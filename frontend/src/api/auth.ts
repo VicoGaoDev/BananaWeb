@@ -15,3 +15,11 @@ export function changePassword(oldPassword: string, newPassword: string): Promis
 export function getMe(): Promise<UserInfo> {
   return client.get("/auth/me");
 }
+
+export function uploadAvatar(file: File): Promise<UserInfo> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return client.post("/auth/avatar", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}

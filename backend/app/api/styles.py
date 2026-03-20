@@ -1,11 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user, require_admin
 from app.models.user import User
 from app.models.style import Style
 from app.models.style_prompt import StylePrompt
-from app.schemas.style import StyleOut, StyleCreate, StylePromptCreate, StylePromptOut
+from app.schemas.style import (
+    StyleOut,
+    StyleCreate,
+    StylePromptCreate,
+    StylePromptUpdate,
+    StylePromptOut,
+)
 
 router = APIRouter(prefix="/api/styles", tags=["风格"])
 
@@ -91,3 +97,27 @@ def delete_prompt(
     ).delete()
     db.commit()
     return {"message": "删除成功"}
+
+
+@router.put("/{style_id}/prompts/{prompt_id}", response_model=StylePromptOut)
+def update_prompt(
+    style_id: int,
+    prompt_id: int,
+    body: StylePromptUpdate,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    prompt = (
+        db.query(StylePrompt)
+        .filter(StylePrompt.id == prompt_id, StylePrompt.style_id == style_id)
+        .first()
+    )
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt 不存在")
+
+    prompt.prompt = body.prompt
+    prompt.negative_prompt = body.negative_prompt
+    prompt.sort_order = body.sort_order
+    db.commit()
+    db.refresh(prompt)
+    return prompt

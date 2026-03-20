@@ -86,14 +86,21 @@ function copyKey() {
 </script>
 
 <template>
-  <div class="apikey-page">
-    <div class="page-header">
-      <h2><KeyOutlined /> API Key 管理</h2>
-      <p class="page-desc">管理 AI 生图服务的 API Key，系统全局使用同一个 Key</p>
+  <div class="apikey-page warm-page">
+    <div class="warm-page-header">
+      <div class="warm-page-heading">
+        <div class="warm-page-icon">
+          <KeyOutlined />
+        </div>
+        <div>
+          <div class="warm-page-title">API Key 管理</div>
+          <div class="warm-page-desc">管理 AI 生图服务的全局密钥，后端会实时读取新配置。</div>
+        </div>
+      </div>
     </div>
 
     <a-spin :spinning="loading">
-      <div class="key-card dashboard-card">
+      <div class="key-card warm-card">
         <div class="key-label">当前 API Key</div>
 
         <div class="key-input-row">
@@ -126,16 +133,11 @@ function copyKey() {
         </div>
 
         <div class="key-footer">
-          <a-button
-            type="primary"
-            :loading="saving"
-            :disabled="!visible"
-            @click="handleSave"
-          >
+          <a-button type="primary" class="warm-primary-btn" :loading="saving" :disabled="!visible" @click="handleSave">
             <template #icon><SaveOutlined /></template>
             保存
           </a-button>
-          <a-button danger :disabled="!hasKey" @click="handleDelete">
+          <a-button class="warm-danger-btn" :disabled="!hasKey" @click="handleDelete">
             <template #icon><DeleteOutlined /></template>
             删除
           </a-button>
@@ -147,23 +149,7 @@ function copyKey() {
 
 <style scoped lang="scss">
 .apikey-page {
-  max-width: 640px;
-}
-
-.page-header {
-  margin-bottom: 24px;
-
-  h2 {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 4px;
-  }
-}
-
-.page-desc {
-  font-size: 13px;
-  color: var(--text-secondary);
+  max-width: 820px;
 }
 
 .key-card {
@@ -172,9 +158,11 @@ function copyKey() {
 
 .key-label {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: #8d7457;
   margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .key-input-row {
@@ -188,33 +176,48 @@ function copyKey() {
   flex: 1;
   font-family: "SF Mono", "Consolas", "Monaco", monospace;
   letter-spacing: 0.5px;
+
+  :deep(.ant-input) {
+    border-radius: 16px;
+    border-color: #efdcb9;
+    background: #fffdf8;
+  }
 }
 
 .key-masked {
   flex: 1;
-  height: 40px;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
-  border-radius: 8px;
+  padding: 0 16px;
+  background: #fff8ec;
+  border: 1px solid #f0dfbe;
+  border-radius: 16px;
   font-family: "SF Mono", "Consolas", "Monaco", monospace;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: #80684b;
   letter-spacing: 1px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    border-color: var(--primary);
-    color: var(--text);
+    border-color: #f0ba5f;
+    color: #4c341a;
   }
 }
 
 .key-actions {
   display: flex;
-  gap: 2px;
+  gap: 6px;
+
+  :deep(.ant-btn) {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    background: #fff7e6;
+    border: 1px solid #f0dfbe;
+    color: #7a613f;
+  }
 }
 
 .key-footer {

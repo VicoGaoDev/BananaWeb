@@ -15,7 +15,7 @@ def create(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    task = create_task(db, user.id, body.style_id, body.model, body.size, body.reference_image)
+    task = create_task(db, user.id, body.style_id, body.model, body.size, body.resolution, body.reference_image)
 
     # Trigger async generation (Celery)
     try:

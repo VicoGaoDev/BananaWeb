@@ -30,3 +30,9 @@ class StylePromptCreate(BaseModel):
     prompt: str
     negative_prompt: str = ""
     sort_order: int = 0
+
+
+class StylePromptUpdate(BaseModel):
+    prompt: str
+    negative_prompt: str = ""
+    sort_order: int = 0

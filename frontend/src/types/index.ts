@@ -2,6 +2,7 @@ export interface UserInfo {
   id: number;
   username: string;
   role: "user" | "admin";
+  avatar_url?: string;
 }
 
 export interface LoginResponse {
@@ -42,12 +43,21 @@ export interface TaskResult {
 
 export interface HistoryItem {
   task_id: number;
+  username?: string;
+  avatar_url?: string;
   style_name: string;
   model: string;
   size: string;
   status: string;
   created_at: string;
   images: ImageResult[];
+}
+
+export interface HistoryFilter {
+  status?: string;
+  user_id?: number;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface HistoryResponse {
@@ -58,6 +68,7 @@ export interface HistoryResponse {
 export interface AdminUser {
   id: number;
   username: string;
+  avatar_url?: string;
   role: string;
   status: string;
   created_at: string;

@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted, h } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
-import { UserOutlined, LockOutlined } from "@ant-design/icons-vue";
+import { LockOutlined, ThunderboltOutlined, UserOutlined } from "@ant-design/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { login as apiLogin } from "@/api/auth";
 
@@ -36,78 +36,95 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
-    <div class="login-container">
-      <div class="login-left">
-        <div class="left-content">
-          <h1>🍌 Banana Web</h1>
-          <p class="tagline">AI 智能绘图平台</p>
-          <p class="desc">
-            基于风格模板的 AI 批量出图系统<br />
-            选择风格，一键生成精美图片
-          </p>
-          <div class="features">
-            <div class="feature-item">
-              <span class="feature-dot"></span>
-              多种风格模板
-            </div>
-            <div class="feature-item">
-              <span class="feature-dot"></span>
-              批量智能生成
-            </div>
-            <div class="feature-item">
-              <span class="feature-dot"></span>
-              高品质 4K 输出
-            </div>
+    <div class="login-shell">
+      <section class="login-hero">
+        <div class="hero-badge">Banana Web</div>
+        <div class="hero-icon">🍌</div>
+        <h1>统一风格的 AI 绘图工作台</h1>
+        <p class="hero-desc">
+          基于风格模板的 AI 批量出图系统。上传参考图、选择比例与风格，即可快速生成统一视觉的图片结果。
+        </p>
+
+        <div class="hero-list">
+          <div class="hero-item">
+            <span class="hero-dot"></span>
+            风格化模板驱动，不暴露 Prompt
+          </div>
+          <div class="hero-item">
+            <span class="hero-dot"></span>
+            本地参考图上传与多图结果输出
+          </div>
+          <div class="hero-item">
+            <span class="hero-dot"></span>
+            管理后台统一配置风格与 API Key
           </div>
         </div>
-      </div>
 
-      <div class="login-right">
-        <div class="login-card">
-          <h2>登录</h2>
-          <p class="login-sub">输入账号密码进入系统</p>
-
-          <a-form layout="vertical" :model="form" @finish="handleLogin" style="margin-top: 32px">
-            <a-form-item label="用户名">
-              <a-input
-                v-model:value="form.username"
-                size="large"
-                placeholder="请输入用户名"
-                :prefix="h(UserOutlined, { style: { color: '#bfbfbf' } })"
-              />
-            </a-form-item>
-            <a-form-item label="密码">
-              <a-input-password
-                v-model:value="form.password"
-                size="large"
-                placeholder="请输入密码"
-                :prefix="h(LockOutlined, { style: { color: '#bfbfbf' } })"
-                @press-enter="handleLogin"
-              />
-            </a-form-item>
-            <a-form-item style="margin-top: 8px">
-              <a-button
-                type="primary"
-                html-type="submit"
-                size="large"
-                :loading="loading"
-                block
-                class="login-btn"
-              >
-                登 录
-              </a-button>
-            </a-form-item>
-          </a-form>
-
-          <div class="login-footer">
-            默认管理员账号: admin / admin123
+        <div class="hero-card">
+          <div class="hero-card-title">系统体验</div>
+          <div class="hero-card-row">
+            <span>风格模板</span>
+            <strong>统一输出</strong>
+          </div>
+          <div class="hero-card-row">
+            <span>结果返回</span>
+            <strong>实时轮询</strong>
+          </div>
+          <div class="hero-card-row">
+            <span>视觉风格</span>
+            <strong>暖色扁平卡片</strong>
           </div>
         </div>
-      </div>
+      </section>
+
+      <section class="login-panel">
+        <div class="panel-top">
+          <div class="panel-kicker">欢迎回来</div>
+          <h2>登录系统</h2>
+          <p>输入账号密码后进入 Banana Web 控制台。</p>
+        </div>
+
+        <a-form layout="vertical" :model="form" @finish="handleLogin" class="login-form">
+          <a-form-item label="用户名">
+            <a-input
+              v-model:value="form.username"
+              size="large"
+              placeholder="请输入用户名"
+              :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+            />
+          </a-form-item>
+          <a-form-item label="密码">
+            <a-input-password
+              v-model:value="form.password"
+              size="large"
+              placeholder="请输入密码"
+              :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+              @press-enter="handleLogin"
+            />
+          </a-form-item>
+          <a-form-item class="submit-item">
+            <a-button
+              type="primary"
+              html-type="submit"
+              size="large"
+              :loading="loading"
+              block
+              class="login-btn"
+            >
+              <template #icon><ThunderboltOutlined /></template>
+              {{ loading ? "登录中..." : "进入工作台" }}
+            </a-button>
+          </a-form-item>
+        </a-form>
+
+        <div class="login-note">
+          <span class="note-label">默认管理员</span>
+          <strong>admin / admin123</strong>
+        </div>
+      </section>
     </div>
   </div>
 </template>
-
 
 <style scoped lang="scss">
 .login-page {
@@ -115,117 +132,262 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
-  padding: 24px;
+  padding: 28px;
+  background:
+    radial-gradient(circle at top, rgba(255, 203, 113, 0.18), transparent 26%),
+    linear-gradient(180deg, #fff8ee 0%, #fffdf9 100%);
 }
 
-.login-container {
-  display: flex;
-  width: 900px;
-  max-width: 100%;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.07);
+.login-shell {
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 22px;
+}
+
+.login-hero,
+.login-panel {
+  border-radius: 32px;
+  border: 1px solid rgba(241, 210, 154, 0.72);
+  background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
+  box-shadow: 0 24px 54px rgba(236, 185, 88, 0.14);
+}
+
+.login-hero {
+  padding: 42px;
+  position: relative;
   overflow: hidden;
 }
 
-.login-left {
-  width: 400px;
-  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-  padding: 60px 48px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  color: #fff;
-
-  h1 {
-    font-size: 28px;
-    font-weight: 700;
-    margin-bottom: 8px;
-  }
-
-  .tagline {
-    font-size: 16px;
-    opacity: 0.9;
-    margin-bottom: 24px;
-  }
-
-  .desc {
-    font-size: 14px;
-    line-height: 1.8;
-    opacity: 0.75;
-    margin-bottom: 32px;
-  }
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: auto -80px -120px auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 190, 74, 0.28), transparent 62%);
 }
 
-.features {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #fff2d1;
+  color: #c98918;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.feature-item {
+.hero-icon {
+  width: 78px;
+  height: 78px;
+  margin-top: 22px;
+  border-radius: 24px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  opacity: 0.9;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffd06d, #ffaf29);
+  box-shadow: 0 20px 36px rgba(255, 175, 41, 0.24);
+  font-size: 42px;
 }
 
-.feature-dot {
-  width: 8px;
-  height: 8px;
+.login-hero h1 {
+  max-width: 460px;
+  margin-top: 24px;
+  font-size: 42px;
+  line-height: 1.16;
+  color: #4c341a;
+}
+
+.hero-desc {
+  max-width: 500px;
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: #82684d;
+}
+
+.hero-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.hero-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #664e30;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hero-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.8);
+  background: linear-gradient(180deg, #ffcb62, #ffab25);
+  box-shadow: 0 0 0 5px rgba(255, 203, 98, 0.18);
   flex-shrink: 0;
 }
 
-.login-right {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
+.hero-card {
+  width: min(360px, 100%);
+  margin-top: 34px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid #f2dfbf;
+  backdrop-filter: blur(8px);
 }
 
-.login-card {
-  width: 100%;
-  max-width: 360px;
+.hero-card-title {
+  color: #b8883f;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid #f3e5cb;
+  color: #7d6545;
+  font-size: 14px;
+
+  strong {
+    color: #4c341a;
+  }
+}
+
+.login-panel {
+  padding: 38px 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.panel-top {
+  margin-bottom: 28px;
 
   h2 {
-    font-size: 24px;
-    font-weight: 700;
-    margin-bottom: 4px;
-    color: var(--text);
+    margin-top: 8px;
+    font-size: 32px;
+    color: #4c341a;
   }
 
-  .login-sub {
+  p {
+    margin-top: 10px;
+    color: #8c7458;
     font-size: 14px;
-    color: var(--text-secondary);
   }
+}
+
+.panel-kicker {
+  color: #c48a1b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-form {
+  :deep(.ant-form-item-label > label) {
+    font-weight: 700;
+    color: #5f4526;
+  }
+
+  :deep(.ant-input-affix-wrapper),
+  :deep(.ant-input),
+  :deep(.ant-input-password) {
+    height: 50px;
+    border-radius: 16px;
+    border-color: #efdcb9;
+    background: #fffdf8;
+    box-shadow: none;
+  }
+
+  :deep(.ant-input-affix-wrapper:focus),
+  :deep(.ant-input-affix-wrapper-focused),
+  :deep(.ant-input:focus) {
+    border-color: #f0b85a;
+    box-shadow: 0 0 0 3px rgba(255, 184, 90, 0.12);
+  }
+}
+
+.submit-item {
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 
 .login-btn {
-  height: 48px;
+  height: 54px;
+  border-radius: 18px;
   font-size: 16px;
-  font-weight: 600;
-  border-radius: 8px;
+  font-weight: 700;
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  border: none !important;
+  box-shadow: 0 16px 28px rgba(255, 169, 37, 0.28) !important;
 }
 
-.login-footer {
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 16px;
+.login-note {
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: #fff6e2;
+  border: 1px solid #f2dfbf;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7f6747;
+  font-size: 13px;
+
+  strong {
+    color: #4c341a;
+  }
 }
 
-@media (max-width: 768px) {
-  .login-left {
-    display: none;
+.note-label {
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .login-shell {
+    grid-template-columns: 1fr;
   }
 
-  .login-container {
-    width: 420px;
+  .login-hero h1 {
+    font-size: 34px;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-page {
+    padding: 16px;
+  }
+
+  .login-hero,
+  .login-panel {
+    padding: 24px 20px;
+    border-radius: 24px;
+  }
+
+  .login-hero h1 {
+    font-size: 28px;
+  }
+
+  .login-note {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -64,7 +67,15 @@ def admin_stats(
 def admin_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None),
+    user_id: Optional[int] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_all_history(db, page, page_size)
+    return get_all_history(
+        db, page, page_size,
+        status=status, user_id=user_id,
+        start_date=start_date, end_date=end_date,
+    )

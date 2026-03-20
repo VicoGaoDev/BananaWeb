@@ -2,6 +2,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
 from app.database import engine, Base
 from app.config import settings
 import app.models  # noqa: F401 — ensure all models are registered
@@ -22,7 +23,17 @@ def on_startup():
     Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _ensure_schema_compat()
     _seed_default_data()
+
+
+def _ensure_schema_compat():
+    inspector = inspect(engine)
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
+
+    with engine.begin() as conn:
+        if "avatar_url" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500) DEFAULT ''"))
 
 
 def _seed_default_data():

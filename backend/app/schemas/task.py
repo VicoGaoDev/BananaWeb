@@ -5,7 +5,8 @@ from datetime import datetime
 class TaskCreate(BaseModel):
     style_id: int
     model: str = "banana-pro"
-    size: str = "1024x1024"
+    size: str = "3:4"
+    resolution: str = "4K"
     reference_image: str = ""
 
 

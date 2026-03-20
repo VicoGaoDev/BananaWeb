@@ -13,7 +13,7 @@ const form = reactive({ username: "", password: "", role: "user" });
 
 const columns = [
   { title: "ID", dataIndex: "id", width: 70 },
-  { title: "用户名", dataIndex: "username" },
+  { title: "用户", dataIndex: "username", width: 220 },
   { title: "角色", dataIndex: "role", width: 120 },
   { title: "状态", dataIndex: "status", width: 100 },
   { title: "创建时间", dataIndex: "created_at", width: 180 },
@@ -73,19 +73,24 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 </script>
 
 <template>
-  <div>
-    <div class="page-header">
-      <h2 class="page-title">
-        <TeamOutlined style="margin-right: 8px" />
-        用户管理
-      </h2>
-      <a-button type="primary" @click="modalOpen = true">
+  <div class="warm-page">
+    <div class="warm-page-header">
+      <div class="warm-page-heading">
+        <div class="warm-page-icon">
+          <TeamOutlined />
+        </div>
+        <div>
+          <div class="warm-page-title">用户管理</div>
+          <div class="warm-page-desc">统一管理账号、角色权限与启用状态。</div>
+        </div>
+      </div>
+      <a-button type="primary" class="warm-primary-btn" @click="modalOpen = true">
         <template #icon><PlusOutlined /></template>
         新增用户
       </a-button>
     </div>
 
-    <div class="dashboard-card" style="padding: 0; overflow: hidden">
+    <div class="warm-card warm-table-card">
       <a-table
         :columns="columns"
         :data-source="users"
@@ -94,8 +99,16 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         :pagination="false"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.dataIndex === 'role'">
-            <a-tag :color="record.role === 'admin' ? 'volcano' : 'blue'">
+          <template v-if="column.dataIndex === 'username'">
+            <div class="user-cell">
+              <a-avatar :size="34" :src="record.avatar_url || undefined" class="table-avatar">
+                {{ record.username?.charAt(0)?.toUpperCase() }}
+              </a-avatar>
+              <span class="user-cell-name">{{ record.username }}</span>
+            </div>
+          </template>
+          <template v-else-if="column.dataIndex === 'role'">
+            <a-tag class="warm-tag" :color="record.role === 'admin' ? 'volcano' : 'gold'">
               {{ record.role === "admin" ? "管理员" : "普通用户" }}
             </a-tag>
           </template>
@@ -154,16 +167,25 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 </template>
 
 <style scoped lang="scss">
-.page-header {
+.user-cell {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: 10px;
 }
 
-.page-title {
-  font-size: 20px;
+.table-avatar {
+  background: linear-gradient(180deg, #ffd06d, #ffb02b);
+  color: #5a3c14;
   font-weight: 700;
-  color: var(--text);
+}
+
+.user-cell-name {
+  color: #4c341a;
+  font-weight: 700;
+}
+
+:deep(.ant-badge-status-text) {
+  color: #6b5436;
+  font-weight: 600;
 }
 </style>

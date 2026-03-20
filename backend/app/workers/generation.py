@@ -1,70 +1,159 @@
 """
-AI image generation tasks.
+AI image generation via Gemini API (Nano Banana Pro).
 
-Provides both Celery async tasks and synchronous fallbacks
-for when Redis/Celery is not available.
+Reads API Key dynamically from database. Supports reference image (base64).
+Falls back to a static error image on failure.
 """
 
-import time
+import base64
+import logging
+import shutil
 import uuid
 import httpx
 from pathlib import Path
+
 from app.config import settings
 from app.database import SessionLocal
 from app.models.task import Task
 from app.models.image import Image
+from app.models.api_key import ApiKey
 from app.models.style_prompt import StylePrompt
 from app.models.regenerate_log import RegenerateLog
 
-try:
-    from app.workers.celery_app import celery_app
-    CELERY_AVAILABLE = True
-except Exception:
-    CELERY_AVAILABLE = False
-    celery_app = None
+logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+ERROR_IMAGE_PATH = STATIC_DIR / "error.svg"
 
 
-def _call_ai_api(prompt: str, negative_prompt: str, model: str, size: str) -> bytes | None:
-    """Call external AI API to generate an image. Returns image bytes or None."""
-    if not settings.AI_API_BASE_URL or not settings.AI_API_KEY:
-        return _generate_placeholder(prompt)
+def _get_api_key() -> str | None:
+    db = SessionLocal()
+    try:
+        record = db.query(ApiKey).first()
+        return record.key if record and record.key else None
+    finally:
+        db.close()
+
+
+def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
+    """Read a local uploaded file and return (mime_type, base64_data)."""
+    if not ref_url:
+        return None
+    relative = ref_url.lstrip("/")
+    if relative.startswith("uploads/"):
+        relative = relative[len("uploads/"):]
+    file_path = Path(settings.UPLOAD_DIR) / relative
+    if not file_path.exists():
+        return None
+    ext = file_path.suffix.lower()
+    mime_map = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
+    }
+    mime_type = mime_map.get(ext, "image/jpeg")
+    data = file_path.read_bytes()
+    return mime_type, base64.b64encode(data).decode("utf-8")
+
+
+def _call_gemini_api(
+    prompt: str,
+    aspect_ratio: str,
+    image_size: str,
+    reference_image: str = "",
+) -> bytes | None:
+    """
+    Call Gemini image generation API.
+    Returns decoded image bytes on success, None on failure.
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        logger.warning("No API Key configured in database")
+        return None
+
+    parts: list[dict] = []
+
+    ref = _read_file_as_base64(reference_image)
+    if ref:
+        mime_type, b64_data = ref
+        parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+
+    parts.append({"text": prompt})
+
+    payload = {
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {
+                "aspectRatio": aspect_ratio,
+                "imageSize": image_size,
+            },
+        },
+    }
+
+    auth_value = api_key.strip()
+    logger.info(
+        "Calling Gemini API: prompt=%s, ratio=%s, size=%s, has_ref=%s, key_prefix=%s",
+        prompt[:60], aspect_ratio, image_size, bool(ref), auth_value[:8] + "..."
+    )
 
     try:
-        with httpx.Client(timeout=120) as client:
+        with httpx.Client(timeout=settings.AI_TIMEOUT) as client:
             resp = client.post(
-                f"{settings.AI_API_BASE_URL}/generate",
-                json={
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "model": model,
-                    "size": size,
+                settings.AI_API_URL,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": auth_value,
                 },
-                headers={"Authorization": f"Bearer {settings.AI_API_KEY}"},
             )
-            resp.raise_for_status()
-            return resp.content
-    except Exception:
+
+            if resp.status_code != 200:
+                logger.error(
+                    "Gemini API HTTP %s: %s", resp.status_code, resp.text[:500]
+                )
+                return None
+
+            data = resp.json()
+
+        candidates = data.get("candidates", [])
+        if not candidates:
+            logger.warning("Gemini API returned no candidates: %s", str(data)[:300])
+            return None
+
+        for part in candidates[0].get("content", {}).get("parts", []):
+            if "inlineData" in part:
+                b64_str = part["inlineData"]["data"]
+                img_bytes = base64.b64decode(b64_str)
+                logger.info("Gemini API success, image size: %d bytes", len(img_bytes))
+                return img_bytes
+
+        logger.warning("Gemini API response has no inlineData in parts")
+        return None
+
+    except httpx.TimeoutException:
+        logger.error("Gemini API request timed out (%ds)", settings.AI_TIMEOUT)
+        return None
+    except Exception as e:
+        logger.error("Gemini API error: %s", e, exc_info=True)
         return None
 
 
-def _generate_placeholder(prompt: str) -> bytes:
-    """Generate a placeholder SVG image for development/testing."""
-    short = prompt[:30].replace('"', "'")
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
-  <rect width="512" height="512" fill="#1a1a2e"/>
-  <rect x="20" y="20" width="472" height="472" rx="16" fill="none" stroke="#e94560" stroke-width="2"/>
-  <text x="256" y="240" text-anchor="middle" fill="#e94560" font-size="20" font-family="sans-serif">AI Generated</text>
-  <text x="256" y="280" text-anchor="middle" fill="#888" font-size="14" font-family="sans-serif">{short}</text>
-</svg>"""
-    return svg.encode("utf-8")
-
-
-def _save_image_bytes(image_bytes: bytes, ext: str = "svg") -> str:
+def _save_image_bytes(image_bytes: bytes, ext: str = "jpg") -> str:
     upload_dir = Path(settings.UPLOAD_DIR)
     upload_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.{ext}"
     (upload_dir / filename).write_bytes(image_bytes)
     return f"/uploads/{filename}"
+
+
+def _get_error_image_url() -> str:
+    """Copy static error image to uploads and return its URL."""
+    upload_dir = Path(settings.UPLOAD_DIR)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / "error.svg"
+    if not dest.exists():
+        shutil.copy2(ERROR_IMAGE_PATH, dest)
+    return "/uploads/error.svg"
 
 
 def _process_task(task_id: int):
@@ -80,20 +169,25 @@ def _process_task(task_id: int):
         all_success = True
 
         for image in images:
-            prompt = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
-            if not prompt:
+            sp = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
+            if not sp:
                 image.status = "failed"
+                image.image_url = _get_error_image_url()
                 all_success = False
                 continue
 
-            time.sleep(1)  # Simulate processing time
+            result = _call_gemini_api(
+                prompt=sp.prompt,
+                aspect_ratio=task.size,
+                image_size=task.resolution,
+                reference_image=task.reference_image,
+            )
 
-            result = _call_ai_api(prompt.prompt, prompt.negative_prompt, task.model, task.size)
             if result:
-                ext = "svg" if result[:5] == b"<svg " else "png"
-                image.image_url = _save_image_bytes(result, ext)
+                image.image_url = _save_image_bytes(result, "jpg")
                 image.status = "success"
             else:
+                image.image_url = _get_error_image_url()
                 image.status = "failed"
                 all_success = False
 
@@ -110,20 +204,23 @@ def _process_single_image(image_id: int):
         if not image:
             return
 
-        prompt = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
+        sp = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
         task = db.query(Task).filter(Task.id == image.task_id).first()
-        if not prompt or not task:
+        if not sp or not task:
             image.status = "failed"
+            image.image_url = _get_error_image_url()
             db.commit()
             return
 
-        time.sleep(1)
+        result = _call_gemini_api(
+            prompt=sp.prompt,
+            aspect_ratio=task.size,
+            image_size=task.resolution,
+            reference_image=task.reference_image,
+        )
 
-        result = _call_ai_api(prompt.prompt, prompt.negative_prompt, task.model, task.size)
         if result:
-            ext = "svg" if result[:5] == b"<svg " else "png"
-            new_url = _save_image_bytes(result, ext)
-            # Update regenerate log
+            new_url = _save_image_bytes(result, "jpg")
             log = (
                 db.query(RegenerateLog)
                 .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")
@@ -135,6 +232,7 @@ def _process_single_image(image_id: int):
             image.image_url = new_url
             image.status = "success"
         else:
+            image.image_url = _get_error_image_url()
             image.status = "failed"
 
         db.commit()
@@ -143,6 +241,28 @@ def _process_single_image(image_id: int):
 
 
 # --- Celery tasks ---
+
+def _redis_reachable() -> bool:
+    """Quick check: can we actually connect to the Redis broker?"""
+    try:
+        import redis
+        r = redis.Redis.from_url(
+            settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1
+        )
+        r.ping()
+        return True
+    except Exception:
+        return False
+
+
+try:
+    from app.workers.celery_app import celery_app
+    CELERY_AVAILABLE = _redis_reachable()
+    if not CELERY_AVAILABLE:
+        logger.info("Redis not reachable — falling back to sync thread mode")
+except Exception:
+    CELERY_AVAILABLE = False
+    celery_app = None
 
 if CELERY_AVAILABLE and celery_app:
     @celery_app.task(bind=True, max_retries=2)

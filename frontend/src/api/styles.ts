@@ -21,6 +21,14 @@ export function addPrompt(styleId: number, data: { prompt: string; negative_prom
   return client.post(`/styles/${styleId}/prompts`, data);
 }
 
+export function updatePrompt(
+  styleId: number,
+  promptId: number,
+  data: { prompt: string; negative_prompt?: string; sort_order?: number },
+): Promise<StylePrompt> {
+  return client.put(`/styles/${styleId}/prompts/${promptId}`, data);
+}
+
 export function deletePrompt(styleId: number, promptId: number): Promise<any> {
   return client.delete(`/styles/${styleId}/prompts/${promptId}`);
 }

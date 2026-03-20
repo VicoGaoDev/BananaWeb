@@ -1,12 +1,18 @@
-from fastapi import APIRouter, Depends
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.config import settings
 from app.schemas.auth import LoginRequest, LoginResponse, UserBrief, ChangePasswordRequest
 from app.services.auth_service import authenticate_user, change_password
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+AVATAR_MAX_SIZE = 1 * 1024 * 1024  # 1 MB
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -14,7 +20,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     token, user = authenticate_user(db, body.username, body.password)
     return LoginResponse(
         token=token,
-        user=UserBrief(id=user.id, username=user.username, role=user.role),
+        user=UserBrief(id=user.id, username=user.username, role=user.role, avatar_url=user.avatar_url or ""),
     )
 
 
@@ -30,4 +36,30 @@ def change_pwd(
 
 @router.get("/me", response_model=UserBrief)
 def get_me(user: User = Depends(get_current_user)):
-    return UserBrief(id=user.id, username=user.username, role=user.role)
+    return UserBrief(id=user.id, username=user.username, role=user.role, avatar_url=user.avatar_url or "")
+
+
+@router.post("/avatar", response_model=UserBrief)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持 JPG/PNG/WEBP/GIF 格式")
+
+    data = await file.read()
+    if len(data) > AVATAR_MAX_SIZE:
+        raise HTTPException(status_code=400, detail="头像图片不能超过 1 MB")
+
+    ext = Path(file.filename or "avatar.jpg").suffix or ".jpg"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = Path(settings.UPLOAD_DIR) / "avatar" / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+
+    user.avatar_url = f"/uploads/avatar/{filename}"
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserBrief(id=user.id, username=user.username, role=user.role, avatar_url=user.avatar_url or "")

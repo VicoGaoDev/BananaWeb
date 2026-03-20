@@ -5,6 +5,7 @@ export function createTask(data: {
   style_id: number;
   model: string;
   size: string;
+  resolution: string;
   reference_image?: string;
 }): Promise<{ task_id: number }> {
   return client.post("/tasks", data);

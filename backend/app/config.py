@@ -15,8 +15,8 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    AI_API_BASE_URL: str = ""
-    AI_API_KEY: str = ""
+    AI_API_URL: str = "https://nanoapi.poloai.top/v1beta/models/gemini-3-pro-image-preview:generateContent"
+    AI_TIMEOUT: int = 120
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

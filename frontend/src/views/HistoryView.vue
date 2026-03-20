@@ -65,26 +65,44 @@ function statusLabel(s: string) {
 </script>
 
 <template>
-  <div>
-    <div class="page-header">
-      <h2 class="page-title">
-        <ClockCircleOutlined style="margin-right: 8px" />
-        历史记录
-      </h2>
+  <div class="warm-page">
+    <div class="warm-page-header">
+      <div class="warm-page-heading">
+        <div class="warm-page-icon">
+          <ClockCircleOutlined />
+        </div>
+        <div>
+          <div class="warm-page-title">历史记录</div>
+          <div class="warm-page-desc">查看每次风格生成任务的状态、时间与结果图。</div>
+        </div>
+      </div>
+
+      <div class="history-stats warm-summary-grid">
+        <div class="warm-summary-item">
+          <div class="warm-summary-label">任务总数</div>
+          <div class="warm-summary-value">{{ total }}</div>
+          <div class="warm-summary-text">按时间倒序展示你的全部记录</div>
+        </div>
+        <div class="warm-summary-item">
+          <div class="warm-summary-label">当前页</div>
+          <div class="warm-summary-value">{{ page }}</div>
+          <div class="warm-summary-text">每页 {{ pageSize }} 条任务记录</div>
+        </div>
+      </div>
     </div>
 
     <a-spin :spinning="loading">
-      <div v-if="!items.length && !loading" class="empty-state dashboard-card">
+      <div v-if="!items.length && !loading" class="empty-state warm-card">
         <a-empty description="暂无生成记录" />
       </div>
 
-      <div v-for="item in items" :key="item.task_id" class="history-card dashboard-card">
+      <div v-for="item in items" :key="item.task_id" class="history-card warm-card">
         <div class="hc-header">
           <span class="hc-style">{{ item.style_name }}</span>
-          <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+          <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
           <span class="hc-meta">{{ formatTime(item.created_at) }}</span>
-          <a-tag color="blue" style="margin-left: auto">{{ item.model }}</a-tag>
-          <a-tag>{{ item.size }}</a-tag>
+          <a-tag class="warm-tag" color="gold" style="margin-left: auto">{{ item.model }}</a-tag>
+          <a-tag class="warm-tag">{{ item.size }}</a-tag>
         </div>
         <div class="hc-images">
           <div v-for="img in item.images" :key="img.id" class="thumb-wrap">
@@ -108,7 +126,7 @@ function statusLabel(s: string) {
       </div>
     </a-spin>
 
-    <div v-if="total > pageSize" class="pagination">
+    <div v-if="total > pageSize" class="warm-pagination">
       <a-pagination
         :current="page"
         :total="total"
@@ -128,14 +146,9 @@ function statusLabel(s: string) {
 </template>
 
 <style scoped lang="scss">
-.page-header {
-  margin-bottom: 24px;
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
+.history-stats {
+  width: min(520px, 100%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .empty-state {
@@ -144,8 +157,7 @@ function statusLabel(s: string) {
 }
 
 .history-card {
-  padding: 20px 24px;
-  margin-bottom: 16px;
+  padding: 22px 24px;
 }
 
 .hc-header {
@@ -157,14 +169,14 @@ function statusLabel(s: string) {
 }
 
 .hc-style {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  color: #4c341a;
 }
 
 .hc-meta {
   font-size: 13px;
-  color: var(--text-muted);
+  color: #9b825f;
 }
 
 .hc-images {
@@ -176,16 +188,18 @@ function statusLabel(s: string) {
 .thumb-wrap {
   width: 110px;
   height: 110px;
-  border-radius: 10px;
+  border-radius: 16px;
   overflow: hidden;
   position: relative;
+  border: 1px solid #f1ddb7;
+  background: #fff8eb;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     cursor: pointer;
-    border-radius: 10px;
+    border-radius: 16px;
     transition: transform 0.2s;
 
     &:hover {
@@ -196,10 +210,12 @@ function statusLabel(s: string) {
 
 .thumb-dl {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
+  bottom: 8px;
+  right: 8px;
   opacity: 0;
   transition: opacity 0.2s;
+  border: none;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
 
   .thumb-wrap:hover & {
     opacity: 1;
@@ -212,16 +228,16 @@ function statusLabel(s: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fafafa;
-  border-radius: 10px;
-  border: 1px dashed #d9d9d9;
-  color: var(--text-muted);
+  background: #fff8ee;
+  border-radius: 16px;
+  border: 1px dashed #e4cfa7;
+  color: #b49361;
   font-size: 16px;
 }
 
-.pagination {
-  display: flex;
-  justify-content: center;
-  margin-top: 28px;
+@media (max-width: 960px) {
+  .history-stats {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

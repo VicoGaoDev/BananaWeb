@@ -15,6 +15,7 @@ class UserBrief(BaseModel):
     id: int
     username: str
     role: str
+    avatar_url: str = ""
 
     model_config = {"from_attributes": True}
 
