@@ -16,7 +16,8 @@ export const useAuthStore = defineStore("auth", () => {
   );
 
   const isLoggedIn = computed(() => !!token.value);
-  const isAdmin = computed(() => user.value?.role === "admin");
+  const isSuperAdmin = computed(() => user.value?.role === "superadmin");
+  const isAdmin = computed(() => user.value?.role === "admin" || user.value?.role === "superadmin");
 
   function setAuth(t: string, u: UserInfo) {
     token.value = t;
@@ -37,5 +38,5 @@ export const useAuthStore = defineStore("auth", () => {
     localStorage.removeItem("user");
   }
 
-  return { token, user, isLoggedIn, isAdmin, setAuth, updateUser, logout };
+  return { token, user, isLoggedIn, isAdmin, isSuperAdmin, setAuth, updateUser, logout };
 });

@@ -17,6 +17,10 @@ export function updateUserRole(userId: number, role: string): Promise<AdminUser>
   return client.put(`/admin/users/${userId}/role`, { role });
 }
 
+export function resetUserPassword(userId: number, newPassword: string): Promise<AdminUser> {
+  return client.put(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
+}
+
 export function getStats(): Promise<AdminStats> {
   return client.get("/admin/stats");
 }

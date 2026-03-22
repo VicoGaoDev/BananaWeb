@@ -27,6 +27,10 @@ class UpdateRoleRequest(BaseModel):
     role: str  # "user" | "admin"
 
 
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 class StatsOut(BaseModel):
     last_7_days: int
     last_30_days: int

@@ -1,7 +1,7 @@
 export interface UserInfo {
   id: number;
   username: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "superadmin";
   avatar_url?: string;
 }
 

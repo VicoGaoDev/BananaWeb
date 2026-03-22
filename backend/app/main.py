@@ -29,15 +29,20 @@ def on_startup():
 
 def _ensure_schema_compat():
     inspector = inspect(engine)
-    user_columns = {col["name"] for col in inspector.get_columns("users")}
 
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
     with engine.begin() as conn:
         if "avatar_url" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500) DEFAULT ''"))
 
+    task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+    with engine.begin() as conn:
+        if "resolution" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN resolution VARCHAR(10) DEFAULT '4K'"))
+
 
 def _seed_default_data():
-    """Create default admin and sample styles on first run."""
+    """Create default admin, superadmin, and sample styles on first run."""
     from app.database import SessionLocal
     from app.models.user import User
     from app.models.style import Style
@@ -46,7 +51,15 @@ def _seed_default_data():
 
     db = SessionLocal()
     try:
-        if not db.query(User).first():
+        if not db.query(User).filter(User.role == "superadmin").first():
+            db.add(User(
+                username="administrator",
+                password_hash=hash_password("administrator123"),
+                role="superadmin",
+            ))
+            db.commit()
+
+        if not db.query(User).filter(User.role.in_(["admin", "user"])).first():
             db.add(User(username="admin", password_hash=hash_password("admin123"), role="admin"))
             db.commit()
 

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.models.api_key import ApiKey
 from app.schemas.task import TaskCreate, TaskCreateResponse, TaskOut
 from app.services.task_service import create_task, get_task_detail
 
@@ -15,6 +16,13 @@ def create(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    api_key = db.query(ApiKey).first()
+    if not api_key or not api_key.key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="系统尚未配置 API Key，请联系管理员在后台设置后再发起任务",
+        )
+
     task = create_task(db, user.id, body.style_id, body.model, body.size, body.resolution, body.reference_image)
 
     # Trigger async generation (Celery)

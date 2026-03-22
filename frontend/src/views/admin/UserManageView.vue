@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive } from "vue";
+import { ref, onMounted, reactive, computed } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { PlusOutlined, TeamOutlined } from "@ant-design/icons-vue";
-import { listUsers, createUser, updateUserStatus, updateUserRole } from "@/api/admin";
+import { listUsers, createUser, updateUserStatus, updateUserRole, resetUserPassword } from "@/api/admin";
+import { useAuthStore } from "@/stores/auth";
 import type { AdminUser } from "@/types";
+
+const auth = useAuthStore();
+const isSuperAdmin = computed(() => auth.isSuperAdmin);
 
 const users = ref<AdminUser[]>([]);
 const loading = ref(false);
@@ -11,13 +15,18 @@ const modalOpen = ref(false);
 const creating = ref(false);
 const form = reactive({ username: "", password: "", role: "user" });
 
+const resetPwdOpen = ref(false);
+const resetPwdLoading = ref(false);
+const resetTarget = ref<AdminUser | null>(null);
+const resetForm = reactive({ newPassword: "" });
+
 const columns = [
   { title: "ID", dataIndex: "id", width: 70 },
   { title: "用户", dataIndex: "username", width: 220 },
   { title: "角色", dataIndex: "role", width: 120 },
   { title: "状态", dataIndex: "status", width: 100 },
   { title: "创建时间", dataIndex: "created_at", width: 180 },
-  { title: "操作", key: "action", width: 220 },
+  { title: "操作", key: "action", width: 280 },
 ];
 
 async function load() {
@@ -67,6 +76,37 @@ function toggleRole(u: AdminUser) {
       load();
     },
   });
+}
+
+function openResetPwd(u: AdminUser) {
+  resetTarget.value = u;
+  resetForm.newPassword = "";
+  resetPwdOpen.value = true;
+}
+
+async function handleResetPwd() {
+  if (!resetTarget.value) return;
+  if (!resetForm.newPassword || resetForm.newPassword.length < 6) {
+    message.warning("新密码至少6位");
+    return;
+  }
+  resetPwdLoading.value = true;
+  try {
+    await resetUserPassword(resetTarget.value.id, resetForm.newPassword);
+    message.success(`已重置 "${resetTarget.value.username}" 的密码`);
+    resetPwdOpen.value = false;
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "重置失败");
+  } finally {
+    resetPwdLoading.value = false;
+  }
+}
+
+function isFirstAdmin(u: AdminUser) {
+  const admins = users.value.filter((x) => x.role === "admin");
+  if (!admins.length) return false;
+  admins.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  return admins[0].id === u.id;
 }
 
 function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "-"; }
@@ -124,14 +164,26 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               type="link"
               size="small"
               :danger="record.status === 'active'"
+              :disabled="isFirstAdmin(record) && record.status === 'active'"
               @click="toggleStatus(record)"
             >
               {{ record.status === "active" ? "禁用" : "启用" }}
             </a-button>
             <a-divider type="vertical" />
-            <a-button type="link" size="small" @click="toggleRole(record)">
+            <a-button
+              type="link"
+              size="small"
+              :disabled="isFirstAdmin(record)"
+              @click="toggleRole(record)"
+            >
               {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
             </a-button>
+            <template v-if="isSuperAdmin">
+              <a-divider type="vertical" />
+              <a-button type="link" size="small" @click="openResetPwd(record)">
+                重置密码
+              </a-button>
+            </template>
           </template>
         </template>
       </a-table>
@@ -160,6 +212,24 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
             <a-radio value="user">普通用户</a-radio>
             <a-radio value="admin">管理员</a-radio>
           </a-radio-group>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- Reset password modal (superadmin only) -->
+    <a-modal
+      v-model:open="resetPwdOpen"
+      :title="`重置密码 — ${resetTarget?.username}`"
+      :confirm-loading="resetPwdLoading"
+      ok-text="确认重置"
+      cancel-text="取消"
+      centered
+      :width="440"
+      @ok="handleResetPwd"
+    >
+      <a-form layout="vertical" style="margin-top: 16px">
+        <a-form-item label="新密码" style="margin-bottom: 0">
+          <a-input-password v-model:value="resetForm.newPassword" placeholder="至少6位" />
         </a-form-item>
       </a-form>
     </a-modal>

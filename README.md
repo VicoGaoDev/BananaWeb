@@ -61,6 +61,7 @@ uvicorn app.main:app --reload --port 8000
 
 启动后：
 - API 文档：http://localhost:8000/docs
+- 超级管理员：`administrator` / `administrator123`（不显示在用户列表，可重置所有用户密码）
 - 默认管理员：`admin` / `admin123`
 
 ### 2. 启动前端
@@ -142,6 +143,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | GET | /api/admin/users | 管理员 | 用户列表 |
 | PUT | /api/admin/users/:id/status | 管理员 | 禁用/启用 |
 | PUT | /api/admin/users/:id/role | 管理员 | 设置角色 |
+| PUT | /api/admin/users/:id/reset-password | 超级管理员 | 重置用户密码 |
 | GET | /api/admin/stats | 管理员 | 数据统计 |
 | GET | /api/admin/history | 管理员 | 全部记录 |
 

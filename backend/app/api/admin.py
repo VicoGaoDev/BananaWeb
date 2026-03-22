@@ -4,14 +4,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.api.deps import require_admin
+from app.api.deps import require_admin, require_superadmin
 from app.models.user import User
 from app.schemas.admin import (
-    CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest, StatsOut,
+    CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest,
+    ResetPasswordRequest, StatsOut,
 )
 from app.schemas.history import HistoryResponse
 from app.services.admin_service import (
-    create_user, list_users, update_user_status, update_user_role, get_stats,
+    create_user, list_users, update_user_status, update_user_role,
+    reset_user_password, get_stats,
 )
 from app.services.history_service import get_all_history
 
@@ -53,6 +55,16 @@ def admin_update_role(
     db: Session = Depends(get_db),
 ):
     return update_user_role(db, user_id, body.role)
+
+
+@router.put("/users/{user_id}/reset-password", response_model=UserOut)
+def admin_reset_password(
+    user_id: int,
+    body: ResetPasswordRequest,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return reset_user_password(db, user_id, body.new_password)
 
 
 @router.get("/stats", response_model=StatsOut)
