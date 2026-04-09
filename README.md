@@ -1,6 +1,6 @@
 # 🍌 Banana Web — AI 绘图系统
 
-基于风格模板的 AI 批量出图系统，无 Prompt 暴露，强后台控制。
+基于提示词的 AI 批量出图系统，支持多参考图上传与自定义生成数量。
 
 ## 技术栈
 
@@ -15,24 +15,24 @@
 
 ```
 Banana_Web/
-├── frontend/          # Vue 3 前端
+├── frontend/              # Vue 3 前端
 │   ├── src/
-│   │   ├── api/       # API 请求层
-│   │   ├── stores/    # Pinia 状态管理
-│   │   ├── views/     # 页面视图
-│   │   ├── components/# 通用组件
-│   │   └── router/    # 路由配置
-│   └── vercel.json    # Vercel 部署配置
-├── backend/           # FastAPI 后端
+│   │   ├── api/           # API 请求层
+│   │   ├── stores/        # Pinia 状态管理
+│   │   ├── views/         # 页面视图（GenerateView / HistoryView / admin）
+│   │   ├── components/    # 通用组件（AppLayout 含登录弹窗）
+│   │   └── router/        # 路由配置
+│   └── vercel.json        # Vercel 部署配置
+├── backend/               # FastAPI 后端
 │   ├── app/
-│   │   ├── api/       # 路由层
-│   │   ├── models/    # ORM 模型
-│   │   ├── schemas/   # Pydantic 模型
-│   │   ├── services/  # 业务逻辑层
-│   │   ├── workers/   # Celery 异步任务
-│   │   └── utils/     # 工具函数
-│   └── data/          # SQLite 数据库（自动创建）
-└── prd.md             # 产品需求文档
+│   │   ├── api/           # 路由层
+│   │   ├── models/        # ORM 模型
+│   │   ├── schemas/       # Pydantic 模型
+│   │   ├── services/      # 业务逻辑层
+│   │   ├── workers/       # Celery 异步任务
+│   │   └── utils/         # 工具函数
+│   └── data/              # SQLite 数据库（自动创建）
+└── prd.md                 # 产品需求文档
 ```
 
 ## 快速开始
@@ -76,7 +76,7 @@ npm install
 npm run dev
 ```
 
-打开 http://localhost:3000 即可使用。
+打开 http://localhost:3000 即可使用（无需登录即可浏览，点击顶部"登录"按钮弹窗登录后可生成图片）。
 
 ### 3. （可选）启动 Celery Worker
 
@@ -133,11 +133,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | POST | /api/auth/login | 公开 | 登录 |
 | POST | /api/auth/change-password | 用户 | 修改密码 |
 | GET | /api/auth/me | 用户 | 获取当前用户信息 |
-| GET | /api/styles | 用户 | 风格列表 |
-| POST | /api/tasks | 用户 | 创建生成任务 |
+| POST | /api/tasks | 用户 | 创建生成任务（prompt + num_images + reference_images） |
 | GET | /api/tasks/:id | 用户 | 查询任务结果 |
 | POST | /api/images/:id/regenerate | 用户 | 单张重新生成 |
 | GET | /api/images/:id/download | 用户 | 下载图片 |
+| POST | /api/upload | 用户 | 上传参考图（最多 6 张） |
 | GET | /api/history | 用户 | 历史记录 |
 | POST | /api/admin/users | 管理员 | 创建用户 |
 | GET | /api/admin/users | 管理员 | 用户列表 |

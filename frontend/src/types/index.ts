@@ -10,21 +10,6 @@ export interface LoginResponse {
   user: UserInfo;
 }
 
-export interface Style {
-  id: number;
-  name: string;
-  cover_image: string;
-  description: string;
-}
-
-export interface StylePrompt {
-  id: number;
-  style_id: number;
-  prompt: string;
-  negative_prompt: string;
-  sort_order: number;
-}
-
 export interface ImageResult {
   id: number;
   image_url: string;
@@ -33,8 +18,8 @@ export interface ImageResult {
 
 export interface TaskResult {
   id: number;
-  style_id: number;
-  model: string;
+  prompt: string;
+  num_images: number;
   size: string;
   status: "pending" | "processing" | "success" | "failed";
   created_at: string;
@@ -45,8 +30,8 @@ export interface HistoryItem {
   task_id: number;
   username?: string;
   avatar_url?: string;
-  style_name: string;
-  model: string;
+  prompt: string;
+  reference_images: string[];
   size: string;
   status: string;
   created_at: string;

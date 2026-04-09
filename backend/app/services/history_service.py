@@ -1,10 +1,20 @@
+import json
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 from app.models.task import Task
-from app.models.style import Style
 from app.models.user import User
+
+
+def _parse_refs(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        refs = json.loads(raw)
+        return refs if isinstance(refs, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 def get_user_history(db: Session, user_id: int, page: int = 1, page_size: int = 20):
@@ -14,11 +24,10 @@ def get_user_history(db: Session, user_id: int, page: int = 1, page_size: int = 
 
     items = []
     for task in tasks:
-        style = db.query(Style).filter(Style.id == task.style_id).first()
         items.append({
             "task_id": task.id,
-            "style_name": style.name if style else "未知",
-            "model": task.model,
+            "prompt": task.prompt or "",
+            "reference_images": _parse_refs(task.reference_images),
             "size": task.size,
             "status": task.status,
             "created_at": task.created_at,
@@ -64,13 +73,12 @@ def get_all_history(
                 "avatar_url": (u.avatar_url or "") if u else "",
             }
 
-        style = db.query(Style).filter(Style.id == task.style_id).first()
         items.append({
             "task_id": task.id,
             "username": user_cache[task.user_id]["username"],
             "avatar_url": user_cache[task.user_id]["avatar_url"],
-            "style_name": style.name if style else "未知",
-            "model": task.model,
+            "prompt": task.prompt or "",
+            "reference_images": _parse_refs(task.reference_images),
             "size": task.size,
             "status": task.status,
             "created_at": task.created_at,

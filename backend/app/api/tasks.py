@@ -23,14 +23,20 @@ def create(
             detail="系统尚未配置 API Key，请联系管理员在后台设置后再发起任务",
         )
 
-    task = create_task(db, user.id, body.style_id, body.model, body.size, body.resolution, body.reference_image)
+    task = create_task(
+        db,
+        user_id=user.id,
+        prompt=body.prompt,
+        num_images=body.num_images,
+        size=body.size,
+        resolution=body.resolution,
+        reference_images=body.reference_images,
+    )
 
-    # Trigger async generation (Celery)
     try:
         from app.workers.generation import generate_images_task
         generate_images_task.delay(task.id)
     except Exception:
-        # If Celery/Redis not available, run sync simulation
         from app.workers.generation import generate_images_sync
         generate_images_sync(task.id)
 

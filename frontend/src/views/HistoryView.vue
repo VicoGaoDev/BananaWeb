@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { message } from "ant-design-vue";
-import { DownloadOutlined, ClockCircleOutlined } from "@ant-design/icons-vue";
+import { DownloadOutlined, ClockCircleOutlined, PictureOutlined } from "@ant-design/icons-vue";
 import { fetchHistory } from "@/api/history";
 import { getDownloadUrl } from "@/api/images";
 import type { HistoryItem } from "@/types";
@@ -73,7 +73,7 @@ function statusLabel(s: string) {
         </div>
         <div>
           <div class="warm-page-title">历史记录</div>
-          <div class="warm-page-desc">查看每次风格生成任务的状态、时间与结果图。</div>
+          <div class="warm-page-desc">查看每次生成任务的状态、时间与结果图。</div>
         </div>
       </div>
 
@@ -98,12 +98,26 @@ function statusLabel(s: string) {
 
       <div v-for="item in items" :key="item.task_id" class="history-card warm-card">
         <div class="hc-header">
-          <span class="hc-style">{{ item.style_name }}</span>
           <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
           <span class="hc-meta">{{ formatTime(item.created_at) }}</span>
-          <a-tag class="warm-tag" color="gold" style="margin-left: auto">{{ item.model }}</a-tag>
-          <a-tag class="warm-tag">{{ item.size }}</a-tag>
+          <a-tag class="warm-tag" style="margin-left: auto">{{ item.size }}</a-tag>
         </div>
+
+        <div class="hc-prompt">{{ item.prompt }}</div>
+
+        <div v-if="item.reference_images && item.reference_images.length" class="hc-refs">
+          <div class="hc-refs-label">
+            <PictureOutlined />
+            <span>参考图 ({{ item.reference_images.length }})</span>
+          </div>
+          <div class="hc-refs-grid">
+            <div v-for="(ref, idx) in item.reference_images" :key="idx" class="ref-thumb" @click="openPreview(ref)">
+              <img :src="ref" alt="参考图" />
+            </div>
+          </div>
+        </div>
+
+        <div class="hc-result-label">生成结果 ({{ item.images.length }})</div>
         <div class="hc-images">
           <div v-for="img in item.images" :key="img.id" class="thumb-wrap">
             <template v-if="img.status === 'success' && img.image_url">
@@ -168,15 +182,64 @@ function statusLabel(s: string) {
   flex-wrap: wrap;
 }
 
-.hc-style {
-  font-size: 16px;
-  font-weight: 700;
-  color: #4c341a;
-}
-
 .hc-meta {
   font-size: 13px;
   color: #9b825f;
+}
+
+.hc-prompt {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fff8ee;
+  border: 1px solid #f2e3c6;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #4c341a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hc-refs {
+  margin-bottom: 14px;
+}
+
+.hc-refs-label,
+.hc-result-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #8a6d45;
+}
+
+.hc-refs-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ref-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #f1ddb7;
+  cursor: pointer;
+  transition: transform 0.2s;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
 }
 
 .hc-images {

@@ -1,31 +1,40 @@
+import json
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.task import Task
 from app.models.image import Image
-from app.models.style import Style
-from app.models.style_prompt import StylePrompt
 
 
-def create_task(db: Session, user_id: int, style_id: int, model: str, size: str, resolution: str = "4K", reference_image: str = "") -> Task:
-    style = db.query(Style).filter(Style.id == style_id).first()
-    if not style:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="风格不存在")
+def create_task(
+    db: Session,
+    user_id: int,
+    prompt: str,
+    num_images: int,
+    size: str,
+    resolution: str = "4K",
+    reference_images: list[str] | None = None,
+) -> Task:
+    if not prompt or not prompt.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词不能为空")
+    if num_images < 1 or num_images > 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="生成数量须在 1-8 之间")
 
-    prompts = (
-        db.query(StylePrompt)
-        .filter(StylePrompt.style_id == style_id)
-        .order_by(StylePrompt.sort_order)
-        .all()
+    ref_json = json.dumps(reference_images or [])
+
+    task = Task(
+        user_id=user_id,
+        prompt=prompt.strip(),
+        num_images=num_images,
+        size=size,
+        resolution=resolution,
+        reference_images=ref_json,
+        status="pending",
     )
-    if not prompts:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该风格暂无配置的Prompt")
-
-    task = Task(user_id=user_id, style_id=style_id, model=model, size=size, resolution=resolution, reference_image=reference_image, status="pending")
     db.add(task)
     db.flush()
 
-    for prompt in prompts:
-        image = Image(task_id=task.id, prompt_id=prompt.id, image_url="", status="pending")
+    for _ in range(num_images):
+        image = Image(task_id=task.id, image_url="", status="pending")
         db.add(image)
 
     db.commit()

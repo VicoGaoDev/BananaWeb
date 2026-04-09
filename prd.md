@@ -1,7 +1,7 @@
 # 🧾 AI 绘图系统 — 产品需求文档
 
-> 基于风格模板的 AI 批量出图系统（无 Prompt 暴露 + 强后台控制）
-> 最后更新：2026-03-20
+> 基于提示词的 AI 批量出图系统，支持多参考图上传与自定义生成数量
+> 最后更新：2026-04-09
 
 ---
 
@@ -25,7 +25,6 @@ Banana_Web/
 │   ├── src/
 │   │   ├── api/              # Axios API 请求层
 │   │   │   ├── auth.ts       # 登录、修改密码
-│   │   │   ├── styles.ts     # 风格列表
 │   │   │   ├── tasks.ts      # 创建/查询生成任务
 │   │   │   ├── images.ts     # 图片下载、重新生成
 │   │   │   ├── upload.ts     # 参考图上传
@@ -33,18 +32,15 @@ Banana_Web/
 │   │   │   └── client.ts     # Axios 实例 + JWT 拦截器
 │   │   ├── stores/auth.ts    # Pinia 认证状态
 │   │   ├── views/            # 页面
-│   │   │   ├── LoginView.vue
 │   │   │   ├── GenerateView.vue
 │   │   │   ├── HistoryView.vue
 │   │   │   └── admin/
 │   │   │       ├── UserManageView.vue
-│   │   │       ├── StyleManageView.vue
 │   │   │       ├── DashboardView.vue
 │   │   │       └── ApiKeyView.vue
 │   │   ├── components/
-│   │   │   ├── StyleSelector.vue    # 风格选择抽屉
 │   │   │   ├── ImageCard.vue        # 图片结果卡片
-│   │   │   └── layout/AppLayout.vue # 顶部导航布局
+│   │   │   └── layout/AppLayout.vue # 顶部导航布局（含登录弹窗）
 │   │   ├── router/index.ts
 │   │   ├── types/index.ts
 │   │   └── composables/usePolling.ts
@@ -91,10 +87,10 @@ Banana_Web/
 
 系统分为 5 大模块：
 
-1. **用户认证模块** — 登录 / 修改密码 / JWT 鉴权
-2. **绘图主功能模块** — 风格选择 / 参考图上传 / AI 生图
+1. **用户认证模块** — 弹窗登录 / 修改密码 / JWT 鉴权
+2. **绘图主功能模块** — 提示词输入 / 多参考图上传 / 生成数量选择 / AI 生图
 3. **历史记录模块** — 生成结果浏览与管理
-4. **后台管理模块** — 用户管理 / 风格管理 / 数据统计 / API Key 管理
+4. **后台管理模块** — 用户管理 / 数据统计 / API Key 管理
 5. **AI 生图引擎** — 对接 Gemini API，base64 图片交互
 
 ---
@@ -103,8 +99,10 @@ Banana_Web/
 
 ## 3.1 功能说明
 
+- 无单独登录页，用户在主页顶部点击"登录"按钮弹出登录 Dialog
 - 用户通过「用户名 + 密码」登录系统，获取 JWT Token
 - Token 有效期 24 小时（可配置）
+- 未登录用户可浏览主页，但生成图片需先登录
 - 支持用户修改密码
 
 ## 3.2 权限规则
@@ -131,36 +129,36 @@ Banana_Web/
 
 ## 4.1 页面布局
 
-左右分栏布局：
+上下分区布局：
 
-| 左侧面板（280px） | 右侧面板 |
+| 上方左侧面板 | 上方右侧面板 |
 |---|---|
-| 参考图上传区（点击上传本地图片） | 2×2 图片结果网格 |
-| 分辨率选择（1K / 2K / 4K，默认 4K） | 空态提示 / 生成结果 |
-| 比例选择（1:1 / 2:3 / 3:2 / 3:4 / 4:3 / 9:16 / 16:9） | |
-| 风格图选项按钮（点击弹出风格选择抽屉） | |
-| 开始生成按钮 | |
+| 参考图上传区（最多 6 张，3 列网格展示） | 绘图设置面板 |
+| 支持逐张上传、逐张删除 | 提示词输入框（最多 2000 字） |
+| | 生成数量选择（1-8 张） |
+| | 图片尺寸选择（1:1 / 2:3 / 3:2 / 3:4 / 4:3 / 9:16 / 16:9） |
+| | 生成质量选择（1K / 2K / 4K，默认 4K） |
+| | 开始生成按钮 |
+
+| 下方全宽面板 |
+|---|
+| 生成结果区域（3 列网格排列） |
 
 ## 4.2 核心设计原则
 
-- ❌ 前端不提供 Prompt 输入
-- ❌ 前端不可见任何 Prompt
-- ✅ Prompt 由后端维护，通过风格关联
-- ✅ 支持上传本地参考图（base64 传递给 AI API）
+- ✅ 前端提供提示词输入框，用户自行描述想要生成的内容
+- ✅ 支持上传最多 6 张本地参考图（base64 传递给 AI API）
+- ✅ 用户可选择生成数量（1-8 张）
+- ✅ 生成结果以 3 列网格排列展示
 
-## 4.3 风格生成逻辑
-
-- 每个"风格"对应后端**多条 Prompt**
-- 用户选择风格 → 后端批量调用 AI API 生成图片
-- 前端只展示结果
-
-## 4.4 生成流程
+## 4.3 生成流程
 
 1. 用户操作：
-   - （可选）上传参考图
-   - 选择分辨率（1K / 2K / 4K）
+   - （可选）上传参考图（最多 6 张）
+   - 输入提示词
+   - 选择生成数量（1-8 张）
    - 选择比例（3:4 等）
-   - 点击"风格图选项"选择风格
+   - 选择分辨率（1K / 2K / 4K）
    - 点击"开始生成"
 
 2. 系统处理：
@@ -170,7 +168,8 @@ Banana_Web/
    - 实时更新图片结果
 
 3. 返回结果：
-   - 多张生成图片（风格对应的 Prompt 数量）
+   - 按用户指定数量生成图片（1-8 张）
+   - 结果以 3 列网格排列
    - 每张图片可独立操作
 
 ## 4.5 图片操作
@@ -200,11 +199,17 @@ Banana_Web/
         {
           "inlineData": {
             "mimeType": "image/jpeg",
-            "data": "<参考图 base64>"
+            "data": "<参考图1 base64>"
           }
         },
         {
-          "text": "<后端 Prompt>"
+          "inlineData": {
+            "mimeType": "image/jpeg",
+            "data": "<参考图2 base64（可选，最多6张）>"
+          }
+        },
+        {
+          "text": "<用户输入的提示词>"
         }
       ]
     }
@@ -218,6 +223,8 @@ Banana_Web/
   }
 }
 ```
+
+> 参考图为可选项，最多 6 张。每张参考图作为一个 `inlineData` part 传入。
 
 ### 响应格式
 
@@ -276,18 +283,13 @@ Banana_Web/
 - 禁用 / 启用用户
 - 设置管理员权限
 
-## 6.2 风格管理
-
-- 风格列表（CRUD）
-- 每个风格管理多条 Prompt（含负面 Prompt、排序）
-
-## 6.3 数据统计
+## 6.2 数据统计
 
 - 最近 7 / 30 天生成量
 - 总用户数 / 活跃用户数
 - 最近生成任务列表
 
-## 6.4 API Key 管理
+## 6.3 API Key 管理
 
 - 全局唯一 API Key（用于调用 Gemini 生图接口）
 - 支持查看（带掩码）、编辑、删除
@@ -342,16 +344,15 @@ CREATE TABLE style_prompts (
 CREATE TABLE tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
-  style_id INTEGER NOT NULL,
-  model VARCHAR(50) DEFAULT 'banana-pro',
+  prompt TEXT NOT NULL DEFAULT '',         -- 用户输入的提示词
+  num_images INTEGER DEFAULT 4,           -- 生成数量（1-8）
   size VARCHAR(20) DEFAULT '3:4',          -- 比例（传给 API 的 aspectRatio）
   resolution VARCHAR(10) DEFAULT '4K',     -- 分辨率（传给 API 的 imageSize）
-  reference_image VARCHAR(500) DEFAULT '', -- 参考图路径
+  reference_images TEXT DEFAULT '',        -- 参考图路径列表（JSON 数组）
   status VARCHAR(20) DEFAULT 'pending',    -- pending | processing | success | failed
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (style_id) REFERENCES styles(id)
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
 ```
 
@@ -361,12 +362,10 @@ CREATE TABLE tasks (
 CREATE TABLE images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL,
-  prompt_id INTEGER,
   image_url VARCHAR(255) DEFAULT '',
   status VARCHAR(20) DEFAULT 'pending',   -- pending | success | failed
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (task_id) REFERENCES tasks(id),
-  FOREIGN KEY (prompt_id) REFERENCES style_prompts(id)
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 ```
 
@@ -397,11 +396,11 @@ CREATE TABLE api_keys (
 
 ```
 users 1:N tasks
-styles 1:N style_prompts
 tasks 1:N images
-images N:1 style_prompts
 api_keys（全局唯一，只存一条记录）
 ```
+
+> 注：styles 和 style_prompts 表保留在数据库中供后端兼容，但前端不再使用风格功能。
 
 ---
 
@@ -434,13 +433,7 @@ POST /api/auth/login
 }
 ```
 
-## 8.2 风格接口
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | /api/styles | 用户 | 获取风格列表（含关联 Prompt） |
-
-## 8.3 生成任务接口
+## 8.2 生成任务接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
@@ -456,27 +449,35 @@ POST /api/tasks
 请求：
 ```json
 {
-  "style_id": 1,
-  "model": "banana-pro",
+  "prompt": "一只在花园中奔跑的金毛犬",
+  "num_images": 4,
   "size": "3:4",
   "resolution": "4K",
-  "reference_image": "/uploads/ref/xxx.jpg"
+  "reference_images": ["/uploads/ref/xxx.jpg", "/uploads/ref/yyy.jpg"]
 }
 ```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| prompt | string | 是 | 用户输入的提示词 |
+| num_images | int | 是 | 生成数量（1-8） |
+| size | string | 是 | 比例（如 3:4） |
+| resolution | string | 是 | 分辨率（1K / 2K / 4K） |
+| reference_images | string[] | 否 | 参考图路径列表（最多 6 张） |
 
 响应：
 ```json
 { "task_id": 1 }
 ```
 
-## 8.4 图片接口
+## 8.3 图片接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | POST | /api/images/:id/regenerate | 用户 | 单张重新生成 |
 | GET | /api/images/:id/download | 用户 | 下载图片 |
 
-## 8.5 文件上传接口
+## 8.4 文件上传接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
@@ -487,13 +488,13 @@ POST /api/tasks
 { "url": "/uploads/ref/abc123.jpg" }
 ```
 
-## 8.6 历史记录接口
+## 8.5 历史记录接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | /api/history | 用户 | 当前用户历史（分页） |
 
-## 8.7 管理员接口
+## 8.6 管理员接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -511,24 +512,26 @@ POST /api/tasks
 
 # 九、前端页面说明
 
-## 9.1 登录页
+## 9.1 登录
 
-双栏布局：左侧蓝色品牌区 + 右侧登录表单。
+无单独登录页。主页顶部导航栏右侧：
+- 未登录时显示"登录"按钮，点击弹出登录 Dialog（Modal）
+- 已登录时显示用户头像和下拉菜单（修改密码、上传头像、退出登录）
 
 ## 9.2 主绘图页
 
-左右分栏：
-- 左侧：参考图上传卡片（点击上传）、分辨率/比例选择、风格选择按钮、生成按钮
-- 右侧：2×2 图片网格（支持预览、下载、重新生成）
+上下分区布局：
+- 上方左侧：参考图上传区（最多 6 张，3 列网格，逐张上传/删除）
+- 上方右侧：绘图设置面板（提示词输入框、生成数量 1-8、尺寸选择、质量选择、生成按钮）
+- 下方全宽：生成结果区域（3 列网格排列，支持预览、下载、重新生成）
 
 ## 9.3 历史记录页
 
-卡片列表：每条任务显示风格名、时间、状态、图片缩略图，支持分页。
+卡片列表：每条任务显示时间、状态、图片缩略图，支持分页。
 
 ## 9.4 管理后台（导航栏下拉菜单）
 
 - **用户管理**：表格展示，支持新增/禁用/设角色
-- **风格管理**：CRUD 风格及其 Prompt
 - **数据统计**：7天/30天生成量、用户统计
 - **API Key**：全局 Key 管理（查看/编辑/删除）
 
@@ -583,9 +586,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # 十二、关键设计原则
 
-1. **Prompt 隐藏**：Prompt 完全在后端维护，前端不可见、不可编辑
-2. **风格驱动生成**：用户选"风格"而非写描述，风格 → 多 Prompt → 多图结果
-3. **权限强控制**：禁止开放注册，管理员控制所有账号
-4. **API Key 动态化**：Key 存数据库，管理员随时可更换，无需重启服务
-5. **失败兜底**：生图失败显示统一错误图片，不生成占位 SVG
-6. **参考图支持**：用户上传参考图，以 base64 传递给 AI 接口辅助生成
+1. **提示词驱动**：用户直接输入提示词描述想要生成的内容
+2. **多参考图支持**：支持上传最多 6 张参考图，以 base64 传递给 AI 接口辅助生成
+3. **灵活生成数量**：用户可选择 1-8 张生成数量
+4. **无独立登录页**：登录通过主页顶部弹窗完成，未登录可浏览、生成需登录
+5. **权限强控制**：禁止开放注册，管理员控制所有账号
+6. **API Key 动态化**：Key 存数据库，管理员随时可更换，无需重启服务
+7. **失败兜底**：生图失败显示统一错误图片，不生成占位 SVG
+8. **三列结果展示**：生成结果以 3 列网格排列，清晰直观

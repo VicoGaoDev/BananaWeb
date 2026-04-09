@@ -1,11 +1,12 @@
 """
-AI image generation via Gemini API (Nano Banana Pro).
+AI image generation via Gemini API.
 
-Reads API Key dynamically from database. Supports reference image (base64).
+Reads API Key dynamically from database. Supports multiple reference images (base64).
 Falls back to a static error image on failure.
 """
 
 import base64
+import json
 import logging
 import shutil
 import uuid
@@ -17,7 +18,6 @@ from app.database import SessionLocal
 from app.models.task import Task
 from app.models.image import Image
 from app.models.api_key import ApiKey
-from app.models.style_prompt import StylePrompt
 from app.models.regenerate_log import RegenerateLog
 
 logger = logging.getLogger(__name__)
@@ -59,11 +59,11 @@ def _call_gemini_api(
     prompt: str,
     aspect_ratio: str,
     image_size: str,
-    reference_image: str = "",
-) -> bytes | None:
+    reference_images: list[str] | None = None,
+) -> tuple[bytes, str] | None:
     """
     Call Gemini image generation API.
-    Returns decoded image bytes on success, None on failure.
+    Returns (image_bytes, mime_type) on success, None on failure.
     """
     api_key = _get_api_key()
     if not api_key:
@@ -72,10 +72,11 @@ def _call_gemini_api(
 
     parts: list[dict] = []
 
-    ref = _read_file_as_base64(reference_image)
-    if ref:
-        mime_type, b64_data = ref
-        parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+    for ref_url in (reference_images or []):
+        ref = _read_file_as_base64(ref_url)
+        if ref:
+            mime_type, b64_data = ref
+            parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
 
     parts.append({"text": prompt})
 
@@ -92,8 +93,9 @@ def _call_gemini_api(
 
     auth_value = api_key.strip()
     logger.info(
-        "Calling Gemini API: prompt=%s, ratio=%s, size=%s, has_ref=%s, key_prefix=%s",
-        prompt[:60], aspect_ratio, image_size, bool(ref), auth_value[:8] + "..."
+        "Calling Gemini API: prompt=%s, ratio=%s, size=%s, ref_count=%d, key_prefix=%s",
+        prompt[:60], aspect_ratio, image_size,
+        len(reference_images or []), auth_value[:8] + "..."
     )
 
     try:
@@ -121,11 +123,16 @@ def _call_gemini_api(
             return None
 
         for part in candidates[0].get("content", {}).get("parts", []):
-            if "inlineData" in part:
-                b64_str = part["inlineData"]["data"]
+            inline = part.get("inlineData")
+            if inline:
+                b64_str = inline["data"]
+                mime = inline.get("mimeType", "image/png")
                 img_bytes = base64.b64decode(b64_str)
-                logger.info("Gemini API success, image size: %d bytes", len(img_bytes))
-                return img_bytes
+                logger.info(
+                    "Gemini API success, mime=%s, image size: %d bytes",
+                    mime, len(img_bytes),
+                )
+                return img_bytes, mime
 
         logger.warning("Gemini API response has no inlineData in parts")
         return None
@@ -138,9 +145,18 @@ def _call_gemini_api(
         return None
 
 
-def _save_image_bytes(image_bytes: bytes, ext: str = "jpg") -> str:
+MIME_TO_EXT = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+
+def _save_image_bytes(image_bytes: bytes, mime: str = "image/png") -> str:
     upload_dir = Path(settings.UPLOAD_DIR)
     upload_dir.mkdir(parents=True, exist_ok=True)
+    ext = MIME_TO_EXT.get(mime, "png")
     filename = f"{uuid.uuid4().hex}.{ext}"
     (upload_dir / filename).write_bytes(image_bytes)
     return f"/uploads/{filename}"
@@ -156,6 +172,17 @@ def _get_error_image_url() -> str:
     return "/uploads/error.svg"
 
 
+def _parse_reference_images(task: Task) -> list[str]:
+    """Parse reference_images JSON string from task."""
+    if not task.reference_images:
+        return []
+    try:
+        refs = json.loads(task.reference_images)
+        return refs if isinstance(refs, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
 def _process_task(task_id: int):
     db = SessionLocal()
     try:
@@ -166,25 +193,20 @@ def _process_task(task_id: int):
         db.commit()
 
         images = db.query(Image).filter(Image.task_id == task_id).all()
+        ref_urls = _parse_reference_images(task)
         all_success = True
 
         for image in images:
-            sp = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
-            if not sp:
-                image.status = "failed"
-                image.image_url = _get_error_image_url()
-                all_success = False
-                continue
-
             result = _call_gemini_api(
-                prompt=sp.prompt,
+                prompt=task.prompt,
                 aspect_ratio=task.size,
                 image_size=task.resolution,
-                reference_image=task.reference_image,
+                reference_images=ref_urls,
             )
 
             if result:
-                image.image_url = _save_image_bytes(result, "jpg")
+                img_bytes, mime = result
+                image.image_url = _save_image_bytes(img_bytes, mime)
                 image.status = "success"
             else:
                 image.image_url = _get_error_image_url()
@@ -204,23 +226,25 @@ def _process_single_image(image_id: int):
         if not image:
             return
 
-        sp = db.query(StylePrompt).filter(StylePrompt.id == image.prompt_id).first()
         task = db.query(Task).filter(Task.id == image.task_id).first()
-        if not sp or not task:
+        if not task:
             image.status = "failed"
             image.image_url = _get_error_image_url()
             db.commit()
             return
 
+        ref_urls = _parse_reference_images(task)
+
         result = _call_gemini_api(
-            prompt=sp.prompt,
+            prompt=task.prompt,
             aspect_ratio=task.size,
             image_size=task.resolution,
-            reference_image=task.reference_image,
+            reference_images=ref_urls,
         )
 
         if result:
-            new_url = _save_image_bytes(result, "jpg")
+            img_bytes, mime = result
+            new_url = _save_image_bytes(img_bytes, mime)
             log = (
                 db.query(RegenerateLog)
                 .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")

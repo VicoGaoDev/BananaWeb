@@ -5,15 +5,9 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
-      path: "/login",
-      name: "Login",
-      component: () => import("@/views/LoginView.vue"),
-    },
-    {
       path: "/",
       component: () => import("@/components/layout/AppLayout.vue"),
       redirect: "/generate",
-      meta: { requiresAuth: true },
       children: [
         {
           path: "generate",
@@ -30,12 +24,6 @@ const router = createRouter({
           name: "UserManage",
           meta: { requiresAdmin: true },
           component: () => import("@/views/admin/UserManageView.vue"),
-        },
-        {
-          path: "admin/styles",
-          name: "StyleManage",
-          meta: { requiresAdmin: true },
-          component: () => import("@/views/admin/StyleManageView.vue"),
         },
         {
           path: "admin/dashboard",
@@ -56,10 +44,6 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore();
-
-  if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    return { name: "Login" };
-  }
   if (to.meta.requiresAdmin && !auth.isAdmin) {
     return { name: "Generate" };
   }

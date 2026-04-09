@@ -14,8 +14,8 @@ class HistoryItem(BaseModel):
     task_id: int
     username: str = ""
     avatar_url: str = ""
-    style_name: str
-    model: str
+    prompt: str = ""
+    reference_images: list[str] = []
     size: str
     status: str
     created_at: datetime | None = None

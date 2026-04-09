@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from "vue";
+import { ref, computed, h } from "vue";
 import { message } from "ant-design-vue";
 import {
-  AppstoreOutlined,
-  CheckCircleFilled,
   CloudUploadOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -13,33 +11,30 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons-vue";
-import StyleSelector from "@/components/StyleSelector.vue";
-import { fetchStyles } from "@/api/styles";
 import { createTask, getTask } from "@/api/tasks";
 import { getDownloadUrl, regenerateImage } from "@/api/images";
 import { uploadReferenceImage } from "@/api/upload";
 import { usePolling } from "@/composables/usePolling";
-import type { Style, ImageResult, TaskResult } from "@/types";
+import { useAuthStore } from "@/stores/auth";
+import type { ImageResult, TaskResult } from "@/types";
 
-const styles = ref<Style[]>([]);
-const selectedStyleId = ref<number | null>(null);
-const model = ref("banana-pro");
+const auth = useAuthStore();
+
+const prompt = ref("");
+const numImages = ref(4);
 const resolution = ref("4K");
 const size = ref("3:4");
 const loading = ref(false);
 const images = ref<ImageResult[]>([]);
 const currentTaskId = ref<number | null>(null);
 
-const referenceUrl = ref("");
+const MAX_REFS = 6;
+const referenceUrls = ref<string[]>([]);
 const uploading = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
-const styleDrawerOpen = ref(false);
 
 const previewVisible = ref(false);
 const previewCurrent = ref("");
-
-const selectedStyle = computed(() => styles.value.find((s) => s.id === selectedStyleId.value) || null);
-const selectedStyleName = computed(() => selectedStyle.value?.name || "");
 
 const resolutionOptions = [
   { label: "1K", value: "1K" },
@@ -60,18 +55,10 @@ const sizeOptions = [
 const pendingCount = computed(() => images.value.filter((img) => img.status === "pending").length);
 const successCount = computed(() => images.value.filter((img) => img.status === "success").length);
 const resultSummary = computed(() => {
-  if (loading.value || pendingCount.value) return "AI 正在根据当前风格逐张生成图片";
+  if (loading.value || pendingCount.value) return "AI 正在根据提示词逐张生成图片";
   if (images.value.length && successCount.value === images.value.length) return "本次任务已完成，可预览、下载或重新生成";
   if (images.value.length) return "部分结果已返回，请继续查看生成状态";
   return "";
-});
-
-onMounted(async () => {
-  try {
-    styles.value = await fetchStyles();
-  } catch {
-    message.error("获取风格列表失败");
-  }
 });
 
 const polling = usePolling<TaskResult>(
@@ -100,15 +87,22 @@ async function handleFileChange(e: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
+  if (referenceUrls.value.length >= MAX_REFS) {
+    message.warning(`最多上传 ${MAX_REFS} 张参考图`);
+    input.value = "";
+    return;
+  }
+
   if (file.size > 10 * 1024 * 1024) {
     message.warning("图片大小不能超过 10MB");
+    input.value = "";
     return;
   }
 
   uploading.value = true;
   try {
     const res = await uploadReferenceImage(file);
-    referenceUrl.value = res.url;
+    referenceUrls.value.push(res.url);
     message.success("参考图上传成功");
   } catch {
     message.error("上传失败，请重试");
@@ -118,24 +112,28 @@ async function handleFileChange(e: Event) {
   }
 }
 
-function removeReference() {
-  referenceUrl.value = "";
+function removeReference(index: number) {
+  referenceUrls.value.splice(index, 1);
 }
 
 async function handleGenerate() {
-  if (!selectedStyleId.value) {
-    message.warning("请先选择风格");
+  if (!auth.isLoggedIn) {
+    message.warning("请先登录");
+    return;
+  }
+  if (!prompt.value.trim()) {
+    message.warning("请输入提示词");
     return;
   }
   loading.value = true;
   images.value = [];
   try {
     const res = await createTask({
-      style_id: selectedStyleId.value,
-      model: model.value,
+      prompt: prompt.value,
+      num_images: numImages.value,
       size: size.value,
       resolution: resolution.value,
-      reference_image: referenceUrl.value || undefined,
+      reference_images: referenceUrls.value.length ? referenceUrls.value : undefined,
     });
     currentTaskId.value = res.task_id;
     const taskData = await getTask(res.task_id);
@@ -180,56 +178,50 @@ function handleDownload(imageId: number) {
       <section class="work-panel upload-panel">
         <div class="panel-head">
           <div>
-            <h3>参考图</h3>
+            <h3>参考图 ({{ referenceUrls.length }}/{{ MAX_REFS }})</h3>
           </div>
         </div>
 
-        <div class="upload-stage" @click="triggerUpload">
-          <input
-            ref="fileInput"
-            type="file"
-            accept="image/*"
-            hidden
-            @change="handleFileChange"
-          />
+        <input
+          ref="fileInput"
+          type="file"
+          accept="image/*"
+          hidden
+          @change="handleFileChange"
+        />
 
-          <template v-if="referenceUrl">
-            <img :src="referenceUrl" class="upload-preview" alt="参考图" />
-            <div class="upload-overlay">
-              <a-button
-                type="text"
-                shape="circle"
-                class="icon-chip danger"
-                @click.stop="removeReference"
-              >
-                <template #icon><DeleteOutlined /></template>
-              </a-button>
-            </div>
-          </template>
+        <div class="upload-grid">
+          <div v-for="(url, idx) in referenceUrls" :key="idx" class="upload-thumb">
+            <img :src="url" alt="参考图" />
+            <a-button
+              type="text"
+              shape="circle"
+              class="icon-chip danger thumb-remove"
+              @click="removeReference(idx)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
 
-          <template v-else>
-            <div class="upload-empty">
-              <a-spin
-                v-if="uploading"
-                :indicator="h(LoadingOutlined, { style: { fontSize: '30px', color: '#ff9f1a' } })"
-              />
-              <template v-else>
-                <div class="empty-illust">
-                  <CloudUploadOutlined />
-                </div>
-                <div class="upload-title">上传参考图</div>
-                <a-button type="primary" class="upload-btn">
-                  <template #icon><PictureOutlined /></template>
-                  选择图片
-                </a-button>
-              </template>
-            </div>
-          </template>
+          <div
+            v-if="referenceUrls.length < MAX_REFS"
+            class="upload-add"
+            @click="triggerUpload"
+          >
+            <a-spin
+              v-if="uploading"
+              :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#ff9f1a' } })"
+            />
+            <template v-else>
+              <CloudUploadOutlined style="font-size: 28px; color: #f0a62a" />
+              <span>添加图片</span>
+            </template>
+          </div>
         </div>
 
         <div class="upload-foot">
-          <span>支持大小不超过 10MB</span>
-          <span v-if="referenceUrl">已载入参考图</span>
+          <span>支持大小不超过 10MB，最多 {{ MAX_REFS }} 张</span>
+          <span v-if="referenceUrls.length">已载入 {{ referenceUrls.length }} 张</span>
         </div>
       </section>
 
@@ -237,6 +229,33 @@ function handleDownload(imageId: number) {
         <div class="panel-head">
           <div>
             <h3>绘图设置</h3>
+          </div>
+        </div>
+
+        <div class="field-block">
+          <label>提示词</label>
+          <a-textarea
+            v-model:value="prompt"
+            :rows="4"
+            placeholder="描述你想要生成的图片内容..."
+            class="prompt-input"
+            :maxlength="2000"
+            show-count
+          />
+        </div>
+
+        <div class="field-block">
+          <label>生成数量</label>
+          <div class="num-grid">
+            <button
+              v-for="n in 8"
+              :key="n"
+              type="button"
+              :class="['size-item', { active: numImages === n }]"
+              @click="numImages = n"
+            >
+              {{ n }}
+            </button>
           </div>
         </div>
 
@@ -269,35 +288,12 @@ function handleDownload(imageId: number) {
           </div>
         </div>
 
-        <div class="field-block style-block">
-          <button type="button" class="style-trigger" @click="styleDrawerOpen = true">
-            <div class="style-trigger-cover">
-              <img
-                v-if="selectedStyle?.cover_image"
-                :src="selectedStyle.cover_image"
-                :alt="selectedStyle.name"
-              />
-              <div v-else class="style-trigger-ph">
-                <AppstoreOutlined />
-              </div>
-            </div>
-            <div class="style-trigger-body">
-              <span class="style-trigger-label">风格图选项</span>
-              <strong>{{ selectedStyleName || "点击选择风格" }}</strong>
-              <span class="style-trigger-desc">
-                {{ selectedStyle?.description || "选择一个风格后开始生成结果" }}
-              </span>
-            </div>
-            <CheckCircleFilled v-if="selectedStyleId" class="style-selected-icon" />
-          </button>
-        </div>
-
         <a-button
           type="primary"
           block
           size="large"
           :loading="loading"
-          :disabled="!selectedStyleId"
+          :disabled="!prompt.trim()"
           class="generate-btn"
           @click="handleGenerate"
         >
@@ -314,14 +310,10 @@ function handleDownload(imageId: number) {
         </div>
 
         <div v-if="loading || pendingCount > 0" class="result-hero">
-          <div class="hero-ring" :class="{ spinning: loading || pendingCount > 0 }">
-            <component
-              :is="LoadingOutlined"
-            />
+          <div class="hero-ring spinning">
+            <component :is="LoadingOutlined" />
           </div>
-          <div class="hero-title">
-            AI 正在生成您的图片...
-          </div>
+          <div class="hero-title">AI 正在生成您的图片...</div>
           <div class="hero-subtitle">{{ resultSummary }}</div>
         </div>
 
@@ -391,15 +383,8 @@ function handleDownload(imageId: number) {
         </div>
 
         <div v-else-if="!loading && pendingCount === 0" class="result-empty"></div>
-        <div v-else class="result-empty result-empty-loading"></div>
       </section>
     </div>
-
-    <StyleSelector
-      :styles="styles"
-      v-model="selectedStyleId"
-      v-model:open="styleDrawerOpen"
-    />
 
     <div v-if="previewVisible" style="display: none">
       <a-image
@@ -420,9 +405,13 @@ function handleDownload(imageId: number) {
 
 .generate-workbench {
   display: grid;
-  grid-template-columns: 1.05fr 1.1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 24px;
   align-items: start;
+}
+
+.result-panel {
+  grid-column: 1 / -1;
 }
 
 .work-panel {
@@ -447,102 +436,57 @@ function handleDownload(imageId: number) {
   }
 }
 
-.upload-stage {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 24px;
-  min-height: 520px;
-  border: 2px dashed #e8d7b7;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 232, 0.92)),
-    radial-gradient(circle at top, rgba(255, 196, 83, 0.12), transparent 55%);
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+/* --- Upload grid --- */
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
 
-  &:hover {
-    transform: translateY(-2px);
-    border-color: #f1bd57;
-    box-shadow: inset 0 0 0 1px rgba(255, 185, 55, 0.15);
+.upload-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #f0ddbb;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 }
 
-.upload-preview,
-.result-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.upload-overlay {
+.thumb-remove {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 14px;
-  background: linear-gradient(180deg, rgba(76, 52, 14, 0.18), transparent 32%);
+  top: 6px;
+  right: 6px;
 }
 
-.upload-empty {
-  width: 100%;
-  min-height: 100%;
-  padding: 40px 20px;
+.upload-add {
+  aspect-ratio: 1;
+  border-radius: 16px;
+  border: 2px dashed #e8d7b7;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-}
-
-.result-empty {
-  min-height: 520px;
-  border-radius: 24px;
-  border: 1px dashed #ead9b9;
-  background: linear-gradient(180deg, rgba(255, 248, 232, 0.38), rgba(255, 253, 248, 0.82));
-}
-
-.empty-illust {
-  width: 88px;
-  height: 88px;
-  border-radius: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #ffd87d, #ffb83d);
-  color: #5f3c09;
-  font-size: 40px;
-  box-shadow: 0 14px 30px rgba(255, 177, 42, 0.22);
-}
-
-.upload-title,
-.empty-title {
-  margin-top: 18px;
-  font-size: 21px;
-  font-weight: 700;
-  color: #4e3820;
-}
-
-.upload-subtitle,
-.empty-sub {
-  max-width: 280px;
-  margin-top: 8px;
+  gap: 8px;
+  cursor: pointer;
   color: #8f7558;
-  font-size: 14px;
-  line-height: 1.7;
-}
+  font-size: 13px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 248, 232, 0.92)
+  );
+  transition: border-color 0.2s, transform 0.2s;
 
-.upload-btn {
-  margin-top: 20px;
-  height: 44px;
-  padding: 0 22px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffbb42, #ff9f1a) !important;
-  border: none !important;
-  box-shadow: 0 14px 24px rgba(255, 159, 26, 0.22) !important;
+  &:hover {
+    border-color: #f1bd57;
+    transform: translateY(-2px);
+  }
 }
 
 .upload-foot {
@@ -554,6 +498,30 @@ function handleDownload(imageId: number) {
   color: #a88962;
 }
 
+/* --- Prompt --- */
+.prompt-input {
+  border-radius: 16px !important;
+  border-color: #efdcb9 !important;
+  background: #fffdf8 !important;
+  padding: 12px 16px;
+  font-size: 14px;
+  resize: none;
+
+  &:focus,
+  &:hover {
+    border-color: #f0b85a !important;
+    box-shadow: 0 0 0 3px rgba(255, 184, 90, 0.12);
+  }
+}
+
+/* --- Number grid --- */
+.num-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+/* --- Fields --- */
 .field-block + .field-block {
   margin-top: 18px;
 }
@@ -599,10 +567,6 @@ function handleDownload(imageId: number) {
   min-width: 0;
 }
 
-.style-block {
-  margin-top: 22px;
-}
-
 .size-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -622,6 +586,8 @@ function handleDownload(imageId: number) {
   color: #7a6447;
   cursor: pointer;
   transition: all 0.2s ease;
+  font-weight: 700;
+  font-size: 15px;
 
   &:hover {
     border-color: #f5b64c;
@@ -646,79 +612,8 @@ function handleDownload(imageId: number) {
   font-weight: 700;
 }
 
-.style-trigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  position: relative;
-  padding: 14px;
-  border-radius: 22px;
-  border: 1px solid #f0ddbb;
-  background: #fff;
-  box-shadow: 0 8px 18px rgba(244, 182, 84, 0.08);
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.2s ease, border-color 0.2s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-    border-color: #f5b64c;
-  }
-}
-
-.style-trigger-cover {
-  width: 84px;
-  height: 84px;
-  flex-shrink: 0;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #fff5df;
-}
-
-.style-trigger-ph {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #f0a62a;
-  font-size: 30px;
-}
-
-.style-trigger-body {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-
-  strong {
-    color: #493219;
-    font-size: 17px;
-  }
-}
-
-.style-trigger-label,
-.style-trigger-desc {
-  color: #92775a;
-  font-size: 12px;
-}
-
-.style-trigger-desc {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.style-selected-icon {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  color: #ff9f1a;
-  font-size: 18px;
-}
-
 .generate-btn {
+  margin-top: 22px;
   height: 54px;
   border-radius: 18px;
   font-size: 16px;
@@ -728,6 +623,7 @@ function handleDownload(imageId: number) {
   box-shadow: 0 16px 28px rgba(255, 169, 37, 0.28) !important;
 }
 
+/* --- Results --- */
 .result-hero {
   padding: 26px 20px;
   border-radius: 24px;
@@ -767,8 +663,8 @@ function handleDownload(imageId: number) {
 }
 
 .result-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-top: 18px;
 }
@@ -793,11 +689,18 @@ function handleDownload(imageId: number) {
 
 .result-frame {
   position: relative;
-  min-height: 220px;
+  min-height: 180px;
   border-radius: 20px;
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
 
   &.clickable {
     cursor: pointer;
@@ -836,7 +739,11 @@ function handleDownload(imageId: number) {
   background: rgba(255, 250, 240, 0.74);
 
   &.error {
-    background: linear-gradient(180deg, rgba(255, 247, 245, 0.4), rgba(255, 247, 245, 0.86));
+    background: linear-gradient(
+      180deg,
+      rgba(255, 247, 245, 0.4),
+      rgba(255, 247, 245, 0.86)
+    );
     color: #d45b4d;
   }
 }
@@ -870,6 +777,17 @@ function handleDownload(imageId: number) {
   }
 }
 
+.result-empty {
+  min-height: 220px;
+  border-radius: 24px;
+  border: 1px dashed #ead9b9;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 248, 232, 0.38),
+    rgba(255, 253, 248, 0.82)
+  );
+}
+
 :deep(.generate-dropdown.ant-select-dropdown) {
   border-radius: 14px;
   padding: 6px;
@@ -886,32 +804,33 @@ function handleDownload(imageId: number) {
   }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 960px) {
   .generate-workbench {
     grid-template-columns: 1fr;
   }
 
-  .upload-stage {
-    min-height: 360px;
+  .result-list {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   .work-panel {
     padding: 18px;
     border-radius: 22px;
   }
 
-  .size-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .size-grid,
+  .num-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .quality-row {
+  .upload-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .result-list {
     grid-template-columns: 1fr;
-  }
-
-  .upload-foot {
-    flex-direction: column;
   }
 }
 </style>

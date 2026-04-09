@@ -1,13 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
 class TaskCreate(BaseModel):
-    style_id: int
-    model: str = "banana-pro"
+    prompt: str
+    num_images: int = Field(default=4, ge=1, le=8)
     size: str = "3:4"
     resolution: str = "4K"
-    reference_image: str = ""
+    reference_images: list[str] | None = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -24,8 +24,8 @@ class ImageOut(BaseModel):
 
 class TaskOut(BaseModel):
     id: int
-    style_id: int
-    model: str
+    prompt: str = ""
+    num_images: int = 4
     size: str
     status: str
     created_at: datetime | None = None

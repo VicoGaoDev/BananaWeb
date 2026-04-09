@@ -34,7 +34,7 @@ const filter = reactive<{
 const columns = [
   { title: "ID", dataIndex: "task_id", width: 70 },
   { title: "用户", dataIndex: "username", width: 160 },
-  { title: "风格", dataIndex: "style_name", width: 120 },
+  { title: "提示词", dataIndex: "prompt", width: 200, ellipsis: true },
   { title: "尺寸", dataIndex: "size", width: 100 },
   { title: "状态", dataIndex: "status", width: 90 },
   { title: "图片", key: "imgCount", width: 70 },

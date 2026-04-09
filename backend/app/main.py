@@ -39,6 +39,12 @@ def _ensure_schema_compat():
     with engine.begin() as conn:
         if "resolution" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN resolution VARCHAR(10) DEFAULT '4K'"))
+        if "prompt" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN prompt TEXT DEFAULT ''"))
+        if "num_images" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN num_images INTEGER DEFAULT 4"))
+        if "reference_images" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN reference_images TEXT DEFAULT ''"))
 
 
 def _seed_default_data():

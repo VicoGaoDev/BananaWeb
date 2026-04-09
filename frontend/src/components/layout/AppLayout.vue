@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, h } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message } from "ant-design-vue";
-import { changePassword, getMe, uploadAvatar } from "@/api/auth";
+import { login as apiLogin, changePassword, getMe, uploadAvatar } from "@/api/auth";
 import {
   PictureOutlined,
   HistoryOutlined,
   SettingOutlined,
   TeamOutlined,
-  BgColorsOutlined,
   BarChartOutlined,
   KeyOutlined,
   LogoutOutlined,
   LockOutlined,
   UploadOutlined,
   DownOutlined,
+  UserOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -49,7 +50,31 @@ function handleUserMenu({ key }: { key: string }) {
   else if (key === "password") pwdVisible.value = true;
   else if (key === "logout") {
     auth.logout();
-    router.push("/login");
+    router.push("/generate");
+  }
+}
+
+const loginModalVisible = ref(false);
+const loginForm = reactive({ username: "", password: "" });
+const loginLoading = ref(false);
+
+async function handleLoginSubmit() {
+  if (!loginForm.username || !loginForm.password) {
+    message.warning("请输入用户名和密码");
+    return;
+  }
+  loginLoading.value = true;
+  try {
+    const res = await apiLogin(loginForm.username, loginForm.password);
+    auth.setAuth(res.token, res.user);
+    message.success("登录成功");
+    loginModalVisible.value = false;
+    loginForm.username = "";
+    loginForm.password = "";
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "登录失败");
+  } finally {
+    loginLoading.value = false;
   }
 }
 
@@ -159,59 +184,62 @@ async function handleAvatarChange(e: Event) {
         </a-menu>
 
         <div class="header-actions">
-          <a-dropdown v-if="isAdmin" :trigger="['click']" overlay-class-name="warm-dropdown">
-            <a-button class="admin-btn" type="text">
-              <SettingOutlined />
-              管理后台
-              <DownOutlined style="font-size: 10px; margin-left: 4px" />
-            </a-button>
-            <template #overlay>
-              <a-menu :selected-keys="adminSelectedKeys" @click="handleAdminMenu">
-                <a-menu-item key="/admin/users">
-                  <TeamOutlined />
-                  <span style="margin-left: 8px">用户管理</span>
-                </a-menu-item>
-                <a-menu-item key="/admin/styles">
-                  <BgColorsOutlined />
-                  <span style="margin-left: 8px">风格管理</span>
-                </a-menu-item>
-                <a-menu-item key="/admin/dashboard">
-                  <BarChartOutlined />
-                  <span style="margin-left: 8px">数据统计</span>
-                </a-menu-item>
-                <a-menu-item key="/admin/api-key">
-                  <KeyOutlined />
-                  <span style="margin-left: 8px">API Key</span>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+          <template v-if="auth.isLoggedIn">
+            <a-dropdown v-if="isAdmin" :trigger="['click']" overlay-class-name="warm-dropdown">
+              <a-button class="admin-btn" type="text">
+                <SettingOutlined />
+                管理后台
+                <DownOutlined style="font-size: 10px; margin-left: 4px" />
+              </a-button>
+              <template #overlay>
+                <a-menu :selected-keys="adminSelectedKeys" @click="handleAdminMenu">
+                  <a-menu-item key="/admin/users">
+                    <TeamOutlined />
+                    <span style="margin-left: 8px">用户管理</span>
+                  </a-menu-item>
+                  <a-menu-item key="/admin/dashboard">
+                    <BarChartOutlined />
+                    <span style="margin-left: 8px">数据统计</span>
+                  </a-menu-item>
+                  <a-menu-item key="/admin/api-key">
+                    <KeyOutlined />
+                    <span style="margin-left: 8px">API Key</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
 
-          <a-dropdown :trigger="['click']" overlay-class-name="warm-dropdown">
-            <div class="user-trigger">
-              <a-avatar :size="34" class="user-avatar" :src="avatarUrl || undefined">
-                {{ avatarFallback }}
-              </a-avatar>
-              <span class="user-name">{{ auth.user?.username }}</span>
-            </div>
-            <template #overlay>
-              <a-menu @click="handleUserMenu">
-                <a-menu-item key="avatar">
-                  <UploadOutlined />
-                  <span style="margin-left: 8px">上传头像</span>
-                </a-menu-item>
-                <a-menu-item key="password">
-                  <LockOutlined />
-                  <span style="margin-left: 8px">修改密码</span>
-                </a-menu-item>
-                <a-menu-divider />
-                <a-menu-item key="logout" danger>
-                  <LogoutOutlined />
-                  <span style="margin-left: 8px">退出登录</span>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+            <a-dropdown :trigger="['click']" overlay-class-name="warm-dropdown">
+              <div class="user-trigger">
+                <a-avatar :size="34" class="user-avatar" :src="avatarUrl || undefined">
+                  {{ avatarFallback }}
+                </a-avatar>
+                <span class="user-name">{{ auth.user?.username }}</span>
+              </div>
+              <template #overlay>
+                <a-menu @click="handleUserMenu">
+                  <a-menu-item key="avatar">
+                    <UploadOutlined />
+                    <span style="margin-left: 8px">上传头像</span>
+                  </a-menu-item>
+                  <a-menu-item key="password">
+                    <LockOutlined />
+                    <span style="margin-left: 8px">修改密码</span>
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item key="logout" danger>
+                    <LogoutOutlined />
+                    <span style="margin-left: 8px">退出登录</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </template>
+
+          <a-button v-else type="primary" class="login-header-btn" @click="loginModalVisible = true">
+            <template #icon><UserOutlined /></template>
+            登录
+          </a-button>
         </div>
       </div>
     </a-layout-header>
@@ -272,6 +300,46 @@ async function handleAvatarChange(e: Event) {
         </a-form-item>
         <a-form-item label="确认新密码" style="margin-bottom: 0">
           <a-input-password v-model:value="pwdForm.confirmPassword" placeholder="请再次输入" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+    <a-modal
+      v-model:open="loginModalVisible"
+      title="登录 Banana Web"
+      :footer="null"
+      :width="420"
+      centered
+    >
+      <a-form layout="vertical" :model="loginForm" @finish="handleLoginSubmit" style="margin-top: 16px">
+        <a-form-item label="用户名">
+          <a-input
+            v-model:value="loginForm.username"
+            size="large"
+            placeholder="请输入用户名"
+            :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+          />
+        </a-form-item>
+        <a-form-item label="密码">
+          <a-input-password
+            v-model:value="loginForm.password"
+            size="large"
+            placeholder="请输入密码"
+            :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+            @press-enter="handleLoginSubmit"
+          />
+        </a-form-item>
+        <a-form-item style="margin-bottom: 0">
+          <a-button
+            type="primary"
+            html-type="submit"
+            size="large"
+            :loading="loginLoading"
+            block
+            class="warm-primary-btn"
+          >
+            <template #icon><ThunderboltOutlined /></template>
+            {{ loginLoading ? "登录中..." : "登录" }}
+          </a-button>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -542,6 +610,16 @@ async function handleAvatarChange(e: Event) {
 
 .avatar-upload-btn {
   margin-top: 18px;
+}
+
+.login-header-btn {
+  height: 42px;
+  padding-inline: 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  border: none !important;
+  box-shadow: 0 10px 22px rgba(255, 169, 37, 0.22);
 }
 
 @media (max-width: 960px) {
