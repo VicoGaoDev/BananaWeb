@@ -16,8 +16,14 @@ class UserBrief(BaseModel):
     username: str
     role: str
     avatar_url: str = ""
+    credits: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
 
 
 class ChangePasswordRequest(BaseModel):

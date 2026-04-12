@@ -1,29 +1,49 @@
 <script setup lang="ts">
-import { ref, computed, h } from "vue";
+import { ref, computed, h, inject, onMounted, type Ref } from "vue";
 import { message } from "ant-design-vue";
 import {
+  CloseOutlined,
   CloudUploadOutlined,
+  ClockCircleOutlined,
+  ClearOutlined,
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
   EyeOutlined,
   LoadingOutlined,
   PictureOutlined,
+  RedoOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
+  UndoOutlined,
 } from "@ant-design/icons-vue";
+import { getGenerationModels } from "@/api/config";
 import { createTask, getTask } from "@/api/tasks";
 import { getDownloadUrl, regenerateImage } from "@/api/images";
+import { reversePrompt } from "@/api/promptReverse";
 import { uploadReferenceImage } from "@/api/upload";
+import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { usePolling } from "@/composables/usePolling";
 import { useAuthStore } from "@/stores/auth";
-import type { ImageResult, TaskResult } from "@/types";
+import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
+import type { GenerationModelOption, ImageResult, TaskResult } from "@/types";
+
+const CREDITS_PER_IMAGE = 4;
+const PROMPT_REVERSE_COST = 1;
 
 const auth = useAuthStore();
+const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 
+type GenerateMode = "generate" | "inpaint" | "promptReverse";
+
+const generateMode = ref<GenerateMode>("generate");
 const prompt = ref("");
-const numImages = ref(4);
-const resolution = ref("4K");
-const size = ref("3:4");
+const repaintPrompt = ref("");
+const selectedModel = ref("banana_pro");
+const numImages = ref(1);
+const resolution = ref("2K");
+const size = ref("9:16");
 const loading = ref(false);
 const images = ref<ImageResult[]>([]);
 const currentTaskId = ref<number | null>(null);
@@ -32,9 +52,38 @@ const MAX_REFS = 6;
 const referenceUrls = ref<string[]>([]);
 const uploading = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const sourceImageUrl = ref("");
+const sourceUploading = ref(false);
+const sourceInput = ref<HTMLInputElement | null>(null);
+const reverseImageUrl = ref("");
+const reverseUploading = ref(false);
+const reverseInput = ref<HTMLInputElement | null>(null);
+const reverseLoading = ref(false);
+const reversePromptResult = ref("");
+const brushSize = ref(28);
+const repaintTool = ref<"paint" | "erase">("paint");
+const hasRepaintMask = ref(false);
+const canUndoMask = ref(false);
+const canRedoMask = ref(false);
+const repaintCanvasRef = ref<{
+  clearMask: () => void;
+  hasDrawnMask: () => boolean;
+  exportMaskBlob: () => Promise<Blob | null>;
+  undo: () => boolean;
+  canUndo: () => boolean;
+  redo: () => boolean;
+  canRedo: () => boolean;
+} | null>(null);
 
 const previewVisible = ref(false);
 const previewCurrent = ref("");
+
+const historyVisible = ref(false);
+const historyItems = ref<{ id: number; prompt: string; created_at: string }[]>([]);
+const historyLoading = ref(false);
+const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
+const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
+const generationModels = ref<GenerationModelOption[]>([]);
 
 const resolutionOptions = [
   { label: "1K", value: "1K" },
@@ -60,6 +109,18 @@ const resultSummary = computed(() => {
   if (images.value.length) return "部分结果已返回，请继续查看生成状态";
   return "";
 });
+const resultEmptyTitle = computed(() => (
+  generateMode.value === "promptReverse" ? "提示词反推结果会在左侧展示" : "生图结果将在这里展示"
+));
+const resultEmptyDesc = computed(() => (
+  generateMode.value === "promptReverse"
+    ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
+    : "在左侧设置提示词和参数，点击「开始生成」即可"
+));
+const selectedModelOption = computed(
+  () => generationModels.value.find((item) => item.model_key === selectedModel.value) || null
+);
+const hideResolution = computed(() => generateMode.value === "generate" && !!selectedModelOption.value?.hide_resolution);
 
 const polling = usePolling<TaskResult>(
   () => getTask(currentTaskId.value!),
@@ -78,7 +139,22 @@ const polling = usePolling<TaskResult>(
   }
 );
 
-function triggerUpload() {
+async function ensureAuthenticated() {
+  if (!auth.isLoggedIn) {
+    loginModalVisible.value = true;
+    return false;
+  }
+  try {
+    auth.updateUser(await getMe());
+    return true;
+  } catch {
+    loginModalVisible.value = true;
+    return false;
+  }
+}
+
+async function triggerUpload() {
+  if (!(await ensureAuthenticated())) return;
   fileInput.value?.click();
 }
 
@@ -116,29 +192,245 @@ function removeReference(index: number) {
   referenceUrls.value.splice(index, 1);
 }
 
-async function handleGenerate() {
-  if (!auth.isLoggedIn) {
-    message.warning("请先登录");
+async function triggerSourceUpload() {
+  if (!(await ensureAuthenticated())) return;
+  sourceInput.value?.click();
+}
+
+async function handleSourceFileChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  if (file.size > 10 * 1024 * 1024) {
+    message.warning("图片大小不能超过 10MB");
+    input.value = "";
     return;
   }
-  if (!prompt.value.trim()) {
+
+  sourceUploading.value = true;
+  try {
+    const res = await uploadReferenceImage(file);
+    sourceImageUrl.value = res.url;
+    hasRepaintMask.value = false;
+    repaintCanvasRef.value?.clearMask();
+    message.success("原图上传成功");
+  } catch {
+    message.error("原图上传失败，请重试");
+  } finally {
+    sourceUploading.value = false;
+    input.value = "";
+  }
+}
+
+function removeSourceImage() {
+  sourceImageUrl.value = "";
+  hasRepaintMask.value = false;
+  canUndoMask.value = false;
+  canRedoMask.value = false;
+}
+
+async function triggerReverseUpload() {
+  if (!(await ensureAuthenticated())) return;
+  reverseInput.value?.click();
+}
+
+async function handleReverseFileChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  if (file.size > 10 * 1024 * 1024) {
+    message.warning("图片大小不能超过 10MB");
+    input.value = "";
+    return;
+  }
+
+  reverseUploading.value = true;
+  try {
+    const res = await uploadReferenceImage(file);
+    reverseImageUrl.value = res.url;
+    reversePromptResult.value = "";
+    message.success("反推图片上传成功");
+  } catch {
+    message.error("图片上传失败，请重试");
+  } finally {
+    reverseUploading.value = false;
+    input.value = "";
+  }
+}
+
+function removeReverseImage() {
+  reverseImageUrl.value = "";
+  reversePromptResult.value = "";
+}
+
+function clearRepaintMask() {
+  repaintCanvasRef.value?.clearMask();
+  hasRepaintMask.value = false;
+  canUndoMask.value = false;
+  canRedoMask.value = false;
+}
+
+function undoRepaintMask() {
+  const changed = repaintCanvasRef.value?.undo();
+  if (!changed) return;
+  hasRepaintMask.value = repaintCanvasRef.value?.hasDrawnMask() ?? false;
+  canUndoMask.value = repaintCanvasRef.value?.canUndo() ?? false;
+  canRedoMask.value = repaintCanvasRef.value?.canRedo() ?? false;
+}
+
+function redoRepaintMask() {
+  const changed = repaintCanvasRef.value?.redo();
+  if (!changed) return;
+  hasRepaintMask.value = repaintCanvasRef.value?.hasDrawnMask() ?? false;
+  canUndoMask.value = repaintCanvasRef.value?.canUndo() ?? false;
+  canRedoMask.value = repaintCanvasRef.value?.canRedo() ?? false;
+}
+
+function handleMaskChange(value: boolean) {
+  hasRepaintMask.value = value;
+  canUndoMask.value = repaintCanvasRef.value?.canUndo() ?? false;
+  canRedoMask.value = repaintCanvasRef.value?.canRedo() ?? false;
+}
+
+const creditCost = computed(() => (
+  generateMode.value === "inpaint"
+    ? CREDITS_PER_IMAGE
+    : generateMode.value === "promptReverse"
+      ? PROMPT_REVERSE_COST
+      : numImages.value * CREDITS_PER_IMAGE
+));
+const userCredits = computed(() => auth.user?.credits ?? 0);
+const isSuperAdmin = computed(() => auth.isSuperAdmin);
+const generateButtonText = computed(() => {
+  if (loading.value) {
+    return generateMode.value === "inpaint" ? "AI 局部重绘中..." : "AI 绘制中...";
+  }
+  return isSuperAdmin.value ? "开始生成" : `开始生成 · ${creditCost.value} 积分`;
+});
+const promptReverseButtonText = computed(() => {
+  if (reverseLoading.value) return "提示词反推中...";
+  return isSuperAdmin.value ? "开始反推" : `开始反推 · ${PROMPT_REVERSE_COST} 积分`;
+});
+const activePrompt = computed(() => (
+  generateMode.value === "inpaint" ? repaintPrompt.value : prompt.value
+));
+
+async function handlePromptReverse() {
+  if (!(await ensureAuthenticated())) return;
+  if (!reverseImageUrl.value.trim()) {
+    message.warning("请先上传需要反推提示词的图片");
+    return;
+  }
+  if (!isSuperAdmin.value && userCredits.value < PROMPT_REVERSE_COST) {
+    message.warning(`积分不足，需要 ${PROMPT_REVERSE_COST} 积分，当前余额 ${userCredits.value}`);
+    return;
+  }
+
+  reverseLoading.value = true;
+  try {
+    const res = await reversePrompt(reverseImageUrl.value);
+    reversePromptResult.value = res.prompt;
+    message.success("提示词反推完成");
+    getMe().then((u) => auth.updateUser(u)).catch(() => {});
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "提示词反推失败");
+  } finally {
+    reverseLoading.value = false;
+  }
+}
+
+function copyReversePrompt() {
+  if (!reversePromptResult.value.trim()) return;
+  navigator.clipboard.writeText(reversePromptResult.value).then(() => {
+    message.success("已复制提示词");
+  });
+}
+
+function applyReversePrompt() {
+  if (!reversePromptResult.value.trim()) return;
+  prompt.value = reversePromptResult.value;
+  generateMode.value = "generate";
+  message.success("已带入到文生图/图编辑");
+}
+
+async function handleGenerate() {
+  if (!(await ensureAuthenticated())) return;
+  if (!activePrompt.value.trim()) {
     message.warning("请输入提示词");
     return;
   }
-  loading.value = true;
-  images.value = [];
-  try {
-    const res = await createTask({
+  if (!isSuperAdmin.value && userCredits.value < creditCost.value) {
+    message.warning(`积分不足，需要 ${creditCost.value} 积分，当前余额 ${userCredits.value}`);
+    return;
+  }
+
+  let payload: {
+    model?: string;
+    prompt: string;
+    num_images: number;
+    size: string;
+    resolution: string;
+    mode?: "generate" | "inpaint";
+    reference_images?: string[];
+    source_image?: string;
+    mask_image?: string;
+  };
+
+  if (generateMode.value === "inpaint") {
+    if (!sourceImageUrl.value.trim()) {
+      message.warning("请先上传需要局部重绘的原图");
+      return;
+    }
+    if (!hasRepaintMask.value || !repaintCanvasRef.value?.hasDrawnMask()) {
+      message.warning("请先在原图上涂抹需要重绘的区域");
+      return;
+    }
+    const maskBlob = await repaintCanvasRef.value.exportMaskBlob();
+    if (!maskBlob) {
+      message.warning("蒙版生成失败，请重新涂抹后再试");
+      return;
+    }
+    const maskFile = new File([maskBlob], `mask-${Date.now()}.png`, { type: "image/png" });
+    let maskUploadUrl = "";
+    try {
+      const uploaded = await uploadReferenceImage(maskFile);
+      maskUploadUrl = uploaded.url;
+    } catch {
+      message.error("蒙版上传失败，请重试");
+      return;
+    }
+    payload = {
+      mode: "inpaint",
+      prompt: repaintPrompt.value,
+      num_images: 1,
+      size: size.value,
+      resolution: resolution.value,
+      source_image: sourceImageUrl.value,
+      mask_image: maskUploadUrl,
+    };
+  } else {
+    payload = {
+      mode: "generate",
+      model: selectedModel.value,
       prompt: prompt.value,
       num_images: numImages.value,
       size: size.value,
-      resolution: resolution.value,
+      resolution: hideResolution.value ? "" : resolution.value,
       reference_images: referenceUrls.value.length ? referenceUrls.value : undefined,
-    });
+    };
+  }
+
+  loading.value = true;
+  images.value = [];
+  try {
+    const res = await createTask(payload);
     currentTaskId.value = res.task_id;
     const taskData = await getTask(res.task_id);
     images.value = taskData.images;
     polling.start();
+    getMe().then((u) => auth.updateUser(u)).catch(() => {});
   } catch (err: any) {
     loading.value = false;
     message.error(err.response?.data?.detail || "创建任务失败");
@@ -170,143 +462,444 @@ function handleDownload(imageId: number) {
   a.download = `banana_${imageId}.png`;
   a.click();
 }
+
+async function openHistory() {
+  if (!(await ensureAuthenticated())) return;
+  historyVisible.value = true;
+  historyLoading.value = true;
+  try {
+    historyItems.value = await getPromptHistory();
+  } catch {
+    message.error("获取历史提示词失败");
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+async function removeHistoryItem(id: number) {
+  try {
+    await deletePromptHistory(id);
+    historyItems.value = historyItems.value.filter((i) => i.id !== id);
+  } catch {
+    message.error("删除失败");
+  }
+}
+
+function useHistoryPrompt(text: string) {
+  prompt.value = text;
+  historyVisible.value = false;
+}
+
+function applyDraft(raw: string | null, successText: string, storageKey: string) {
+  if (!raw) return;
+  try {
+    const draft = JSON.parse(raw) as {
+      prompt?: string;
+      model?: string;
+      reference_images?: string[];
+      num_images?: number;
+      size?: string;
+      resolution?: string;
+    };
+    generateMode.value = "generate";
+    prompt.value = draft.prompt || "";
+    selectedModel.value = draft.model || selectedModel.value;
+    referenceUrls.value = Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : [];
+    numImages.value = Math.min(6, Math.max(1, Number(draft.num_images || 1)));
+    size.value = draft.size || "9:16";
+    resolution.value = draft.resolution || "2K";
+    localStorage.removeItem(storageKey);
+    message.success(successText);
+  } catch {
+    localStorage.removeItem(storageKey);
+  }
+}
+
+async function loadGenerationModelOptions() {
+  try {
+    generationModels.value = await getGenerationModels();
+    if (!generationModels.value.length) return;
+    if (!generationModels.value.some((item) => item.model_key === selectedModel.value)) {
+      selectedModel.value = generationModels.value[0].model_key;
+    }
+  } catch {
+    // ignore model loading failures, backend will still validate on submit
+  }
+}
+
+onMounted(async () => {
+  await loadGenerationModelOptions();
+  applyDraft(
+    localStorage.getItem(HISTORY_DRAFT_KEY),
+    "已回填历史任务参数，可继续编辑后重新生成",
+    HISTORY_DRAFT_KEY
+  );
+  applyDraft(
+    localStorage.getItem(TEMPLATE_DRAFT_KEY),
+    "已套用创意模版参数，可继续编辑后生成",
+    TEMPLATE_DRAFT_KEY
+  );
+});
 </script>
 
 <template>
   <div class="generate-page">
     <div class="generate-workbench">
-      <section class="work-panel upload-panel">
-        <div class="panel-head">
-          <div>
-            <h3>参考图 ({{ referenceUrls.length }}/{{ MAX_REFS }})</h3>
-          </div>
-        </div>
+      <div class="left-col">
+        <a-tabs v-model:activeKey="generateMode" class="generate-tabs">
+          <a-tab-pane key="generate" tab="文生图/图编辑">
+            <div class="prompt-block">
+              <div class="prompt-label-row">
+                <label>提示词</label>
+                <a-button type="text" class="history-btn" @click="openHistory">
+                  <template #icon><ClockCircleOutlined /></template>
+                </a-button>
+              </div>
+              <a-textarea
+                v-model:value="prompt"
+                :rows="5"
+                placeholder="描述您想要生成的图片..."
+                class="prompt-input"
+                :maxlength="2000"
+                show-count
+              />
+            </div>
 
-        <input
-          ref="fileInput"
-          type="file"
-          accept="image/*"
-          hidden
-          @change="handleFileChange"
-        />
+            <div class="settings-row model-row">
+              <div class="setting-item setting-item-full">
+                <label>模型</label>
+                <a-select
+                  v-model:value="selectedModel"
+                  :bordered="false"
+                  class="flat-select"
+                  popup-class-name="generate-dropdown"
+                >
+                  <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
+                    <div class="model-option">
+                      <div class="model-option-label">{{ model.model_label }}</div>
+                      <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
+                    </div>
+                  </a-select-option>
+                </a-select>
+              </div>
+            </div>
 
-        <div class="upload-grid">
-          <div v-for="(url, idx) in referenceUrls" :key="idx" class="upload-thumb">
-            <img :src="url" alt="参考图" />
-            <a-button
-              type="text"
-              shape="circle"
-              class="icon-chip danger thumb-remove"
-              @click="removeReference(idx)"
-            >
-              <template #icon><DeleteOutlined /></template>
-            </a-button>
-          </div>
+            <div class="settings-row">
+              <div class="setting-item">
+                <label>宽高比</label>
+                <a-select
+                  v-model:value="size"
+                  :bordered="false"
+                  class="flat-select"
+                  popup-class-name="generate-dropdown"
+                  :options="sizeOptions"
+                />
+              </div>
+              <div v-if="!hideResolution" class="setting-item">
+                <label>分辨率</label>
+                <a-select
+                  v-model:value="resolution"
+                  :bordered="false"
+                  class="flat-select"
+                  popup-class-name="generate-dropdown"
+                  :options="resolutionOptions"
+                />
+              </div>
+            </div>
 
-          <div
-            v-if="referenceUrls.length < MAX_REFS"
-            class="upload-add"
-            @click="triggerUpload"
-          >
-            <a-spin
-              v-if="uploading"
-              :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#ff9f1a' } })"
-            />
-            <template v-else>
-              <CloudUploadOutlined style="font-size: 28px; color: #f0a62a" />
-              <span>添加图片</span>
-            </template>
-          </div>
-        </div>
+            <section class="work-panel settings-panel">
+              <div class="field-block">
+                <div class="panel-head">
+                  <h3>参考图</h3>
+                  <span class="panel-hint">(可选，最多 {{ MAX_REFS }} 张)</span>
+                </div>
 
-        <div class="upload-foot">
-          <span>支持大小不超过 10MB，最多 {{ MAX_REFS }} 张</span>
-          <span v-if="referenceUrls.length">已载入 {{ referenceUrls.length }} 张</span>
-        </div>
-      </section>
+                <input
+                  ref="fileInput"
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  @change="handleFileChange"
+                />
 
-      <section class="work-panel control-panel">
-        <div class="panel-head">
-          <div>
-            <h3>绘图设置</h3>
-          </div>
-        </div>
+                <div class="upload-grid">
+                  <div v-for="(url, idx) in referenceUrls" :key="idx" class="upload-thumb">
+                    <img :src="url" alt="参考图" />
+                    <a-button
+                      type="text"
+                      shape="circle"
+                      class="icon-chip danger thumb-remove"
+                      @click="removeReference(idx)"
+                    >
+                      <template #icon><DeleteOutlined /></template>
+                    </a-button>
+                  </div>
 
-        <div class="field-block">
-          <label>提示词</label>
-          <a-textarea
-            v-model:value="prompt"
-            :rows="4"
-            placeholder="描述你想要生成的图片内容..."
-            class="prompt-input"
-            :maxlength="2000"
-            show-count
-          />
-        </div>
+                  <div
+                    v-if="referenceUrls.length < MAX_REFS"
+                    class="upload-add"
+                    @click="triggerUpload"
+                  >
+                    <a-spin
+                      v-if="uploading"
+                      :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                    />
+                    <template v-else>
+                      <CloudUploadOutlined style="font-size: 22px; color: #f0a62a" />
+                      <span>Import</span>
+                    </template>
+                  </div>
+                </div>
+              </div>
 
-        <div class="field-block">
-          <label>生成数量</label>
-          <div class="num-grid">
-            <button
-              v-for="n in 8"
-              :key="n"
-              type="button"
-              :class="['size-item', { active: numImages === n }]"
-              @click="numImages = n"
-            >
-              {{ n }}
-            </button>
-          </div>
-        </div>
+              <div class="field-block">
+                <label>图片数量：{{ numImages }}</label>
+                <a-slider
+                  v-model:value="numImages"
+                  :min="1"
+                  :max="6"
+                  :marks="{ 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6' }"
+                  class="num-slider"
+                />
+              </div>
 
-        <div class="field-block">
-          <label>图片尺寸</label>
-          <div class="size-grid">
-            <button
-              v-for="option in sizeOptions"
-              :key="option.value"
-              type="button"
-              :class="['size-item', { active: size === option.value }]"
-              @click="size = option.value"
-            >
-              <span class="size-shape">{{ option.label.split('  ')[0] }}</span>
-              <span class="size-value">{{ option.value }}</span>
-            </button>
-          </div>
-        </div>
+              <a-button
+                type="primary"
+                block
+                size="large"
+                :loading="loading"
+                :disabled="!activePrompt.trim()"
+                class="generate-btn"
+                @click="handleGenerate"
+              >
+                <template #icon><ThunderboltOutlined /></template>
+                {{ generateButtonText }}
+              </a-button>
+            </section>
+          </a-tab-pane>
 
-        <div class="field-block">
-          <label>生成质量</label>
-          <div class="quality-row">
-            <a-select
-              v-model:value="resolution"
-              :bordered="false"
-              class="flat-select quality-select"
-              popup-class-name="generate-dropdown"
-              :options="resolutionOptions"
-            />
-          </div>
-        </div>
+          <a-tab-pane key="promptReverse" tab="提示词反推">
+            <section class="work-panel settings-panel prompt-reverse-panel">
+              <div class="field-block">
+                <div class="panel-head">
+                  <h3>上传图片</h3>
+                  <span class="panel-hint">(每次反推消耗 1 积分)</span>
+                </div>
 
-        <a-button
-          type="primary"
-          block
-          size="large"
-          :loading="loading"
-          :disabled="!prompt.trim()"
-          class="generate-btn"
-          @click="handleGenerate"
-        >
-          <template #icon><ThunderboltOutlined /></template>
-          {{ loading ? "AI 绘制中..." : "开始生成" }}
-        </a-button>
-      </section>
+                <input
+                  ref="reverseInput"
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  @change="handleReverseFileChange"
+                />
+
+                <div
+                  v-if="!reverseImageUrl"
+                  class="source-upload-empty"
+                  @click="triggerReverseUpload"
+                >
+                  <a-spin
+                    v-if="reverseUploading"
+                    :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                  />
+                  <template v-else>
+                    <CloudUploadOutlined class="source-upload-icon" />
+                    <div class="source-upload-title">点击上传图片</div>
+                    <div class="source-upload-desc">系统将自动分析图片内容并反推出专业中文提示词</div>
+                  </template>
+                </div>
+
+                <div v-else class="reverse-preview-shell">
+                  <button type="button" class="canvas-remove-btn" @click="removeReverseImage">
+                    <CloseOutlined />
+                  </button>
+                  <img :src="reverseImageUrl" alt="提示词反推图片" class="reverse-preview-image" />
+                </div>
+              </div>
+
+              <a-button
+                type="primary"
+                block
+                size="large"
+                :loading="reverseLoading || reverseUploading"
+                class="generate-btn"
+                @click="handlePromptReverse"
+              >
+                <template #icon><ThunderboltOutlined /></template>
+                {{ promptReverseButtonText }}
+              </a-button>
+
+              <div v-if="reversePromptResult" class="reverse-result-card">
+                <div class="panel-head" style="margin-bottom: 10px">
+                  <h3>反推结果</h3>
+                </div>
+                <a-textarea
+                  :value="reversePromptResult"
+                  :rows="8"
+                  readonly
+                  class="prompt-input reverse-result-input"
+                />
+                <div class="reverse-actions">
+                  <a-button @click="copyReversePrompt">
+                    <template #icon><CopyOutlined /></template>
+                    复制提示词
+                  </a-button>
+                  <a-button type="primary" @click="applyReversePrompt">
+                    带入文生图/图编辑
+                  </a-button>
+                </div>
+              </div>
+
+              <div v-else class="reverse-result-placeholder">
+                上传图片后，点击「开始反推」即可获得适合 AI 绘画的中文提示词。
+              </div>
+            </section>
+          </a-tab-pane>
+
+          <a-tab-pane key="inpaint" tab="局部重绘">
+            <section class="work-panel settings-panel inpaint-panel">
+              <div class="field-block">
+                <div class="panel-head">
+                  <h3>绘制区域</h3>
+                  <span class="panel-hint">(必传，涂抹后仅重绘选区)</span>
+                </div>
+
+                <input
+                  ref="sourceInput"
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  @change="handleSourceFileChange"
+                />
+
+                <div
+                  v-if="!sourceImageUrl"
+                  class="source-upload-empty"
+                  @click="triggerSourceUpload"
+                >
+                  <a-spin
+                    v-if="sourceUploading"
+                    :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                  />
+                  <template v-else>
+                    <CloudUploadOutlined class="source-upload-icon" />
+                    <div class="source-upload-title">点击上传原图</div>
+                    <div class="source-upload-desc">上传后可直接在图片上涂抹需要重绘的区域</div>
+                  </template>
+                </div>
+
+                <template v-else>
+                  <div class="repaint-status-card" :class="{ ready: hasRepaintMask }">
+                    <div class="repaint-status-title">
+                      {{ hasRepaintMask ? "已选择重绘区域" : "请在图片上涂抹需要重绘的区域" }}
+                    </div>
+                    <div class="repaint-status-desc">
+                      {{ hasRepaintMask ? "提交后只会修改已涂抹部分，未涂抹区域保持不变。" : "先上传原图，再直接在图片上绘制需要重绘的局部范围。" }}
+                    </div>
+                  </div>
+
+                  <div class="repaint-canvas-shell">
+                    <button type="button" class="canvas-remove-btn" @click="removeSourceImage">
+                      <CloseOutlined />
+                    </button>
+                    <RepaintCanvas
+                      ref="repaintCanvasRef"
+                      :image-url="sourceImageUrl"
+                      :brush-size="brushSize"
+                      :tool="repaintTool"
+                      @mask-change="handleMaskChange"
+                    />
+                  </div>
+
+                  <div class="repaint-toolbar">
+                    <button
+                      type="button"
+                      class="tool-btn"
+                      :class="{ active: repaintTool === 'paint' }"
+                      @click="repaintTool = 'paint'"
+                    >
+                      <EditOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      class="tool-btn"
+                      :class="{ active: repaintTool === 'erase' }"
+                      @click="repaintTool = 'erase'"
+                    >
+                      <ClearOutlined />
+                    </button>
+                    <div class="toolbar-divider" />
+                    <div class="toolbar-slider">
+                      <a-slider v-model:value="brushSize" :min="12" :max="60" class="brush-slider" />
+                    </div>
+                    <div class="brush-preview" :style="{ width: `${Math.max(10, Math.min(brushSize, 34))}px`, height: `${Math.max(10, Math.min(brushSize, 34))}px` }" />
+                    <div class="toolbar-divider" />
+                    <button
+                      type="button"
+                      class="tool-btn"
+                      @click="clearRepaintMask"
+                    >
+                      <ReloadOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      class="tool-btn"
+                      :disabled="!canUndoMask"
+                      @click="undoRepaintMask"
+                    >
+                      <UndoOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      class="tool-btn"
+                      :disabled="!canRedoMask"
+                      @click="redoRepaintMask"
+                    >
+                      <RedoOutlined />
+                    </button>
+                  </div>
+
+                  <div class="mask-tip">
+                    请直接在图片上涂抹需要重绘的区域，当前蒙层为 50% 透明度，提交时仅对白色蒙版区域进行重绘。
+                  </div>
+                </template>
+              </div>
+
+              <div class="prompt-block inpaint-prompt-block">
+                <div class="prompt-label-row">
+                  <label>提示词</label>
+                </div>
+                <a-textarea
+                  v-model:value="repaintPrompt"
+                  :rows="5"
+                  placeholder="描述需要局部重绘后的效果..."
+                  class="prompt-input"
+                  :maxlength="2000"
+                  show-count
+                />
+              </div>
+
+              <a-button
+                type="primary"
+                block
+                size="large"
+                :loading="loading || sourceUploading"
+                :disabled="!activePrompt.trim()"
+                class="generate-btn"
+                @click="handleGenerate"
+              >
+                <template #icon><ThunderboltOutlined /></template>
+                {{ generateButtonText }}
+              </a-button>
+            </section>
+          </a-tab-pane>
+        </a-tabs>
+      </div>
 
       <section class="work-panel result-panel">
         <div class="panel-head">
-          <div>
-            <h3>生成结果</h3>
-          </div>
+          <h3>生成结果</h3>
         </div>
 
         <div v-if="loading || pendingCount > 0" class="result-hero">
@@ -382,9 +975,47 @@ function handleDownload(imageId: number) {
           </div>
         </div>
 
-        <div v-else-if="!loading && pendingCount === 0" class="result-empty"></div>
+        <div v-else-if="!loading && pendingCount === 0" class="result-empty">
+          <PictureOutlined class="empty-icon" />
+          <div class="empty-title">{{ resultEmptyTitle }}</div>
+          <div class="empty-desc">{{ resultEmptyDesc }}</div>
+        </div>
       </section>
     </div>
+
+    <!-- Prompt history dialog -->
+    <a-modal
+      v-model:open="historyVisible"
+      title="历史提示词"
+      :footer="null"
+      :width="560"
+      centered
+    >
+      <a-spin :spinning="historyLoading">
+        <div v-if="historyItems.length === 0 && !historyLoading" class="history-empty">
+          暂无历史提示词
+        </div>
+        <div v-else class="history-list">
+          <div
+            v-for="item in historyItems"
+            :key="item.id"
+            class="history-item"
+            @click="useHistoryPrompt(item.prompt)"
+          >
+            <div class="history-text">{{ item.prompt }}</div>
+            <a-button
+              type="text"
+              shape="circle"
+              size="small"
+              class="history-del"
+              @click.stop="removeHistoryItem(item.id)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
+        </div>
+      </a-spin>
+    </a-modal>
 
     <div v-if="previewVisible" style="display: none">
       <a-image
@@ -405,50 +1036,163 @@ function handleDownload(imageId: number) {
 
 .generate-workbench {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 382fr 618fr;
   gap: 24px;
   align-items: start;
 }
 
-.result-panel {
-  grid-column: 1 / -1;
+.left-col {
+  display: flex;
+  flex-direction: column;
 }
 
+.generate-tabs {
+  :deep(.ant-tabs-nav) {
+    margin-bottom: 18px;
+  }
+
+  :deep(.ant-tabs-tab) {
+    padding: 10px 0 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #8f7558;
+  }
+
+  :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+    color: #c98511 !important;
+  }
+
+  :deep(.ant-tabs-ink-bar) {
+    height: 3px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #ffc45b, #ffab25);
+  }
+
+  :deep(.ant-tabs-content-holder) {
+    overflow: visible;
+  }
+
+  :deep(.ant-tabs-tabpane) {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+}
+
+/* --- Prompt (standalone) --- */
+.prompt-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+
+  label {
+    color: #5e4524;
+    font-size: 14px;
+    font-weight: 700;
+  }
+}
+
+.history-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: #a88962 !important;
+  font-size: 17px;
+
+  &:hover {
+    color: #d38a12 !important;
+    background: rgba(255, 214, 140, 0.28) !important;
+  }
+}
+
+.prompt-input {
+  border-radius: 14px !important;
+  border-color: #efdcb9 !important;
+  background: #fffdf8 !important;
+  padding: 10px 14px;
+  font-size: 14px;
+  resize: none;
+
+  &:focus,
+  &:hover {
+    border-color: #f0b85a !important;
+    box-shadow: 0 0 0 3px rgba(255, 184, 90, 0.12);
+  }
+}
+
+/* --- Settings row --- */
+.settings-row {
+  display: flex;
+  gap: 16px;
+}
+
+.setting-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  label {
+    color: #5e4524;
+    font-size: 13px;
+    font-weight: 700;
+  }
+}
+
+.setting-item-full {
+  flex: 1 1 100%;
+}
+
+/* --- Card panel --- */
 .work-panel {
   background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
   border: 1px solid rgba(250, 186, 90, 0.24);
-  border-radius: 28px;
+  border-radius: 24px;
   box-shadow: 0 18px 45px rgba(246, 178, 70, 0.12);
-  padding: 22px;
+  padding: 20px;
 }
 
 .panel-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 18px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 14px;
 
   h3 {
-    font-size: 20px;
+    font-size: 16px;
     line-height: 1.2;
     color: #48321a;
+    margin: 0;
   }
 }
 
-/* --- Upload grid --- */
+.panel-hint {
+  font-size: 12px;
+  color: #a88962;
+  font-weight: 400;
+}
+
+/* --- Upload (compact) --- */
 .upload-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .upload-thumb {
   position: relative;
-  aspect-ratio: 1;
-  border-radius: 16px;
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid #f0ddbb;
+  flex-shrink: 0;
 
   img {
     width: 100%;
@@ -460,189 +1204,455 @@ function handleDownload(imageId: number) {
 
 .thumb-remove {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 2px;
+  right: 2px;
+  width: 22px !important;
+  height: 22px !important;
+  font-size: 11px;
 }
 
 .upload-add {
-  aspect-ratio: 1;
-  border-radius: 16px;
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
   border: 2px dashed #e8d7b7;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
   cursor: pointer;
   color: #8f7558;
-  font-size: 13px;
+  font-size: 11px;
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.9),
     rgba(255, 248, 232, 0.92)
   );
   transition: border-color 0.2s, transform 0.2s;
+  flex-shrink: 0;
 
   &:hover {
     border-color: #f1bd57;
-    transform: translateY(-2px);
+    transform: translateY(-1px);
   }
-}
-
-.upload-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  font-size: 12px;
-  color: #a88962;
-}
-
-/* --- Prompt --- */
-.prompt-input {
-  border-radius: 16px !important;
-  border-color: #efdcb9 !important;
-  background: #fffdf8 !important;
-  padding: 12px 16px;
-  font-size: 14px;
-  resize: none;
-
-  &:focus,
-  &:hover {
-    border-color: #f0b85a !important;
-    box-shadow: 0 0 0 3px rgba(255, 184, 90, 0.12);
-  }
-}
-
-/* --- Number grid --- */
-.num-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
 }
 
 /* --- Fields --- */
 .field-block + .field-block {
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .field-block label {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: #5e4524;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .flat-select {
   width: 100%;
   background: #fff;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid #f0ddbb;
   box-shadow: 0 8px 18px rgba(244, 182, 84, 0.08);
 
   :deep(.ant-select-selector) {
-    height: 48px !important;
-    padding: 0 16px !important;
+    height: 44px !important;
+    padding: 0 14px !important;
     border: none !important;
     box-shadow: none !important;
     background: transparent !important;
-    border-radius: 16px !important;
+    border-radius: 14px !important;
     font-weight: 600;
     color: #4b3318;
   }
 
   :deep(.ant-select-selection-item) {
-    line-height: 48px !important;
+    line-height: 44px !important;
   }
 }
 
-.quality-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-
-.quality-select {
-  min-width: 0;
-}
-
-.size-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.size-item {
-  appearance: none;
-  border: 1px solid #f1dfbf;
-  background: #fff;
-  border-radius: 18px;
-  padding: 14px 8px;
+.model-option {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  color: #7a6447;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  gap: 2px;
+}
+
+.model-option-label {
   font-weight: 700;
-  font-size: 15px;
-
-  &:hover {
-    border-color: #f5b64c;
-    transform: translateY(-1px);
-  }
-
-  &.active {
-    background: linear-gradient(180deg, #ffb536, #ff9a16);
-    border-color: #ffad2f;
-    color: #fff;
-    box-shadow: 0 12px 24px rgba(255, 168, 35, 0.28);
-  }
+  color: #4b3318;
 }
 
-.size-shape {
-  font-size: 16px;
-  line-height: 1;
-}
-
-.size-value {
+.model-option-desc {
   font-size: 12px;
-  font-weight: 700;
+  color: #8c7458;
+}
+
+/* --- Slider --- */
+.num-slider {
+  margin: 4px 6px 18px;
+
+  :deep(.ant-slider-rail) {
+    background: #f0ddbb;
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  :deep(.ant-slider-track) {
+    background: linear-gradient(90deg, #ffc45b, #ffab25);
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  :deep(.ant-slider-handle) {
+    width: 22px;
+    height: 22px;
+    margin-top: -8px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    outline: none !important;
+
+    &::after {
+      width: 22px;
+      height: 22px;
+      inset-inline-start: 0;
+      inset-block-start: 0;
+      border-radius: 50%;
+      border: 3px solid #ffab25;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(255, 171, 37, 0.3);
+    }
+
+    &:hover::after,
+    &:focus::after {
+      border-color: #ff9a16;
+      box-shadow: 0 4px 16px rgba(255, 171, 37, 0.45);
+    }
+  }
+
+  :deep(.ant-slider-dot) {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #e8d7b7;
+    background: #fff;
+    top: -2px;
+  }
+
+  :deep(.ant-slider-dot-active) {
+    border-color: #ffab25;
+  }
+
+  :deep(.ant-slider-mark-text) {
+    color: #a88962;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  :deep(.ant-slider-mark-text-active) {
+    color: #6f583a;
+  }
 }
 
 .generate-btn {
-  margin-top: 22px;
-  height: 54px;
-  border-radius: 18px;
-  font-size: 16px;
+  margin-top: 12px;
+  height: 50px;
+  border-radius: 16px;
+  font-size: 15px;
   font-weight: 700;
   background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
   border: none !important;
   box-shadow: 0 16px 28px rgba(255, 169, 37, 0.28) !important;
 }
 
+.source-upload-empty {
+  min-height: 280px;
+  padding: 26px 20px;
+  border-radius: 20px;
+  border: 2px dashed #e8d7b7;
+  background: linear-gradient(180deg, #fffdf9, #fff7eb);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.2s;
+
+  &:hover {
+    border-color: #f1bd57;
+    transform: translateY(-1px);
+  }
+}
+
+.source-upload-icon {
+  font-size: 30px;
+  color: #f0a62a;
+}
+
+.source-upload-title {
+  margin-top: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #5d4322;
+}
+
+.source-upload-desc {
+  margin-top: 6px;
+  color: #9b8160;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.reverse-preview-shell {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid #f0ddbb;
+  background: #fff8ec;
+}
+
+.reverse-preview-image {
+  width: 100%;
+  display: block;
+  max-height: 420px;
+  object-fit: contain;
+}
+
+.reverse-result-card {
+  margin-top: 2px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid #f0ddbb;
+  background: #fffdf8;
+}
+
+.reverse-result-input {
+  :deep(textarea) {
+    min-height: 180px;
+    font-family: "SF Mono", "Consolas", "Monaco", monospace;
+    line-height: 1.7;
+  }
+}
+
+.reverse-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.reverse-result-placeholder {
+  padding: 22px 18px;
+  border-radius: 18px;
+  border: 1px dashed #ead9b9;
+  background: rgba(255, 248, 232, 0.38);
+  color: #8f7558;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.repaint-status-card {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff9ef, #fffdf8);
+  border: 1px solid #f1dfbe;
+
+  &.ready {
+    background: linear-gradient(180deg, #fff5df, #fffaf0);
+    border-color: #f0c36a;
+  }
+}
+
+.repaint-status-title {
+  color: #5d4322;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.repaint-status-desc {
+  margin-top: 6px;
+  color: #907659;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.repaint-canvas-shell {
+  position: relative;
+  border-radius: 18px;
+}
+
+.canvas-remove-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(38, 38, 42, 0.84);
+  color: rgba(255, 255, 255, 0.92);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px);
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+
+  &:hover {
+    background: rgba(48, 48, 54, 0.94);
+    border-color: rgba(255, 255, 255, 0.24);
+    transform: scale(1.03);
+  }
+}
+
+.repaint-toolbar {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(46, 46, 52, 0.96), rgba(34, 34, 38, 0.96));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.tool-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, opacity 0.2s, border-color 0.2s, transform 0.2s;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+  }
+
+  &.active {
+    background: linear-gradient(180deg, rgba(116, 107, 255, 0.9), rgba(95, 91, 240, 0.9));
+    color: #fff;
+    border-color: rgba(170, 167, 255, 0.38);
+    box-shadow: 0 10px 18px rgba(90, 87, 230, 0.24);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.toolbar-slider {
+  flex: 1;
+  min-width: 120px;
+  max-width: 180px;
+}
+
+.brush-preview {
+  flex: 0 0 auto;
+  min-width: 10px;
+  min-height: 10px;
+  max-width: 34px;
+  max-height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 171, 37, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.06),
+    0 4px 10px rgba(0, 0, 0, 0.16);
+}
+
+.brush-slider {
+  margin: 0 4px;
+
+  :deep(.ant-slider-rail) {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+  }
+
+  :deep(.ant-slider-track) {
+    height: 8px;
+    background: #6d6cff;
+    border-radius: 999px;
+  }
+
+  :deep(.ant-slider-handle) {
+    width: 24px;
+    height: 24px;
+    margin-top: -8px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+
+    &::after {
+      width: 24px;
+      height: 24px;
+      border-color: #6d6cff;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(57, 56, 138, 0.32);
+    }
+  }
+}
+
+.mask-tip {
+  margin-top: 12px;
+  color: #8f7558;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.inpaint-prompt-block {
+  margin-top: 6px;
+}
+
 /* --- Results --- */
+.result-panel {
+  min-height: calc(100vh - 156px);
+  display: flex;
+  flex-direction: column;
+}
+
 .result-hero {
   padding: 26px 20px;
-  border-radius: 24px;
+  border-radius: 20px;
   background: linear-gradient(180deg, #fff8e8, #fffdf8);
   border: 1px solid #f1dfbe;
   text-align: center;
 }
 
 .hero-ring {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
   border-radius: 50%;
   border: 4px solid #f6ddab;
   color: #f4a01d;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 26px;
 
   &.spinning {
     animation: spin 1.1s linear infinite;
@@ -650,28 +1660,28 @@ function handleDownload(imageId: number) {
 }
 
 .hero-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #4e3820;
 }
 
 .hero-subtitle {
-  margin-top: 8px;
+  margin-top: 6px;
   color: #8f7558;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.7;
 }
 
 .result-list {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .result-card {
-  padding: 16px;
-  border-radius: 22px;
+  padding: 14px;
+  border-radius: 20px;
   border: 1px solid #f1dfbe;
   background: rgba(255, 255, 255, 0.78);
 }
@@ -681,7 +1691,7 @@ function handleDownload(imageId: number) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   color: #594223;
   font-size: 13px;
   font-weight: 700;
@@ -690,7 +1700,7 @@ function handleDownload(imageId: number) {
 .result-frame {
   position: relative;
   min-height: 180px;
-  border-radius: 20px;
+  border-radius: 18px;
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
@@ -721,7 +1731,7 @@ function handleDownload(imageId: number) {
 
 .result-actions {
   position: absolute;
-  inset: auto 14px 14px auto;
+  inset: auto 12px 12px auto;
   display: flex;
   gap: 8px;
 }
@@ -749,9 +1759,9 @@ function handleDownload(imageId: number) {
 }
 
 .flat-action-btn {
-  margin-top: 12px;
-  height: 42px;
-  border-radius: 14px;
+  margin-top: 10px;
+  height: 40px;
+  border-radius: 12px;
   border: 1px solid #f0ddbb;
   background: #fff !important;
   color: #6f583a !important;
@@ -765,8 +1775,8 @@ function handleDownload(imageId: number) {
 }
 
 .icon-chip {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border: none !important;
   background: rgba(255, 255, 255, 0.92) !important;
   color: #684825 !important;
@@ -777,15 +1787,91 @@ function handleDownload(imageId: number) {
   }
 }
 
+/* --- Empty state --- */
 .result-empty {
-  min-height: 220px;
-  border-radius: 24px;
+  flex: 1;
+  min-height: 320px;
+  border-radius: 20px;
   border: 1px dashed #ead9b9;
   background: linear-gradient(
     180deg,
     rgba(255, 248, 232, 0.38),
     rgba(255, 253, 248, 0.82)
   );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  color: #e8d7b7;
+}
+
+.empty-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #8f7558;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: #b8a080;
+}
+
+/* --- History dialog --- */
+.history-empty {
+  text-align: center;
+  padding: 32px 0;
+  color: #a88962;
+  font-size: 14px;
+}
+
+.history-list {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: #fff8ec;
+  }
+
+  & + & {
+    border-top: 1px solid #f5ead5;
+  }
+}
+
+.history-text {
+  flex: 1;
+  font-size: 13px;
+  color: #4c341a;
+  line-height: 1.6;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.history-del {
+  flex-shrink: 0;
+  color: #c0a578 !important;
+  margin-top: 2px;
+
+  &:hover {
+    color: #d6574b !important;
+  }
 }
 
 :deep(.generate-dropdown.ant-select-dropdown) {
@@ -809,6 +1895,10 @@ function handleDownload(imageId: number) {
     grid-template-columns: 1fr;
   }
 
+  .result-panel {
+    min-height: auto;
+  }
+
   .result-list {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -816,17 +1906,18 @@ function handleDownload(imageId: number) {
 
 @media (max-width: 640px) {
   .work-panel {
-    padding: 18px;
-    border-radius: 22px;
+    padding: 16px;
+    border-radius: 20px;
   }
 
-  .size-grid,
-  .num-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .settings-row {
+    flex-direction: column;
   }
 
-  .upload-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .upload-thumb,
+  .upload-add {
+    width: 60px;
+    height: 60px;
   }
 
   .result-list {

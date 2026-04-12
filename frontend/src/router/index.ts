@@ -7,8 +7,13 @@ const router = createRouter({
     {
       path: "/",
       component: () => import("@/components/layout/AppLayout.vue"),
-      redirect: "/generate",
+      redirect: "/templates",
       children: [
+        {
+          path: "templates",
+          name: "Templates",
+          component: () => import("@/views/TemplatesView.vue"),
+        },
         {
           path: "generate",
           name: "Generate",
@@ -18,6 +23,17 @@ const router = createRouter({
           path: "history",
           name: "History",
           component: () => import("@/views/HistoryView.vue"),
+        },
+        {
+          path: "credit-logs",
+          name: "CreditLogs",
+          component: () => import("@/views/CreditLogsView.vue"),
+        },
+        {
+          path: "admin/templates",
+          name: "TemplateManage",
+          meta: { requiresAdmin: true },
+          component: () => import("@/views/admin/TemplateManageView.vue"),
         },
         {
           path: "admin/users",
@@ -37,6 +53,12 @@ const router = createRouter({
           meta: { requiresAdmin: true },
           component: () => import("@/views/admin/ApiKeyView.vue"),
         },
+        {
+          path: "admin/external-api-configs",
+          name: "ExternalApiConfigManage",
+          meta: { requiresSuperAdmin: true },
+          component: () => import("@/views/admin/ExternalApiConfigView.vue"),
+        },
       ],
     },
   ],
@@ -44,8 +66,11 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore();
+  if (to.meta.requiresSuperAdmin && !auth.isSuperAdmin) {
+    return { name: "Templates" };
+  }
   if (to.meta.requiresAdmin && !auth.isAdmin) {
-    return { name: "Generate" };
+    return { name: "Templates" };
   }
 });
 

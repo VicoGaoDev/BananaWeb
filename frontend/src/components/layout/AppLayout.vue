@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, h } from "vue";
+import { ref, reactive, computed, onMounted, h, provide, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message } from "ant-design-vue";
-import { login as apiLogin, changePassword, getMe, uploadAvatar } from "@/api/auth";
+import {
+  login as apiLogin,
+  register as apiRegister,
+  changePassword,
+  getMe,
+  uploadAvatar,
+  getContactConfig,
+  getAnnouncementConfig,
+} from "@/api/auth";
+import type { AnnouncementConfig } from "@/types";
 import {
   PictureOutlined,
   HistoryOutlined,
@@ -16,6 +25,7 @@ import {
   UploadOutlined,
   DownOutlined,
   UserOutlined,
+  UserAddOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons-vue";
 
@@ -23,10 +33,12 @@ const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.isAdmin);
+const isSuperAdmin = computed(() => auth.isSuperAdmin);
 
 const selectedKeys = computed(() => {
   const p = route.path;
   if (p.startsWith("/admin")) return ["admin"];
+  if (p === "/templates") return ["templates"];
   if (p === "/history") return ["history"];
   return ["generate"];
 });
@@ -37,8 +49,15 @@ const adminSelectedKeys = computed(() => {
 });
 
 function handleMenuClick({ key }: { key: string }) {
-  if (key === "generate") router.push("/generate");
-  else if (key === "history") router.push("/history");
+  if (key === "templates") router.push("/templates");
+  else if (key === "generate") router.push("/generate");
+  else if (key === "history") {
+    if (!auth.isLoggedIn) {
+      loginModalVisible.value = true;
+      return;
+    }
+    router.push("/history");
+  }
 }
 
 function handleAdminMenu({ key }: { key: string }) {
@@ -48,15 +67,33 @@ function handleAdminMenu({ key }: { key: string }) {
 function handleUserMenu({ key }: { key: string }) {
   if (key === "avatar") avatarVisible.value = true;
   else if (key === "password") pwdVisible.value = true;
+  else if (key === "credits") router.push("/credit-logs");
   else if (key === "logout") {
     auth.logout();
-    router.push("/generate");
+    router.push("/templates");
   }
 }
 
 const loginModalVisible = ref(false);
+provide("loginModalVisible", loginModalVisible);
+const authTab = ref<"login" | "register">("login");
 const loginForm = reactive({ username: "", password: "" });
 const loginLoading = ref(false);
+const registerForm = reactive({ username: "", password: "", confirmPassword: "" });
+const registerLoading = ref(false);
+
+function openAuthModal(tab: "login" | "register") {
+  authTab.value = tab;
+  loginModalVisible.value = true;
+}
+
+function resetAuthForms() {
+  loginForm.username = "";
+  loginForm.password = "";
+  registerForm.username = "";
+  registerForm.password = "";
+  registerForm.confirmPassword = "";
+}
 
 async function handleLoginSubmit() {
   if (!loginForm.username || !loginForm.password) {
@@ -69,12 +106,42 @@ async function handleLoginSubmit() {
     auth.setAuth(res.token, res.user);
     message.success("登录成功");
     loginModalVisible.value = false;
-    loginForm.username = "";
-    loginForm.password = "";
+    resetAuthForms();
+    await nextTick();
+    await checkAnnouncement();
   } catch (err: any) {
     message.error(err.response?.data?.detail || "登录失败");
   } finally {
     loginLoading.value = false;
+  }
+}
+
+async function handleRegisterSubmit() {
+  if (!registerForm.username || !registerForm.password) {
+    message.warning("请输入用户名和密码");
+    return;
+  }
+  if (registerForm.password.length < 6) {
+    message.warning("密码至少6位");
+    return;
+  }
+  if (registerForm.password !== registerForm.confirmPassword) {
+    message.warning("两次密码不一致");
+    return;
+  }
+  registerLoading.value = true;
+  try {
+    const res = await apiRegister(registerForm.username, registerForm.password);
+    auth.setAuth(res.token, res.user);
+    message.success("注册成功");
+    loginModalVisible.value = false;
+    resetAuthForms();
+    await nextTick();
+    await checkAnnouncement();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "注册失败");
+  } finally {
+    registerLoading.value = false;
   }
 }
 
@@ -84,11 +151,72 @@ const pwdLoading = ref(false);
 const avatarVisible = ref(false);
 const avatarUploading = ref(false);
 const avatarInput = ref<HTMLInputElement | null>(null);
+const creditsContactVisible = ref(false);
+const contactQrImage = ref("");
+const announcementVisible = ref(false);
+const announcementDismissToday = ref(false);
+const announcementConfig = ref<AnnouncementConfig>({
+  announcement_enabled: false,
+  announcement_content: "",
+  announcement_updated_at: null,
+});
+const ANNOUNCEMENT_DISMISS_KEY = "systemAnnouncementDismissState";
 
 const avatarUrl = computed(() => auth.user?.avatar_url || "");
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
 
+function getTodayString() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function getAnnouncementVersion(config: AnnouncementConfig) {
+  return config.announcement_updated_at || "";
+}
+
+function shouldSuppressAnnouncement(config: AnnouncementConfig) {
+  try {
+    const raw = localStorage.getItem(ANNOUNCEMENT_DISMISS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return parsed?.date === getTodayString() && parsed?.version === getAnnouncementVersion(config);
+  } catch {
+    return false;
+  }
+}
+
+function handleAnnouncementClose() {
+  if (announcementDismissToday.value) {
+    localStorage.setItem(ANNOUNCEMENT_DISMISS_KEY, JSON.stringify({
+      date: getTodayString(),
+      version: getAnnouncementVersion(announcementConfig.value),
+    }));
+  }
+  announcementVisible.value = false;
+}
+
+async function checkAnnouncement() {
+  try {
+    const res = await getAnnouncementConfig();
+    announcementConfig.value = res;
+    if (!res.announcement_enabled || !res.announcement_content.trim() || shouldSuppressAnnouncement(res)) {
+      return;
+    }
+    announcementDismissToday.value = false;
+    announcementVisible.value = true;
+  } catch {
+    // ignore announcement config failures
+  }
+}
+
 onMounted(async () => {
+  await Promise.allSettled([
+    (async () => {
+      const res = await getContactConfig();
+      contactQrImage.value = res.contact_qr_image || "";
+    })(),
+    checkAnnouncement(),
+  ]);
+
   if (!auth.isLoggedIn) return;
   try {
     auth.updateUser(await getMe());
@@ -96,6 +224,10 @@ onMounted(async () => {
     // ignore sync failures for stale sessions
   }
 });
+
+function openCreditsContact() {
+  creditsContactVisible.value = true;
+}
 
 async function handleChangePwd() {
   if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) {
@@ -159,7 +291,7 @@ async function handleAvatarChange(e: Event) {
   <a-layout class="app-layout">
     <a-layout-header class="app-header">
       <div class="header-inner">
-        <div class="header-brand" @click="router.push('/generate')">
+        <div class="header-brand" @click="router.push('/templates')">
           <div class="brand-mark">🍌</div>
           <div class="brand-copy">
             <span class="brand-name">Banana Web</span>
@@ -173,9 +305,13 @@ async function handleAvatarChange(e: Event) {
           class="header-menu"
           @click="handleMenuClick"
         >
-          <a-menu-item key="generate">
+          <a-menu-item key="templates">
             <PictureOutlined />
-            <span>绘图</span>
+            <span>创意模版</span>
+          </a-menu-item>
+          <a-menu-item key="generate">
+            <ThunderboltOutlined />
+            <span>自定义绘图</span>
           </a-menu-item>
           <a-menu-item key="history">
             <HistoryOutlined />
@@ -193,6 +329,10 @@ async function handleAvatarChange(e: Event) {
               </a-button>
               <template #overlay>
                 <a-menu :selected-keys="adminSelectedKeys" @click="handleAdminMenu">
+                  <a-menu-item key="/admin/templates">
+                    <PictureOutlined />
+                    <span style="margin-left: 8px">模版管理</span>
+                  </a-menu-item>
                   <a-menu-item key="/admin/users">
                     <TeamOutlined />
                     <span style="margin-left: 8px">用户管理</span>
@@ -203,11 +343,20 @@ async function handleAvatarChange(e: Event) {
                   </a-menu-item>
                   <a-menu-item key="/admin/api-key">
                     <KeyOutlined />
-                    <span style="margin-left: 8px">API Key</span>
+                    <span style="margin-left: 8px">配置管理</span>
+                  </a-menu-item>
+                  <a-menu-item v-if="isSuperAdmin" key="/admin/external-api-configs">
+                    <KeyOutlined />
+                    <span style="margin-left: 8px">接口管理</span>
                   </a-menu-item>
                 </a-menu>
               </template>
             </a-dropdown>
+
+            <div class="credits-badge" @click="openCreditsContact">
+              <ThunderboltOutlined />
+              <span>{{ auth.user?.credits ?? 0 }}</span>
+            </div>
 
             <a-dropdown :trigger="['click']" overlay-class-name="warm-dropdown">
               <div class="user-trigger">
@@ -226,6 +375,10 @@ async function handleAvatarChange(e: Event) {
                     <LockOutlined />
                     <span style="margin-left: 8px">修改密码</span>
                   </a-menu-item>
+                  <a-menu-item key="credits">
+                    <ThunderboltOutlined />
+                    <span style="margin-left: 8px">积分记录</span>
+                  </a-menu-item>
                   <a-menu-divider />
                   <a-menu-item key="logout" danger>
                     <LogoutOutlined />
@@ -236,10 +389,16 @@ async function handleAvatarChange(e: Event) {
             </a-dropdown>
           </template>
 
-          <a-button v-else type="primary" class="login-header-btn" @click="loginModalVisible = true">
-            <template #icon><UserOutlined /></template>
-            登录
-          </a-button>
+          <template v-else>
+            <a-button type="primary" class="login-header-btn" @click="openAuthModal('login')">
+              <template #icon><UserOutlined /></template>
+              登录
+            </a-button>
+            <a-button class="register-header-btn" @click="openAuthModal('register')">
+              <template #icon><UserAddOutlined /></template>
+              注册
+            </a-button>
+          </template>
         </div>
       </div>
     </a-layout-header>
@@ -249,6 +408,49 @@ async function handleAvatarChange(e: Event) {
         <router-view />
       </div>
     </a-layout-content>
+
+    <a-modal
+      v-model:open="creditsContactVisible"
+      title="联系我们获取积分"
+      :footer="null"
+      :width="420"
+      centered
+    >
+      <div class="credits-contact-modal">
+        <div class="credits-contact-text">
+          积分获取、api调用、技术支持、其他业务需求定制
+        </div>
+        <div v-if="contactQrImage" class="credits-contact-qr">
+          <img :src="contactQrImage" alt="contact qr code" />
+        </div>
+        <div v-else class="credits-contact-empty">
+          暂未配置联系二维码，请联系管理员
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="announcementVisible"
+      title="系统公告"
+      :footer="null"
+      :width="520"
+      centered
+      @cancel="handleAnnouncementClose"
+    >
+      <div class="announcement-modal">
+        <div class="announcement-content">
+          {{ announcementConfig.announcement_content }}
+        </div>
+        <a-checkbox v-model:checked="announcementDismissToday">
+          今日不再弹出
+        </a-checkbox>
+        <div class="announcement-actions">
+          <a-button type="primary" class="warm-primary-btn" @click="handleAnnouncementClose">
+            知道了
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="avatarVisible"
@@ -305,43 +507,98 @@ async function handleAvatarChange(e: Event) {
     </a-modal>
     <a-modal
       v-model:open="loginModalVisible"
-      title="登录 Banana Web"
+      :title="null"
       :footer="null"
       :width="420"
       centered
+      @after-close="resetAuthForms"
     >
-      <a-form layout="vertical" :model="loginForm" @finish="handleLoginSubmit" style="margin-top: 16px">
-        <a-form-item label="用户名">
-          <a-input
-            v-model:value="loginForm.username"
-            size="large"
-            placeholder="请输入用户名"
-            :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
-          />
-        </a-form-item>
-        <a-form-item label="密码">
-          <a-input-password
-            v-model:value="loginForm.password"
-            size="large"
-            placeholder="请输入密码"
-            :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
-            @press-enter="handleLoginSubmit"
-          />
-        </a-form-item>
-        <a-form-item style="margin-bottom: 0">
-          <a-button
-            type="primary"
-            html-type="submit"
-            size="large"
-            :loading="loginLoading"
-            block
-            class="warm-primary-btn"
-          >
-            <template #icon><ThunderboltOutlined /></template>
-            {{ loginLoading ? "登录中..." : "登录" }}
-          </a-button>
-        </a-form-item>
-      </a-form>
+      <a-tabs v-model:activeKey="authTab" centered class="auth-tabs">
+        <a-tab-pane key="login" tab="登录">
+          <a-form layout="vertical" :model="loginForm" @finish="handleLoginSubmit" style="margin-top: 8px">
+            <a-form-item label="用户名">
+              <a-input
+                v-model:value="loginForm.username"
+                size="large"
+                placeholder="请输入用户名"
+                :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+              />
+            </a-form-item>
+            <a-form-item label="密码">
+              <a-input-password
+                v-model:value="loginForm.password"
+                size="large"
+                placeholder="请输入密码"
+                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+                @press-enter="handleLoginSubmit"
+              />
+            </a-form-item>
+            <a-form-item style="margin-bottom: 8px">
+              <a-button
+                type="primary"
+                html-type="submit"
+                size="large"
+                :loading="loginLoading"
+                block
+                class="warm-primary-btn"
+              >
+                <template #icon><ThunderboltOutlined /></template>
+                {{ loginLoading ? "登录中..." : "登录" }}
+              </a-button>
+            </a-form-item>
+            <div class="auth-switch-hint">
+              还没有账号？<a @click="authTab = 'register'">立即注册</a>
+            </div>
+          </a-form>
+        </a-tab-pane>
+
+        <a-tab-pane key="register" tab="注册">
+          <a-form layout="vertical" :model="registerForm" @finish="handleRegisterSubmit" style="margin-top: 8px">
+            <a-form-item label="用户名">
+              <a-input
+                v-model:value="registerForm.username"
+                size="large"
+                placeholder="2-20 个字符"
+                :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+                :maxlength="20"
+              />
+            </a-form-item>
+            <a-form-item label="密码">
+              <a-input-password
+                v-model:value="registerForm.password"
+                size="large"
+                placeholder="至少 6 位"
+                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+              />
+            </a-form-item>
+            <a-form-item label="确认密码">
+              <a-input-password
+                v-model:value="registerForm.confirmPassword"
+                size="large"
+                placeholder="请再次输入密码"
+                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+                @press-enter="handleRegisterSubmit"
+              />
+            </a-form-item>
+            <a-form-item style="margin-bottom: 8px">
+              <a-button
+                type="primary"
+                html-type="submit"
+                size="large"
+                :loading="registerLoading"
+                block
+                class="warm-primary-btn"
+              >
+                <template #icon><UserAddOutlined /></template>
+                {{ registerLoading ? "注册中..." : "注册" }}
+              </a-button>
+            </a-form-item>
+            <div class="auth-switch-hint">
+              已有账号？<a @click="authTab = 'login'">去登录</a>
+            </div>
+          </a-form>
+        </a-tab-pane>
+      </a-tabs>
     </a-modal>
   </a-layout>
 </template>
@@ -517,6 +774,89 @@ async function handleAvatarChange(e: Event) {
   color: #4c341a;
 }
 
+.credits-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #d48806;
+  cursor: pointer;
+  transition: color 0.2s, transform 0.2s;
+
+  &:hover {
+    color: #b87306;
+    transform: translateY(-1px);
+  }
+}
+
+.credits-contact-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.credits-contact-text {
+  color: #7b6544;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.credits-contact-qr {
+  width: 240px;
+  height: 240px;
+  padding: 10px;
+  border-radius: 24px;
+  background: #fffaf1;
+  border: 1px solid #f1dfbf;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 18px;
+    background: #fff;
+  }
+}
+
+.credits-contact-empty {
+  width: 100%;
+  padding: 26px 18px;
+  border-radius: 20px;
+  background: #fffaf1;
+  border: 1px dashed #e8c88f;
+  color: #9a7a52;
+  line-height: 1.8;
+}
+
+.announcement-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 6px 0 2px;
+}
+
+.announcement-content {
+  white-space: pre-wrap;
+  line-height: 1.85;
+  color: #6b5436;
+  font-size: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #fffaf1;
+  border: 1px solid #f1dfbf;
+}
+
+.announcement-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .app-content {
   padding: 22px 24px 28px;
 }
@@ -620,6 +960,61 @@ async function handleAvatarChange(e: Event) {
   background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
   border: none !important;
   box-shadow: 0 10px 22px rgba(255, 169, 37, 0.22);
+}
+
+.register-header-btn {
+  height: 42px;
+  padding-inline: 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  border: 1px solid #efcf93 !important;
+  background: linear-gradient(180deg, #fff7e8, #ffefcf) !important;
+  color: #b26c04 !important;
+  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+
+  &:hover {
+    color: #995b00 !important;
+    border-color: #eab65d !important;
+    background: linear-gradient(180deg, #fff2da, #ffe7b8) !important;
+  }
+}
+
+.auth-tabs {
+  :deep(.ant-tabs-nav) {
+    margin-bottom: 4px;
+  }
+
+  :deep(.ant-tabs-tab) {
+    font-weight: 700;
+    font-size: 15px;
+    color: #8c7458;
+  }
+
+  :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+    color: #c98511 !important;
+  }
+
+  :deep(.ant-tabs-ink-bar) {
+    background: linear-gradient(90deg, #ffc45b, #ffab25);
+    height: 3px;
+    border-radius: 2px;
+  }
+}
+
+.auth-switch-hint {
+  text-align: center;
+  font-size: 13px;
+  color: #8c7458;
+
+  a {
+    color: #d38a12;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      color: #b26c04;
+    }
+  }
 }
 
 @media (max-width: 960px) {

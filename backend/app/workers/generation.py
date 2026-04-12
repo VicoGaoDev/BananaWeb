@@ -1,8 +1,8 @@
 """
-AI image generation via Gemini API.
+AI image generation worker using configurable external APIs.
 
-Reads API Key dynamically from database. Supports multiple reference images (base64).
-Falls back to a static error image on failure.
+Supports multiple reference images (base64) and falls back to a static error
+image on failure.
 """
 
 import base64
@@ -10,30 +10,25 @@ import json
 import logging
 import shutil
 import uuid
+
 import httpx
 from pathlib import Path
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models.task import Task
 from app.models.image import Image
-from app.models.api_key import ApiKey
 from app.models.regenerate_log import RegenerateLog
+from app.models.task import Task
+from app.services.external_api_config_service import (
+    render_config,
+    require_scene_config,
+    SCENE_INPAINT,
+)
 
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 ERROR_IMAGE_PATH = STATIC_DIR / "error.svg"
-
-
-def _get_api_key() -> str | None:
-    db = SessionLocal()
-    try:
-        record = db.query(ApiKey).first()
-        return record.key if record and record.key else None
-    finally:
-        db.close()
-
 
 def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     """Read a local uploaded file and return (mime_type, base64_data)."""
@@ -55,63 +50,97 @@ def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     return mime_type, base64.b64encode(data).decode("utf-8")
 
 
+def _append_inline_image(parts: list[dict], image_url: str) -> bool:
+    ref = _read_file_as_base64(image_url)
+    if not ref:
+        return False
+    mime_type, b64_data = ref
+    parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+    return True
+
+
 def _call_gemini_api(
     prompt: str,
     aspect_ratio: str,
     image_size: str,
+    model_key: str = "",
     reference_images: list[str] | None = None,
+    mode: str = "generate",
+    source_image: str = "",
+    mask_image: str = "",
 ) -> tuple[bytes, str] | None:
     """
     Call Gemini image generation API.
     Returns (image_bytes, mime_type) on success, None on failure.
     """
-    api_key = _get_api_key()
-    if not api_key:
-        logger.warning("No API Key configured in database")
-        return None
-
-    parts: list[dict] = []
-
-    for ref_url in (reference_images or []):
-        ref = _read_file_as_base64(ref_url)
-        if ref:
-            mime_type, b64_data = ref
-            parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
-
-    parts.append({"text": prompt})
-
-    payload = {
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {
-            "responseModalities": ["IMAGE"],
-            "imageConfig": {
-                "aspectRatio": aspect_ratio,
-                "imageSize": image_size,
-            },
-        },
-    }
-
-    auth_value = api_key.strip()
-    logger.info(
-        "Calling Gemini API: prompt=%s, ratio=%s, size=%s, ref_count=%d, key_prefix=%s",
-        prompt[:60], aspect_ratio, image_size,
-        len(reference_images or []), auth_value[:8] + "..."
-    )
+    db = SessionLocal()
 
     try:
+        scene_key = SCENE_INPAINT if mode == "inpaint" else model_key
+        config = require_scene_config(db, scene_key)
+
+        parts: list[dict] = []
+        if mode == "inpaint":
+            if not _append_inline_image(parts, source_image):
+                logger.warning("Inpaint source image not found: %s", source_image)
+                return None
+            if not _append_inline_image(parts, mask_image):
+                logger.warning("Inpaint mask image not found: %s", mask_image)
+                return None
+            parts.append({
+                "text": (
+                    "请基于第1张原图进行局部重绘，第2张图是蒙版：白色区域需要重绘，"
+                    "黑色区域必须保持原样。严格保留未遮罩区域的主体、构图、光影与细节。"
+                    f"重绘要求：{prompt}"
+                )
+            })
+        else:
+            for ref_url in (reference_images or []):
+                _append_inline_image(parts, ref_url)
+            parts.append({"text": prompt})
+
+        generation_config = {"responseModalities": ["IMAGE"]}
+        if mode != "inpaint":
+            generation_config["imageConfig"] = {
+                "aspectRatio": aspect_ratio,
+            }
+            if image_size:
+                generation_config["imageConfig"]["imageSize"] = image_size
+
+        rendered = render_config(
+            config,
+            {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size,
+                "contents_parts": parts,
+                "generation_config": generation_config,
+                "mode": mode,
+            },
+        )
+
+        auth_value = rendered.headers.get("Authorization", "")
+        logger.info(
+            "Calling generation API: config=%s, mode=%s, prompt=%s, ratio=%s, size=%s, ref_count=%d, auth_prefix=%s",
+            config.name,
+            mode,
+            prompt[:60],
+            aspect_ratio,
+            image_size,
+            len(reference_images or []),
+            (auth_value[:8] + "...") if auth_value else "none",
+        )
+
         with httpx.Client(timeout=settings.AI_TIMEOUT) as client:
             resp = client.post(
-                settings.AI_API_URL,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": auth_value,
-                },
+                rendered.request_url,
+                json=rendered.payload,
+                headers=rendered.headers,
             )
 
             if resp.status_code != 200:
                 logger.error(
-                    "Gemini API HTTP %s: %s", resp.status_code, resp.text[:500]
+                    "Generation API HTTP %s: %s", resp.status_code, resp.text[:500]
                 )
                 return None
 
@@ -119,7 +148,7 @@ def _call_gemini_api(
 
         candidates = data.get("candidates", [])
         if not candidates:
-            logger.warning("Gemini API returned no candidates: %s", str(data)[:300])
+            logger.warning("Generation API returned no candidates: %s", str(data)[:300])
             return None
 
         for part in candidates[0].get("content", {}).get("parts", []):
@@ -129,20 +158,22 @@ def _call_gemini_api(
                 mime = inline.get("mimeType", "image/png")
                 img_bytes = base64.b64decode(b64_str)
                 logger.info(
-                    "Gemini API success, mime=%s, image size: %d bytes",
+                    "Generation API success, mime=%s, image size: %d bytes",
                     mime, len(img_bytes),
                 )
                 return img_bytes, mime
 
-        logger.warning("Gemini API response has no inlineData in parts")
+        logger.warning("Generation API response has no inlineData in parts")
         return None
 
     except httpx.TimeoutException:
-        logger.error("Gemini API request timed out (%ds)", settings.AI_TIMEOUT)
+        logger.error("Generation API request timed out (%s seconds)", settings.AI_TIMEOUT)
         return None
     except Exception as e:
-        logger.error("Gemini API error: %s", e, exc_info=True)
+        logger.error("Generation API error: %s", e, exc_info=True)
         return None
+    finally:
+        db.close()
 
 
 MIME_TO_EXT = {
@@ -194,6 +225,7 @@ def _process_task(task_id: int):
 
         images = db.query(Image).filter(Image.task_id == task_id).all()
         ref_urls = _parse_reference_images(task)
+        task_mode = (task.mode or "generate").lower()
         all_success = True
 
         for image in images:
@@ -201,7 +233,11 @@ def _process_task(task_id: int):
                 prompt=task.prompt,
                 aspect_ratio=task.size,
                 image_size=task.resolution,
+                model_key=task.model or "",
                 reference_images=ref_urls,
+                mode=task_mode,
+                source_image=task.source_image or "",
+                mask_image=task.mask_image or "",
             )
 
             if result:
@@ -234,12 +270,17 @@ def _process_single_image(image_id: int):
             return
 
         ref_urls = _parse_reference_images(task)
+        task_mode = (task.mode or "generate").lower()
 
         result = _call_gemini_api(
             prompt=task.prompt,
             aspect_ratio=task.size,
             image_size=task.resolution,
+            model_key=task.model or "",
             reference_images=ref_urls,
+            mode=task_mode,
+            source_image=task.source_image or "",
+            mask_image=task.mask_image or "",
         )
 
         if result:

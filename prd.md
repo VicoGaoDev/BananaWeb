@@ -1,7 +1,7 @@
-# 🧾 AI 绘图系统 — 产品需求文档
+# 🧾 Banana Web — 产品需求文档
 
-> 基于提示词的 AI 批量出图系统，支持多参考图上传与自定义生成数量
-> 最后更新：2026-04-09
+> 面向创意模版、AI 生图、局部重绘、提示词反推的一体化绘图系统
+> 最后更新：2026-04-12
 
 ---
 
@@ -11,72 +11,83 @@
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vue 3 + TypeScript + Ant Design Vue 4 + Pinia |
-| 后端 | Python FastAPI + SQLAlchemy 2.0 + SQLite（WAL 模式） |
-| AI 接口 | Gemini API（Nano Banana Pro），base64 图片交互 |
+| 前端 | Vue 3 + TypeScript + Vue Router + Pinia + Ant Design Vue 4 |
+| 后端 | FastAPI + SQLAlchemy 2.0 + SQLite（WAL 模式） |
+| AI 能力 | Gemini（文生图 / 图编辑 / 局部重绘）、通义千问 Qwen-VL（提示词反推） |
 | 异步任务 | Celery + Redis（可选，无 Redis 自动降级为后台线程） |
 | 部署 | 前端 Vercel / 后端 VPS 或 Railway |
 
 ## 1.2 项目结构
 
-```
+```text
 Banana_Web/
-├── frontend/                 # Vue 3 前端
+├── frontend/
 │   ├── src/
-│   │   ├── api/              # Axios API 请求层
-│   │   │   ├── auth.ts       # 登录、修改密码
-│   │   │   ├── tasks.ts      # 创建/查询生成任务
-│   │   │   ├── images.ts     # 图片下载、重新生成
-│   │   │   ├── upload.ts     # 参考图上传
-│   │   │   ├── admin.ts      # 管理员接口（用户/统计/API Key）
-│   │   │   └── client.ts     # Axios 实例 + JWT 拦截器
-│   │   ├── stores/auth.ts    # Pinia 认证状态
-│   │   ├── views/            # 页面
+│   │   ├── api/
+│   │   │   ├── auth.ts
+│   │   │   ├── tasks.ts
+│   │   │   ├── images.ts
+│   │   │   ├── upload.ts
+│   │   │   ├── templates.ts
+│   │   │   ├── promptReverse.ts
+│   │   │   ├── admin.ts
+│   │   │   ├── config.ts
+│   │   │   └── client.ts
+│   │   ├── components/
+│   │   │   ├── generate/RepaintCanvas.vue
+│   │   │   └── layout/AppLayout.vue
+│   │   ├── views/
+│   │   │   ├── TemplatesView.vue
 │   │   │   ├── GenerateView.vue
 │   │   │   ├── HistoryView.vue
+│   │   │   ├── CreditLogsView.vue
 │   │   │   └── admin/
 │   │   │       ├── UserManageView.vue
 │   │   │       ├── DashboardView.vue
-│   │   │       └── ApiKeyView.vue
-│   │   ├── components/
-│   │   │   ├── ImageCard.vue        # 图片结果卡片
-│   │   │   └── layout/AppLayout.vue # 顶部导航布局（含登录弹窗）
+│   │   │       ├── TemplateManageView.vue
+│   │   │       ├── ApiKeyView.vue
+│   │   │       └── ExternalApiConfigView.vue
+│   │   ├── stores/auth.ts
 │   │   ├── router/index.ts
 │   │   ├── types/index.ts
 │   │   └── composables/usePolling.ts
 │   └── vercel.json
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # FastAPI 路由
+│   │   ├── api/
 │   │   │   ├── auth.py
-│   │   │   ├── styles.py
 │   │   │   ├── tasks.py
 │   │   │   ├── images.py
 │   │   │   ├── history.py
 │   │   │   ├── upload.py
+│   │   │   ├── templates.py
+│   │   │   ├── prompt_reverse.py
 │   │   │   ├── admin.py
 │   │   │   ├── api_key.py
-│   │   │   └── deps.py       # 鉴权依赖（get_current_user / require_admin）
-│   │   ├── models/           # SQLAlchemy ORM
+│   │   │   ├── external_api_config.py
+│   │   │   └── deps.py
+│   │   ├── models/
 │   │   │   ├── user.py
-│   │   │   ├── style.py
-│   │   │   ├── style_prompt.py
 │   │   │   ├── task.py
 │   │   │   ├── image.py
-│   │   │   ├── regenerate_log.py
+│   │   │   ├── credit_log.py
+│   │   │   ├── prompt_history.py
+│   │   │   ├── template.py
+│   │   │   ├── template_tag.py
+│   │   │   ├── template_tag_relation.py
+│   │   │   ├── external_api_config.py
+│   │   │   ├── external_api_scene_binding.py
 │   │   │   └── api_key.py
-│   │   ├── schemas/          # Pydantic 请求/响应模型
-│   │   ├── services/         # 业务逻辑
-│   │   ├── workers/          # 生图任务（Gemini API 调用）
-│   │   │   ├── generation.py
-│   │   │   └── celery_app.py
-│   │   ├── static/error.svg  # 兜底错误图片
-│   │   ├── utils/security.py # 密码哈希 + JWT
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   ├── workers/generation.py
+│   │   ├── static/error.svg
+│   │   ├── utils/security.py
 │   │   ├── config.py
 │   │   ├── database.py
 │   │   └── main.py
-│   ├── data/                 # SQLite 数据库（自动创建）
-│   ├── uploads/              # 上传文件 + 生成图片
+│   ├── data/
+│   ├── uploads/
 │   └── requirements.txt
 └── prd.md
 ```
@@ -85,291 +96,467 @@ Banana_Web/
 
 # 二、系统模块划分
 
-系统分为 5 大模块：
+系统当前分为 7 大模块：
 
-1. **用户认证模块** — 弹窗登录 / 修改密码 / JWT 鉴权
-2. **绘图主功能模块** — 提示词输入 / 多参考图上传 / 生成数量选择 / AI 生图
-3. **历史记录模块** — 生成结果浏览与管理
-4. **后台管理模块** — 用户管理 / 数据统计 / API Key 管理
-5. **AI 生图引擎** — 对接 Gemini API，base64 图片交互
+1. **认证与账户模块** — 登录 / 注册 / 修改密码 / JWT / 头像上传
+2. **创意模版模块** — 默认首页、标签筛选、模版详情、模版带入生成页
+3. **自定义绘图模块** — 文生图 / 图编辑、局部重绘、提示词反推
+4. **历史记录模块** — 历史任务浏览、删除、重新编辑、历史提示词
+5. **积分系统模块** — 积分分配、消耗、日志、顶部余额展示
+6. **后台管理模块** — 用户管理、数据统计、模版管理、配置管理、外部接口与场景绑定管理
+7. **AI 能力引擎** — Gemini 生图链路、Qwen-VL 提示词反推链路
 
 ---
 
-# 三、用户认证模块
+# 三、认证与账户模块
 
 ## 3.1 功能说明
 
-- 无单独登录页，用户在主页顶部点击"登录"按钮弹出登录 Dialog
-- 用户通过「用户名 + 密码」登录系统，获取 JWT Token
-- Token 有效期 24 小时（可配置）
-- 未登录用户可浏览主页，但生成图片需先登录
-- 支持用户修改密码
+- 无独立登录页，登录 / 注册在顶部弹窗内完成
+- 支持用户注册、登录、修改密码、上传头像
+- Token 默认有效期 24 小时
+- 未登录用户可浏览首页与模版详情
+- 以下动作必须登录：
+  - 上传图片
+  - 开始生成
+  - 局部重绘
+  - 提示词反推
+  - 打开历史记录
+  - 打开历史提示词
+- 若登录态过期，前端在用户点击上传 / 生成等动作前会校验会话，失效则弹出登录框
 
-## 3.2 权限规则
-
-- ❌ 普通用户**不可注册**
-- ✅ 仅管理员可以创建账号
-- ✅ 管理员可禁用/启用账号
-- ✅ 管理员可设置其他用户为管理员
-
-## 3.3 功能列表
+## 3.2 角色说明
 
 | 角色 | 功能 |
 |---|---|
-| 普通用户 | 登录、修改密码 |
-| 管理员 | 创建用户、禁用/启用账号、设置管理员权限 |
+| 普通用户 | 注册、登录、修改密码、上传头像、使用模版、生成图片、查看自己的历史与积分 |
+| 管理员 | 拥有普通用户全部能力，另可分配积分、管理模板、维护配置、查看统计 |
+| 超级管理员 | 拥有管理员能力，且可创建用户、设置角色、启用/禁用用户、重置用户密码、访问接口管理 |
 
-## 3.4 默认数据
+## 3.3 顶部账户区
 
-系统首次启动自动创建默认管理员：`admin` / `admin123`
-
----
-
-# 四、绘图主功能模块（核心）
-
-## 4.1 页面布局
-
-上下分区布局：
-
-| 上方左侧面板 | 上方右侧面板 |
-|---|---|
-| 参考图上传区（最多 6 张，3 列网格展示） | 绘图设置面板 |
-| 支持逐张上传、逐张删除 | 提示词输入框（最多 2000 字） |
-| | 生成数量选择（1-8 张） |
-| | 图片尺寸选择（1:1 / 2:3 / 3:2 / 3:4 / 4:3 / 9:16 / 16:9） |
-| | 生成质量选择（1K / 2K / 4K，默认 4K） |
-| | 开始生成按钮 |
-
-| 下方全宽面板 |
-|---|
-| 生成结果区域（3 列网格排列） |
-
-## 4.2 核心设计原则
-
-- ✅ 前端提供提示词输入框，用户自行描述想要生成的内容
-- ✅ 支持上传最多 6 张本地参考图（base64 传递给 AI API）
-- ✅ 用户可选择生成数量（1-8 张）
-- ✅ 生成结果以 3 列网格排列展示
-
-## 4.3 生成流程
-
-1. 用户操作：
-   - （可选）上传参考图（最多 6 张）
-   - 输入提示词
-   - 选择生成数量（1-8 张）
-   - 选择比例（3:4 等）
-   - 选择分辨率（1K / 2K / 4K）
-   - 点击"开始生成"
-
-2. 系统处理：
-   - 创建生成任务（Task）
-   - 后台线程逐张调用 Gemini API
-   - 前端轮询任务状态（每 2 秒）
-   - 实时更新图片结果
-
-3. 返回结果：
-   - 按用户指定数量生成图片（1-8 张）
-   - 结果以 3 列网格排列
-   - 每张图片可独立操作
-
-## 4.5 图片操作
-
-每张图片支持：
-
-- 放大预览
-- 下载
-- 单张重新生成（不影响其他图片）
-
-## 4.6 AI 生图引擎
-
-### 接口对接
-
-- **API 地址**：`https://nanoapi.poloai.top/v1beta/models/gemini-3-pro-image-preview:generateContent`
-- **API Key**：从数据库 `api_keys` 表动态读取（管理员在后台配置）
-- **超时时间**：120 秒（可配置）
-
-### 请求格式
-
-```json
-{
-  "contents": [
-    {
-      "role": "user",
-      "parts": [
-        {
-          "inlineData": {
-            "mimeType": "image/jpeg",
-            "data": "<参考图1 base64>"
-          }
-        },
-        {
-          "inlineData": {
-            "mimeType": "image/jpeg",
-            "data": "<参考图2 base64（可选，最多6张）>"
-          }
-        },
-        {
-          "text": "<用户输入的提示词>"
-        }
-      ]
-    }
-  ],
-  "generationConfig": {
-    "responseModalities": ["IMAGE"],
-    "imageConfig": {
-      "aspectRatio": "3:4",
-      "imageSize": "4K"
-    }
-  }
-}
-```
-
-> 参考图为可选项，最多 6 张。每张参考图作为一个 `inlineData` part 传入。
-
-### 响应格式
-
-```json
-{
-  "candidates": [
-    {
-      "content": {
-        "parts": [
-          {
-            "inlineData": {
-              "mimeType": "image/jpeg",
-              "data": "<生成图片 base64>"
-            }
-          }
-        ]
-      }
-    }
-  ]
-}
-```
-
-### 失败处理
-
-- API 调用失败或超时 → 图片状态设为 `failed`，显示兜底错误图片（`error.svg`）
-- 不重新生成 SVG 占位图，使用统一的静态错误提示图
+- 已登录时显示：积分余额、头像、用户名
+- 点击积分余额：打开“联系我们获取积分”弹窗
+- 弹窗展示：
+  - 文案：`积分获取、api调用、技术支持、其他业务需求定制`
+  - 后台可配置联系二维码
 
 ---
 
-# 五、历史记录模块
+# 四、创意模版模块
 
-## 5.1 用户侧功能
+## 4.1 首页定位
 
-- 按时间倒序展示历史生成任务
-- 每条记录包含：缩略图、风格名称、生成时间、状态
-- 分页加载（每页 20 条）
+- 默认首页为 `创意模版`
+- 路由 `/` 默认跳转到 `/templates`
+- 模版页支持未登录浏览
 
-## 5.2 操作能力
+## 4.2 用户侧能力
+
+- 标签筛选（不包裹额外 card）
+- 模版 5 列瀑布 / 网格展示
+- 模版卡片仅展示结果图
+- Hover 显示“查看详情”
+- 点击卡片后打开详情弹窗
+- 详情中可查看：
+  - 结果图
+  - 提示词
+  - 参考图
+  - 宽高比
+  - 分辨率
+  - 标签
+- 模版默认按单张使用，不展示生图数量
+- 详情弹窗底部仅保留“使用此模版”主操作，不展示额外关闭按钮
+- 点击“使用此模版”后仅回填到生成页，不自动提交任务
+
+## 4.3 管理侧能力
+
+- 新增、编辑、删除模版
+- 模版字段：
+  - 提示词
+  - 参考图片（可选，多张）
+  - 结果图
+  - 模型
+  - 宽高比
+  - 分辨率
+  - 图片数量固定为 `1`，不提供编辑
+  - 多选标签
+
+---
+
+# 五、自定义绘图模块
+
+## 5.1 页面布局
+
+- 页面路由：`/generate`
+- 整体为左右双栏布局，宽度比例接近黄金分割
+- 左侧为配置区，右侧为结果区
+- 左侧顶部使用 Tabs，当前共 3 个 tab：
+  - `文生图/图编辑`
+  - `提示词反推`
+  - `局部重绘`
+
+## 5.2 文生图 / 图编辑
+
+### 能力
+
+- 提示词输入
+- 固定 4 种模型选择：
+  - `banana`
+  - `banana2`
+  - `banana_pro`
+  - `banana_pro_plus`
+- 历史提示词弹窗（最近 10 条，可删除、可回填）
+- 参考图上传（最多 6 张）
+- 图片数量 slider（1-6）
+- 宽高比选择
+- 分辨率选择
+- 开始生成按钮内直接显示积分消耗
+
+### 生成规则
+
+- 每生成 1 张图片消耗 `4` 积分
+- 支持参考图辅助生成
+- 运行时按所选模型场景查找后台绑定接口
+- `banana` 模型不显示分辨率选项
+- 支持任务轮询
+- 结果支持：
+  - 预览
+  - 下载
+  - 单张重新生成
+
+## 5.3 提示词反推
+
+### 目标
+
+- 用户上传一张图片
+- 调用后台绑定的 `prompt_reverse` 场景接口
+- 返回适合 AI 绘画使用的**中文提示词**
+
+### 交互
+
+- 上传图片
+- 点击“开始反推 · 1 积分”
+- 返回中文提示词结果
+- 支持：
+  - 复制提示词
+  - 一键带入“文生图/图编辑”tab
+
+### 积分规则
+
+- 每次提示词反推消耗 `1` 积分
+
+## 5.4 局部重绘
+
+### 目标
+
+- 用户上传原图
+- 在图片上涂抹需要修改的局部区域
+- 系统生成蒙版并调用 AI 完成局部重绘
+
+### 交互
+
+- 绘制区域位于提示词输入框上方
+- 支持工具栏：
+  - 涂抹
+  - 擦除
+  - 画笔大小调整
+  - 画笔圆点预览
+  - 清空选区
+  - 撤销
+  - 重做
+- 图片右上角提供 `X` 按钮移除原图
+- 前端显示的蒙层透明度为 `50%`
+- 导出给后端的蒙版仍为纯黑白图，不携带透明度
+
+### 生成规则
+
+- 局部重绘按单张任务处理
+- 每次局部重绘消耗 `4` 积分
+- 运行时固定使用后台 `inpaint` 场景绑定接口，用户不选择模型
+- 提交时必须同时具备：
+  - 原图
+  - 提示词
+  - 蒙版选区
+
+## 5.5 结果区
+
+- 文生图 / 图编辑、局部重绘共用右侧图片结果区
+- 提示词反推结果在当前 tab 内展示，不复用右侧图片区
+- 当不同 tab 激活时，空状态文案会根据模式变化
+
+---
+
+# 六、历史记录模块
+
+## 6.1 历史任务页
+
+- 路由：`/history`
+- 卡片化展示用户历史任务
+- 每条任务展示：
+  - 结果缩略图
+  - 模型
+  - 提示词
+  - 参考图数量
+  - 尺寸
+  - 分辨率
+  - 图片数量
+  - 状态
+  - 时间
+
+## 6.2 操作能力
 
 - 查看大图
-- 下载图片
+- 下载结果
+- 删除历史任务
+- 重新编辑
 
-## 5.3 管理员增强
+## 6.3 重新编辑
 
-- 查看所有用户的生成记录
-- 数据统计：最近 7 天 / 30 天生成量、总用户数、活跃用户数
+- 点击“重新编辑”后跳回 `/generate`
+- 自动回填：
+  - 模型
+  - 提示词
+  - 参考图
+  - 宽高比
+  - 分辨率
+  - 图片数量
+- 仅回填，不自动发起任务
+
+## 6.4 历史提示词
+
+- 在生成页内单独维护最近 10 次提示词历史
+- 支持：
+  - 列表查看
+  - 单条删除
+  - 点击回填当前提示词输入框
 
 ---
 
-# 六、后台管理模块（仅管理员）
+# 七、积分系统模块
 
-## 6.1 用户管理
+## 7.1 账户余额
 
-- 用户列表（ID、用户名、角色、状态、创建时间）
-- 创建用户
-- 禁用 / 启用用户
-- 设置管理员权限
+- 用户登录后，右上角显示剩余积分
+- 样式为文本式展示，不与头像合并为一个按钮
+- 点击后打开联系弹窗，不跳转积分日志页
 
-## 6.2 数据统计
+## 7.2 消费规则
+
+| 功能 | 消耗 |
+|---|---|
+| 文生图 / 图编辑 | `4` 积分 / 张 |
+| 局部重绘 | `4` 积分 / 次 |
+| 提示词反推 | `1` 积分 / 次 |
+
+## 7.3 管理员能力
+
+- 普通管理员在用户管理中仅可为用户分配积分
+- 支持填写数量与说明
+- 自动记录积分分配日志
+
+## 7.4 日志能力
+
+- 普通用户可查看自己的积分记录
+- 管理员可查看全部积分记录
+- 支持按用户、时间筛选
+- 日志包含：
+  - 分配记录
+  - 图片生成消耗
+  - 提示词反推消耗
+
+---
+
+# 八、后台管理模块
+
+## 8.1 用户管理
+
+- 用户列表字段：
+  - ID
+  - 用户名
+  - 头像
+  - 角色
+  - 状态
+  - 积分
+  - 创建时间
+- 支持：
+  - 查看用户列表（管理员 / 超级管理员）
+  - 分配积分
+  - 创建用户（仅超级管理员）
+  - 启用 / 禁用（仅超级管理员）
+  - 设置角色（仅超级管理员）
+  - 重置密码（仅超级管理员）
+
+## 8.2 数据统计
 
 - 最近 7 / 30 天生成量
-- 总用户数 / 活跃用户数
-- 最近生成任务列表
+- 总用户数
+- 活跃用户数
 
-## 6.3 API Key 管理
+## 8.3 模版管理
 
-- 全局唯一 API Key（用于调用 Gemini 生图接口）
-- 支持查看（带掩码）、编辑、删除
-- Key 存储在数据库中，后端动态读取
+- 管理创意模版 CRUD
+- 管理标签
+- 维护结果图与参考图
+- 模版数量固定为 `1`
+
+## 8.4 配置管理
+
+后台“配置管理”页统一维护全局配置：
+
+- Gemini API Key
+- Tongyi API Key
+- 联系二维码图片
+
+要求：
+
+- 支持查看（掩码）、编辑、复制、删除
+- 配置存数据库，后端动态读取
+- 修改后无需重启服务
+
+## 8.5 外部接口管理
+
+超级管理员可进入独立“接口管理”页，页面拆为两个区域：
+
+### 接口配置区
+
+- 维护接口名称
+- 维护分组 `group_name`
+- 维护请求地址
+- 维护 Header JSON
+- 维护请求 JSON
+- 启用 / 停用
+- 测试连接
+
+### 场景绑定区
+
+固定维护以下 6 个调用场景：
+
+- `banana`
+- `banana2`
+- `banana_pro`
+- `banana_pro_plus`
+- `prompt_reverse`
+- `inpaint`
+
+规则：
+
+- 每个场景单独绑定一个接口
+- 一个接口可以被多个场景复用
+- 可按分组筛选接口
+- 分组仅用于展示和筛选，不参与运行时逻辑
 
 ---
 
-# 七、数据库表结构（SQLite）
+# 九、AI 能力引擎
 
-## 7.1 用户表（users）
+## 9.1 Gemini 生图链路
+
+用于：
+
+- 文生图 / 图编辑
+- 局部重绘
+
+### 配置
+
+- 生图实际接口配置来源：数据库 `external_api_configs`
+- 生图实际场景绑定来源：数据库 `external_api_scene_bindings`
+- 默认迁移种子可由 `AI_API_URL` 与 `api_keys.key` 初始化
+- 超时：`AI_TIMEOUT`
+
+### 调用方式
+
+- 文生图 / 图编辑：
+  - 可带多张参考图
+  - 按 `banana / banana2 / banana_pro / banana_pro_plus` 场景选接口
+  - 返回图片结果
+- 局部重绘：
+  - 固定走 `inpaint` 场景绑定
+  - 传入原图 + 蒙版 + 提示词
+  - 要求仅修改白色蒙版区域
+
+### 失败策略
+
+- 调用失败或超时时，图片状态置为 `failed`
+- 使用统一静态错误图 `error.svg`
+
+## 9.2 通义千问提示词反推链路
+
+用于：
+
+- `提示词反推` tab
+
+### 配置
+
+- 反推实际接口配置来源：数据库 `external_api_configs`
+- 反推实际场景绑定来源：数据库 `external_api_scene_bindings`
+- 默认迁移种子可由 `api_keys.tongyi_key` 初始化
+
+### 调用方式
+
+- 上传图片后转为 base64 data URL
+- 固定走 `prompt_reverse` 场景绑定
+- 模型：`qwen-vl-plus`
+- 固定提示词：要求输出适合 AI 绘画使用的**中文提示词**
+
+---
+
+# 十、数据库结构
+
+## 10.1 用户表（users）
 
 ```sql
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username VARCHAR(50) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(10) DEFAULT 'user',        -- 'user' | 'admin'
-  status VARCHAR(10) DEFAULT 'active',    -- 'active' | 'disabled'
+  role VARCHAR(20) DEFAULT 'user',
+  status VARCHAR(20) DEFAULT 'active',
+  avatar_url VARCHAR(500) DEFAULT '',
+  credits INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-## 7.2 风格表（styles）
-
-```sql
-CREATE TABLE styles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name VARCHAR(100) NOT NULL,
-  cover_image VARCHAR(255),
-  description VARCHAR(255),
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-## 7.3 Prompt 模板表（style_prompts）
-
-```sql
-CREATE TABLE style_prompts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  style_id INTEGER NOT NULL,
-  prompt TEXT NOT NULL,
-  negative_prompt TEXT,
-  sort_order INTEGER DEFAULT 0,
-  FOREIGN KEY (style_id) REFERENCES styles(id)
-);
-```
-
-## 7.4 生成任务表（tasks）
+## 10.2 生成任务表（tasks）
 
 ```sql
 CREATE TABLE tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
-  prompt TEXT NOT NULL DEFAULT '',         -- 用户输入的提示词
-  num_images INTEGER DEFAULT 4,           -- 生成数量（1-8）
-  size VARCHAR(20) DEFAULT '3:4',          -- 比例（传给 API 的 aspectRatio）
-  resolution VARCHAR(10) DEFAULT '4K',     -- 分辨率（传给 API 的 imageSize）
-  reference_images TEXT DEFAULT '',        -- 参考图路径列表（JSON 数组）
-  status VARCHAR(20) DEFAULT 'pending',    -- pending | processing | success | failed
+  style_id INTEGER,
+  model VARCHAR(50) DEFAULT '',
+  mode VARCHAR(20) DEFAULT 'generate',       -- generate | inpaint
+  prompt TEXT NOT NULL DEFAULT '',
+  num_images INTEGER DEFAULT 4,
+  size VARCHAR(20) DEFAULT '3:4',
+  resolution VARCHAR(10) DEFAULT '4K',
+  reference_image VARCHAR(500) DEFAULT '',
+  reference_images TEXT DEFAULT '',          -- JSON array
+  source_image VARCHAR(500) DEFAULT '',
+  mask_image VARCHAR(500) DEFAULT '',
+  status VARCHAR(20) DEFAULT 'pending',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 ```
 
-## 7.5 图片结果表（images）
+## 10.3 图片结果表（images）
 
 ```sql
 CREATE TABLE images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL,
   image_url VARCHAR(255) DEFAULT '',
-  status VARCHAR(20) DEFAULT 'pending',   -- pending | success | failed
+  status VARCHAR(20) DEFAULT 'pending',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 ```
 
-## 7.6 重新生成记录表（regenerate_logs）
+## 10.4 重新生成记录表（regenerate_logs）
 
 ```sql
 CREATE TABLE regenerate_logs (
@@ -382,215 +569,352 @@ CREATE TABLE regenerate_logs (
 );
 ```
 
-## 7.7 API Key 表（api_keys）
+## 10.5 积分日志表（credit_logs）
 
 ```sql
-CREATE TABLE api_keys (
+CREATE TABLE credit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  key VARCHAR(255) NOT NULL DEFAULT '',
+  user_id INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  type VARCHAR(20) NOT NULL,                 -- allocate | consume
+  description VARCHAR(500) DEFAULT '',
+  operator_id INTEGER,
+  task_id INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## 10.6 历史提示词表（prompt_history）
+
+```sql
+CREATE TABLE prompt_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  prompt TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## 10.7 创意模版表（templates）
+
+```sql
+CREATE TABLE templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  prompt TEXT NOT NULL,
+  model VARCHAR(50) DEFAULT 'banana_pro',
+  reference_images TEXT DEFAULT '',          -- JSON array
+  num_images INTEGER DEFAULT 1,
+  size VARCHAR(20) DEFAULT '1:1',
+  resolution VARCHAR(10) DEFAULT '2K',
+  result_image VARCHAR(500) DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-## 7.8 数据关系
+## 10.8 模版标签表（template_tags / template_tag_relations）
 
-```
-users 1:N tasks
-tasks 1:N images
-api_keys（全局唯一，只存一条记录）
+```sql
+CREATE TABLE template_tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE template_tag_relations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL
+);
 ```
 
-> 注：styles 和 style_prompts 表保留在数据库中供后端兼容，但前端不再使用风格功能。
+## 10.9 配置表（api_keys）
+
+```sql
+CREATE TABLE api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key VARCHAR(255) NOT NULL DEFAULT '',            -- Gemini API Key
+  tongyi_key VARCHAR(255) NOT NULL DEFAULT '',    -- Tongyi API Key
+  contact_qr_image VARCHAR(500) NOT NULL DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## 10.10 外部接口配置表（external_api_configs）
+
+```sql
+CREATE TABLE external_api_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  description VARCHAR(255) NOT NULL DEFAULT '',
+  group_name VARCHAR(100) NOT NULL DEFAULT '默认',
+  request_url VARCHAR(500) NOT NULL DEFAULT '',
+  headers_json TEXT NOT NULL DEFAULT '{}',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  status VARCHAR(20) NOT NULL DEFAULT 'enabled',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+说明：
+
+- 该表以“纯接口配置”为主
+- 只维护接口本身信息，不直接决定调用场景
+
+## 10.11 外部接口场景绑定表（external_api_scene_bindings）
+
+```sql
+CREATE TABLE external_api_scene_bindings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scene_key VARCHAR(50) NOT NULL UNIQUE,
+  api_config_id INTEGER,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (api_config_id) REFERENCES external_api_configs(id)
+);
+```
+
+说明：
+
+- 每个 `scene_key` 只能绑定一个接口
+- 一个接口可被多个场景复用
+- 当前固定场景为 `banana`、`banana2`、`banana_pro`、`banana_pro_plus`、`prompt_reverse`、`inpaint`
 
 ---
 
-# 八、API 接口文档
+# 十一、API 接口文档
 
-## 8.1 认证接口
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | /api/auth/login | 公开 | 登录，返回 JWT |
-| POST | /api/auth/change-password | 用户 | 修改密码 |
-| GET | /api/auth/me | 用户 | 获取当前用户信息 |
-
-### 登录
-
-```
-POST /api/auth/login
-```
-
-请求：
-```json
-{ "username": "admin", "password": "admin123" }
-```
-
-响应：
-```json
-{
-  "token": "eyJhbGciOi...",
-  "user": { "id": 1, "username": "admin", "role": "admin" }
-}
-```
-
-## 8.2 生成任务接口
+## 11.1 认证与账户
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | /api/tasks | 用户 | 创建生成任务 |
-| GET | /api/tasks/:id | 用户 | 查询任务结果（含图片列表） |
+| POST | `/api/auth/register` | 公开 | 用户注册 |
+| POST | `/api/auth/login` | 公开 | 登录 |
+| POST | `/api/auth/change-password` | 用户 | 修改密码 |
+| GET | `/api/auth/me` | 用户 | 获取当前用户 |
+| POST | `/api/auth/avatar` | 用户 | 上传头像 |
+| GET | `/api/auth/prompt-history` | 用户 | 获取最近 10 条历史提示词 |
+| DELETE | `/api/auth/prompt-history/:id` | 用户 | 删除历史提示词 |
+| GET | `/api/auth/credit-logs` | 用户 | 获取积分记录 |
 
-### 创建任务
+## 11.2 生成任务
 
-```
-POST /api/tasks
-```
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/api/tasks` | 用户 | 创建生图 / 局部重绘任务 |
+| GET | `/api/tasks/:id` | 用户 | 查询任务结果 |
 
-请求：
+### 创建任务请求示例
+
 ```json
 {
+  "mode": "generate",
+  "model": "banana_pro",
   "prompt": "一只在花园中奔跑的金毛犬",
   "num_images": 4,
   "size": "3:4",
   "resolution": "4K",
-  "reference_images": ["/uploads/ref/xxx.jpg", "/uploads/ref/yyy.jpg"]
+  "reference_images": ["/uploads/ref/a.jpg", "/uploads/ref/b.jpg"]
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
+局部重绘示例：
+
+```json
+{
+  "mode": "inpaint",
+  "prompt": "将遮罩区域替换为更明亮的花朵细节",
+  "num_images": 1,
+  "size": "3:4",
+  "resolution": "2K",
+  "source_image": "/uploads/source.jpg",
+  "mask_image": "/uploads/mask.png"
+}
+```
+
+## 11.3 提示词反推
+
+| 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| prompt | string | 是 | 用户输入的提示词 |
-| num_images | int | 是 | 生成数量（1-8） |
-| size | string | 是 | 比例（如 3:4） |
-| resolution | string | 是 | 分辨率（1K / 2K / 4K） |
-| reference_images | string[] | 否 | 参考图路径列表（最多 6 张） |
+| POST | `/api/prompt-reverse` | 用户 | 根据图片反推中文绘画提示词 |
+
+请求：
+
+```json
+{ "image_url": "/uploads/example.jpg" }
+```
 
 响应：
+
 ```json
-{ "task_id": 1 }
+{ "prompt": "主体，风格，构图，光影，色彩，画质，细节" }
 ```
 
-## 8.3 图片接口
+## 11.4 图片接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | /api/images/:id/regenerate | 用户 | 单张重新生成 |
-| GET | /api/images/:id/download | 用户 | 下载图片 |
+| POST | `/api/images/:id/regenerate` | 用户 | 单张重新生成 |
+| GET | `/api/images/:id/download` | 用户 | 下载图片 |
 
-## 8.4 文件上传接口
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | /api/upload | 用户 | 上传参考图（JPG/PNG/WEBP/GIF，≤10MB） |
-
-响应：
-```json
-{ "url": "/uploads/ref/abc123.jpg" }
-```
-
-## 8.5 历史记录接口
+## 11.5 上传接口
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | /api/history | 用户 | 当前用户历史（分页） |
+| POST | `/api/upload` | 用户 | 上传图片（JPG/PNG/WEBP/GIF，≤10MB） |
 
-## 8.6 管理员接口
+## 11.6 历史记录接口
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | /api/admin/users | 创建用户 |
-| GET | /api/admin/users | 用户列表 |
-| PUT | /api/admin/users/:id/status | 禁用/启用用户 |
-| PUT | /api/admin/users/:id/role | 设置角色 |
-| GET | /api/admin/stats | 数据统计 |
-| GET | /api/admin/history | 全部生成记录 |
-| GET | /api/admin/api-key | 获取 API Key |
-| PUT | /api/admin/api-key | 设置 API Key |
-| DELETE | /api/admin/api-key | 删除 API Key |
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/history` | 用户 | 获取历史任务 |
+| DELETE | `/api/history/:task_id` | 用户 | 删除历史任务 |
 
----
+## 11.7 创意模版接口
 
-# 九、前端页面说明
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/templates` | 公开 | 获取模板列表 |
+| GET | `/api/templates/tags` | 公开 | 获取模板标签 |
+| GET | `/api/templates/:id` | 公开 | 获取模板详情 |
+| GET | `/api/templates/admin/list` | 管理员 | 管理端模板列表 |
+| POST | `/api/templates` | 管理员 | 创建模板，生图数量固定为 `1` |
+| PUT | `/api/templates/:id` | 管理员 | 编辑模板，生图数量固定为 `1` |
+| DELETE | `/api/templates/:id` | 管理员 | 删除模板 |
 
-## 9.1 登录
+## 11.8 管理员接口
 
-无单独登录页。主页顶部导航栏右侧：
-- 未登录时显示"登录"按钮，点击弹出登录 Dialog（Modal）
-- 已登录时显示用户头像和下拉菜单（修改密码、上传头像、退出登录）
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/api/admin/users` | 超级管理员 | 创建用户 |
+| GET | `/api/admin/users` | 管理员 | 用户列表 |
+| PUT | `/api/admin/users/:id/status` | 超级管理员 | 禁用 / 启用 |
+| PUT | `/api/admin/users/:id/role` | 超级管理员 | 设置角色 |
+| PUT | `/api/admin/users/:id/reset-password` | 超级管理员 | 重置密码 |
+| POST | `/api/admin/users/:id/credits` | 管理员 | 分配积分 |
+| GET | `/api/admin/credit-logs` | 管理员 | 获取积分日志 |
+| GET | `/api/admin/stats` | 管理员 | 数据统计 |
+| GET | `/api/admin/history` | 管理员 | 全部生成记录 |
+| GET | `/api/admin/api-key` | 管理员 | 获取配置 |
+| PUT | `/api/admin/api-key` | 管理员 | 保存配置 |
+| DELETE | `/api/admin/api-key` | 管理员 | 删除配置 |
+| GET | `/api/admin/external-api-configs` | 超级管理员 | 获取外部接口配置列表 |
+| POST | `/api/admin/external-api-configs` | 超级管理员 | 新增外部接口配置 |
+| PUT | `/api/admin/external-api-configs/:id` | 超级管理员 | 编辑外部接口配置 |
+| PATCH | `/api/admin/external-api-configs/:id/status` | 超级管理员 | 启用 / 停用外部接口配置 |
+| POST | `/api/admin/external-api-configs/test` | 超级管理员 | 测试接口连接 |
+| GET | `/api/admin/external-api-scene-bindings` | 超级管理员 | 获取场景绑定列表 |
+| PUT | `/api/admin/external-api-scene-bindings/:scene_key` | 超级管理员 | 更新场景绑定 |
 
-## 9.2 主绘图页
+## 11.9 公开配置接口
 
-上下分区布局：
-- 上方左侧：参考图上传区（最多 6 张，3 列网格，逐张上传/删除）
-- 上方右侧：绘图设置面板（提示词输入框、生成数量 1-8、尺寸选择、质量选择、生成按钮）
-- 下方全宽：生成结果区域（3 列网格排列，支持预览、下载、重新生成）
-
-## 9.3 历史记录页
-
-卡片列表：每条任务显示时间、状态、图片缩略图，支持分页。
-
-## 9.4 管理后台（导航栏下拉菜单）
-
-- **用户管理**：表格展示，支持新增/禁用/设角色
-- **数据统计**：7天/30天生成量、用户统计
-- **API Key**：全局 Key 管理（查看/编辑/删除）
-
----
-
-# 十、部署方案
-
-## 10.1 前端 — Vercel
-
-1. GitHub 仓库关联 Vercel
-2. Root Directory: `frontend`
-3. 环境变量: `VITE_API_BASE_URL` = 后端地址
-4. 更新 `vercel.json` 中的 rewrites 代理地址
-
-## 10.2 后端 — Railway（推荐）
-
-1. 创建 Railway 项目，选择 GitHub 仓库
-2. Root Directory: `backend`
-3. Build: `pip install -r requirements.txt`
-4. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. 挂载 Volume：`/app/data`（数据库）+ `/app/uploads`（图片文件）
-6. 环境变量：`SECRET_KEY`、`DB_PATH=/app/data/banana.db`、`UPLOAD_DIR=/app/uploads`
-
-## 10.3 后端 — VPS
-
-```bash
-cd backend
-pip install -r requirements.txt
-cp .env.example .env  # 修改 SECRET_KEY
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-配合 Nginx 反向代理 + Let's Encrypt HTTPS。
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/config/contact` | 公开 | 获取联系二维码配置 |
+| GET | `/api/config/generation-models` | 公开 | 获取固定四模型展示配置 |
 
 ---
 
-# 十一、配置项
+# 十二、前端页面说明
+
+## 12.1 顶部导航
+
+- 菜单：
+  - 创意模版
+  - 自定义绘图
+  - 历史记录
+- 已登录：
+  - 左侧显示积分余额
+  - 右侧显示头像与用户名
+  - 下拉菜单提供头像上传、修改密码、积分记录、退出登录
+- 管理员额外可进入：
+  - 用户管理
+  - 数据统计
+  - 模版管理
+  - 配置管理
+  - 接口管理（超级管理员）
+
+## 12.2 创意模版页
+
+- 5 列模板瀑布 / 网格
+- Hover 查看详情
+- 详情弹窗支持模板带入生成页
+- 模版默认单张使用，不展示生图数量
+- 详情弹窗底部仅保留“使用此模版”
+
+## 12.3 自定义绘图页
+
+- `文生图/图编辑`
+- `提示词反推`
+- `局部重绘`
+- 文生图固定 4 个模型选项
+- `banana` 不显示分辨率
+- 局部重绘不让用户选模型，由后台绑定接口决定
+
+上传图片、开始生成、开始反推等动作均要求已登录；未登录或会话失效会直接弹登录框。
+
+## 12.4 历史记录页
+
+- 支持查看、删除、重新编辑
+
+## 12.5 配置管理页
+
+- Gemini API Key
+- Tongyi API Key
+- 联系二维码上传与预览
+
+## 12.6 接口管理页
+
+- 仅超级管理员可访问
+- 分为“接口配置”和“场景绑定”两个区域
+- 接口配置支持新增、编辑、分组、启停、测试连接
+- 场景绑定固定列出 6 个场景
+- 可按接口分组筛选下拉选项
+- 页面内提供占位符用法说明
+
+---
+
+# 十三、部署与配置
+
+## 13.1 前端 — Vercel
+
+1. Root Directory: `frontend`
+2. Build Command: `npm run build`
+3. 环境变量：`VITE_API_BASE_URL`
+
+## 13.2 后端 — Railway / VPS
+
+1. Root Directory: `backend`
+2. Build: `pip install -r requirements.txt`
+3. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. 挂载目录：
+   - `/app/data`
+   - `/app/uploads`
+
+## 13.3 环境变量
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `SECRET_KEY` | `change-me-in-production` | JWT 签名密钥 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Token 有效期（分钟） |
 | `DB_PATH` | `backend/data/banana.db` | SQLite 数据库路径 |
-| `UPLOAD_DIR` | `backend/uploads` | 上传文件存储路径 |
-| `AI_API_URL` | `https://nanoapi.poloai.top/...` | Gemini 生图接口地址 |
-| `AI_TIMEOUT` | `120` | AI 接口超时时间（秒） |
+| `UPLOAD_DIR` | `backend/uploads` | 上传文件与生成结果存储路径 |
+| `AI_API_URL` | `https://nanoapi.poloai.top/...` | 默认生图接口迁移种子地址 |
+| `AI_TIMEOUT` | `120` | AI 接口超时时间 |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis 地址（可选） |
 
-> API Key 不在配置文件中，由管理员在后台界面配置，存储在数据库中。
+> Gemini Key、Tongyi Key、联系二维码、外部接口配置、场景绑定均通过后台写入数据库，不存放在前端配置中。
 
 ---
 
-# 十二、关键设计原则
+# 十四、关键设计原则
 
-1. **提示词驱动**：用户直接输入提示词描述想要生成的内容
-2. **多参考图支持**：支持上传最多 6 张参考图，以 base64 传递给 AI 接口辅助生成
-3. **灵活生成数量**：用户可选择 1-8 张生成数量
-4. **无独立登录页**：登录通过主页顶部弹窗完成，未登录可浏览、生成需登录
-5. **权限强控制**：禁止开放注册，管理员控制所有账号
-6. **API Key 动态化**：Key 存数据库，管理员随时可更换，无需重启服务
-7. **失败兜底**：生图失败显示统一错误图片，不生成占位 SVG
-8. **三列结果展示**：生成结果以 3 列网格排列，清晰直观
+1. **默认首页模版化**：先看创意模版，再进入自定义创作
+2. **三种创作入口统一到一个页面**：文生图、局部重绘、提示词反推统一在 `/generate`
+3. **动作级登录校验**：浏览开放，上传 / 生成 / 历史 / 反推等动作强制登录
+4. **积分驱动能力使用**：图片生成与提示词反推均走统一积分系统
+5. **配置动态化**：Gemini、Tongyi、联系二维码在后台配置后即时生效
+6. **生成结果可回流编辑**：历史记录与创意模版都可回填到生成页
+7. **局部重绘前端可视化**：前端看到半透明蒙层，后端拿到纯黑白蒙版
+8. **失败兜底统一**：生图失败显示统一错误图，接口异常给出明确提示
+9. **接口与场景解耦**：接口配置只维护接口信息，调用场景通过独立绑定关系决定

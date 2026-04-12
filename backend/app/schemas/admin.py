@@ -14,9 +14,27 @@ class UserOut(BaseModel):
     avatar_url: str = ""
     role: str
     status: str
+    credits: int = 0
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AllocateCreditsRequest(BaseModel):
+    amount: int
+    description: str = ""
+
+
+class CreditLogOut(BaseModel):
+    id: int
+    user_id: int
+    username: str = ""
+    amount: int
+    type: str
+    description: str = ""
+    operator_name: str = ""
+    task_id: int | None = None
+    created_at: datetime | None = None
 
 
 class UpdateStatusRequest(BaseModel):

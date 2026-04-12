@@ -37,6 +37,8 @@ def _ensure_schema_compat():
 
     task_columns = {col["name"] for col in inspector.get_columns("tasks")}
     with engine.begin() as conn:
+        if "model" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN model VARCHAR(50) DEFAULT ''"))
         if "resolution" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN resolution VARCHAR(10) DEFAULT '4K'"))
         if "prompt" not in task_columns:
@@ -45,11 +47,65 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN num_images INTEGER DEFAULT 4"))
         if "reference_images" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN reference_images TEXT DEFAULT ''"))
+        if "mode" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN mode VARCHAR(20) DEFAULT 'generate'"))
+        if "source_image" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
+        if "mask_image" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN mask_image VARCHAR(500) DEFAULT ''"))
+
+    api_key_tables = set(inspector.get_table_names())
+    if "api_keys" in api_key_tables:
+        api_key_columns = {col["name"] for col in inspector.get_columns("api_keys")}
+        with engine.begin() as conn:
+            if "tongyi_key" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN tongyi_key VARCHAR(255) DEFAULT ''"))
+            if "contact_qr_image" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN contact_qr_image VARCHAR(500) DEFAULT ''"))
+            if "announcement_enabled" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_enabled INTEGER DEFAULT 0"))
+            if "announcement_content" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_content VARCHAR(5000) DEFAULT ''"))
+            if "announcement_updated_at" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_updated_at DATETIME"))
+
+    if "templates" in api_key_tables:
+        template_columns = {col["name"] for col in inspector.get_columns("templates")}
+        with engine.begin() as conn:
+            if "model" not in template_columns:
+                conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
+
+    if "external_api_configs" in api_key_tables:
+        external_api_columns = {col["name"] for col in inspector.get_columns("external_api_configs")}
+        with engine.begin() as conn:
+            if "group_name" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN group_name VARCHAR(100) DEFAULT '默认'"))
+            if "model_key" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN model_key VARCHAR(50) DEFAULT ''"))
+            if "model_label" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN model_label VARCHAR(100) DEFAULT ''"))
+            if "model_description" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN model_description VARCHAR(255) DEFAULT ''"))
+            if "sort_order" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN sort_order INTEGER DEFAULT 0"))
+            if "hide_resolution" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
+            if "supports_inpaint" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_inpaint BOOLEAN DEFAULT 0"))
+            if "is_active_inpaint" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_inpaint BOOLEAN DEFAULT 0"))
+
+    if "external_api_scene_bindings" in api_key_tables:
+        scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
+        with engine.begin() as conn:
+            if "api_config_id" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN api_config_id INTEGER"))
 
 
 def _seed_default_data():
     """Create default admin, superadmin, and sample styles on first run."""
     from app.database import SessionLocal
+    from app.services.external_api_config_service import seed_legacy_configs
     from app.models.user import User
     from app.models.style import Style
     from app.models.style_prompt import StylePrompt
@@ -125,6 +181,12 @@ def _seed_default_data():
                         sort_order=i,
                     ))
             db.commit()
+
+        seed_legacy_configs(
+            db,
+            ai_api_url=settings.AI_API_URL,
+            prompt_reverse_url="https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        )
     finally:
         db.close()
 
@@ -133,12 +195,18 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, styles, tasks, images, history, admin, upload, api_key  # noqa: E402
+from app.api import auth, styles, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config  # noqa: E402
 app.include_router(auth.router)
 app.include_router(styles.router)
+app.include_router(templates.router)
 app.include_router(tasks.router)
 app.include_router(images.router)
 app.include_router(history.router)
 app.include_router(admin.router)
 app.include_router(upload.router)
 app.include_router(api_key.router)
+app.include_router(api_key.public_router)
+app.include_router(prompt_reverse.router)
+app.include_router(external_api_config.router)
+app.include_router(external_api_config.scene_router)
+app.include_router(external_api_config.public_router)

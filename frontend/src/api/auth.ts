@@ -1,8 +1,12 @@
 import client from "./client";
-import type { LoginResponse, UserInfo } from "@/types";
+import type { LoginResponse, UserInfo, CreditLog, AnnouncementConfig } from "@/types";
 
 export function login(username: string, password: string): Promise<LoginResponse> {
   return client.post("/auth/login", { username, password });
+}
+
+export function register(username: string, password: string): Promise<LoginResponse> {
+  return client.post("/auth/register", { username, password });
 }
 
 export function changePassword(oldPassword: string, newPassword: string): Promise<any> {
@@ -22,4 +26,30 @@ export function uploadAvatar(file: File): Promise<UserInfo> {
   return client.post("/auth/avatar", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+}
+
+export function getPromptHistory(): Promise<{ id: number; prompt: string; created_at: string }[]> {
+  return client.get("/auth/prompt-history");
+}
+
+export function deletePromptHistory(id: number): Promise<void> {
+  return client.delete(`/auth/prompt-history/${id}`);
+}
+
+export function getCreditLogs(params: {
+  page?: number;
+  page_size?: number;
+  user_id?: number;
+  start_date?: string;
+  end_date?: string;
+}): Promise<{ total: number; items: CreditLog[] }> {
+  return client.get("/auth/credit-logs", { params });
+}
+
+export function getContactConfig(): Promise<{ contact_qr_image: string }> {
+  return client.get("/config/contact");
+}
+
+export function getAnnouncementConfig(): Promise<AnnouncementConfig> {
+  return client.get("/config/announcement");
 }

@@ -22,7 +22,7 @@ client.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      router.push("/login");
+      router.push("/templates");
     }
     return Promise.reject(error);
   }

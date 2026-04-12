@@ -5,6 +5,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.task import Task
 from app.models.user import User
+from app.models.image import Image
+from app.models.regenerate_log import RegenerateLog
+from app.models.credit_log import CreditLog
 
 
 def _parse_refs(raw: str | None) -> list[str]:
@@ -26,9 +29,12 @@ def get_user_history(db: Session, user_id: int, page: int = 1, page_size: int = 
     for task in tasks:
         items.append({
             "task_id": task.id,
+            "model": task.model or "",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
+            "num_images": task.num_images,
             "size": task.size,
+            "resolution": task.resolution or "",
             "status": task.status,
             "created_at": task.created_at,
             "images": [
@@ -38,6 +44,26 @@ def get_user_history(db: Session, user_id: int, page: int = 1, page_size: int = 
         })
 
     return {"total": total, "items": items}
+
+
+def delete_user_history_task(db: Session, user_id: int, task_id: int):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user_id).first()
+    if not task:
+        return False
+
+    image_ids = [img.id for img in task.images]
+    if image_ids:
+        db.query(RegenerateLog).filter(RegenerateLog.image_id.in_(image_ids)).delete(synchronize_session=False)
+        for image in list(task.images):
+            db.delete(image)
+
+    db.query(CreditLog).filter(CreditLog.task_id == task_id).update(
+        {"task_id": None},
+        synchronize_session=False,
+    )
+    db.delete(task)
+    db.commit()
+    return True
 
 
 def get_all_history(
@@ -77,9 +103,12 @@ def get_all_history(
             "task_id": task.id,
             "username": user_cache[task.user_id]["username"],
             "avatar_url": user_cache[task.user_id]["avatar_url"],
+            "model": task.model or "",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
+            "num_images": task.num_images,
             "size": task.size,
+            "resolution": task.resolution or "",
             "status": task.status,
             "created_at": task.created_at,
             "images": [

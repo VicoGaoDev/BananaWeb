@@ -1,0 +1,98 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_superadmin
+from app.database import get_db
+from app.models.user import User
+from app.schemas.external_api_config import (
+    ExternalApiConfigCreate,
+    ExternalApiConfigOut,
+    ExternalApiSceneBindingOut,
+    ExternalApiSceneBindingUpdate,
+    ExternalApiConfigStatusUpdate,
+    ExternalApiConfigTestResult,
+    GenerationModelOptionOut,
+    ExternalApiConfigUpdate,
+)
+from app.services.external_api_config_service import (
+    create_config,
+    list_scene_bindings,
+    list_generation_models,
+    list_configs,
+    set_scene_binding,
+    set_config_status,
+    test_external_api_config,
+    update_config,
+)
+
+router = APIRouter(prefix="/api/admin/external-api-configs", tags=["外部接口配置"])
+scene_router = APIRouter(prefix="/api/admin/external-api-scene-bindings", tags=["外部接口场景绑定"])
+public_router = APIRouter(prefix="/api/config", tags=["公开配置"])
+
+
+@router.get("", response_model=list[ExternalApiConfigOut])
+def get_external_api_configs(
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return list_configs(db)
+
+
+@public_router.get("/generation-models", response_model=list[GenerationModelOptionOut])
+def get_generation_models(db: Session = Depends(get_db)):
+    return list_generation_models(db)
+
+
+@router.post("", response_model=ExternalApiConfigOut)
+def create_external_api_config(
+    body: ExternalApiConfigCreate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return create_config(db, body)
+
+
+@router.post("/test", response_model=ExternalApiConfigTestResult)
+def test_external_api_config_endpoint(
+    body: ExternalApiConfigCreate,
+    _user: User = Depends(require_superadmin),
+):
+    return test_external_api_config(body)
+
+
+@router.put("/{config_id}", response_model=ExternalApiConfigOut)
+def update_external_api_config(
+    config_id: int,
+    body: ExternalApiConfigUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return update_config(db, config_id, body)
+
+
+@router.patch("/{config_id}/status", response_model=ExternalApiConfigOut)
+def patch_external_api_config_status(
+    config_id: int,
+    body: ExternalApiConfigStatusUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return set_config_status(db, config_id, body.status)
+
+
+@scene_router.get("", response_model=list[ExternalApiSceneBindingOut])
+def get_external_api_scene_bindings(
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return list_scene_bindings(db)
+
+
+@scene_router.put("/{scene_key}", response_model=ExternalApiSceneBindingOut)
+def update_external_api_scene_binding(
+    scene_key: str,
+    body: ExternalApiSceneBindingUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return set_scene_binding(db, scene_key, body.api_config_id)

@@ -4,6 +4,22 @@ from app.models.user import User
 from app.utils.security import verify_password, hash_password, create_access_token
 
 
+def register_user(db: Session, username: str, password: str) -> tuple[str, User]:
+    if len(username) < 2 or len(username) > 20:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名需 2-20 个字符")
+    if len(password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少6位")
+    existing = db.query(User).filter(User.username == username).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
+    user = User(username=username, password_hash=hash_password(password), role="user", status="active")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(user.id, user.role)
+    return token, user
+
+
 def authenticate_user(db: Session, username: str, password: str) -> tuple[str, User]:
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):

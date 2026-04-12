@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { message } from "ant-design-vue";
-import { DownloadOutlined, ClockCircleOutlined, PictureOutlined } from "@ant-design/icons-vue";
-import { fetchHistory } from "@/api/history";
+import { message, Modal } from "ant-design-vue";
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  ClockCircleOutlined,
+  EditOutlined,
+  PictureOutlined,
+} from "@ant-design/icons-vue";
+import { useRouter } from "vue-router";
+import { deleteHistoryTask, fetchHistory } from "@/api/history";
 import { getDownloadUrl } from "@/api/images";
 import type { HistoryItem } from "@/types";
 
+const router = useRouter();
 const items = ref<HistoryItem[]>([]);
 const total = ref(0);
 const page = ref(1);
@@ -62,6 +70,35 @@ function statusLabel(s: string) {
   const m: Record<string, string> = { success: "成功", failed: "失败", processing: "处理中", pending: "等待中" };
   return m[s] || s;
 }
+
+function handleDelete(item: HistoryItem) {
+  Modal.confirm({
+    title: "确认删除该任务记录？",
+    content: "删除后不可恢复，但不会影响已消耗积分记录。",
+    centered: true,
+    async onOk() {
+      await deleteHistoryTask(item.task_id);
+      message.success("删除成功");
+      if (items.value.length === 1 && page.value > 1) page.value -= 1;
+      loadHistory();
+    },
+  });
+}
+
+function handleReedit(item: HistoryItem) {
+  localStorage.setItem(
+    "generateDraftFromHistory",
+    JSON.stringify({
+      model: item.model,
+      prompt: item.prompt,
+      reference_images: item.reference_images,
+      num_images: item.num_images,
+      size: item.size,
+      resolution: item.resolution,
+    })
+  );
+  router.push("/generate");
+}
 </script>
 
 <template>
@@ -100,10 +137,26 @@ function statusLabel(s: string) {
         <div class="hc-header">
           <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
           <span class="hc-meta">{{ formatTime(item.created_at) }}</span>
-          <a-tag class="warm-tag" style="margin-left: auto">{{ item.size }}</a-tag>
+          <div class="hc-actions">
+            <a-button type="text" class="hc-action-btn" @click="handleReedit(item)">
+              <template #icon><EditOutlined /></template>
+              重新编辑
+            </a-button>
+            <a-button type="text" danger class="hc-action-btn" @click="handleDelete(item)">
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
         </div>
 
         <div class="hc-prompt">{{ item.prompt }}</div>
+
+        <div class="hc-tags">
+          <a-tag v-if="item.model" class="warm-tag">{{ item.model }}</a-tag>
+          <a-tag class="warm-tag">{{ item.size }}</a-tag>
+          <a-tag v-if="item.resolution" class="warm-tag">{{ item.resolution }}</a-tag>
+          <a-tag class="warm-tag">{{ item.num_images }} 张</a-tag>
+          <a-tag class="warm-tag">结果 {{ item.images.length }} 张</a-tag>
+        </div>
 
         <div v-if="item.reference_images && item.reference_images.length" class="hc-refs">
           <div class="hc-refs-label">
@@ -187,6 +240,17 @@ function statusLabel(s: string) {
   color: #9b825f;
 }
 
+.hc-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-action-btn {
+  border-radius: 12px;
+}
+
 .hc-prompt {
   margin-bottom: 14px;
   padding: 12px 16px;
@@ -198,6 +262,13 @@ function statusLabel(s: string) {
   color: #4c341a;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.hc-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
 .hc-refs {
@@ -301,6 +372,12 @@ function statusLabel(s: string) {
 @media (max-width: 960px) {
   .history-stats {
     grid-template-columns: 1fr;
+  }
+
+  .hc-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
   }
 }
 </style>

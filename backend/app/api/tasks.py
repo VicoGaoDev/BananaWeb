@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.models.api_key import ApiKey
 from app.schemas.task import TaskCreate, TaskCreateResponse, TaskOut
+from app.services.external_api_config_service import (
+    get_default_generation_model_key,
+    require_scene_config,
+    SCENE_INPAINT,
+)
 from app.services.task_service import create_task, get_task_detail
 
 router = APIRouter(prefix="/api/tasks", tags=["生成任务"])
@@ -16,21 +20,27 @@ def create(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    api_key = db.query(ApiKey).first()
-    if not api_key or not api_key.key:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="系统尚未配置 API Key，请联系管理员在后台设置后再发起任务",
-        )
+    if body.mode == "inpaint":
+        require_scene_config(db, SCENE_INPAINT)
+        task_model = SCENE_INPAINT
+        resolved_resolution = body.resolution
+    else:
+        task_model = body.model.strip() or get_default_generation_model_key(db)
+        require_scene_config(db, task_model)
+        resolved_resolution = "" if task_model == "banana" else body.resolution
 
     task = create_task(
         db,
         user_id=user.id,
+        model=task_model,
+        mode=body.mode,
         prompt=body.prompt,
         num_images=body.num_images,
         size=body.size,
-        resolution=body.resolution,
+        resolution=resolved_resolution,
         reference_images=body.reference_images,
+        source_image=body.source_image,
+        mask_image=body.mask_image,
     )
 
     try:

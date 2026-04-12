@@ -8,12 +8,12 @@ from app.api.deps import require_admin, require_superadmin
 from app.models.user import User
 from app.schemas.admin import (
     CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest,
-    ResetPasswordRequest, StatsOut,
+    ResetPasswordRequest, StatsOut, AllocateCreditsRequest, CreditLogOut,
 )
 from app.schemas.history import HistoryResponse
 from app.services.admin_service import (
     create_user, list_users, update_user_status, update_user_role,
-    reset_user_password, get_stats,
+    reset_user_password, get_stats, allocate_credits, get_credit_logs,
 )
 from app.services.history_service import get_all_history
 
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/admin", tags=["管理员"])
 @router.post("/users", response_model=UserOut)
 def admin_create_user(
     body: CreateUserRequest,
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     return create_user(db, body.username, body.password, body.role)
@@ -41,7 +41,7 @@ def admin_list_users(
 def admin_update_status(
     user_id: int,
     body: UpdateStatusRequest,
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     return update_user_status(db, user_id, body.status)
@@ -51,7 +51,7 @@ def admin_update_status(
 def admin_update_role(
     user_id: int,
     body: UpdateRoleRequest,
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     return update_user_role(db, user_id, body.role)
@@ -65,6 +65,30 @@ def admin_reset_password(
     db: Session = Depends(get_db),
 ):
     return reset_user_password(db, user_id, body.new_password)
+
+
+@router.post("/users/{user_id}/credits", response_model=UserOut)
+def admin_allocate_credits(
+    user_id: int,
+    body: AllocateCreditsRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return allocate_credits(db, user_id, body.amount, body.description, admin.id)
+
+
+@router.get("/credit-logs", response_model=dict)
+def admin_credit_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user_id: Optional[int] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_credit_logs(db, user_id=user_id, page=page, page_size=page_size,
+                           start_date=start_date, end_date=end_date)
 
 
 @router.get("/stats", response_model=StatsOut)

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { PlusOutlined, TeamOutlined } from "@ant-design/icons-vue";
-import { listUsers, createUser, updateUserStatus, updateUserRole, resetUserPassword } from "@/api/admin";
+import { PlusOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons-vue";
+import { listUsers, createUser, updateUserStatus, updateUserRole, resetUserPassword, allocateCredits } from "@/api/admin";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser } from "@/types";
 
@@ -20,13 +20,19 @@ const resetPwdLoading = ref(false);
 const resetTarget = ref<AdminUser | null>(null);
 const resetForm = reactive({ newPassword: "" });
 
+const creditsOpen = ref(false);
+const creditsLoading = ref(false);
+const creditsTarget = ref<AdminUser | null>(null);
+const creditsForm = reactive({ amount: 0, description: "" });
+
 const columns = [
   { title: "ID", dataIndex: "id", width: 70 },
-  { title: "用户", dataIndex: "username", width: 220 },
-  { title: "角色", dataIndex: "role", width: 120 },
-  { title: "状态", dataIndex: "status", width: 100 },
-  { title: "创建时间", dataIndex: "created_at", width: 180 },
-  { title: "操作", key: "action", width: 280 },
+  { title: "用户", dataIndex: "username", width: 200 },
+  { title: "角色", dataIndex: "role", width: 100 },
+  { title: "积分", dataIndex: "credits", width: 100 },
+  { title: "状态", dataIndex: "status", width: 90 },
+  { title: "创建时间", dataIndex: "created_at", width: 170 },
+  { title: "操作", key: "action", width: 320 },
 ];
 
 async function load() {
@@ -102,6 +108,31 @@ async function handleResetPwd() {
   }
 }
 
+function openCredits(u: AdminUser) {
+  creditsTarget.value = u;
+  creditsForm.amount = 0;
+  creditsForm.description = "";
+  creditsOpen.value = true;
+}
+
+async function handleAllocateCredits() {
+  if (!creditsTarget.value || creditsForm.amount === 0) {
+    message.warning("请输入有效的积分数量");
+    return;
+  }
+  creditsLoading.value = true;
+  try {
+    await allocateCredits(creditsTarget.value.id, creditsForm.amount, creditsForm.description);
+    message.success("积分分配成功");
+    creditsOpen.value = false;
+    load();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "分配失败");
+  } finally {
+    creditsLoading.value = false;
+  }
+}
+
 function isFirstAdmin(u: AdminUser) {
   const admins = users.value.filter((x) => x.role === "admin");
   if (!admins.length) return false;
@@ -121,10 +152,10 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         </div>
         <div>
           <div class="warm-page-title">用户管理</div>
-          <div class="warm-page-desc">统一管理账号、角色权限与启用状态。</div>
+          <div class="warm-page-desc">超级管理员可管理账号权限，普通管理员仅可分配积分。</div>
         </div>
       </div>
-      <a-button type="primary" class="warm-primary-btn" @click="modalOpen = true">
+      <a-button v-if="isSuperAdmin" type="primary" class="warm-primary-btn" @click="modalOpen = true">
         <template #icon><PlusOutlined /></template>
         新增用户
       </a-button>
@@ -152,6 +183,9 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               {{ record.role === "admin" ? "管理员" : "普通用户" }}
             </a-tag>
           </template>
+          <template v-else-if="column.dataIndex === 'credits'">
+            <span style="font-weight: 700; color: #d48806">{{ record.credits }}</span>
+          </template>
           <template v-else-if="column.dataIndex === 'status'">
             <a-badge :status="record.status === 'active' ? 'success' : 'error'" />
             {{ record.status === "active" ? "正常" : "禁用" }}
@@ -160,25 +194,30 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
             {{ fmtTime(record.created_at) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-button
-              type="link"
-              size="small"
-              :danger="record.status === 'active'"
-              :disabled="isFirstAdmin(record) && record.status === 'active'"
-              @click="toggleStatus(record)"
-            >
-              {{ record.status === "active" ? "禁用" : "启用" }}
-            </a-button>
-            <a-divider type="vertical" />
-            <a-button
-              type="link"
-              size="small"
-              :disabled="isFirstAdmin(record)"
-              @click="toggleRole(record)"
-            >
-              {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
+            <a-button type="link" size="small" @click="openCredits(record)">
+              <template #icon><WalletOutlined /></template>
+              分配积分
             </a-button>
             <template v-if="isSuperAdmin">
+              <a-divider type="vertical" />
+              <a-button
+                type="link"
+                size="small"
+                :danger="record.status === 'active'"
+                :disabled="isFirstAdmin(record) && record.status === 'active'"
+                @click="toggleStatus(record)"
+              >
+                {{ record.status === "active" ? "禁用" : "启用" }}
+              </a-button>
+              <a-divider type="vertical" />
+              <a-button
+                type="link"
+                size="small"
+                :disabled="isFirstAdmin(record)"
+                @click="toggleRole(record)"
+              >
+                {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
+              </a-button>
               <a-divider type="vertical" />
               <a-button type="link" size="small" @click="openResetPwd(record)">
                 重置密码
@@ -230,6 +269,27 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       <a-form layout="vertical" style="margin-top: 16px">
         <a-form-item label="新密码" style="margin-bottom: 0">
           <a-input-password v-model:value="resetForm.newPassword" placeholder="至少6位" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- Allocate credits modal -->
+    <a-modal
+      v-model:open="creditsOpen"
+      :title="`分配积分 — ${creditsTarget?.username}`"
+      :confirm-loading="creditsLoading"
+      ok-text="确认"
+      cancel-text="取消"
+      centered
+      :width="440"
+      @ok="handleAllocateCredits"
+    >
+      <a-form layout="vertical" style="margin-top: 16px">
+        <a-form-item label="积分数量（正数充值，负数扣减）">
+          <a-input-number v-model:value="creditsForm.amount" style="width: 100%" placeholder="请输入积分数量" />
+        </a-form-item>
+        <a-form-item label="备注说明" style="margin-bottom: 0">
+          <a-input v-model:value="creditsForm.description" placeholder="可选" />
         </a-form-item>
       </a-form>
     </a-modal>

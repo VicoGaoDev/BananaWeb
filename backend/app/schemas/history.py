@@ -14,9 +14,12 @@ class HistoryItem(BaseModel):
     task_id: int
     username: str = ""
     avatar_url: str = ""
+    model: str = ""
     prompt: str = ""
     reference_images: list[str] = []
+    num_images: int = 1
     size: str
+    resolution: str = ""
     status: str
     created_at: datetime | None = None
     images: list[HistoryImageOut] = []
