@@ -27,7 +27,7 @@ function handlePreview() {
 
 function handleDownload() {
   const a = document.createElement("a");
-  a.href = getDownloadUrl(props.image.id);
+  a.href = getDownloadUrl(props.image.id, props.image.image_url);
   a.download = `banana_${props.image.id}.png`;
   a.click();
 }

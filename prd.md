@@ -9,13 +9,15 @@
 
 ## 1.1 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端 | Vue 3 + TypeScript + Vue Router + Pinia + Ant Design Vue 4 |
-| 后端 | FastAPI + SQLAlchemy 2.0 + SQLite（WAL 模式） |
-| AI 能力 | Gemini（文生图 / 图编辑 / 局部重绘）、通义千问 Qwen-VL（提示词反推） |
-| 异步任务 | Celery + Redis（可选，无 Redis 自动降级为后台线程） |
-| 部署 | 前端 Vercel / 后端 VPS 或 Railway |
+
+| 层     | 技术                                                         |
+| ----- | ---------------------------------------------------------- |
+| 前端    | Vue 3 + TypeScript + Vue Router + Pinia + Ant Design Vue 4 |
+| 后端    | FastAPI + SQLAlchemy 2.0 + SQLite（WAL 模式）                  |
+| AI 能力 | Gemini（文生图 / 图编辑 / 局部重绘）、通义千问 Qwen-VL（提示词反推）               |
+| 异步任务  | Celery + Redis（可选，无 Redis 自动降级为后台线程）                       |
+| 部署    | 前端 Vercel / 后端 VPS 或 Railway                               |
+
 
 ## 1.2 项目结构
 
@@ -127,11 +129,13 @@ Banana_Web/
 
 ## 3.2 角色说明
 
-| 角色 | 功能 |
-|---|---|
-| 普通用户 | 注册、登录、修改密码、上传头像、使用模版、生成图片、查看自己的历史与积分 |
-| 管理员 | 拥有普通用户全部能力，另可分配积分、管理模板、维护配置、查看统计 |
-| 超级管理员 | 拥有管理员能力，且可创建用户、设置角色、启用/禁用用户、重置用户密码、访问接口管理 |
+
+| 角色    | 功能                                                 |
+| ----- | -------------------------------------------------- |
+| 普通用户  | 注册、登录、修改密码、上传头像、使用模版、生成图片、查看自己的历史与积分               |
+| 管理员   | 拥有普通用户全部能力，另可分配积分、管理模板、维护配置、查看统计                   |
+| 超级管理员 | 拥有管理员能力，且可创建用户、设置角色、启用/禁用用户、重置用户密码、访问 COS 配置页与接口管理 |
+
 
 ## 3.3 顶部账户区
 
@@ -215,7 +219,7 @@ Banana_Web/
 
 ### 生成规则
 
-- 每生成 1 张图片消耗 `4` 积分
+- 每张图片消耗由当前模型场景配置决定，总费用 = 场景单价 × 生成张数
 - 支持参考图辅助生成
 - 运行时按所选模型场景查找后台绑定接口
 - `banana` 模型不显示分辨率选项
@@ -236,7 +240,7 @@ Banana_Web/
 ### 交互
 
 - 上传图片
-- 点击“开始反推 · 1 积分”
+- 点击“开始反推 · X 积分”
 - 返回中文提示词结果
 - 支持：
   - 复制提示词
@@ -244,7 +248,7 @@ Banana_Web/
 
 ### 积分规则
 
-- 每次提示词反推消耗 `1` 积分
+- 每次提示词反推消耗由 `prompt_reverse` 场景积分配置决定
 
 ## 5.4 局部重绘
 
@@ -272,7 +276,7 @@ Banana_Web/
 ### 生成规则
 
 - 局部重绘按单张任务处理
-- 每次局部重绘消耗 `4` 积分
+- 每次局部重绘消耗由 `inpaint` 场景积分配置决定
 - 运行时固定使用后台 `inpaint` 场景绑定接口，用户不选择模型
 - 提交时必须同时具备：
   - 原图
@@ -292,35 +296,36 @@ Banana_Web/
 ## 6.1 历史任务页
 
 - 路由：`/history`
-- 卡片化展示用户历史任务
-- 每条任务展示：
-  - 结果缩略图
-  - 模型
-  - 提示词
-  - 参考图数量
-  - 尺寸
-  - 分辨率
-  - 图片数量
+- 以结果图卡片流展示用户历史记录
+- 支持按任务类型筛选：`生图`、`局部重绘`
+- 支持按模型筛选
+- 支持按任务状态筛选：`等待中`、`处理中`、`成功`、`失败`
+- 支持按提示词关键词筛选
+- 支持按时间范围筛选
+- 每张结果图对应一张历史卡片
+- 卡片主视图仅展示：
+  - 结果图
+  - 类型
   - 状态
   - 时间
+- 提示词、尺寸、分辨率、参考图等参数在详情弹窗展示
 
 ## 6.2 操作能力
 
 - 查看大图
 - 下载结果
-- 删除历史任务
+- 删除单张结果图
 - 重新编辑
+- 查看详情弹窗
 
 ## 6.3 重新编辑
 
 - 点击“重新编辑”后跳回 `/generate`
 - 自动回填：
-  - 模型
-  - 提示词
-  - 参考图
-  - 宽高比
-  - 分辨率
-  - 图片数量
+  - 文生图：模型、提示词、参考图、宽高比、分辨率、图片数量
+  - 局部重绘：提示词、原图、宽高比、分辨率
+- 局部重绘重新编辑时自动切到“局部重绘”tab
+- 不回填旧蒙版，用户需重新涂抹
 - 仅回填，不自动发起任务
 
 ## 6.4 历史提示词
@@ -343,11 +348,13 @@ Banana_Web/
 
 ## 7.2 消费规则
 
-| 功能 | 消耗 |
-|---|---|
-| 文生图 / 图编辑 | `4` 积分 / 张 |
-| 局部重绘 | `4` 积分 / 次 |
-| 提示词反推 | `1` 积分 / 次 |
+
+| 功能        | 消耗                               |
+| --------- | -------------------------------- |
+| 文生图 / 图编辑 | 按所选模型场景配置的积分单价按张扣费               |
+| 局部重绘      | 按 `inpaint` 场景配置的固定积分按次扣费        |
+| 提示词反推     | 按 `prompt_reverse` 场景配置的固定积分按次扣费 |
+
 
 ## 7.3 管理员能力
 
@@ -414,7 +421,28 @@ Banana_Web/
 - 配置存数据库，后端动态读取
 - 修改后无需重启服务
 
-## 8.5 外部接口管理
+## 8.5 COS 配置页
+
+超级管理员可进入独立“COS 配置”页，页面只维护：
+
+- `SecretId`
+- `SecretKey`
+- `Bucket`
+- `Region`
+- 可选访问域名
+
+要求：
+
+- 仅超级管理员可访问
+- 支持查看（掩码）、编辑、复制、清空
+- 配置存数据库，后端动态读取
+- 修改后无需重启服务
+- 图片存储接入腾讯云 COS：
+  - 前端上传参考图、局部重绘原图/蒙版、二维码、模版图时，先向后端获取临时凭证，再直传 COS
+  - 后端生成结果图后直接上传到 COS
+  - 数据库中统一记录上传后的公网 URL
+
+## 8.6 外部接口管理
 
 超级管理员可进入独立“接口管理”页，页面拆为两个区域：
 
@@ -443,6 +471,7 @@ Banana_Web/
 
 - 每个场景单独绑定一个接口
 - 一个接口可以被多个场景复用
+- 每个场景单独配置积分消耗 `credit_cost`
 - 可按分组筛选接口
 - 分组仅用于展示和筛选，不参与运行时逻辑
 
@@ -494,7 +523,7 @@ Banana_Web/
 
 ### 调用方式
 
-- 上传图片后转为 base64 data URL
+- 上传图片后，若为 COS 公网 URL，则由后端拉取远程图片并转为 base64 data URL；历史本地 `/uploads/...` 路径仍兼容
 - 固定走 `prompt_reverse` 场景绑定
 - 模型：`qwen-vl-plus`
 - 固定提示词：要求输出适合 AI 绘画使用的**中文提示词**
@@ -669,6 +698,7 @@ CREATE TABLE external_api_scene_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   scene_key VARCHAR(50) NOT NULL UNIQUE,
   api_config_id INTEGER,
+  credit_cost INTEGER NOT NULL DEFAULT 0,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (api_config_id) REFERENCES external_api_configs(id)
 );
@@ -678,6 +708,7 @@ CREATE TABLE external_api_scene_bindings (
 
 - 每个 `scene_key` 只能绑定一个接口
 - 一个接口可被多个场景复用
+- 每个 `scene_key` 独立维护一份积分配置
 - 当前固定场景为 `banana`、`banana2`、`banana_pro`、`banana_pro_plus`、`prompt_reverse`、`inpaint`
 
 ---
@@ -686,23 +717,27 @@ CREATE TABLE external_api_scene_bindings (
 
 ## 11.1 认证与账户
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/auth/register` | 公开 | 用户注册 |
-| POST | `/api/auth/login` | 公开 | 登录 |
-| POST | `/api/auth/change-password` | 用户 | 修改密码 |
-| GET | `/api/auth/me` | 用户 | 获取当前用户 |
-| POST | `/api/auth/avatar` | 用户 | 上传头像 |
-| GET | `/api/auth/prompt-history` | 用户 | 获取最近 10 条历史提示词 |
-| DELETE | `/api/auth/prompt-history/:id` | 用户 | 删除历史提示词 |
-| GET | `/api/auth/credit-logs` | 用户 | 获取积分记录 |
+
+| 方法     | 路径                             | 权限  | 说明             |
+| ------ | ------------------------------ | --- | -------------- |
+| POST   | `/api/auth/register`           | 公开  | 用户注册           |
+| POST   | `/api/auth/login`              | 公开  | 登录             |
+| POST   | `/api/auth/change-password`    | 用户  | 修改密码           |
+| GET    | `/api/auth/me`                 | 用户  | 获取当前用户         |
+| POST   | `/api/auth/avatar`             | 用户  | 上传头像           |
+| GET    | `/api/auth/prompt-history`     | 用户  | 获取最近 10 条历史提示词 |
+| DELETE | `/api/auth/prompt-history/:id` | 用户  | 删除历史提示词        |
+| GET    | `/api/auth/credit-logs`        | 用户  | 获取积分记录         |
+
 
 ## 11.2 生成任务
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/tasks` | 用户 | 创建生图 / 局部重绘任务 |
-| GET | `/api/tasks/:id` | 用户 | 查询任务结果 |
+
+| 方法   | 路径               | 权限  | 说明            |
+| ---- | ---------------- | --- | ------------- |
+| POST | `/api/tasks`     | 用户  | 创建生图 / 局部重绘任务 |
+| GET  | `/api/tasks/:id` | 用户  | 查询任务结果        |
+
 
 ### 创建任务请求示例
 
@@ -734,9 +769,11 @@ CREATE TABLE external_api_scene_bindings (
 
 ## 11.3 提示词反推
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/prompt-reverse` | 用户 | 根据图片反推中文绘画提示词 |
+
+| 方法   | 路径                    | 权限  | 说明            |
+| ---- | --------------------- | --- | ------------- |
+| POST | `/api/prompt-reverse` | 用户  | 根据图片反推中文绘画提示词 |
+
 
 请求：
 
@@ -752,66 +789,83 @@ CREATE TABLE external_api_scene_bindings (
 
 ## 11.4 图片接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/images/:id/regenerate` | 用户 | 单张重新生成 |
-| GET | `/api/images/:id/download` | 用户 | 下载图片 |
+
+| 方法     | 路径                           | 权限  | 说明                    |
+| ------ | ---------------------------- | --- | --------------------- |
+| POST   | `/api/images/:id/regenerate` | 用户  | 单张重新生成                |
+| GET    | `/api/images/:id/download`   | 用户  | 下载图片                  |
+| DELETE | `/api/images/:id`            | 用户  | 删除单张历史结果图，若任务已空则清理空任务 |
+
 
 ## 11.5 上传接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/upload` | 用户 | 上传图片（JPG/PNG/WEBP/GIF，≤10MB） |
+
+| 方法   | 路径                       | 权限  | 说明                                                      |
+| ---- | ------------------------ | --- | ------------------------------------------------------- |
+| POST | `/api/upload`            | 用户  | 上传图片（JPG/PNG/WEBP/GIF，≤10MB）                            |
+| POST | `/api/upload/credential` | 用户  | 获取腾讯云 COS 临时上传凭证，返回 `bucket`、`region`、`key`、临时密钥与最终 URL |
+
 
 ## 11.6 历史记录接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/history` | 用户 | 获取历史任务 |
-| DELETE | `/api/history/:task_id` | 用户 | 删除历史任务 |
+
+| 方法  | 路径             | 权限  | 说明                                                                           |
+| --- | -------------- | --- | ---------------------------------------------------------------------------- |
+| GET | `/api/history` | 用户  | 获取按结果图展开的历史记录，支持 `mode`、`model`、`prompt`、`status`、`start_date`、`end_date` 筛选 |
+
 
 ## 11.7 创意模版接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/templates` | 公开 | 获取模板列表 |
-| GET | `/api/templates/tags` | 公开 | 获取模板标签 |
-| GET | `/api/templates/:id` | 公开 | 获取模板详情 |
-| GET | `/api/templates/admin/list` | 管理员 | 管理端模板列表 |
-| POST | `/api/templates` | 管理员 | 创建模板，生图数量固定为 `1` |
-| PUT | `/api/templates/:id` | 管理员 | 编辑模板，生图数量固定为 `1` |
-| DELETE | `/api/templates/:id` | 管理员 | 删除模板 |
+
+| 方法     | 路径                          | 权限  | 说明               |
+| ------ | --------------------------- | --- | ---------------- |
+| GET    | `/api/templates`            | 公开  | 获取模板列表           |
+| GET    | `/api/templates/tags`       | 公开  | 获取模板标签           |
+| GET    | `/api/templates/:id`        | 公开  | 获取模板详情           |
+| GET    | `/api/templates/admin/list` | 管理员 | 管理端模板列表          |
+| POST   | `/api/templates`            | 管理员 | 创建模板，生图数量固定为 `1` |
+| PUT    | `/api/templates/:id`        | 管理员 | 编辑模板，生图数量固定为 `1` |
+| DELETE | `/api/templates/:id`        | 管理员 | 删除模板             |
+
 
 ## 11.8 管理员接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| POST | `/api/admin/users` | 超级管理员 | 创建用户 |
-| GET | `/api/admin/users` | 管理员 | 用户列表 |
-| PUT | `/api/admin/users/:id/status` | 超级管理员 | 禁用 / 启用 |
-| PUT | `/api/admin/users/:id/role` | 超级管理员 | 设置角色 |
-| PUT | `/api/admin/users/:id/reset-password` | 超级管理员 | 重置密码 |
-| POST | `/api/admin/users/:id/credits` | 管理员 | 分配积分 |
-| GET | `/api/admin/credit-logs` | 管理员 | 获取积分日志 |
-| GET | `/api/admin/stats` | 管理员 | 数据统计 |
-| GET | `/api/admin/history` | 管理员 | 全部生成记录 |
-| GET | `/api/admin/api-key` | 管理员 | 获取配置 |
-| PUT | `/api/admin/api-key` | 管理员 | 保存配置 |
-| DELETE | `/api/admin/api-key` | 管理员 | 删除配置 |
-| GET | `/api/admin/external-api-configs` | 超级管理员 | 获取外部接口配置列表 |
-| POST | `/api/admin/external-api-configs` | 超级管理员 | 新增外部接口配置 |
-| PUT | `/api/admin/external-api-configs/:id` | 超级管理员 | 编辑外部接口配置 |
-| PATCH | `/api/admin/external-api-configs/:id/status` | 超级管理员 | 启用 / 停用外部接口配置 |
-| POST | `/api/admin/external-api-configs/test` | 超级管理员 | 测试接口连接 |
-| GET | `/api/admin/external-api-scene-bindings` | 超级管理员 | 获取场景绑定列表 |
-| PUT | `/api/admin/external-api-scene-bindings/:scene_key` | 超级管理员 | 更新场景绑定 |
+
+| 方法     | 路径                                                  | 权限    | 说明                                   |
+| ------ | --------------------------------------------------- | ----- | ------------------------------------ |
+| POST   | `/api/admin/users`                                  | 超级管理员 | 创建用户                                 |
+| GET    | `/api/admin/users`                                  | 管理员   | 用户列表                                 |
+| PUT    | `/api/admin/users/:id/status`                       | 超级管理员 | 禁用 / 启用                              |
+| PUT    | `/api/admin/users/:id/role`                         | 超级管理员 | 设置角色                                 |
+| PUT    | `/api/admin/users/:id/reset-password`               | 超级管理员 | 重置密码                                 |
+| POST   | `/api/admin/users/:id/credits`                      | 管理员   | 分配积分                                 |
+| GET    | `/api/admin/credit-logs`                            | 管理员   | 获取积分日志                               |
+| GET    | `/api/admin/stats`                                  | 管理员   | 数据统计                                 |
+| GET    | `/api/admin/history`                                | 管理员   | 全部生成记录                               |
+| GET    | `/api/admin/api-key`                                | 管理员   | 获取普通配置（Gemini / Tongyi / 联系二维码 / 公告） |
+| PUT    | `/api/admin/api-key`                                | 管理员   | 保存普通配置                               |
+| DELETE | `/api/admin/api-key`                                | 管理员   | 清空普通配置                               |
+| GET    | `/api/admin/cos-config`                             | 超级管理员 | 获取 COS 配置                            |
+| PUT    | `/api/admin/cos-config`                             | 超级管理员 | 保存 COS 配置                            |
+| DELETE | `/api/admin/cos-config`                             | 超级管理员 | 清空 COS 配置                            |
+| GET    | `/api/admin/external-api-configs`                   | 超级管理员 | 获取外部接口配置列表                           |
+| POST   | `/api/admin/external-api-configs`                   | 超级管理员 | 新增外部接口配置                             |
+| PUT    | `/api/admin/external-api-configs/:id`               | 超级管理员 | 编辑外部接口配置                             |
+| PATCH  | `/api/admin/external-api-configs/:id/status`        | 超级管理员 | 启用 / 停用外部接口配置                        |
+| POST   | `/api/admin/external-api-configs/test`              | 超级管理员 | 测试接口连接                               |
+| GET    | `/api/admin/external-api-scene-bindings`            | 超级管理员 | 获取场景绑定列表                             |
+| PUT    | `/api/admin/external-api-scene-bindings/:scene_key` | 超级管理员 | 更新场景绑定与积分                            |
+
 
 ## 11.9 公开配置接口
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/config/contact` | 公开 | 获取联系二维码配置 |
-| GET | `/api/config/generation-models` | 公开 | 获取固定四模型展示配置 |
+
+| 方法  | 路径                              | 权限  | 说明              |
+| --- | ------------------------------- | --- | --------------- |
+| GET | `/api/config/contact`           | 公开  | 获取联系二维码配置       |
+| GET | `/api/config/generation-models` | 公开  | 获取固定四模型展示配置     |
+| GET | `/api/config/task-scenes`       | 公开  | 获取各调用场景的积分与展示配置 |
+
 
 ---
 
@@ -832,6 +886,7 @@ CREATE TABLE external_api_scene_bindings (
   - 数据统计
   - 模版管理
   - 配置管理
+  - COS 配置（超级管理员）
   - 接口管理（超级管理员）
 
 ## 12.2 创意模版页
@@ -850,12 +905,22 @@ CREATE TABLE external_api_scene_bindings (
 - 文生图固定 4 个模型选项
 - `banana` 不显示分辨率
 - 局部重绘不让用户选模型，由后台绑定接口决定
+- 按钮积分文案与前端余额校验均读取后台场景积分配置
 
 上传图片、开始生成、开始反推等动作均要求已登录；未登录或会话失效会直接弹登录框。
 
 ## 12.4 历史记录页
 
 - 支持查看、删除、重新编辑
+- 支持按生图 / 局部重绘分类筛选
+- 支持按模型筛选
+- 支持按任务状态筛选
+- 支持按提示词关键词筛选
+- 支持按时间范围筛选
+- 顶部总览改为轻量信息条，不抢占主要视觉空间
+- 列表主视图只突出结果图卡片，详情通过弹窗查看
+- 删除操作按单张结果图执行，而不是整任务
+- 局部重绘历史重新编辑会直接进入局部重绘模式
 
 ## 12.5 配置管理页
 
@@ -863,12 +928,20 @@ CREATE TABLE external_api_scene_bindings (
 - Tongyi API Key
 - 联系二维码上传与预览
 
-## 12.6 接口管理页
+## 12.6 COS 配置页
+
+- 仅超级管理员可访问
+- 独立菜单入口，不与普通配置管理页混用
+- 包含 `SecretId`、`SecretKey`、`Bucket`、`Region`、可选访问域名
+- 支持保存与清空
+
+## 12.7 接口管理页
 
 - 仅超级管理员可访问
 - 分为“接口配置”和“场景绑定”两个区域
 - 接口配置支持新增、编辑、分组、启停、测试连接
 - 场景绑定固定列出 6 个场景
+- 每个场景可同时维护绑定接口和积分消耗
 - 可按接口分组筛选下拉选项
 - 页面内提供占位符用法说明
 
@@ -888,22 +961,26 @@ CREATE TABLE external_api_scene_bindings (
 2. Build: `pip install -r requirements.txt`
 3. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 4. 挂载目录：
-   - `/app/data`
-   - `/app/uploads`
+  - `/app/data`
+  - `/app/uploads`
 
 ## 13.3 环境变量
 
-| 配置项 | 默认值 | 说明 |
-|---|---|---|
-| `SECRET_KEY` | `change-me-in-production` | JWT 签名密钥 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | Token 有效期（分钟） |
-| `DB_PATH` | `backend/data/banana.db` | SQLite 数据库路径 |
-| `UPLOAD_DIR` | `backend/uploads` | 上传文件与生成结果存储路径 |
-| `AI_API_URL` | `https://nanoapi.poloai.top/...` | 默认生图接口迁移种子地址 |
-| `AI_TIMEOUT` | `120` | AI 接口超时时间 |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis 地址（可选） |
 
-> Gemini Key、Tongyi Key、联系二维码、外部接口配置、场景绑定均通过后台写入数据库，不存放在前端配置中。
+| 配置项                           | 默认值                              | 说明                        |
+| ----------------------------- | -------------------------------- | ------------------------- |
+| `SECRET_KEY`                  | `change-me-in-production`        | JWT 签名密钥                  |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                           | Token 有效期（分钟）             |
+| `DB_PATH`                     | `backend/data/banana.db`         | SQLite 数据库路径              |
+| `UPLOAD_DIR`                  | `backend/uploads`                | 上传文件与生成结果存储路径             |
+| `AI_API_URL`                  | `https://nanoapi.poloai.top/...` | 默认生图接口迁移种子地址              |
+| `AI_TIMEOUT`                  | `120`                            | AI 接口超时时间                 |
+| `COS_STS_DURATION_SECONDS`    | `1800`                           | 腾讯云 COS 临时凭证有效期（秒）        |
+| `IMAGE_FETCH_TIMEOUT`         | `30`                             | 后端读取远程参考图 / 原图 / 蒙版时的超时时间 |
+| `REDIS_URL`                   | `redis://localhost:6379/0`       | Redis 地址（可选）              |
+
+
+> Gemini Key、Tongyi Key、腾讯云 COS 密钥与桶配置、联系二维码、外部接口配置、场景绑定均通过后台写入数据库，不存放在前端配置中。
 
 ---
 
@@ -912,9 +989,10 @@ CREATE TABLE external_api_scene_bindings (
 1. **默认首页模版化**：先看创意模版，再进入自定义创作
 2. **三种创作入口统一到一个页面**：文生图、局部重绘、提示词反推统一在 `/generate`
 3. **动作级登录校验**：浏览开放，上传 / 生成 / 历史 / 反推等动作强制登录
-4. **积分驱动能力使用**：图片生成与提示词反推均走统一积分系统
+4. **积分驱动能力使用**：图片生成与提示词反推均走统一积分系统，且按场景动态配置扣费
 5. **配置动态化**：Gemini、Tongyi、联系二维码在后台配置后即时生效
 6. **生成结果可回流编辑**：历史记录与创意模版都可回填到生成页
 7. **局部重绘前端可视化**：前端看到半透明蒙层，后端拿到纯黑白蒙版
 8. **失败兜底统一**：生图失败显示统一错误图，接口异常给出明确提示
 9. **接口与场景解耦**：接口配置只维护接口信息，调用场景通过独立绑定关系决定
+

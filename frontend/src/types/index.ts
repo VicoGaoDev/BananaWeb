@@ -34,6 +34,7 @@ export interface HistoryItem {
   username?: string;
   avatar_url?: string;
   model: string;
+  mode: "generate" | "inpaint";
   prompt: string;
   reference_images: string[];
   num_images: number;
@@ -45,6 +46,9 @@ export interface HistoryItem {
 }
 
 export interface HistoryFilter {
+  mode?: "generate" | "inpaint";
+  model?: string;
+  prompt?: string;
   status?: string;
   user_id?: number;
   start_date?: string;
@@ -54,6 +58,28 @@ export interface HistoryFilter {
 export interface HistoryResponse {
   total: number;
   items: HistoryItem[];
+}
+
+export interface UserHistoryCard {
+  task_id: number;
+  image_id: number;
+  image_url: string;
+  status: "pending" | "processing" | "success" | "failed";
+  model: string;
+  mode: "generate" | "inpaint";
+  prompt: string;
+  reference_images: string[];
+  source_image: string;
+  num_images: number;
+  size: string;
+  resolution: string;
+  created_at: string;
+  images: ImageResult[];
+}
+
+export interface UserHistoryResponse {
+  total: number;
+  items: UserHistoryCard[];
 }
 
 export interface AdminUser {
@@ -114,6 +140,16 @@ export interface ApiKeyConfig {
   updated_at: string;
 }
 
+export interface CosConfig {
+  id: number;
+  cos_secret_id: string;
+  cos_secret_key: string;
+  cos_bucket: string;
+  cos_region: string;
+  cos_public_base_url: string;
+  updated_at?: string | null;
+}
+
 export interface AnnouncementConfig {
   announcement_enabled: boolean;
   announcement_content: string;
@@ -155,6 +191,7 @@ export interface ExternalApiSceneBinding {
   api_config_name: string;
   api_group_name: string;
   api_status?: ExternalApiConfigStatus | null;
+  credit_cost: number;
 }
 
 export interface ExternalApiConfigTestResult {
@@ -170,4 +207,28 @@ export interface GenerationModelOption {
   model_description: string;
   sort_order: number;
   hide_resolution: boolean;
+  credit_cost: number;
+}
+
+export interface TaskSceneConfig {
+  scene_key: "banana" | "banana2" | "banana_pro" | "banana_pro_plus" | "prompt_reverse" | "inpaint";
+  scene_label: string;
+  scene_description: string;
+  sort_order: number;
+  hide_resolution: boolean;
+  credit_cost: number;
+}
+
+export type UploadPurpose = "ref" | "source" | "mask" | "reverse" | "misc";
+
+export interface UploadCredential {
+  bucket: string;
+  region: string;
+  key: string;
+  url: string;
+  tmp_secret_id: string;
+  tmp_secret_key: string;
+  session_token: string;
+  start_time?: number | null;
+  expired_time: number;
 }

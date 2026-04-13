@@ -6,8 +6,7 @@ from app.models.image import Image
 from app.models.user import User
 from app.models.credit_log import CreditLog
 from app.models.prompt_history import PromptHistory
-
-CREDITS_PER_IMAGE = 4
+from app.services.external_api_config_service import SCENE_INPAINT, get_scene_credit_cost
 
 
 def _is_credit_exempt_user(user: User | None) -> bool:
@@ -41,13 +40,15 @@ def create_task(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先涂抹需要重绘的区域")
         num_images = 1
 
-    cost = num_images * CREDITS_PER_IMAGE
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户不存在",
         )
+    scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
+    unit_cost = get_scene_credit_cost(db, scene_key)
+    cost = unit_cost if mode == "inpaint" else num_images * unit_cost
     if not _is_credit_exempt_user(user) and user.credits < cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

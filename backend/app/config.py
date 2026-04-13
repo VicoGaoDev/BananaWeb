@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     AI_API_URL: str = "https://nanoapi.poloai.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent"
     AI_TIMEOUT: int = 120
+    COS_STS_DURATION_SECONDS: int = 1800
+    IMAGE_FETCH_TIMEOUT: int = 30
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -15,8 +15,10 @@ from app.schemas.external_api_config import (
     ExternalApiConfigTestResult,
     ExternalApiConfigUpdate,
     ExternalApiSceneBindingOut,
+    ExternalApiSceneBindingUpdate,
     GenerationModelOptionOut,
     RenderedExternalApiConfig,
+    TaskSceneConfigOut,
 )
 
 SCENE_BANANA = "banana"
@@ -28,13 +30,21 @@ SCENE_INPAINT = "inpaint"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 SCENE_DEFINITIONS = [
-    {"scene_key": SCENE_BANANA, "scene_label": "Banana", "scene_description": "推荐 - 约1积分/次", "sort_order": 10, "hide_resolution": True},
-    {"scene_key": SCENE_BANANA2, "scene_label": "Banana 2", "scene_description": "尝鲜版 - 约4积分/次", "sort_order": 20, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO, "scene_label": "Banana Pro", "scene_description": "增强 - 约4积分/次", "sort_order": 30, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO_PLUS, "scene_label": "Banana Pro+", "scene_description": "增强、稳定 - 约7积分/次", "sort_order": 40, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 10, "hide_resolution": True},
+    {"scene_key": SCENE_BANANA2, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 20, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA_PRO, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 30, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA_PRO_PLUS, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 40, "hide_resolution": False},
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_resolution": False},
     {"scene_key": SCENE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_resolution": False},
 ]
+SCENE_DEFAULT_CREDIT_COSTS = {
+    SCENE_BANANA: 4,
+    SCENE_BANANA2: 4,
+    SCENE_BANANA_PRO: 4,
+    SCENE_BANANA_PRO_PLUS: 4,
+    SCENE_PROMPT_REVERSE: 1,
+    SCENE_INPAINT: 4,
+}
 GENERATION_SCENE_KEYS = {SCENE_BANANA, SCENE_BANANA2, SCENE_BANANA_PRO, SCENE_BANANA_PRO_PLUS}
 SCENE_DEF_MAP = {item["scene_key"]: item for item in SCENE_DEFINITIONS}
 
@@ -137,6 +147,29 @@ def _serialize_config(config: ExternalApiConfig) -> ExternalApiConfigOut:
     return ExternalApiConfigOut.model_validate(config)
 
 
+def get_default_credit_cost(scene_key: str) -> int:
+    return SCENE_DEFAULT_CREDIT_COSTS.get(scene_key, 0)
+
+
+def _serialize_scene_binding(
+    definition: dict[str, Any],
+    binding: ExternalApiSceneBinding | None,
+    config: ExternalApiConfig | None,
+) -> ExternalApiSceneBindingOut:
+    return ExternalApiSceneBindingOut(
+        scene_key=definition["scene_key"],
+        scene_label=definition["scene_label"],
+        scene_description=definition["scene_description"],
+        sort_order=definition["sort_order"],
+        hide_resolution=definition["hide_resolution"],
+        api_config_id=config.id if config else None,
+        api_config_name=config.name if config else "",
+        api_group_name=config.group_name if config else "",
+        api_status=config.status if config else None,
+        credit_cost=binding.credit_cost if binding else get_default_credit_cost(definition["scene_key"]),
+    )
+
+
 def list_configs(db: Session) -> list[ExternalApiConfigOut]:
     rows = (
         db.query(ExternalApiConfig)
@@ -147,6 +180,7 @@ def list_configs(db: Session) -> list[ExternalApiConfigOut]:
 
 
 def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
+    scene_bindings = {row.scene_key: row for row in db.query(ExternalApiSceneBinding).all()}
     return [
         GenerationModelOptionOut(
             model_key=item["scene_key"],
@@ -154,6 +188,9 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             model_description=item["scene_description"],
             sort_order=item["sort_order"],
             hide_resolution=item["hide_resolution"],
+            credit_cost=scene_bindings.get(item["scene_key"]).credit_cost
+            if scene_bindings.get(item["scene_key"])
+            else get_default_credit_cost(item["scene_key"]),
         )
         for item in SCENE_DEFINITIONS
         if item["scene_key"] in GENERATION_SCENE_KEYS
@@ -213,37 +250,59 @@ def list_scene_bindings(db: Session) -> list[ExternalApiSceneBindingOut]:
     for definition in SCENE_DEFINITIONS:
         binding = bindings.get(definition["scene_key"])
         config = configs.get(binding.api_config_id) if binding and binding.api_config_id else None
-        items.append(ExternalApiSceneBindingOut(
-            scene_key=definition["scene_key"],
-            scene_label=definition["scene_label"],
-            scene_description=definition["scene_description"],
-            sort_order=definition["sort_order"],
-            hide_resolution=definition["hide_resolution"],
-            api_config_id=config.id if config else None,
-            api_config_name=config.name if config else "",
-            api_group_name=config.group_name if config else "",
-            api_status=config.status if config else None,
-        ))
+        items.append(_serialize_scene_binding(definition, binding, config))
     return items
 
 
-def set_scene_binding(db: Session, scene_key: str, api_config_id: int | None) -> ExternalApiSceneBindingOut:
+def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
+    return [
+        TaskSceneConfigOut(
+            scene_key=item.scene_key,
+            scene_label=item.scene_label,
+            scene_description=item.scene_description,
+            sort_order=item.sort_order,
+            hide_resolution=item.hide_resolution,
+            credit_cost=item.credit_cost,
+        )
+        for item in list_scene_bindings(db)
+    ]
+
+
+def set_scene_binding(
+    db: Session,
+    scene_key: str,
+    body: ExternalApiSceneBindingUpdate,
+) -> ExternalApiSceneBindingOut:
     if scene_key not in SCENE_DEF_MAP:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
 
-    if api_config_id is not None:
-        config = get_config_or_404(db, api_config_id)
+    if body.api_config_id is not None:
+        config = get_config_or_404(db, body.api_config_id)
         if config.status != "enabled":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="只能绑定启用状态的接口")
 
     binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
     if not binding:
-        binding = ExternalApiSceneBinding(scene_key=scene_key, api_config_id=api_config_id)
+        binding = ExternalApiSceneBinding(
+            scene_key=scene_key,
+            api_config_id=body.api_config_id,
+            credit_cost=body.credit_cost,
+        )
         db.add(binding)
     else:
-        binding.api_config_id = api_config_id
+        binding.api_config_id = body.api_config_id
+        binding.credit_cost = body.credit_cost
     db.commit()
     return next(item for item in list_scene_bindings(db) if item.scene_key == scene_key)
+
+
+def get_scene_credit_cost(db: Session, scene_key: str) -> int:
+    if scene_key not in SCENE_DEF_MAP:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
+    binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
+    if binding:
+        return binding.credit_cost
+    return get_default_credit_cost(scene_key)
 
 
 def require_scene_config(db: Session, scene_key: str) -> ExternalApiConfig:
@@ -359,17 +418,38 @@ def _pick_inpaint_config(db: Session) -> ExternalApiConfig | None:
 
 def _ensure_scene_bindings(db: Session) -> None:
     if db.query(ExternalApiSceneBinding).first():
+        bindings = db.query(ExternalApiSceneBinding).all()
+        updated = False
+        for binding in bindings:
+            default_cost = get_default_credit_cost(binding.scene_key)
+            if binding.credit_cost is None:
+                binding.credit_cost = default_cost
+                updated = True
+        if updated:
+            db.commit()
         return
 
     for scene_key in [SCENE_BANANA, SCENE_BANANA2, SCENE_BANANA_PRO, SCENE_BANANA_PRO_PLUS]:
         config = _pick_generation_config_for_scene(db, scene_key)
-        db.add(ExternalApiSceneBinding(scene_key=scene_key, api_config_id=config.id if config else None))
+        db.add(ExternalApiSceneBinding(
+            scene_key=scene_key,
+            api_config_id=config.id if config else None,
+            credit_cost=get_default_credit_cost(scene_key),
+        ))
 
     prompt_reverse_config = _pick_prompt_reverse_config(db)
-    db.add(ExternalApiSceneBinding(scene_key=SCENE_PROMPT_REVERSE, api_config_id=prompt_reverse_config.id if prompt_reverse_config else None))
+    db.add(ExternalApiSceneBinding(
+        scene_key=SCENE_PROMPT_REVERSE,
+        api_config_id=prompt_reverse_config.id if prompt_reverse_config else None,
+        credit_cost=get_default_credit_cost(SCENE_PROMPT_REVERSE),
+    ))
 
     inpaint_config = _pick_inpaint_config(db)
-    db.add(ExternalApiSceneBinding(scene_key=SCENE_INPAINT, api_config_id=inpaint_config.id if inpaint_config else None))
+    db.add(ExternalApiSceneBinding(
+        scene_key=SCENE_INPAINT,
+        api_config_id=inpaint_config.id if inpaint_config else None,
+        credit_cost=get_default_credit_cost(SCENE_INPAINT),
+    ))
     db.commit()
 
 

@@ -27,3 +27,23 @@ class AnnouncementConfigOut(BaseModel):
     announcement_enabled: bool = False
     announcement_content: str = ""
     announcement_updated_at: datetime | None = None
+
+
+class CosConfigOut(BaseModel):
+    id: int
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_bucket: str = ""
+    cos_region: str = ""
+    cos_public_base_url: str = ""
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class CosConfigUpdate(BaseModel):
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_bucket: str = ""
+    cos_region: str = ""
+    cos_public_base_url: str = ""

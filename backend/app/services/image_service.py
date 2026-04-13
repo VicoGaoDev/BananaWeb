@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
+from app.models.credit_log import CreditLog
 
 
 def get_image(db: Session, image_id: int) -> Image:
@@ -27,3 +28,27 @@ def request_regenerate(db: Session, image_id: int, user_id: int) -> Image:
     db.commit()
     db.refresh(image)
     return image
+
+
+def delete_image_for_user(db: Session, image_id: int, user_id: int) -> bool:
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        return False
+    if image.task.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作此图片")
+
+    task = image.task
+    db.query(RegenerateLog).filter(RegenerateLog.image_id == image.id).delete(synchronize_session=False)
+    db.delete(image)
+    db.flush()
+
+    remaining = db.query(Image).filter(Image.task_id == task.id).count()
+    if remaining == 0:
+        db.query(CreditLog).filter(CreditLog.task_id == task.id).update(
+            {"task_id": None},
+            synchronize_session=False,
+        )
+        db.delete(task)
+
+    db.commit()
+    return True

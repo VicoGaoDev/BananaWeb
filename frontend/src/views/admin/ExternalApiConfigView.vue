@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { EditOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import { CopyOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons-vue";
 import {
   createExternalApiConfig,
   listExternalApiConfigs,
@@ -26,6 +26,7 @@ const testing = ref(false);
 const bindingSavingKey = ref("");
 const modalOpen = ref(false);
 const editingId = ref<number | null>(null);
+const isCopyMode = ref(false);
 const configGroupFilter = ref("all");
 const bindingGroupFilter = ref("all");
 
@@ -35,13 +36,14 @@ const configColumns = [
   { title: "请求地址", dataIndex: "request_url", ellipsis: true },
   { title: "状态", dataIndex: "status", width: 100 },
   { title: "更新时间", dataIndex: "updated_at", width: 180 },
-  { title: "操作", key: "action", width: 180 },
+  { title: "操作", key: "action", width: 260 },
 ];
 
 const bindingColumns = [
   { title: "调用场景", key: "scene", width: 220 },
   { title: "当前绑定接口", key: "current", width: 220 },
-  { title: "选择接口", key: "bind" },
+  { title: "选择接口", key: "bind", width: 360 },
+  { title: "消耗积分", key: "credit", width: 180 },
 ];
 
 const form = reactive<ExternalApiConfigPayload>({
@@ -54,7 +56,11 @@ const form = reactive<ExternalApiConfigPayload>({
   status: "enabled",
 });
 
-const modalTitle = computed(() => (editingId.value ? "编辑接口配置" : "新增接口配置"));
+const modalTitle = computed(() => {
+  if (editingId.value) return "编辑接口配置";
+  if (isCopyMode.value) return "复制新增接口配置";
+  return "新增接口配置";
+});
 const groupOptions = computed(() => {
   const groups = Array.from(new Set(configs.value.map((item) => item.group_name || "未分组").filter(Boolean)));
   return groups.sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -67,6 +73,7 @@ const filteredConfigs = computed(() => (
 
 function resetForm() {
   editingId.value = null;
+  isCopyMode.value = false;
   form.name = "";
   form.description = "";
   form.group_name = "默认";
@@ -78,6 +85,7 @@ function resetForm() {
 
 function fillForm(item: ExternalApiConfig) {
   editingId.value = item.id;
+  isCopyMode.value = false;
   form.name = item.name;
   form.description = item.description || "";
   form.group_name = item.group_name || "默认";
@@ -85,6 +93,19 @@ function fillForm(item: ExternalApiConfig) {
   form.headers_json = item.headers_json;
   form.payload_json = item.payload_json;
   form.status = item.status;
+}
+
+function buildCopiedName(sourceName: string) {
+  const trimmed = sourceName.trim() || "未命名接口";
+  const existingNames = new Set(configs.value.map((item) => item.name.trim()));
+  const baseName = `${trimmed}（副本）`;
+  if (!existingNames.has(baseName)) return baseName;
+
+  let index = 2;
+  while (existingNames.has(`${trimmed}（副本${index}）`)) {
+    index += 1;
+  }
+  return `${trimmed}（副本${index}）`;
 }
 
 function getBindingOptions() {
@@ -122,6 +143,19 @@ function openCreate() {
 
 function openEdit(item: ExternalApiConfig) {
   fillForm(item);
+  modalOpen.value = true;
+}
+
+function openCopy(item: ExternalApiConfig) {
+  resetForm();
+  isCopyMode.value = true;
+  form.name = buildCopiedName(item.name);
+  form.description = item.description || "";
+  form.group_name = item.group_name || "默认";
+  form.request_url = item.request_url;
+  form.headers_json = item.headers_json;
+  form.payload_json = item.payload_json;
+  form.status = item.status;
   modalOpen.value = true;
 }
 
@@ -245,10 +279,16 @@ function handleToggleStatus(item: ExternalApiConfig) {
   });
 }
 
-async function handleBindingChange(sceneKey: ExternalApiSceneBinding["scene_key"], apiConfigId: number | null) {
+async function handleBindingChange(
+  sceneKey: ExternalApiSceneBinding["scene_key"],
+  payload: {
+    api_config_id: number | null;
+    credit_cost: number;
+  },
+) {
   bindingSavingKey.value = sceneKey;
   try {
-    await updateExternalApiSceneBinding(sceneKey, apiConfigId);
+    await updateExternalApiSceneBinding(sceneKey, payload);
     message.success("场景绑定已更新");
     await load();
   } catch (err: any) {
@@ -297,6 +337,7 @@ async function handleBindingChange(sceneKey: ExternalApiSceneBinding["scene_key"
             <template v-else-if="column.key === 'action'">
               <a-space>
                 <a-button size="small" :icon="h(EditOutlined)" @click="openEdit(record)">编辑</a-button>
+                <a-button size="small" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
                 <a-button size="small" @click="handleToggleStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
                 </a-button>
@@ -355,7 +396,7 @@ async function handleBindingChange(sceneKey: ExternalApiSceneBinding["scene_key"
                 placeholder="请选择接口"
                 style="width: 320px"
                 :loading="bindingSavingKey === record.scene_key"
-                @change="(value: number | undefined) => handleBindingChange(record.scene_key, value ?? null)"
+                @change="(value: number | undefined) => handleBindingChange(record.scene_key, { api_config_id: value ?? null, credit_cost: record.credit_cost })"
               >
                 <a-select-option
                   v-for="option in getBindingOptions()"
@@ -365,6 +406,17 @@ async function handleBindingChange(sceneKey: ExternalApiSceneBinding["scene_key"
                   {{ option.label }}
                 </a-select-option>
               </a-select>
+            </template>
+            <template v-else-if="column.key === 'credit'">
+              <a-input-number
+                :value="record.credit_cost"
+                :min="0"
+                :precision="0"
+                style="width: 120px"
+                :disabled="bindingSavingKey === record.scene_key"
+                @change="(value: number | null) => handleBindingChange(record.scene_key, { api_config_id: record.api_config_id ?? null, credit_cost: Number(value ?? 0) })"
+              />
+              <span class="credit-unit">积分</span>
             </template>
           </template>
         </a-table>
@@ -483,5 +535,10 @@ async function handleBindingChange(sceneKey: ExternalApiSceneBinding["scene_key"
   border-radius: 8px;
   background: #f5f5f5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.credit-unit {
+  margin-left: 8px;
+  color: rgba(0, 0, 0, 0.45);
 }
 </style>

@@ -119,10 +119,19 @@ class GenerationModelOptionOut(BaseModel):
     model_description: str
     sort_order: int
     hide_resolution: bool
+    credit_cost: int
 
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
+    credit_cost: int
+
+    @field_validator("credit_cost")
+    @classmethod
+    def validate_credit_cost(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("积分消耗不能小于 0")
+        return value
 
 
 class ExternalApiSceneBindingOut(BaseModel):
@@ -135,6 +144,16 @@ class ExternalApiSceneBindingOut(BaseModel):
     api_config_name: str = ""
     api_group_name: str = ""
     api_status: StatusType | None = None
+    credit_cost: int
+
+
+class TaskSceneConfigOut(BaseModel):
+    scene_key: SceneKeyType
+    scene_label: str
+    scene_description: str
+    sort_order: int
+    hide_resolution: bool
+    credit_cost: int
 
 
 class ExternalApiConfigTestResult(BaseModel):

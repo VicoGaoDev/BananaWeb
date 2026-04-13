@@ -1,32 +1,68 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { computed, ref, onMounted } from "vue";
 import { message, Modal } from "ant-design-vue";
+import dayjs from "dayjs";
 import {
+  ClockCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
-  ClockCircleOutlined,
   EditOutlined,
   PictureOutlined,
 } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
-import { deleteHistoryTask, fetchHistory } from "@/api/history";
-import { getDownloadUrl } from "@/api/images";
-import type { HistoryItem } from "@/types";
+import { getGenerationModels } from "@/api/config";
+import { fetchHistory } from "@/api/history";
+import { deleteImage, getDownloadUrl } from "@/api/images";
+import type { GenerationModelOption, UserHistoryCard } from "@/types";
 
 const router = useRouter();
-const items = ref<HistoryItem[]>([]);
+const items = ref<UserHistoryCard[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
+const typeFilter = ref<"" | "generate" | "inpaint">("");
+const modelFilter = ref("");
+const statusFilter = ref<"" | "pending" | "processing" | "success" | "failed">("");
+const promptFilter = ref("");
+const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+const generationModels = ref<GenerationModelOption[]>([]);
+const detailOpen = ref(false);
+const detailItem = ref<UserHistoryCard | null>(null);
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
 
+const modelOptions = computed(() => {
+  const options = generationModels.value.map((item) => ({
+    label: item.model_label,
+    value: item.model_key,
+  }));
+  options.push({ label: "局部重绘", value: "inpaint" });
+  return options;
+});
+
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (typeFilter.value) count += 1;
+  if (modelFilter.value) count += 1;
+  if (statusFilter.value) count += 1;
+  if (promptFilter.value.trim()) count += 1;
+  if (dateRangeFilter.value) count += 1;
+  return count;
+});
+
 async function loadHistory() {
   loading.value = true;
   try {
-    const res = await fetchHistory(page.value, pageSize.value);
+    const res = await fetchHistory(page.value, pageSize.value, {
+      mode: typeFilter.value || undefined,
+      model: modelFilter.value || undefined,
+      prompt: promptFilter.value,
+      status: statusFilter.value || undefined,
+      start_date: dateRangeFilter.value?.[0].startOf("day").toISOString(),
+      end_date: dateRangeFilter.value?.[1].endOf("day").toISOString(),
+    });
     items.value = res.items;
     total.value = res.total;
   } catch {
@@ -36,157 +72,217 @@ async function loadHistory() {
   }
 }
 
+async function loadModels() {
+  try {
+    generationModels.value = await getGenerationModels();
+  } catch {
+    generationModels.value = [];
+  }
+}
+
 onMounted(loadHistory);
+onMounted(loadModels);
 
 function handlePageChange(p: number) {
   page.value = p;
   loadHistory();
 }
 
+function modeLabel(mode: UserHistoryCard["mode"]) {
+  return mode === "inpaint" ? "局部重绘" : "生图";
+}
+
+function modeColor(mode: UserHistoryCard["mode"]) {
+  return mode === "inpaint" ? "purple" : "gold";
+}
+
+function statusColor(status: UserHistoryCard["status"]) {
+  if (status === "success") return "green";
+  if (status === "failed") return "red";
+  if (status === "processing") return "orange";
+  return "default";
+}
+
+function statusLabel(status: UserHistoryCard["status"]) {
+  const mapping: Record<string, string> = {
+    pending: "等待中",
+    processing: "处理中",
+    success: "成功",
+    failed: "失败",
+  };
+  return mapping[status] || status;
+}
+
+function formatTime(t: string) {
+  return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
+}
+
+function applyFilters() {
+  page.value = 1;
+  loadHistory();
+}
+
+function resetFilters() {
+  typeFilter.value = "";
+  modelFilter.value = "";
+  statusFilter.value = "";
+  promptFilter.value = "";
+  dateRangeFilter.value = null;
+  page.value = 1;
+  loadHistory();
+}
+
 function openPreview(url: string) {
+  if (!url) return;
   previewSrc.value = url;
   previewVisible.value = true;
 }
 
-function download(imageId: number) {
+function openDetail(item: UserHistoryCard) {
+  detailItem.value = item;
+  detailOpen.value = true;
+}
+
+function download(imageId: number, imageUrl: string) {
   const a = document.createElement("a");
-  a.href = getDownloadUrl(imageId);
+  a.href = getDownloadUrl(imageId, imageUrl);
   a.download = `banana_${imageId}.png`;
   a.click();
 }
 
-function formatTime(t: string) {
-  return t ? new Date(t).toLocaleString("zh-CN") : "-";
-}
-
-function statusColor(s: string) {
-  if (s === "success") return "green";
-  if (s === "failed") return "red";
-  if (s === "processing") return "orange";
-  return "default";
-}
-
-function statusLabel(s: string) {
-  const m: Record<string, string> = { success: "成功", failed: "失败", processing: "处理中", pending: "等待中" };
-  return m[s] || s;
-}
-
-function handleDelete(item: HistoryItem) {
+async function handleDelete(item: UserHistoryCard) {
   Modal.confirm({
-    title: "确认删除该任务记录？",
-    content: "删除后不可恢复，但不会影响已消耗积分记录。",
+    title: "确认删除这张历史结果？",
+    content: "仅删除当前结果图；如果这是该任务最后一张结果图，会同时清理空任务记录。",
     centered: true,
     async onOk() {
-      await deleteHistoryTask(item.task_id);
+      await deleteImage(item.image_id);
       message.success("删除成功");
       if (items.value.length === 1 && page.value > 1) page.value -= 1;
-      loadHistory();
+      if (detailItem.value?.image_id === item.image_id) detailOpen.value = false;
+      await loadHistory();
     },
   });
 }
 
-function handleReedit(item: HistoryItem) {
-  localStorage.setItem(
-    "generateDraftFromHistory",
-    JSON.stringify({
-      model: item.model,
-      prompt: item.prompt,
-      reference_images: item.reference_images,
-      num_images: item.num_images,
-      size: item.size,
-      resolution: item.resolution,
-    })
-  );
+function handleReedit(item: UserHistoryCard) {
+  if (item.mode === "inpaint") {
+    localStorage.setItem(
+      "generateDraftFromHistory",
+      JSON.stringify({
+        mode: "inpaint",
+        prompt: item.prompt,
+        size: item.size,
+        resolution: item.resolution,
+        source_image: item.source_image,
+      })
+    );
+  } else {
+    localStorage.setItem(
+      "generateDraftFromHistory",
+      JSON.stringify({
+        mode: "generate",
+        model: item.model,
+        prompt: item.prompt,
+        reference_images: item.reference_images,
+        num_images: item.num_images,
+        size: item.size,
+        resolution: item.resolution,
+      })
+    );
+  }
   router.push("/generate");
 }
 </script>
 
 <template>
   <div class="warm-page">
-    <div class="warm-page-header">
+    <div class="history-topbar">
       <div class="warm-page-heading">
-        <div class="warm-page-icon">
+        <div class="warm-page-icon history-topbar-icon">
           <ClockCircleOutlined />
         </div>
         <div>
-          <div class="warm-page-title">历史记录</div>
-          <div class="warm-page-desc">查看每次生成任务的状态、时间与结果图。</div>
+          <div class="warm-page-title history-topbar-title">历史记录</div>
+          <div class="warm-page-desc">按结果图查看历史任务，详情中可查看完整参数并重新编辑。</div>
         </div>
       </div>
+      <div class="history-topbar-meta">
+        <span>共 {{ total }} 条结果</span>
+        <span>当前第 {{ page }} 页</span>
+      </div>
+    </div>
 
-      <div class="history-stats warm-summary-grid">
-        <div class="warm-summary-item">
-          <div class="warm-summary-label">任务总数</div>
-          <div class="warm-summary-value">{{ total }}</div>
-          <div class="warm-summary-text">按时间倒序展示你的全部记录</div>
-        </div>
-        <div class="warm-summary-item">
-          <div class="warm-summary-label">当前页</div>
-          <div class="warm-summary-value">{{ page }}</div>
-          <div class="warm-summary-text">每页 {{ pageSize }} 条任务记录</div>
-        </div>
-      </div>
+    <div class="history-filter-bar">
+      <a-select v-model:value="typeFilter" placeholder="全部类型" style="width: 160px" allow-clear>
+        <a-select-option value="generate">生图</a-select-option>
+        <a-select-option value="inpaint">局部重绘</a-select-option>
+      </a-select>
+      <a-select v-model:value="modelFilter" placeholder="全部模型" style="width: 170px" allow-clear>
+        <a-select-option v-for="option in modelOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </a-select-option>
+      </a-select>
+      <a-select v-model:value="statusFilter" placeholder="全部状态" style="width: 160px" allow-clear>
+        <a-select-option value="pending">等待中</a-select-option>
+        <a-select-option value="processing">处理中</a-select-option>
+        <a-select-option value="success">成功</a-select-option>
+        <a-select-option value="failed">失败</a-select-option>
+      </a-select>
+      <a-input
+        v-model:value="promptFilter"
+        placeholder="按提示词筛选"
+        style="width: min(320px, 100%)"
+        allow-clear
+        @pressEnter="applyFilters"
+      />
+      <a-range-picker
+        v-model:value="dateRangeFilter"
+        :placeholder="['开始日期', '结束日期']"
+        style="width: 250px"
+      />
+      <a-button type="primary" @click="applyFilters">筛选</a-button>
+      <a-button @click="resetFilters">重置</a-button>
+      <span class="history-filter-tip">已启用 {{ activeFilterCount }} 个筛选条件</span>
     </div>
 
     <a-spin :spinning="loading">
       <div v-if="!items.length && !loading" class="empty-state warm-card">
-        <a-empty description="暂无生成记录" />
+        <a-empty :description="activeFilterCount ? '没有符合条件的历史记录' : '暂无生成记录'" />
       </div>
 
-      <div v-for="item in items" :key="item.task_id" class="history-card warm-card">
-        <div class="hc-header">
-          <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-          <span class="hc-meta">{{ formatTime(item.created_at) }}</span>
-          <div class="hc-actions">
-            <a-button type="text" class="hc-action-btn" @click="handleReedit(item)">
-              <template #icon><EditOutlined /></template>
-              重新编辑
-            </a-button>
-            <a-button type="text" danger class="hc-action-btn" @click="handleDelete(item)">
-              <template #icon><DeleteOutlined /></template>
-            </a-button>
-          </div>
-        </div>
-
-        <div class="hc-prompt">{{ item.prompt }}</div>
-
-        <div class="hc-tags">
-          <a-tag v-if="item.model" class="warm-tag">{{ item.model }}</a-tag>
-          <a-tag class="warm-tag">{{ item.size }}</a-tag>
-          <a-tag v-if="item.resolution" class="warm-tag">{{ item.resolution }}</a-tag>
-          <a-tag class="warm-tag">{{ item.num_images }} 张</a-tag>
-          <a-tag class="warm-tag">结果 {{ item.images.length }} 张</a-tag>
-        </div>
-
-        <div v-if="item.reference_images && item.reference_images.length" class="hc-refs">
-          <div class="hc-refs-label">
-            <PictureOutlined />
-            <span>参考图 ({{ item.reference_images.length }})</span>
-          </div>
-          <div class="hc-refs-grid">
-            <div v-for="(ref, idx) in item.reference_images" :key="idx" class="ref-thumb" @click="openPreview(ref)">
-              <img :src="ref" alt="参考图" />
+      <div v-else class="history-grid">
+        <div v-for="item in items" :key="item.image_id" class="result-card warm-card" @click="openDetail(item)">
+          <div class="result-card-media">
+            <img v-if="item.image_url" :src="item.image_url" alt="历史结果图" />
+            <div v-else class="result-card-placeholder">
+              {{ item.status === "failed" ? "生成失败" : item.status === "processing" ? "生成中..." : "等待中..." }}
             </div>
           </div>
-        </div>
 
-        <div class="hc-result-label">生成结果 ({{ item.images.length }})</div>
-        <div class="hc-images">
-          <div v-for="img in item.images" :key="img.id" class="thumb-wrap">
-            <template v-if="img.status === 'success' && img.image_url">
-              <img :src="img.image_url" @click="openPreview(img.image_url)" />
-              <a-button
-                type="primary"
-                shape="circle"
-                size="small"
-                class="thumb-dl"
-                @click="download(img.id)"
-              >
-                <template #icon><DownloadOutlined /></template>
-              </a-button>
-            </template>
-            <div v-else class="thumb-ph">
-              {{ img.status === "failed" ? "✗" : "..." }}
+          <div class="result-card-body">
+            <div class="result-card-meta">
+              <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+              <a-tag class="warm-tag" :color="modeColor(item.mode)">{{ modeLabel(item.mode) }}</a-tag>
+              <span class="result-card-time">{{ formatTime(item.created_at) }}</span>
+            </div>
+
+            <div class="result-card-actions">
+              <a-tooltip title="重新编辑">
+                <a-button shape="circle" size="small" @click.stop="handleReedit(item)">
+                  <template #icon><EditOutlined /></template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="下载">
+                <a-button shape="circle" size="small" :disabled="!item.image_url" @click.stop="download(item.image_id, item.image_url)">
+                  <template #icon><DownloadOutlined /></template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="删除">
+                <a-button shape="circle" size="small" danger @click.stop="handleDelete(item)">
+                  <template #icon><DeleteOutlined /></template>
+                </a-button>
+              </a-tooltip>
             </div>
           </div>
         </div>
@@ -203,6 +299,72 @@ function handleReedit(item: HistoryItem) {
       />
     </div>
 
+    <a-modal
+      v-model:open="detailOpen"
+      title="任务详情"
+      :footer="null"
+      :width="840"
+      centered
+    >
+      <template v-if="detailItem">
+        <div class="detail-section">
+          <div class="detail-label">提示词</div>
+          <div class="detail-prompt">{{ detailItem.prompt || "-" }}</div>
+        </div>
+
+        <div class="detail-tags">
+          <a-tag class="warm-tag" :color="modeColor(detailItem.mode)">{{ modeLabel(detailItem.mode) }}</a-tag>
+          <a-tag v-if="detailItem.model" class="warm-tag">{{ detailItem.model }}</a-tag>
+          <a-tag class="warm-tag">{{ detailItem.size }}</a-tag>
+          <a-tag v-if="detailItem.resolution" class="warm-tag">{{ detailItem.resolution }}</a-tag>
+          <a-tag class="warm-tag">{{ formatTime(detailItem.created_at) }}</a-tag>
+        </div>
+
+        <div v-if="detailItem.mode === 'inpaint' && detailItem.source_image" class="detail-section">
+          <div class="detail-label">局部重绘原图</div>
+          <div class="detail-thumb-row">
+            <div class="detail-thumb" @click="openPreview(detailItem.source_image)">
+              <img :src="detailItem.source_image" alt="局部重绘原图" />
+            </div>
+          </div>
+        </div>
+
+        <div v-if="detailItem.reference_images.length" class="detail-section">
+          <div class="detail-label">
+            <PictureOutlined />
+            <span>参考图</span>
+          </div>
+          <div class="detail-thumb-row">
+            <div
+              v-for="(ref, index) in detailItem.reference_images"
+              :key="index"
+              class="detail-thumb"
+              @click="openPreview(ref)"
+            >
+              <img :src="ref" alt="参考图" />
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-label">该任务全部结果</div>
+          <div class="detail-thumb-row">
+            <div
+              v-for="img in detailItem.images"
+              :key="img.id"
+              class="detail-thumb detail-result-thumb"
+              @click="img.image_url && openPreview(img.image_url)"
+            >
+              <img v-if="img.image_url" :src="img.image_url" alt="结果图" />
+              <div v-else class="result-card-placeholder">
+                {{ img.status === "failed" ? "生成失败" : "等待中..." }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </a-modal>
+
     <div v-if="previewVisible" style="display: none">
       <a-image
         :src="previewSrc"
@@ -213,9 +375,45 @@ function handleReedit(item: HistoryItem) {
 </template>
 
 <style scoped lang="scss">
-.history-stats {
-  width: min(520px, 100%);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.history-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.history-topbar-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  font-size: 18px;
+}
+
+.history-topbar-title {
+  font-size: 20px;
+}
+
+.history-topbar-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #9b825f;
+  padding-top: 6px;
+}
+
+.history-filter-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.history-filter-tip {
+  font-size: 13px;
+  color: #9b825f;
 }
 
 .empty-state {
@@ -223,60 +421,80 @@ function handleReedit(item: HistoryItem) {
   text-align: center;
 }
 
-.history-card {
-  padding: 22px 24px;
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
 }
 
-.hc-header {
+.result-card {
+  padding: 14px;
+  cursor: pointer;
+}
+
+.result-card-media {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff8ee;
+  border: 1px solid #f1ddb7;
+  cursor: pointer;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+  }
+
+  &:hover img {
+    transform: scale(1.03);
+  }
+}
+
+.result-card-placeholder {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  justify-content: center;
+  padding: 16px;
+  color: #9b825f;
+  text-align: center;
+  font-size: 14px;
+  background: #fff8ee;
+}
+
+.result-card-body {
+  padding-top: 12px;
+}
+
+.result-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.hc-meta {
-  font-size: 13px;
+.result-card-time {
+  font-size: 12px;
   color: #9b825f;
 }
 
-.hc-actions {
-  margin-left: auto;
+.result-card-actions {
   display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hc-action-btn {
-  border-radius: 12px;
-}
-
-.hc-prompt {
-  margin-bottom: 14px;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: #fff8ee;
-  border: 1px solid #f2e3c6;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #4c341a;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.hc-tags {
-  display: flex;
+  justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-top: 12px;
 }
 
-.hc-refs {
-  margin-bottom: 14px;
+.detail-section + .detail-section {
+  margin-top: 18px;
 }
 
-.hc-refs-label,
-.hc-result-label {
+.detail-label {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -286,24 +504,37 @@ function handleReedit(item: HistoryItem) {
   color: #8a6d45;
 }
 
-.hc-refs-grid {
+.detail-prompt {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff8ee;
+  border: 1px solid #f2e3c6;
+  color: #4c341a;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-tags {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.ref-thumb {
-  width: 72px;
-  height: 72px;
-  border-radius: 12px;
+.detail-thumb-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid #f1ddb7;
+  background: #fff8ee;
   cursor: pointer;
-  transition: transform 0.2s;
-
-  &:hover {
-    transform: scale(1.05);
-  }
 
   img {
     width: 100%;
@@ -313,71 +544,19 @@ function handleReedit(item: HistoryItem) {
   }
 }
 
-.hc-images {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.detail-result-thumb {
+  width: 96px;
+  height: 96px;
 }
 
-.thumb-wrap {
-  width: 110px;
-  height: 110px;
-  border-radius: 16px;
-  overflow: hidden;
-  position: relative;
-  border: 1px solid #f1ddb7;
-  background: #fff8eb;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    cursor: pointer;
-    border-radius: 16px;
-    transition: transform 0.2s;
-
-    &:hover {
-      transform: scale(1.04);
-    }
-  }
-}
-
-.thumb-dl {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  border: none;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
-
-  .thumb-wrap:hover & {
-    opacity: 1;
-  }
-}
-
-.thumb-ph {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #fff8ee;
-  border-radius: 16px;
-  border: 1px dashed #e4cfa7;
-  color: #b49361;
-  font-size: 16px;
-}
-
-@media (max-width: 960px) {
-  .history-stats {
-    grid-template-columns: 1fr;
+@media (max-width: 900px) {
+  .history-topbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .hc-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-end;
+  .history-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   }
 }
 </style>

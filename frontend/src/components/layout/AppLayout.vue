@@ -20,6 +20,7 @@ import {
   TeamOutlined,
   BarChartOutlined,
   KeyOutlined,
+  CloudUploadOutlined,
   LogoutOutlined,
   LockOutlined,
   UploadOutlined,
@@ -344,6 +345,10 @@ async function handleAvatarChange(e: Event) {
                   <a-menu-item key="/admin/api-key">
                     <KeyOutlined />
                     <span style="margin-left: 8px">配置管理</span>
+                  </a-menu-item>
+                  <a-menu-item v-if="isSuperAdmin" key="/admin/cos-config">
+                    <CloudUploadOutlined />
+                    <span style="margin-left: 8px">COS 配置</span>
                   </a-menu-item>
                   <a-menu-item v-if="isSuperAdmin" key="/admin/external-api-configs">
                     <KeyOutlined />

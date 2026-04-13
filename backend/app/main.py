@@ -62,6 +62,16 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN tongyi_key VARCHAR(255) DEFAULT ''"))
             if "contact_qr_image" not in api_key_columns:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN contact_qr_image VARCHAR(500) DEFAULT ''"))
+            if "cos_secret_id" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_secret_id VARCHAR(255) DEFAULT ''"))
+            if "cos_secret_key" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_secret_key VARCHAR(255) DEFAULT ''"))
+            if "cos_bucket" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_bucket VARCHAR(255) DEFAULT ''"))
+            if "cos_region" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_region VARCHAR(100) DEFAULT ''"))
+            if "cos_public_base_url" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_public_base_url VARCHAR(500) DEFAULT ''"))
             if "announcement_enabled" not in api_key_columns:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_enabled INTEGER DEFAULT 0"))
             if "announcement_content" not in api_key_columns:
@@ -97,9 +107,42 @@ def _ensure_schema_compat():
 
     if "external_api_scene_bindings" in api_key_tables:
         scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
+        credit_cost_added = False
         with engine.begin() as conn:
             if "api_config_id" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN api_config_id INTEGER"))
+            if "credit_cost" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
+                credit_cost_added = True
+
+    from app.services.external_api_config_service import get_default_credit_cost
+
+    if "external_api_scene_bindings" in api_key_tables:
+        with engine.begin() as conn:
+            for scene_key in ["banana", "banana2", "banana_pro", "banana_pro_plus", "prompt_reverse", "inpaint"]:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE external_api_scene_bindings
+                        SET credit_cost = :credit_cost
+                        WHERE scene_key = :scene_key
+                          AND credit_cost IS NULL
+                        """
+                    ),
+                    {"scene_key": scene_key, "credit_cost": get_default_credit_cost(scene_key)},
+                )
+                if credit_cost_added:
+                    conn.execute(
+                        text(
+                            """
+                            UPDATE external_api_scene_bindings
+                            SET credit_cost = :credit_cost
+                            WHERE scene_key = :scene_key
+                              AND credit_cost = 0
+                            """
+                        ),
+                        {"scene_key": scene_key, "credit_cost": get_default_credit_cost(scene_key)},
+                    )
 
 
 def _seed_default_data():
@@ -205,6 +248,7 @@ app.include_router(history.router)
 app.include_router(admin.router)
 app.include_router(upload.router)
 app.include_router(api_key.router)
+app.include_router(api_key.cos_router)
 app.include_router(api_key.public_router)
 app.include_router(prompt_reverse.router)
 app.include_router(external_api_config.router)

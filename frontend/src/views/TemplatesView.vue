@@ -82,13 +82,13 @@ onMounted(() => {
 
 <template>
   <div class="templates-page warm-page">
-    <div class="warm-page-header">
+    <div class="templates-topbar">
       <div class="warm-page-heading">
-        <div class="warm-page-icon">
+        <div class="warm-page-icon templates-topbar-icon">
           <PictureOutlined />
         </div>
         <div>
-          <div class="warm-page-title">创意模版</div>
+          <div class="warm-page-title templates-topbar-title">创意模版</div>
           <div class="warm-page-desc">浏览灵感案例，选择喜欢的模版后再进入编辑生成。</div>
         </div>
       </div>
@@ -205,6 +205,25 @@ onMounted(() => {
 <style scoped lang="scss">
 .templates-page {
   min-height: calc(100vh - 120px);
+}
+
+.templates-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.templates-topbar-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  font-size: 18px;
+}
+
+.templates-topbar-title {
+  font-size: 20px;
 }
 
 .tag-filter {
@@ -433,6 +452,13 @@ onMounted(() => {
 
   .detail-preview {
     height: 320px;
+  }
+}
+
+@media (max-width: 900px) {
+  .templates-topbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

@@ -1,6 +1,6 @@
 # 🍌 Banana Web — AI 绘图系统
 
-基于提示词的 AI 批量出图系统，支持多参考图上传与自定义生成数量。
+基于提示词的 AI 批量出图系统，支持多参考图上传与自定义生成数量，并可将参考图与生成结果统一存储到腾讯云 COS。
 
 ## 技术栈
 
@@ -9,6 +9,7 @@
 | 前端 | Vue 3 + TypeScript + Ant Design Vue 4 + Pinia |
 | 后端 | Python FastAPI + SQLAlchemy + SQLite |
 | 异步任务 | Celery + Redis（可选，开发环境自动降级为线程） |
+| 图片存储 | 腾讯云 COS（前端临时凭证直传 + 后端结果图上传） |
 | 部署 | 前端 Vercel / 后端 VPS |
 
 ## 项目结构
@@ -63,6 +64,7 @@ uvicorn app.main:app --reload --port 8000
 - API 文档：http://localhost:8000/docs
 - 超级管理员：`administrator` / `administrator123`（不显示在用户列表，可重置所有用户密码）
 - 默认管理员：`admin` / `admin123`
+- 如需启用腾讯云 COS，请使用超级管理员进入后台“COS 配置”页填写 `SecretId`、`SecretKey`、`Bucket`、`Region`
 
 ### 2. 启动前端
 
@@ -90,6 +92,32 @@ celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 > 不启动 Redis/Celery 时，系统自动降级为后台线程处理，开发环境完全可用。
 
 ## 部署
+
+### 腾讯云 COS 配置
+
+系统已支持将以下图片统一存储到腾讯云 COS：
+- 参考图
+- 局部重绘原图与蒙版
+- 提示词反推上传图
+- 联系二维码
+- 模版参考图 / 结果图
+- AI 生成结果图
+
+配置方式：
+1. 启动系统并使用超级管理员登录后台
+2. 进入独立的“COS 配置”页
+3. 填写：
+   - `Bucket`，例如 `vicoimagetencent-1257893314`
+   - `Region`，例如 `ap-guangzhou`
+   - `SecretId`
+   - `SecretKey`
+   - `访问域名` 可选，留空时默认使用 COS 公网域名
+4. 点击保存后立即生效，无需重启服务
+
+说明：
+- 前端上传文件时会先请求后端获取临时凭证，再直传 COS
+- 后端 worker 会把生成结果图上传到 COS，并将最终 URL 写入数据库
+- 历史遗留的本地 `/uploads/...` 路径仍兼容读取与下载
 
 ### 前端 — Vercel
 
@@ -120,11 +148,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 配合 Nginx 反向代理 + HTTPS。
 
+如果启用腾讯云 COS，后端服务器不再依赖本地磁盘保存业务图片，但 SQLite 数据库目录仍需持久化。
+
 **方案 B：Railway**
 1. 在 Railway 创建项目，选择 GitHub 仓库
 2. Root Directory 设为 `backend`
 3. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 4. 添加持久化 Volume 挂载到 `/app/data` 和 `/app/uploads`
+
+如果已全面切换到腾讯云 COS，`/app/uploads` 主要只用于兼容旧数据与失败占位图，核心业务图片将写入 COS。
 
 ## API 概览
 
@@ -138,7 +170,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | POST | /api/images/:id/regenerate | 用户 | 单张重新生成 |
 | GET | /api/images/:id/download | 用户 | 下载图片 |
 | POST | /api/upload | 用户 | 上传参考图（最多 6 张） |
+| POST | /api/upload/credential | 用户 | 获取腾讯云 COS 临时上传凭证 |
 | GET | /api/history | 用户 | 历史记录 |
+| GET | /api/admin/cos-config | 超级管理员 | 获取 COS 配置 |
+| PUT | /api/admin/cos-config | 超级管理员 | 保存 COS 配置 |
 | POST | /api/admin/users | 管理员 | 创建用户 |
 | GET | /api/admin/users | 管理员 | 用户列表 |
 | PUT | /api/admin/users/:id/status | 管理员 | 禁用/启用 |

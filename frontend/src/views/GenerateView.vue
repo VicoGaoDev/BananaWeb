@@ -18,7 +18,7 @@ import {
   ThunderboltOutlined,
   UndoOutlined,
 } from "@ant-design/icons-vue";
-import { getGenerationModels } from "@/api/config";
+import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { createTask, getTask } from "@/api/tasks";
 import { getDownloadUrl, regenerateImage } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
@@ -27,15 +27,20 @@ import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { usePolling } from "@/composables/usePolling";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
-import type { GenerationModelOption, ImageResult, TaskResult } from "@/types";
-
-const CREDITS_PER_IMAGE = 4;
-const PROMPT_REVERSE_COST = 1;
+import type { GenerationModelOption, ImageResult, TaskResult, TaskSceneConfig } from "@/types";
 
 const auth = useAuthStore();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 
 type GenerateMode = "generate" | "inpaint" | "promptReverse";
+const DEFAULT_SCENE_COSTS: Record<string, number> = {
+  banana: 4,
+  banana2: 4,
+  banana_pro: 4,
+  banana_pro_plus: 4,
+  prompt_reverse: 1,
+  inpaint: 4,
+};
 
 const generateMode = ref<GenerateMode>("generate");
 const prompt = ref("");
@@ -84,6 +89,7 @@ const historyLoading = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
 const generationModels = ref<GenerationModelOption[]>([]);
+const taskScenes = ref<TaskSceneConfig[]>([]);
 
 const resolutionOptions = [
   { label: "1K", value: "1K" },
@@ -121,6 +127,15 @@ const selectedModelOption = computed(
   () => generationModels.value.find((item) => item.model_key === selectedModel.value) || null
 );
 const hideResolution = computed(() => generateMode.value === "generate" && !!selectedModelOption.value?.hide_resolution);
+const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
+const selectedModelCreditCost = computed(() => (
+  selectedModelOption.value?.credit_cost
+  ?? sceneCostMap.value[selectedModel.value]
+  ?? DEFAULT_SCENE_COSTS[selectedModel.value]
+  ?? 0
+));
+const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
+const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
 
 const polling = usePolling<TaskResult>(
   () => getTask(currentTaskId.value!),
@@ -177,7 +192,7 @@ async function handleFileChange(e: Event) {
 
   uploading.value = true;
   try {
-    const res = await uploadReferenceImage(file);
+    const res = await uploadReferenceImage(file, "ref");
     referenceUrls.value.push(res.url);
     message.success("参考图上传成功");
   } catch {
@@ -210,7 +225,7 @@ async function handleSourceFileChange(e: Event) {
 
   sourceUploading.value = true;
   try {
-    const res = await uploadReferenceImage(file);
+    const res = await uploadReferenceImage(file, "source");
     sourceImageUrl.value = res.url;
     hasRepaintMask.value = false;
     repaintCanvasRef.value?.clearMask();
@@ -248,7 +263,7 @@ async function handleReverseFileChange(e: Event) {
 
   reverseUploading.value = true;
   try {
-    const res = await uploadReferenceImage(file);
+    const res = await uploadReferenceImage(file, "reverse");
     reverseImageUrl.value = res.url;
     reversePromptResult.value = "";
     message.success("反推图片上传成功");
@@ -296,10 +311,8 @@ function handleMaskChange(value: boolean) {
 
 const creditCost = computed(() => (
   generateMode.value === "inpaint"
-    ? CREDITS_PER_IMAGE
-    : generateMode.value === "promptReverse"
-      ? PROMPT_REVERSE_COST
-      : numImages.value * CREDITS_PER_IMAGE
+    ? inpaintCreditCost.value
+    : numImages.value * selectedModelCreditCost.value
 ));
 const userCredits = computed(() => auth.user?.credits ?? 0);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
@@ -311,7 +324,7 @@ const generateButtonText = computed(() => {
 });
 const promptReverseButtonText = computed(() => {
   if (reverseLoading.value) return "提示词反推中...";
-  return isSuperAdmin.value ? "开始反推" : `开始反推 · ${PROMPT_REVERSE_COST} 积分`;
+  return isSuperAdmin.value ? "开始反推" : `开始反推 · ${promptReverseCreditCost.value} 积分`;
 });
 const activePrompt = computed(() => (
   generateMode.value === "inpaint" ? repaintPrompt.value : prompt.value
@@ -323,8 +336,8 @@ async function handlePromptReverse() {
     message.warning("请先上传需要反推提示词的图片");
     return;
   }
-  if (!isSuperAdmin.value && userCredits.value < PROMPT_REVERSE_COST) {
-    message.warning(`积分不足，需要 ${PROMPT_REVERSE_COST} 积分，当前余额 ${userCredits.value}`);
+  if (!isSuperAdmin.value && userCredits.value < promptReverseCreditCost.value) {
+    message.warning(`积分不足，需要 ${promptReverseCreditCost.value} 积分，当前余额 ${userCredits.value}`);
     return;
   }
 
@@ -395,7 +408,7 @@ async function handleGenerate() {
     const maskFile = new File([maskBlob], `mask-${Date.now()}.png`, { type: "image/png" });
     let maskUploadUrl = "";
     try {
-      const uploaded = await uploadReferenceImage(maskFile);
+      const uploaded = await uploadReferenceImage(maskFile, "mask");
       maskUploadUrl = uploaded.url;
     } catch {
       message.error("蒙版上传失败，请重试");
@@ -456,9 +469,9 @@ function handlePreview(url: string) {
   previewVisible.value = true;
 }
 
-function handleDownload(imageId: number) {
+function handleDownload(imageId: number, imageUrl: string) {
   const a = document.createElement("a");
-  a.href = getDownloadUrl(imageId);
+  a.href = getDownloadUrl(imageId, imageUrl);
   a.download = `banana_${imageId}.png`;
   a.click();
 }
@@ -494,20 +507,42 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
   if (!raw) return;
   try {
     const draft = JSON.parse(raw) as {
+      mode?: "generate" | "inpaint";
       prompt?: string;
       model?: string;
       reference_images?: string[];
       num_images?: number;
       size?: string;
       resolution?: string;
+      source_image?: string;
     };
-    generateMode.value = "generate";
-    prompt.value = draft.prompt || "";
-    selectedModel.value = draft.model || selectedModel.value;
-    referenceUrls.value = Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : [];
-    numImages.value = Math.min(6, Math.max(1, Number(draft.num_images || 1)));
+    const draftMode = draft.mode === "inpaint" ? "inpaint" : "generate";
+    generateMode.value = draftMode;
     size.value = draft.size || "9:16";
     resolution.value = draft.resolution || "2K";
+
+    if (draftMode === "inpaint") {
+      repaintPrompt.value = draft.prompt || "";
+      sourceImageUrl.value = draft.source_image || "";
+      hasRepaintMask.value = false;
+      canUndoMask.value = false;
+      canRedoMask.value = false;
+      repaintCanvasRef.value?.clearMask();
+      prompt.value = "";
+      referenceUrls.value = [];
+      numImages.value = 1;
+    } else {
+      prompt.value = draft.prompt || "";
+      selectedModel.value = draft.model || selectedModel.value;
+      referenceUrls.value = Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : [];
+      numImages.value = Math.min(6, Math.max(1, Number(draft.num_images || 1)));
+      repaintPrompt.value = "";
+      sourceImageUrl.value = "";
+      hasRepaintMask.value = false;
+      canUndoMask.value = false;
+      canRedoMask.value = false;
+      repaintCanvasRef.value?.clearMask();
+    }
     localStorage.removeItem(storageKey);
     message.success(successText);
   } catch {
@@ -527,8 +562,16 @@ async function loadGenerationModelOptions() {
   }
 }
 
+async function loadTaskSceneConfigs() {
+  try {
+    taskScenes.value = await getTaskScenes();
+  } catch {
+    // ignore scene config loading failures, backend will still validate on submit
+  }
+}
+
 onMounted(async () => {
-  await loadGenerationModelOptions();
+  await Promise.all([loadGenerationModelOptions(), loadTaskSceneConfigs()]);
   applyDraft(
     localStorage.getItem(HISTORY_DRAFT_KEY),
     "已回填历史任务参数，可继续编辑后重新生成",
@@ -940,7 +983,7 @@ onMounted(async () => {
                   <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(img.image_url)">
                     <template #icon><EyeOutlined /></template>
                   </a-button>
-                  <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(img.id)">
+                  <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(img.id, img.image_url)">
                     <template #icon><DownloadOutlined /></template>
                   </a-button>
                 </div>

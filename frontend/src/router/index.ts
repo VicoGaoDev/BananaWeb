@@ -54,6 +54,12 @@ const router = createRouter({
           component: () => import("@/views/admin/ApiKeyView.vue"),
         },
         {
+          path: "admin/cos-config",
+          name: "CosConfigManage",
+          meta: { requiresSuperAdmin: true },
+          component: () => import("@/views/admin/CosConfigView.vue"),
+        },
+        {
           path: "admin/external-api-configs",
           name: "ExternalApiConfigManage",
           meta: { requiresSuperAdmin: true },

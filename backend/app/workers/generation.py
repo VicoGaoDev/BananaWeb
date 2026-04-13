@@ -9,7 +9,6 @@ import base64
 import json
 import logging
 import shutil
-import uuid
 
 import httpx
 from pathlib import Path
@@ -19,6 +18,7 @@ from app.database import SessionLocal
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
 from app.models.task import Task
+from app.services.cos_service import build_object_key, load_image_bytes, upload_bytes_to_cos
 from app.services.external_api_config_service import (
     render_config,
     require_scene_config,
@@ -31,22 +31,11 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 ERROR_IMAGE_PATH = STATIC_DIR / "error.svg"
 
 def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
-    """Read a local uploaded file and return (mime_type, base64_data)."""
-    if not ref_url:
+    """Read a local or remote image and return (mime_type, base64_data)."""
+    result = load_image_bytes(ref_url)
+    if not result:
         return None
-    relative = ref_url.lstrip("/")
-    if relative.startswith("uploads/"):
-        relative = relative[len("uploads/"):]
-    file_path = Path(settings.UPLOAD_DIR) / relative
-    if not file_path.exists():
-        return None
-    ext = file_path.suffix.lower()
-    mime_map = {
-        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
-    }
-    mime_type = mime_map.get(ext, "image/jpeg")
-    data = file_path.read_bytes()
+    data, mime_type = result
     return mime_type, base64.b64encode(data).decode("utf-8")
 
 
@@ -184,13 +173,10 @@ MIME_TO_EXT = {
 }
 
 
-def _save_image_bytes(image_bytes: bytes, mime: str = "image/png") -> str:
-    upload_dir = Path(settings.UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+def _save_image_bytes(db, image_bytes: bytes, mime: str = "image/png") -> str:
     ext = MIME_TO_EXT.get(mime, "png")
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    (upload_dir / filename).write_bytes(image_bytes)
-    return f"/uploads/{filename}"
+    key = build_object_key("generated", f"generated.{ext}", mime)
+    return upload_bytes_to_cos(db, data=image_bytes, key=key, content_type=mime)
 
 
 def _get_error_image_url() -> str:
@@ -242,8 +228,14 @@ def _process_task(task_id: int):
 
             if result:
                 img_bytes, mime = result
-                image.image_url = _save_image_bytes(img_bytes, mime)
-                image.status = "success"
+                try:
+                    image.image_url = _save_image_bytes(db, img_bytes, mime)
+                    image.status = "success"
+                except Exception:
+                    logger.exception("Failed to persist generated image to storage")
+                    image.image_url = _get_error_image_url()
+                    image.status = "failed"
+                    all_success = False
             else:
                 image.image_url = _get_error_image_url()
                 image.status = "failed"
@@ -285,17 +277,22 @@ def _process_single_image(image_id: int):
 
         if result:
             img_bytes, mime = result
-            new_url = _save_image_bytes(img_bytes, mime)
-            log = (
-                db.query(RegenerateLog)
-                .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")
-                .order_by(RegenerateLog.created_at.desc())
-                .first()
-            )
-            if log:
-                log.new_image_url = new_url
-            image.image_url = new_url
-            image.status = "success"
+            try:
+                new_url = _save_image_bytes(db, img_bytes, mime)
+                log = (
+                    db.query(RegenerateLog)
+                    .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")
+                    .order_by(RegenerateLog.created_at.desc())
+                    .first()
+                )
+                if log:
+                    log.new_image_url = new_url
+                image.image_url = new_url
+                image.status = "success"
+            except Exception:
+                logger.exception("Failed to persist regenerated image to storage")
+                image.image_url = _get_error_image_url()
+                image.status = "failed"
         else:
             image.image_url = _get_error_image_url()
             image.status = "failed"

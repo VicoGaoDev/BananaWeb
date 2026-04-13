@@ -13,10 +13,12 @@ from app.schemas.external_api_config import (
     ExternalApiConfigTestResult,
     GenerationModelOptionOut,
     ExternalApiConfigUpdate,
+    TaskSceneConfigOut,
 )
 from app.services.external_api_config_service import (
     create_config,
     list_scene_bindings,
+    list_public_task_scene_configs,
     list_generation_models,
     list_configs,
     set_scene_binding,
@@ -41,6 +43,11 @@ def get_external_api_configs(
 @public_router.get("/generation-models", response_model=list[GenerationModelOptionOut])
 def get_generation_models(db: Session = Depends(get_db)):
     return list_generation_models(db)
+
+
+@public_router.get("/task-scenes", response_model=list[TaskSceneConfigOut])
+def get_task_scenes(db: Session = Depends(get_db)):
+    return list_public_task_scene_configs(db)
 
 
 @router.post("", response_model=ExternalApiConfigOut)
@@ -95,4 +102,4 @@ def update_external_api_scene_binding(
     _user: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
-    return set_scene_binding(db, scene_key, body.api_config_id)
+    return set_scene_binding(db, scene_key, body)

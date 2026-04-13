@@ -2,12 +2,13 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session, selectinload
 from app.models.task import Task
-from app.models.user import User
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
 from app.models.credit_log import CreditLog
+from app.models.user import User
 
 
 def _parse_refs(raw: str | None) -> list[str]:
@@ -20,26 +21,75 @@ def _parse_refs(raw: str | None) -> list[str]:
         return []
 
 
-def get_user_history(db: Session, user_id: int, page: int = 1, page_size: int = 20):
-    query = db.query(Task).filter(Task.user_id == user_id).order_by(Task.created_at.desc())
+def _resolve_history_card_status(task_status: str | None, image_status: str | None) -> str:
+    if image_status == "pending" and task_status in {"pending", "processing", "failed"}:
+        return task_status
+    return image_status or task_status or "pending"
+
+
+def get_user_history(
+    db: Session,
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+    mode: str | None = None,
+    model: str | None = None,
+    prompt: str | None = None,
+    status: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+):
+    query = (
+        db.query(Image)
+        .join(Task, Image.task_id == Task.id)
+        .options(selectinload(Image.task).selectinload(Task.images))
+        .filter(Task.user_id == user_id)
+    )
+    if mode:
+        query = query.filter(Task.mode == mode)
+    if model:
+        query = query.filter(Task.model == model)
+    if prompt:
+        keyword = prompt.strip()
+        if keyword:
+            query = query.filter(Task.prompt.ilike(f"%{keyword}%"))
+    if status:
+        if status == "processing":
+            query = query.filter(Image.status == "pending", Task.status == "processing")
+        elif status == "pending":
+            query = query.filter(Image.status == "pending", Task.status == "pending")
+        elif status == "failed":
+            query = query.filter(or_(Image.status == "failed", and_(Image.status == "pending", Task.status == "failed")))
+        else:
+            query = query.filter(Image.status == status)
+    if start_date:
+        query = query.filter(Task.created_at >= start_date)
+    if end_date:
+        query = query.filter(Task.created_at <= end_date)
+    query = query.order_by(Task.created_at.desc(), Image.id.desc())
     total = query.count()
-    tasks = query.offset((page - 1) * page_size).limit(page_size).all()
+    images = query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
-    for task in tasks:
+    for image in images:
+        task = image.task
         items.append({
             "task_id": task.id,
+            "image_id": image.id,
+            "image_url": image.image_url or "",
+            "status": _resolve_history_card_status(task.status, image.status),
             "model": task.model or "",
+            "mode": task.mode or "generate",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
+            "source_image": task.source_image or "",
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
-            "status": task.status,
             "created_at": task.created_at,
             "images": [
                 {"id": img.id, "image_url": img.image_url, "status": img.status}
-                for img in task.images
+                for img in sorted(task.images, key=lambda item: item.id, reverse=True)
             ],
         })
 
@@ -104,6 +154,7 @@ def get_all_history(
             "username": user_cache[task.user_id]["username"],
             "avatar_url": user_cache[task.user_id]["avatar_url"],
             "model": task.model or "",
+            "mode": task.mode or "generate",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
             "num_images": task.num_images,

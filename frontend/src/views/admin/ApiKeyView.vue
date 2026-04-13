@@ -51,7 +51,11 @@ onMounted(async () => {
       announcementEnabled.value = !!res.announcement_enabled;
       announcementContent.value = res.announcement_content || "";
       hasConfig.value = Boolean(
-        res.key || res.tongyi_key || res.contact_qr_image || res.announcement_enabled || res.announcement_content
+        res.key
+        || res.tongyi_key
+        || res.contact_qr_image
+        || res.announcement_enabled
+        || res.announcement_content
       );
     }
   } catch {
@@ -93,7 +97,7 @@ async function handleSave() {
 function handleDelete() {
   Modal.confirm({
     title: "确认删除",
-    content: "删除后 API Key 将被清空，AI 生图功能将无法使用。",
+    content: "删除后当前页面中的 Gemini、通义、联系二维码与公告配置将被清空。",
     okText: "确认删除",
     okType: "danger",
     cancelText: "取消",
@@ -130,6 +134,7 @@ function copyTongyiKey() {
   });
 }
 
+
 function triggerQrUpload() {
   qrInput.value?.click();
 }
@@ -140,7 +145,7 @@ async function handleQrUpload(event: Event) {
   if (!file) return;
   qrUploading.value = true;
   try {
-    const res = await uploadReferenceImage(file);
+    const res = await uploadReferenceImage(file, "misc");
     contactQrImage.value = res.url;
     message.success("二维码上传成功");
   } catch (err: any) {
@@ -161,7 +166,7 @@ async function handleQrUpload(event: Event) {
         </div>
         <div>
           <div class="warm-page-title">配置管理</div>
-          <div class="warm-page-desc">管理 AI 生图服务的全局配置，后端会实时读取新配置。</div>
+          <div class="warm-page-desc">管理 Gemini、通义、联系二维码与公告配置，后端会实时读取新配置。</div>
         </div>
       </div>
     </div>

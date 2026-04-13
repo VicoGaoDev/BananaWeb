@@ -2,6 +2,7 @@ import client from "./client";
 import type {
   AdminStats,
   ApiKeyConfig,
+  CosConfig,
   AdminUser,
   CreditLog,
   ExternalApiConfig,
@@ -78,6 +79,24 @@ export function deleteApiKey(): Promise<void> {
   return client.delete("/admin/api-key");
 }
 
+export function getCosConfig(): Promise<CosConfig | null> {
+  return client.get("/admin/cos-config");
+}
+
+export function setCosConfig(payload: {
+  cos_secret_id?: string;
+  cos_secret_key?: string;
+  cos_bucket?: string;
+  cos_region?: string;
+  cos_public_base_url?: string;
+}): Promise<CosConfig> {
+  return client.put("/admin/cos-config", payload);
+}
+
+export function deleteCosConfig(): Promise<void> {
+  return client.delete("/admin/cos-config");
+}
+
 export function listExternalApiConfigs(): Promise<ExternalApiConfig[]> {
   return client.get("/admin/external-api-configs");
 }
@@ -100,9 +119,12 @@ export function listExternalApiSceneBindings(): Promise<ExternalApiSceneBinding[
 
 export function updateExternalApiSceneBinding(
   sceneKey: ExternalApiSceneBinding["scene_key"],
-  apiConfigId: number | null,
+  payload: {
+    api_config_id: number | null;
+    credit_cost: number;
+  },
 ): Promise<ExternalApiSceneBinding> {
-  return client.put(`/admin/external-api-scene-bindings/${sceneKey}`, { api_config_id: apiConfigId });
+  return client.put(`/admin/external-api-scene-bindings/${sceneKey}`, payload);
 }
 
 export function testExternalApiConfig(payload: ExternalApiConfigPayload): Promise<ExternalApiConfigTestResult> {

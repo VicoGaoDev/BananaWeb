@@ -1,10 +1,21 @@
 import client from "./client";
-import type { HistoryResponse } from "@/types";
+import type { HistoryFilter, UserHistoryResponse } from "@/types";
 
-export function fetchHistory(page: number = 1, pageSize: number = 20): Promise<HistoryResponse> {
-  return client.get("/history", { params: { page, page_size: pageSize } });
-}
-
-export function deleteHistoryTask(taskId: number): Promise<void> {
-  return client.delete(`/history/${taskId}`);
+export function fetchHistory(
+  page: number = 1,
+  pageSize: number = 20,
+  filters: Pick<HistoryFilter, "mode" | "model" | "prompt" | "status" | "start_date" | "end_date"> = {},
+): Promise<UserHistoryResponse> {
+  return client.get("/history", {
+    params: {
+      page,
+      page_size: pageSize,
+      mode: filters.mode,
+      model: filters.model,
+      prompt: filters.prompt?.trim() || undefined,
+      status: filters.status,
+      start_date: filters.start_date,
+      end_date: filters.end_date,
+    },
+  });
 }

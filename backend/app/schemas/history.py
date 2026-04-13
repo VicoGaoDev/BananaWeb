@@ -15,6 +15,7 @@ class HistoryItem(BaseModel):
     username: str = ""
     avatar_url: str = ""
     model: str = ""
+    mode: str = "generate"
     prompt: str = ""
     reference_images: list[str] = []
     num_images: int = 1
@@ -28,3 +29,25 @@ class HistoryItem(BaseModel):
 class HistoryResponse(BaseModel):
     total: int
     items: list[HistoryItem]
+
+
+class UserHistoryCardItem(BaseModel):
+    task_id: int
+    image_id: int
+    image_url: str = ""
+    status: str
+    model: str = ""
+    mode: str = "generate"
+    prompt: str = ""
+    reference_images: list[str] = []
+    source_image: str = ""
+    num_images: int = 1
+    size: str
+    resolution: str = ""
+    created_at: datetime | None = None
+    images: list[HistoryImageOut] = []
+
+
+class UserHistoryResponse(BaseModel):
+    total: int
+    items: list[UserHistoryCardItem]

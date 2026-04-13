@@ -1,6 +1,3 @@
-import base64
-from pathlib import Path
-
 import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -8,13 +5,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.credit_log import CreditLog
 from app.models.user import User
+from app.services.cos_service import load_image_as_data_url
 from app.services.external_api_config_service import (
+    get_scene_credit_cost,
     render_config,
     require_scene_config,
     SCENE_PROMPT_REVERSE,
 )
-
-PROMPT_REVERSE_COST = 1
 PROMPT_REVERSE_TEXT = (
     "详细分析这张图片，生成适合AI绘画的专业中文提示词，"
     "包含主体、风格、构图、光影、色彩、画质、细节，用中文逗号分隔输出"
@@ -23,28 +20,6 @@ PROMPT_REVERSE_TEXT = (
 
 def _is_credit_exempt_user(user: User | None) -> bool:
     return bool(user and user.role == "superadmin")
-
-
-def _load_image_as_data_url(image_url: str) -> str:
-    relative = image_url.strip().lstrip("/")
-    if relative.startswith("uploads/"):
-        relative = relative[len("uploads/"):]
-    file_path = Path(settings.UPLOAD_DIR) / relative
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片不存在或尚未上传成功")
-
-    mime_map = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-    }
-    mime_type = mime_map.get(file_path.suffix.lower(), "image/jpeg")
-    encoded = base64.b64encode(file_path.read_bytes()).decode("utf-8")
-    return f"data:{mime_type};base64,{encoded}"
-
-
 def _extract_prompt_text(payload: dict) -> str:
     candidate_paths = [
         payload.get("output", {}).get("text"),
@@ -72,6 +47,7 @@ def _extract_prompt_text(payload: dict) -> str:
 
 def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
     api_config = require_scene_config(db, SCENE_PROMPT_REVERSE)
+    credit_cost = get_scene_credit_cost(db, SCENE_PROMPT_REVERSE)
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -79,10 +55,10 @@ def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户不存在",
         )
-    if not _is_credit_exempt_user(user) and user.credits < PROMPT_REVERSE_COST:
+    if not _is_credit_exempt_user(user) and user.credits < credit_cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"积分不足，需要 {PROMPT_REVERSE_COST} 积分，当前余额 {user.credits if user else 0}",
+            detail=f"积分不足，需要 {credit_cost} 积分，当前余额 {user.credits if user else 0}",
         )
 
     image_data_url = _load_image_as_data_url(image_url)
@@ -119,10 +95,10 @@ def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="提示词反推服务异常，请稍后重试")
 
     if not _is_credit_exempt_user(user):
-        user.credits -= PROMPT_REVERSE_COST
+        user.credits -= credit_cost
         db.add(CreditLog(
             user_id=user_id,
-            amount=-PROMPT_REVERSE_COST,
+            amount=-credit_cost,
             type="consume",
             description="提示词反推",
         ))
