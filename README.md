@@ -7,7 +7,7 @@
 | 模块 | 技术 |
 |------|------|
 | 前端 | Vue 3 + TypeScript + Ant Design Vue 4 + Pinia |
-| 后端 | Python FastAPI + SQLAlchemy + SQLite |
+| 后端 | Python FastAPI + SQLAlchemy + SQLite / MySQL |
 | 异步任务 | Celery + Redis（可选，开发环境自动降级为线程） |
 | 图片存储 | 腾讯云 COS（前端临时凭证直传 + 后端结果图上传） |
 | 部署 | 前端 Vercel / 后端 VPS |
@@ -134,7 +134,7 @@ celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 
 ### 后端 — VPS / Railway / Render
 
-后端使用 SQLite，需要持久化文件系统，推荐：
+后端默认使用 SQLite，也支持通过 `DATABASE_URL` 切换到 MySQL：
 
 **方案 A：VPS 部署**
 ```bash
@@ -157,6 +157,46 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 4. 添加持久化 Volume 挂载到 `/app/data` 和 `/app/uploads`
 
 如果已全面切换到腾讯云 COS，`/app/uploads` 主要只用于兼容旧数据与失败占位图，核心业务图片将写入 COS。
+
+### 数据库切换到 MySQL
+
+1. 在 `backend/.env` 中配置 MySQL 连接串：
+
+```env
+DATABASE_URL=mysql+pymysql://user:password@host:3306/database?charset=utf8mb4
+DB_AUTO_CREATE_TABLES=true
+DB_RUN_SCHEMA_COMPAT=false
+DB_RUN_SEED=false
+```
+
+2. 安装新增依赖：
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+3. 在切换窗口前备份 SQLite：
+
+```bash
+cp backend/data/banana.db backend/data/banana.db.bak
+```
+
+4. 执行一次性迁移：
+
+```bash
+cd backend
+python scripts/migrate_sqlite_to_mysql.py \
+  --sqlite-path data/banana.db \
+  --target-url "mysql+pymysql://user:password@host:3306/database?charset=utf8mb4"
+```
+
+5. 迁移完成后再启动后端，并检查登录、历史记录、管理配置和任务查询是否正常。
+
+说明：
+- `scripts/migrate_sqlite_to_mysql.py` 会先建表，再按外键顺序导入数据，并自动做行数与关键外键校验。
+- 如果只想复核迁移结果，可加 `--validate-only`。
+- MySQL 生产环境建议禁用运行时补列与种子逻辑，即 `DB_RUN_SCHEMA_COMPAT=false`、`DB_RUN_SEED=false`。
 
 ## API 概览
 

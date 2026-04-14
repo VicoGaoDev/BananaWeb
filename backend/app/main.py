@@ -20,11 +20,17 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    if settings.is_sqlite:
+        Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
-    _ensure_schema_compat()
-    _seed_default_data()
+    if settings.DB_AUTO_CREATE_TABLES:
+        Base.metadata.create_all(bind=engine)
+    _ensure_template_required_columns()
+    if settings.should_run_schema_compat:
+        _ensure_schema_compat()
+    _initialize_template_sort_orders()
+    if settings.should_run_seed:
+        _seed_default_data()
 
 
 def _ensure_schema_compat():
@@ -78,12 +84,6 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_content VARCHAR(5000) DEFAULT ''"))
             if "announcement_updated_at" not in api_key_columns:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN announcement_updated_at DATETIME"))
-
-    if "templates" in api_key_tables:
-        template_columns = {col["name"] for col in inspector.get_columns("templates")}
-        with engine.begin() as conn:
-            if "model" not in template_columns:
-                conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
 
     if "external_api_configs" in api_key_tables:
         external_api_columns = {col["name"] for col in inspector.get_columns("external_api_configs")}
@@ -143,6 +143,47 @@ def _ensure_schema_compat():
                         ),
                         {"scene_key": scene_key, "credit_cost": get_default_credit_cost(scene_key)},
                     )
+
+
+def _ensure_template_required_columns():
+    inspector = inspect(engine)
+    if "templates" not in inspector.get_table_names():
+        return
+
+    template_columns = {col["name"] for col in inspector.get_columns("templates")}
+    with engine.begin() as conn:
+        if "model" not in template_columns:
+            conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
+        if "sort_order" not in template_columns:
+            conn.execute(text("ALTER TABLE templates ADD COLUMN sort_order INTEGER DEFAULT 0"))
+
+
+def _initialize_template_sort_orders():
+    from app.database import SessionLocal
+    from app.models.template import Template
+
+    _ensure_template_required_columns()
+
+    db = SessionLocal()
+    try:
+        templates = (
+            db.query(Template)
+            .order_by(Template.created_at.asc(), Template.id.asc())
+            .all()
+        )
+        if not templates:
+            return
+
+        has_initialized_sort = any((template.sort_order or 0) > 0 for template in templates)
+        if has_initialized_sort:
+            return
+
+        for index, template in enumerate(templates, start=1):
+            template.sort_order = index
+
+        db.commit()
+    finally:
+        db.close()
 
 
 def _seed_default_data():
