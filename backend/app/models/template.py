@@ -14,6 +14,7 @@ class Template(Base):
     resolution = Column(String(10), default="2K")
     num_images = Column(Integer, default=1)
     result_image = Column(String(255), default="")
+    sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

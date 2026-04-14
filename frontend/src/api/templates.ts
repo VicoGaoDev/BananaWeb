@@ -9,7 +9,12 @@ export interface TemplatePayload {
   size: string;
   resolution: string;
   result_image: string;
+  sort_order: number;
   tag_names: string[];
+}
+
+export interface TemplateTagPayload {
+  name: string;
 }
 
 export function listTemplates(tagId?: number): Promise<CreativeTemplate[]> {
@@ -20,6 +25,18 @@ export function listTemplates(tagId?: number): Promise<CreativeTemplate[]> {
 
 export function listTemplateTags(): Promise<TemplateTag[]> {
   return client.get("/templates/tags");
+}
+
+export function createTemplateTag(data: TemplateTagPayload): Promise<TemplateTag> {
+  return client.post("/templates/tags", data);
+}
+
+export function updateTemplateTag(tagId: number, data: TemplateTagPayload): Promise<TemplateTag> {
+  return client.put(`/templates/tags/${tagId}`, data);
+}
+
+export function deleteTemplateTag(tagId: number): Promise<void> {
+  return client.delete(`/templates/tags/${tagId}`);
 }
 
 export function getTemplateDetail(templateId: number): Promise<CreativeTemplate> {

@@ -5,8 +5,13 @@ from pydantic import BaseModel, Field
 class TemplateTagOut(BaseModel):
     id: int
     name: str
+    template_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class TemplateTagPayload(BaseModel):
+    name: str
 
 
 class TemplateBase(BaseModel):
@@ -17,6 +22,7 @@ class TemplateBase(BaseModel):
     resolution: str = "2K"
     num_images: int = Field(default=1, ge=1, le=6)
     result_image: str = ""
+    sort_order: int = 0
     tag_names: list[str] = []
 
 
@@ -33,6 +39,7 @@ class TemplateListItemOut(BaseModel):
     prompt: str
     model: str = ""
     result_image: str
+    sort_order: int = 0
     size: str
     resolution: str
     num_images: int
@@ -45,6 +52,7 @@ class TemplateDetailOut(BaseModel):
     prompt: str
     model: str = ""
     reference_images: list[str] = []
+    sort_order: int = 0
     size: str
     resolution: str
     num_images: int

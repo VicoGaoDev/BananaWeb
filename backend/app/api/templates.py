@@ -13,6 +13,7 @@ from app.schemas.template import (
     TemplateCreate,
     TemplateDetailOut,
     TemplateListItemOut,
+    TemplateTagPayload,
     TemplateTagOut,
     TemplateUpdate,
 )
@@ -20,19 +21,31 @@ from app.schemas.template import (
 router = APIRouter(prefix="/api/templates", tags=["创意模版"])
 
 
+def _normalize_tag_name(name: str) -> str:
+    return (name or "").strip()[:50]
+
+
 def _normalize_tag_names(tag_names: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for name in tag_names:
-        normalized = (name or "").strip()
+        normalized = _normalize_tag_name(name)
         if not normalized:
             continue
         lowered = normalized.lower()
         if lowered in seen:
             continue
         seen.add(lowered)
-        result.append(normalized[:50])
+        result.append(normalized)
     return result
+
+
+def _serialize_tag(tag: TemplateTag) -> dict:
+    return {
+        "id": tag.id,
+        "name": tag.name,
+        "template_count": len(tag.template_relations),
+    }
 
 
 def _serialize_template_list_item(template: Template) -> dict:
@@ -41,6 +54,7 @@ def _serialize_template_list_item(template: Template) -> dict:
         "prompt": template.prompt or "",
         "model": template.model or "",
         "result_image": template.result_image or "",
+        "sort_order": template.sort_order or 0,
         "size": template.size,
         "resolution": template.resolution or "",
         "num_images": 1,
@@ -79,7 +93,7 @@ def list_templates(
     tag_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Template).order_by(Template.created_at.desc())
+    query = db.query(Template).order_by(Template.sort_order.desc(), Template.created_at.desc())
     if tag_id is not None:
         query = query.join(TemplateTagRelation).filter(TemplateTagRelation.tag_id == tag_id)
     templates = query.all()
@@ -88,7 +102,69 @@ def list_templates(
 
 @router.get("/tags", response_model=list[TemplateTagOut])
 def list_template_tags(db: Session = Depends(get_db)):
-    return db.query(TemplateTag).order_by(TemplateTag.name.asc()).all()
+    tags = db.query(TemplateTag).order_by(TemplateTag.name.asc()).all()
+    return [_serialize_tag(tag) for tag in tags]
+
+
+@router.post("/tags", response_model=TemplateTagOut)
+def create_template_tag(
+    body: TemplateTagPayload,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    tag_name = _normalize_tag_name(body.name)
+    if not tag_name:
+        raise HTTPException(status_code=400, detail="标签名称不能为空")
+
+    existing_tag = db.query(TemplateTag).filter(TemplateTag.name == tag_name).first()
+    if existing_tag:
+        raise HTTPException(status_code=400, detail="标签已存在")
+
+    tag = TemplateTag(name=tag_name)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return _serialize_tag(tag)
+
+
+@router.put("/tags/{tag_id}", response_model=TemplateTagOut)
+def update_template_tag(
+    tag_id: int,
+    body: TemplateTagPayload,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    tag = db.query(TemplateTag).filter(TemplateTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="标签不存在")
+
+    tag_name = _normalize_tag_name(body.name)
+    if not tag_name:
+        raise HTTPException(status_code=400, detail="标签名称不能为空")
+
+    existing_tag = db.query(TemplateTag).filter(TemplateTag.name == tag_name, TemplateTag.id != tag_id).first()
+    if existing_tag:
+        raise HTTPException(status_code=400, detail="标签已存在")
+
+    tag.name = tag_name
+    db.commit()
+    db.refresh(tag)
+    return _serialize_tag(tag)
+
+
+@router.delete("/tags/{tag_id}")
+def delete_template_tag(
+    tag_id: int,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    tag = db.query(TemplateTag).filter(TemplateTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="标签不存在")
+
+    db.delete(tag)
+    db.commit()
+    return {"message": "删除成功"}
 
 
 @router.get("/admin/list", response_model=list[TemplateListItemOut])
@@ -96,7 +172,7 @@ def list_admin_templates(
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    templates = db.query(Template).order_by(Template.created_at.desc()).all()
+    templates = db.query(Template).order_by(Template.sort_order.desc(), Template.created_at.desc()).all()
     return [_serialize_template_list_item(template) for template in templates]
 
 
@@ -124,6 +200,7 @@ def create_template(
         resolution=body.resolution,
         num_images=1,
         result_image=body.result_image,
+        sort_order=body.sort_order,
     )
     db.add(template)
     db.flush()
@@ -153,6 +230,7 @@ def update_template(
     template.resolution = body.resolution
     template.num_images = 1
     template.result_image = body.result_image
+    template.sort_order = body.sort_order
     _sync_template_tags(db, template, body.tag_names)
     db.commit()
     db.refresh(template)

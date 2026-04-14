@@ -107,6 +107,7 @@ export interface CreditLog {
 export interface TemplateTag {
   id: number;
   name: string;
+  template_count?: number;
 }
 
 export interface CreativeTemplate {
@@ -118,6 +119,7 @@ export interface CreativeTemplate {
   size: string;
   resolution: string;
   result_image: string;
+  sort_order: number;
   tags: TemplateTag[];
   created_at: string;
 }

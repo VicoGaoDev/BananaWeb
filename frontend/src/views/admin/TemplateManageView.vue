@@ -6,16 +6,20 @@ import {
   EditOutlined,
   PictureOutlined,
   PlusOutlined,
+  TagsOutlined,
   UploadOutlined,
 } from "@ant-design/icons-vue";
 import { uploadReferenceImage } from "@/api/upload";
 import { getGenerationModels } from "@/api/config";
 import {
+  createTemplateTag,
   createTemplate,
+  deleteTemplateTag,
   deleteTemplate,
   getTemplateDetail,
   listAdminTemplates,
   listTemplateTags,
+  updateTemplateTag,
   updateTemplate,
   type TemplatePayload,
 } from "@/api/templates";
@@ -28,6 +32,10 @@ const loading = ref(false);
 const modalOpen = ref(false);
 const saving = ref(false);
 const editingId = ref<number | null>(null);
+const activeTagId = ref<number | null>(null);
+const tagManageOpen = ref(false);
+const savingTag = ref(false);
+const editingTag = ref<TemplateTag | null>(null);
 
 const refInput = ref<HTMLInputElement | null>(null);
 const resultInput = ref<HTMLInputElement | null>(null);
@@ -42,6 +50,7 @@ const form = reactive<TemplatePayload>({
   size: "9:16",
   resolution: "2K",
   result_image: "",
+  sort_order: 0,
   tag_names: [],
 });
 
@@ -49,6 +58,7 @@ const columns = [
   { title: "结果图", dataIndex: "result_image", width: 110 },
   { title: "提示词", dataIndex: "prompt", ellipsis: true },
   { title: "标签", key: "tags", width: 220 },
+  { title: "排序", dataIndex: "sort_order", width: 90 },
   { title: "参数", key: "meta", width: 180 },
   { title: "创建时间", dataIndex: "created_at", width: 180 },
   { title: "操作", key: "action", width: 160 },
@@ -73,6 +83,14 @@ const resolutionOptions = [
 const tagOptions = computed(() => tags.value.map((tag) => ({ label: tag.name, value: tag.name })));
 const selectedModelOption = computed(() => modelOptions.value.find((item) => item.model_key === form.model) || null);
 const hideResolution = computed(() => !!selectedModelOption.value?.hide_resolution);
+const filteredTemplates = computed(() => {
+  if (activeTagId.value === null) return templates.value;
+  return templates.value.filter((item) => item.tags.some((tag) => tag.id === activeTagId.value));
+});
+
+const renameForm = reactive({
+  name: "",
+});
 
 function resetForm() {
   editingId.value = null;
@@ -83,7 +101,13 @@ function resetForm() {
   form.size = "9:16";
   form.resolution = "2K";
   form.result_image = "";
+  form.sort_order = 0;
   form.tag_names = [];
+}
+
+function resetTagForm() {
+  editingTag.value = null;
+  renameForm.name = "";
 }
 
 async function load() {
@@ -100,6 +124,9 @@ async function load() {
 async function loadTags() {
   try {
     tags.value = await listTemplateTags();
+    if (activeTagId.value !== null && !tags.value.some((tag) => tag.id === activeTagId.value)) {
+      activeTagId.value = null;
+    }
   } catch {
     // ignore
   }
@@ -127,6 +154,16 @@ function openCreate() {
   modalOpen.value = true;
 }
 
+function openTagManage() {
+  resetTagForm();
+  tagManageOpen.value = true;
+}
+
+function openRenameTag(tag: TemplateTag) {
+  editingTag.value = tag;
+  renameForm.name = tag.name;
+}
+
 async function openEdit(item: CreativeTemplate) {
   try {
     const detail = await getTemplateDetail(item.id);
@@ -138,6 +175,7 @@ async function openEdit(item: CreativeTemplate) {
     form.size = detail.size;
     form.resolution = detail.resolution;
     form.result_image = detail.result_image;
+    form.sort_order = detail.sort_order ?? 0;
     form.tag_names = detail.tags.map((tag) => tag.name);
     modalOpen.value = true;
   } catch {
@@ -164,6 +202,7 @@ async function handleSave() {
       size: form.size,
       resolution: hideResolution.value ? "" : form.resolution,
       result_image: form.result_image,
+      sort_order: Number.isFinite(form.sort_order) ? form.sort_order : 0,
       tag_names: [...form.tag_names],
     };
     if (editingId.value) await updateTemplate(editingId.value, payload);
@@ -180,6 +219,31 @@ async function handleSave() {
   }
 }
 
+async function handleSaveTag() {
+  const name = renameForm.name.trim();
+  if (!name) {
+    message.warning("请输入标签名称");
+    return;
+  }
+  savingTag.value = true;
+  try {
+    if (editingTag.value) {
+      await updateTemplateTag(editingTag.value.id, { name });
+      message.success("标签更新成功");
+      await Promise.all([load(), loadTags()]);
+    } else {
+      await createTemplateTag({ name });
+      message.success("标签创建成功");
+      await loadTags();
+    }
+    resetTagForm();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || (editingTag.value ? "标签更新失败" : "标签创建失败"));
+  } finally {
+    savingTag.value = false;
+  }
+}
+
 function handleDelete(item: CreativeTemplate) {
   Modal.confirm({
     title: "确认删除该模版？",
@@ -189,6 +253,19 @@ function handleDelete(item: CreativeTemplate) {
       message.success("删除成功");
       load();
       loadTags();
+    },
+  });
+}
+
+function handleDeleteTag(tag: TemplateTag) {
+  Modal.confirm({
+    title: `确认删除标签「${tag.name}」？`,
+    content: "删除后会同步移除该标签与模板的关联关系。",
+    centered: true,
+    async onOk() {
+      await deleteTemplateTag(tag.id);
+      message.success("标签删除成功");
+      await Promise.all([load(), loadTags()]);
     },
   });
 }
@@ -258,16 +335,37 @@ function fmtTime(t: string) {
           <div class="warm-page-desc">维护创意模版内容、标签和展示结果图。</div>
         </div>
       </div>
-      <a-button type="primary" class="warm-primary-btn" @click="openCreate">
-        <template #icon><PlusOutlined /></template>
-        新增模版
-      </a-button>
+      <div class="page-actions">
+        <a-button type="primary" class="warm-primary-btn" @click="openTagManage">
+          <template #icon><TagsOutlined /></template>
+          标签管理
+        </a-button>
+        <a-button type="primary" class="warm-primary-btn" @click="openCreate">
+          <template #icon><PlusOutlined /></template>
+          新增模版
+        </a-button>
+      </div>
+    </div>
+
+    <div class="tag-filter-row">
+      <a-tag class="manage-filter-tag" :class="{ active: activeTagId === null }" @click="activeTagId = null">
+        全部模版
+      </a-tag>
+      <a-tag
+        v-for="tag in tags"
+        :key="tag.id"
+        class="manage-filter-tag"
+        :class="{ active: activeTagId === tag.id }"
+        @click="activeTagId = tag.id"
+      >
+        {{ tag.name }}
+      </a-tag>
     </div>
 
     <div class="warm-card warm-table-card">
       <a-table
         :columns="columns"
-        :data-source="templates"
+        :data-source="filteredTemplates"
         :loading="loading"
         row-key="id"
         :pagination="false"
@@ -282,6 +380,9 @@ function fmtTime(t: string) {
             <div class="tag-list">
               <a-tag v-for="tag in record.tags" :key="tag.id" class="warm-tag">{{ tag.name }}</a-tag>
             </div>
+          </template>
+          <template v-else-if="column.dataIndex === 'sort_order'">
+            {{ record.sort_order ?? 0 }}
           </template>
           <template v-else-if="column.key === 'meta'">
             <div class="meta-cell">
@@ -333,6 +434,9 @@ function fmtTime(t: string) {
           <a-form-item label="宽高比">
             <a-select v-model:value="form.size" :options="sizeOptions" />
           </a-form-item>
+          <a-form-item label="排序值">
+            <a-input-number v-model:value="form.sort_order" style="width: 100%" :min="0" :precision="0" />
+          </a-form-item>
           <a-form-item v-if="!hideResolution" label="分辨率">
             <a-select v-model:value="form.resolution" :options="resolutionOptions" />
           </a-form-item>
@@ -377,10 +481,136 @@ function fmtTime(t: string) {
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="tagManageOpen"
+      title="标签管理"
+      :confirm-loading="savingTag"
+      ok-text="提交"
+      cancel-text="取消"
+      centered
+      :width="760"
+      @ok="handleSaveTag"
+      @cancel="resetTagForm"
+    >
+      <a-form layout="vertical" style="margin-top: 16px">
+        <a-form-item :label="editingTag ? '重命名标签' : '新增标签'">
+          <div class="tag-create-box">
+            <a-input
+              v-model:value="renameForm.name"
+              :maxlength="50"
+              :placeholder="editingTag ? '请输入新的标签名称' : '输入新标签名称'"
+              @pressEnter="handleSaveTag"
+            />
+            <a-button v-if="editingTag" @click="resetTagForm">取消编辑</a-button>
+          </div>
+        </a-form-item>
+      </a-form>
+
+      <div v-if="tags.length" class="tag-manage-list">
+        <div v-for="tag in tags" :key="tag.id" class="tag-manage-item">
+          <div class="tag-manage-main">
+            <a-tag class="warm-tag">{{ tag.name }}</a-tag>
+            <span class="tag-manage-count">关联 {{ tag.template_count ?? 0 }} 个模版</span>
+          </div>
+          <div class="tag-manage-actions">
+            <a-button type="link" size="small" @click="openRenameTag(tag)">重命名</a-button>
+            <a-divider type="vertical" />
+            <a-button type="link" danger size="small" @click="handleDeleteTag(tag)">删除</a-button>
+          </div>
+        </div>
+      </div>
+      <a-empty v-else description="暂无标签，可先新增标签" />
+    </a-modal>
   </div>
 </template>
 
 <style scoped lang="scss">
+.page-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.tag-manage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.tag-manage-title {
+  color: #4c341a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.tag-manage-desc {
+  margin-top: 6px;
+  color: #8d7457;
+  font-size: 13px;
+}
+
+.tag-create-box {
+  display: flex;
+  gap: 12px;
+  width: min(100%, 420px);
+}
+
+.tag-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.manage-filter-tag {
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 600;
+
+  &.active {
+    color: #8a5400;
+    background: linear-gradient(180deg, #fff0cc, #ffe2a9);
+    border-color: #f0c46d;
+  }
+}
+
+.tag-manage-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tag-manage-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #f0dfbe;
+  background: #fffaf2;
+}
+
+.tag-manage-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tag-manage-count {
+  color: #8d7457;
+  font-size: 13px;
+}
+
+.tag-manage-actions {
+  flex-shrink: 0;
+}
+
 .thumb-box {
   width: 72px;
   height: 72px;
@@ -484,6 +714,25 @@ function fmtTime(t: string) {
 }
 
 @media (max-width: 720px) {
+  .page-actions,
+  .tag-manage-header,
+  .tag-create-box {
+    flex-direction: column;
+  }
+
+  .tag-create-box {
+    width: 100%;
+  }
+
+  .tag-manage-list {
+    grid-template-columns: 1fr;
+  }
+
+  .tag-manage-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
