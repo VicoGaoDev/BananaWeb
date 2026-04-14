@@ -21,9 +21,9 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
-const typeFilter = ref<"" | "generate" | "inpaint">("");
-const modelFilter = ref("");
-const statusFilter = ref<"" | "pending" | "processing" | "success" | "failed">("");
+const typeFilter = ref<"generate" | "inpaint" | undefined>(undefined);
+const modelFilter = ref<string | undefined>(undefined);
+const statusFilter = ref<"pending" | "processing" | "success" | "failed" | undefined>(undefined);
 const promptFilter = ref("");
 const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const generationModels = ref<GenerationModelOption[]>([]);
@@ -56,10 +56,10 @@ async function loadHistory() {
   loading.value = true;
   try {
     const res = await fetchHistory(page.value, pageSize.value, {
-      mode: typeFilter.value || undefined,
-      model: modelFilter.value || undefined,
+      mode: typeFilter.value,
+      model: modelFilter.value,
       prompt: promptFilter.value,
-      status: statusFilter.value || undefined,
+      status: statusFilter.value,
       start_date: dateRangeFilter.value?.[0].startOf("day").toISOString(),
       end_date: dateRangeFilter.value?.[1].endOf("day").toISOString(),
     });
@@ -117,15 +117,22 @@ function formatTime(t: string) {
   return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
 }
 
+function formatImageSize(size?: number) {
+  const bytes = Number(size || 0);
+  if (!bytes) return "-";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function applyFilters() {
   page.value = 1;
   loadHistory();
 }
 
 function resetFilters() {
-  typeFilter.value = "";
-  modelFilter.value = "";
-  statusFilter.value = "";
+  typeFilter.value = undefined;
+  modelFilter.value = undefined;
+  statusFilter.value = undefined;
   promptFilter.value = "";
   dateRangeFilter.value = null;
   page.value = 1;
@@ -136,6 +143,11 @@ function openPreview(url: string) {
   if (!url) return;
   previewSrc.value = url;
   previewVisible.value = true;
+}
+
+function getHistoryImageSrc(image: Pick<UserHistoryCard, "image_url" | "status">) {
+  if (image.image_url) return image.image_url;
+  return image.status === "failed" ? "/failed-result.svg" : "";
 }
 
 function openDetail(item: UserHistoryCard) {
@@ -254,7 +266,13 @@ function handleReedit(item: UserHistoryCard) {
       <div v-else class="history-grid">
         <div v-for="item in items" :key="item.image_id" class="result-card warm-card" @click="openDetail(item)">
           <div class="result-card-media">
-            <img v-if="item.image_url" :src="item.image_url" alt="历史结果图" />
+            <img
+              v-if="getHistoryImageSrc(item)"
+              :src="getHistoryImageSrc(item)"
+              :alt="item.status === 'failed' ? '生成失败' : '历史结果图'"
+              :class="{ 'failed-result-image': item.status === 'failed' }"
+              @click.stop="openPreview(getHistoryImageSrc(item))"
+            />
             <div v-else class="result-card-placeholder">
               {{ item.status === "failed" ? "生成失败" : item.status === "processing" ? "生成中..." : "等待中..." }}
             </div>
@@ -265,6 +283,11 @@ function handleReedit(item: UserHistoryCard) {
               <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
               <a-tag class="warm-tag" :color="modeColor(item.mode)">{{ modeLabel(item.mode) }}</a-tag>
               <span class="result-card-time">{{ formatTime(item.created_at) }}</span>
+            </div>
+
+            <div class="result-card-file-meta">
+              <span>格式：{{ item.image_format || "-" }}</span>
+              <span>大小：{{ formatImageSize(item.image_size_bytes) }}</span>
             </div>
 
             <div class="result-card-actions">
@@ -355,9 +378,14 @@ function handleReedit(item: UserHistoryCard) {
               class="detail-thumb detail-result-thumb"
               @click="img.image_url && openPreview(img.image_url)"
             >
-              <img v-if="img.image_url" :src="img.image_url" alt="结果图" />
+              <img
+                v-if="img.image_url || img.status === 'failed'"
+                :src="img.image_url || '/failed-result.svg'"
+                :alt="img.status === 'failed' ? '生成失败' : '结果图'"
+                :class="{ 'failed-result-image': img.status === 'failed' }"
+              />
               <div v-else class="result-card-placeholder">
-                {{ img.status === "failed" ? "生成失败" : "等待中..." }}
+                等待中...
               </div>
             </div>
           </div>
@@ -467,6 +495,12 @@ function handleReedit(item: UserHistoryCard) {
   background: #fff8ee;
 }
 
+.failed-result-image {
+  object-fit: contain !important;
+  padding: 14px;
+  background: #fffdfb;
+}
+
 .result-card-body {
   padding-top: 12px;
 }
@@ -479,6 +513,15 @@ function handleReedit(item: UserHistoryCard) {
 }
 
 .result-card-time {
+  font-size: 12px;
+  color: #9b825f;
+}
+
+.result-card-file-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
   font-size: 12px;
   color: #9b825f;
 }

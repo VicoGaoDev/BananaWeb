@@ -14,7 +14,11 @@ export interface LoginResponse {
 export interface ImageResult {
   id: number;
   image_url: string;
+  preview_url?: string;
   status: "pending" | "success" | "failed";
+  image_format?: string;
+  image_size_bytes?: number;
+  is_deleted?: boolean;
 }
 
 export interface TaskResult {
@@ -41,6 +45,8 @@ export interface HistoryItem {
   size: string;
   resolution: string;
   status: string;
+  is_soft_deleted?: boolean;
+  soft_deleted_count?: number;
   created_at: string;
   images: ImageResult[];
 }
@@ -65,6 +71,9 @@ export interface UserHistoryCard {
   image_id: number;
   image_url: string;
   status: "pending" | "processing" | "success" | "failed";
+  image_format?: string;
+  image_size_bytes?: number;
+  is_soft_deleted?: boolean;
   model: string;
   mode: "generate" | "inpaint";
   prompt: string;
@@ -221,7 +230,7 @@ export interface TaskSceneConfig {
   credit_cost: number;
 }
 
-export type UploadPurpose = "ref" | "source" | "mask" | "reverse" | "misc";
+export type UploadPurpose = "ref" | "source" | "mask" | "reverse" | "misc" | "template";
 
 export interface UploadCredential {
   bucket: string;

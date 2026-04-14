@@ -1,14 +1,14 @@
 """
 AI image generation worker using configurable external APIs.
 
-Supports multiple reference images (base64) and falls back to a static error
-image on failure.
+Supports multiple reference images (base64) and marks outputs as failed when
+generation or persistence fails.
 """
 
 import base64
 import json
 import logging
-import shutil
+import uuid
 
 import httpx
 from pathlib import Path
@@ -26,9 +26,6 @@ from app.services.external_api_config_service import (
 )
 
 logger = logging.getLogger(__name__)
-
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-ERROR_IMAGE_PATH = STATIC_DIR / "error.svg"
 
 def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     """Read a local or remote image and return (mime_type, base64_data)."""
@@ -179,14 +176,20 @@ def _save_image_bytes(db, image_bytes: bytes, mime: str = "image/png") -> str:
     return upload_bytes_to_cos(db, data=image_bytes, key=key, content_type=mime)
 
 
-def _get_error_image_url() -> str:
-    """Copy static error image to uploads and return its URL."""
-    upload_dir = Path(settings.UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / "error.svg"
-    if not dest.exists():
-        shutil.copy2(ERROR_IMAGE_PATH, dest)
-    return "/uploads/error.svg"
+def _save_preview_image(image_bytes: bytes, mime: str = "image/png") -> str:
+    ext = MIME_TO_EXT.get(mime, "png")
+    preview_dir = Path(settings.UPLOAD_DIR) / "generated_preview"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{uuid.uuid4().hex}.{ext}"
+    file_path = preview_dir / file_name
+    file_path.write_bytes(image_bytes)
+    return f"/uploads/generated_preview/{file_name}"
+
+
+def _derive_image_format(mime: str) -> str:
+    if not mime:
+        return ""
+    return mime.split("/")[-1].upper()
 
 
 def _parse_reference_images(task: Task) -> list[str]:
@@ -198,6 +201,14 @@ def _parse_reference_images(task: Task) -> list[str]:
         return refs if isinstance(refs, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
+
+
+def _resolve_task_status(images: list[Image]) -> str:
+    if any(image.status == "pending" for image in images):
+        return "processing"
+    if images and all(image.status == "success" for image in images):
+        return "success"
+    return "failed"
 
 
 def _process_task(task_id: int):
@@ -228,18 +239,32 @@ def _process_task(task_id: int):
 
             if result:
                 img_bytes, mime = result
+                image.preview_url = _save_preview_image(img_bytes, mime)
+                image.image_url = ""
+                image.image_format = _derive_image_format(mime)
+                image.image_size_bytes = len(img_bytes)
+                image.status = "success"
+                db.commit()
                 try:
                     image.image_url = _save_image_bytes(db, img_bytes, mime)
-                    image.status = "success"
+                    db.commit()
                 except Exception:
                     logger.exception("Failed to persist generated image to storage")
-                    image.image_url = _get_error_image_url()
+                    image.preview_url = ""
+                    image.image_url = ""
+                    image.image_format = ""
+                    image.image_size_bytes = 0
                     image.status = "failed"
                     all_success = False
+                    db.commit()
             else:
-                image.image_url = _get_error_image_url()
+                image.preview_url = ""
+                image.image_url = ""
+                image.image_format = ""
+                image.image_size_bytes = 0
                 image.status = "failed"
                 all_success = False
+                db.commit()
 
         task.status = "success" if all_success else "failed"
         db.commit()
@@ -257,9 +282,15 @@ def _process_single_image(image_id: int):
         task = db.query(Task).filter(Task.id == image.task_id).first()
         if not task:
             image.status = "failed"
-            image.image_url = _get_error_image_url()
+            image.preview_url = ""
+            image.image_url = ""
+            image.image_format = ""
+            image.image_size_bytes = 0
             db.commit()
             return
+
+        task.status = "processing"
+        db.commit()
 
         ref_urls = _parse_reference_images(task)
         task_mode = (task.mode or "generate").lower()
@@ -277,6 +308,12 @@ def _process_single_image(image_id: int):
 
         if result:
             img_bytes, mime = result
+            image.preview_url = _save_preview_image(img_bytes, mime)
+            image.image_url = ""
+            image.image_format = _derive_image_format(mime)
+            image.image_size_bytes = len(img_bytes)
+            image.status = "success"
+            db.commit()
             try:
                 new_url = _save_image_bytes(db, img_bytes, mime)
                 log = (
@@ -288,15 +325,25 @@ def _process_single_image(image_id: int):
                 if log:
                     log.new_image_url = new_url
                 image.image_url = new_url
-                image.status = "success"
+                db.commit()
             except Exception:
                 logger.exception("Failed to persist regenerated image to storage")
-                image.image_url = _get_error_image_url()
+                image.preview_url = ""
+                image.image_url = ""
+                image.image_format = ""
+                image.image_size_bytes = 0
                 image.status = "failed"
+                db.commit()
         else:
-            image.image_url = _get_error_image_url()
+            image.preview_url = ""
+            image.image_url = ""
+            image.image_format = ""
+            image.image_size_bytes = 0
             image.status = "failed"
+            db.commit()
 
+        db.refresh(task)
+        task.status = _resolve_task_status(list(task.images))
         db.commit()
     finally:
         db.close()

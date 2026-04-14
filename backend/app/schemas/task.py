@@ -21,6 +21,7 @@ class TaskCreateResponse(BaseModel):
 class ImageOut(BaseModel):
     id: int
     image_url: str
+    preview_url: str = ""
     status: str
 
     model_config = {"from_attributes": True}

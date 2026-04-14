@@ -20,6 +20,7 @@ UPLOAD_PURPOSE_PREFIXES = {
     "mask": "mask",
     "reverse": "reverse",
     "misc": "misc",
+    "template": "template",
     "generated": "generated",
 }
 PUT_OBJECT_ACTIONS = [

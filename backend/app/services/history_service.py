@@ -27,6 +27,22 @@ def _resolve_history_card_status(task_status: str | None, image_status: str | No
     return image_status or task_status or "pending"
 
 
+def _serialize_history_images(images: list[Image], include_deleted: bool = False) -> list[dict]:
+    result: list[dict] = []
+    for img in sorted(images, key=lambda item: item.id, reverse=True):
+        if not include_deleted and img.is_deleted:
+            continue
+        result.append({
+            "id": img.id,
+            "image_url": img.image_url,
+            "status": img.status,
+            "image_format": img.image_format or "",
+            "image_size_bytes": int(img.image_size_bytes or 0),
+            "is_deleted": bool(img.is_deleted),
+        })
+    return result
+
+
 def get_user_history(
     db: Session,
     user_id: int,
@@ -44,6 +60,7 @@ def get_user_history(
         .join(Task, Image.task_id == Task.id)
         .options(selectinload(Image.task).selectinload(Task.images))
         .filter(Task.user_id == user_id)
+        .filter(Image.is_deleted.is_(False))
     )
     if mode:
         query = query.filter(Task.mode == mode)
@@ -73,11 +90,15 @@ def get_user_history(
     items = []
     for image in images:
         task = image.task
+        visible_images = _serialize_history_images(task.images)
         items.append({
             "task_id": task.id,
             "image_id": image.id,
             "image_url": image.image_url or "",
             "status": _resolve_history_card_status(task.status, image.status),
+            "image_format": image.image_format or "",
+            "image_size_bytes": int(image.image_size_bytes or 0),
+            "is_soft_deleted": False,
             "model": task.model or "",
             "mode": task.mode or "generate",
             "prompt": task.prompt or "",
@@ -87,10 +108,7 @@ def get_user_history(
             "size": task.size,
             "resolution": task.resolution or "",
             "created_at": task.created_at,
-            "images": [
-                {"id": img.id, "image_url": img.image_url, "status": img.status}
-                for img in sorted(task.images, key=lambda item: item.id, reverse=True)
-            ],
+            "images": visible_images,
         })
 
     return {"total": total, "items": items}
@@ -149,6 +167,8 @@ def get_all_history(
                 "avatar_url": (u.avatar_url or "") if u else "",
             }
 
+        soft_deleted_count = sum(1 for img in task.images if img.is_deleted)
+
         items.append({
             "task_id": task.id,
             "username": user_cache[task.user_id]["username"],
@@ -161,11 +181,10 @@ def get_all_history(
             "size": task.size,
             "resolution": task.resolution or "",
             "status": task.status,
+            "is_soft_deleted": soft_deleted_count > 0,
+            "soft_deleted_count": soft_deleted_count,
             "created_at": task.created_at,
-            "images": [
-                {"id": img.id, "image_url": img.image_url, "status": img.status}
-                for img in task.images
-            ],
+            "images": _serialize_history_images(task.images, include_deleted=True),
         })
 
     return {"total": total, "items": items}

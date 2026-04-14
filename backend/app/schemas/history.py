@@ -6,6 +6,9 @@ class HistoryImageOut(BaseModel):
     id: int
     image_url: str
     status: str
+    image_format: str = ""
+    image_size_bytes: int = 0
+    is_deleted: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -22,6 +25,8 @@ class HistoryItem(BaseModel):
     size: str
     resolution: str = ""
     status: str
+    is_soft_deleted: bool = False
+    soft_deleted_count: int = 0
     created_at: datetime | None = None
     images: list[HistoryImageOut] = []
 
@@ -36,6 +41,9 @@ class UserHistoryCardItem(BaseModel):
     image_id: int
     image_url: str = ""
     status: str
+    image_format: str = ""
+    image_size_bytes: int = 0
+    is_soft_deleted: bool = False
     model: str = ""
     mode: str = "generate"
     prompt: str = ""

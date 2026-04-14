@@ -285,7 +285,7 @@ async function handleRefUpload(e: Event) {
   refUploading.value = true;
   try {
     for (const file of files) {
-      const res = await uploadReferenceImage(file, "misc");
+      const res = await uploadReferenceImage(file, "template");
       form.reference_images.push(res.url);
     }
     message.success("参考图上传成功");
@@ -303,7 +303,7 @@ async function handleResultUpload(e: Event) {
   if (!file) return;
   resultUploading.value = true;
   try {
-    const res = await uploadReferenceImage(file, "misc");
+    const res = await uploadReferenceImage(file, "template");
     form.result_image = res.url;
     message.success("结果图上传成功");
   } catch {

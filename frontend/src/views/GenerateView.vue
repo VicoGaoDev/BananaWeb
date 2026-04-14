@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, h, inject, onMounted, type Ref } from "vue";
+import { ref, computed, h, inject, onBeforeUnmount, onMounted, type Ref } from "vue";
 import { message } from "ant-design-vue";
 import {
   CloseOutlined,
@@ -20,7 +20,7 @@ import {
 } from "@ant-design/icons-vue";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { createTask, getTask } from "@/api/tasks";
-import { getDownloadUrl, regenerateImage } from "@/api/images";
+import { getDownloadUrl, regenerateImage, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
 import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
@@ -53,11 +53,21 @@ const loading = ref(false);
 const images = ref<ImageResult[]>([]);
 const currentTaskId = ref<number | null>(null);
 
+type UploadItemStatus = "uploading" | "success" | "failed";
+
+interface UploadPreviewItem {
+  id: string;
+  localUrl: string;
+  remoteUrl: string;
+  status: UploadItemStatus;
+  objectUrl?: string;
+}
+
 const MAX_REFS = 6;
-const referenceUrls = ref<string[]>([]);
-const uploading = ref(false);
+const referenceItems = ref<UploadPreviewItem[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
 const sourceImageUrl = ref("");
+const sourcePreviewUrl = ref("");
 const sourceUploading = ref(false);
 const sourceInput = ref<HTMLInputElement | null>(null);
 const reverseImageUrl = ref("");
@@ -108,13 +118,6 @@ const sizeOptions = [
 ];
 
 const pendingCount = computed(() => images.value.filter((img) => img.status === "pending").length);
-const successCount = computed(() => images.value.filter((img) => img.status === "success").length);
-const resultSummary = computed(() => {
-  if (loading.value || pendingCount.value) return "AI 正在根据提示词逐张生成图片";
-  if (images.value.length && successCount.value === images.value.length) return "本次任务已完成，可预览、下载或重新生成";
-  if (images.value.length) return "部分结果已返回，请继续查看生成状态";
-  return "";
-});
 const resultEmptyTitle = computed(() => (
   generateMode.value === "promptReverse" ? "提示词反推结果会在左侧展示" : "生图结果将在这里展示"
 ));
@@ -123,6 +126,25 @@ const resultEmptyDesc = computed(() => (
     ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
     : "在左侧设置提示词和参数，点击「开始生成」即可"
 ));
+const resultLayoutClass = computed(() => ({
+  "result-list-single": images.value.length === 1,
+  "result-list-double": images.value.length >= 2,
+}));
+const referenceUrls = computed(() => (
+  referenceItems.value
+    .filter((item) => item.status === "success" && item.remoteUrl)
+    .map((item) => item.remoteUrl)
+));
+const uploading = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
+const hasPendingReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
+const hasFailedReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "failed"));
+const sourceDisplayUrl = computed(() => resolveImageUrl(sourcePreviewUrl.value || sourceImageUrl.value));
+const hasBlockedUploads = computed(() => {
+  if (generateMode.value === "inpaint") {
+    return !!sourcePreviewUrl.value && !sourceImageUrl.value;
+  }
+  return hasPendingReferenceUploads.value || hasFailedReferenceUploads.value;
+});
 const selectedModelOption = computed(
   () => generationModels.value.find((item) => item.model_key === selectedModel.value) || null
 );
@@ -173,12 +195,39 @@ async function triggerUpload() {
   fileInput.value?.click();
 }
 
+function revokeObjectUrl(url?: string) {
+  if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+}
+
+function syncReferenceItems(urls: string[]) {
+  referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
+  referenceItems.value = urls.map((url, index) => ({
+    id: `${Date.now()}-${index}-${url}`,
+    localUrl: url,
+    remoteUrl: url,
+    status: "success",
+  }));
+}
+
+function getReferencePreviewUrl(item: UploadPreviewItem) {
+  return resolveImageUrl(item.localUrl || item.remoteUrl);
+}
+
+function updateReferenceItem(id: string, patch: Partial<UploadPreviewItem>) {
+  const index = referenceItems.value.findIndex((item) => item.id === id);
+  if (index === -1) return;
+  referenceItems.value[index] = {
+    ...referenceItems.value[index],
+    ...patch,
+  };
+}
+
 async function handleFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
-  if (referenceUrls.value.length >= MAX_REFS) {
+  if (referenceItems.value.length >= MAX_REFS) {
     message.warning(`最多上传 ${MAX_REFS} 张参考图`);
     input.value = "";
     return;
@@ -190,21 +239,37 @@ async function handleFileChange(e: Event) {
     return;
   }
 
-  uploading.value = true;
+  const objectUrl = URL.createObjectURL(file);
+  const item: UploadPreviewItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    localUrl: objectUrl,
+    remoteUrl: "",
+    status: "uploading",
+    objectUrl,
+  };
+  referenceItems.value.push(item);
   try {
     const res = await uploadReferenceImage(file, "ref");
-    referenceUrls.value.push(res.url);
+    revokeObjectUrl(objectUrl);
+    updateReferenceItem(item.id, {
+      objectUrl: undefined,
+      localUrl: res.url,
+      remoteUrl: res.url,
+      status: "success",
+    });
     message.success("参考图上传成功");
   } catch {
+    updateReferenceItem(item.id, { status: "failed" });
     message.error("上传失败，请重试");
   } finally {
-    uploading.value = false;
     input.value = "";
   }
 }
 
 function removeReference(index: number) {
-  referenceUrls.value.splice(index, 1);
+  const item = referenceItems.value[index];
+  if (item) revokeObjectUrl(item.objectUrl);
+  referenceItems.value.splice(index, 1);
 }
 
 async function triggerSourceUpload() {
@@ -223,6 +288,9 @@ async function handleSourceFileChange(e: Event) {
     return;
   }
 
+  revokeObjectUrl(sourcePreviewUrl.value);
+  sourcePreviewUrl.value = URL.createObjectURL(file);
+  sourceImageUrl.value = "";
   sourceUploading.value = true;
   try {
     const res = await uploadReferenceImage(file, "source");
@@ -239,6 +307,8 @@ async function handleSourceFileChange(e: Event) {
 }
 
 function removeSourceImage() {
+  revokeObjectUrl(sourcePreviewUrl.value);
+  sourcePreviewUrl.value = "";
   sourceImageUrl.value = "";
   hasRepaintMask.value = false;
   canUndoMask.value = false;
@@ -320,6 +390,18 @@ const generateButtonText = computed(() => {
   if (loading.value) {
     return generateMode.value === "inpaint" ? "AI 局部重绘中..." : "AI 绘制中...";
   }
+  if (generateMode.value === "inpaint" && sourceUploading.value) {
+    return "原图上传中...";
+  }
+  if (generateMode.value === "inpaint" && sourcePreviewUrl.value && !sourceImageUrl.value) {
+    return "原图未上传完成";
+  }
+  if (generateMode.value === "generate" && hasPendingReferenceUploads.value) {
+    return "参考图上传中...";
+  }
+  if (generateMode.value === "generate" && hasFailedReferenceUploads.value) {
+    return "参考图上传失败，请处理后再生成";
+  }
   return isSuperAdmin.value ? "开始生成" : `开始生成 · ${creditCost.value} 积分`;
 });
 const promptReverseButtonText = computed(() => {
@@ -374,6 +456,14 @@ async function handleGenerate() {
     message.warning("请输入提示词");
     return;
   }
+  if (generateMode.value === "generate" && hasPendingReferenceUploads.value) {
+    message.warning("参考图仍在上传中，请稍候再发起任务");
+    return;
+  }
+  if (generateMode.value === "generate" && hasFailedReferenceUploads.value) {
+    message.warning("存在上传失败的参考图，请删除或重新上传后再试");
+    return;
+  }
   if (!isSuperAdmin.value && userCredits.value < creditCost.value) {
     message.warning(`积分不足，需要 ${creditCost.value} 积分，当前余额 ${userCredits.value}`);
     return;
@@ -393,7 +483,7 @@ async function handleGenerate() {
 
   if (generateMode.value === "inpaint") {
     if (!sourceImageUrl.value.trim()) {
-      message.warning("请先上传需要局部重绘的原图");
+      message.warning(sourceUploading.value ? "原图上传中，请稍候再试" : "请先上传需要局部重绘的原图");
       return;
     }
     if (!hasRepaintMask.value || !repaintCanvasRef.value?.hasDrawnMask()) {
@@ -469,9 +559,13 @@ function handlePreview(url: string) {
   previewVisible.value = true;
 }
 
-function handleDownload(imageId: number, imageUrl: string) {
+function getResultDisplayUrl(img: ImageResult) {
+  return resolveImageUrl(img.image_url || img.preview_url || "");
+}
+
+function handleDownload(imageId: number, imageUrl: string, previewUrl?: string) {
   const a = document.createElement("a");
-  a.href = getDownloadUrl(imageId, imageUrl);
+  a.href = getDownloadUrl(imageId, imageUrl, previewUrl);
   a.download = `banana_${imageId}.png`;
   a.click();
 }
@@ -523,20 +617,24 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
 
     if (draftMode === "inpaint") {
       repaintPrompt.value = draft.prompt || "";
+      revokeObjectUrl(sourcePreviewUrl.value);
       sourceImageUrl.value = draft.source_image || "";
+      sourcePreviewUrl.value = "";
       hasRepaintMask.value = false;
       canUndoMask.value = false;
       canRedoMask.value = false;
       repaintCanvasRef.value?.clearMask();
       prompt.value = "";
-      referenceUrls.value = [];
+      syncReferenceItems([]);
       numImages.value = 1;
     } else {
       prompt.value = draft.prompt || "";
       selectedModel.value = draft.model || selectedModel.value;
-      referenceUrls.value = Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : [];
-      numImages.value = Math.min(6, Math.max(1, Number(draft.num_images || 1)));
+      syncReferenceItems(Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : []);
+      numImages.value = Math.min(4, Math.max(1, Number(draft.num_images || 1)));
       repaintPrompt.value = "";
+      revokeObjectUrl(sourcePreviewUrl.value);
+      sourcePreviewUrl.value = "";
       sourceImageUrl.value = "";
       hasRepaintMask.value = false;
       canUndoMask.value = false;
@@ -583,6 +681,11 @@ onMounted(async () => {
     TEMPLATE_DRAFT_KEY
   );
 });
+
+onBeforeUnmount(() => {
+  referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
+  revokeObjectUrl(sourcePreviewUrl.value);
+});
 </script>
 
 <template>
@@ -591,67 +694,27 @@ onMounted(async () => {
       <div class="left-col">
         <a-tabs v-model:activeKey="generateMode" class="generate-tabs">
           <a-tab-pane key="generate" tab="文生图/图编辑">
-            <div class="prompt-block">
-              <div class="prompt-label-row">
-                <label>提示词</label>
-                <a-button type="text" class="history-btn" @click="openHistory">
-                  <template #icon><ClockCircleOutlined /></template>
-                </a-button>
-              </div>
-              <a-textarea
-                v-model:value="prompt"
-                :rows="5"
-                placeholder="描述您想要生成的图片..."
-                class="prompt-input"
-                :maxlength="2000"
-                show-count
-              />
-            </div>
-
-            <div class="settings-row model-row">
-              <div class="setting-item setting-item-full">
-                <label>模型</label>
-                <a-select
-                  v-model:value="selectedModel"
-                  :bordered="false"
-                  class="flat-select"
-                  popup-class-name="generate-dropdown"
-                >
-                  <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
-                    <div class="model-option">
-                      <div class="model-option-label">{{ model.model_label }}</div>
-                      <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
-                    </div>
-                  </a-select-option>
-                </a-select>
-              </div>
-            </div>
-
-            <div class="settings-row">
-              <div class="setting-item">
-                <label>宽高比</label>
-                <a-select
-                  v-model:value="size"
-                  :bordered="false"
-                  class="flat-select"
-                  popup-class-name="generate-dropdown"
-                  :options="sizeOptions"
-                />
-              </div>
-              <div v-if="!hideResolution" class="setting-item">
-                <label>分辨率</label>
-                <a-select
-                  v-model:value="resolution"
-                  :bordered="false"
-                  class="flat-select"
-                  popup-class-name="generate-dropdown"
-                  :options="resolutionOptions"
-                />
-              </div>
-            </div>
-
             <section class="work-panel settings-panel">
-              <div class="field-block">
+              <div class="settings-row model-row">
+                <div class="setting-item setting-item-full">
+                  <label>模型</label>
+                  <a-select
+                    v-model:value="selectedModel"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                  >
+                    <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
+                      <div class="model-option">
+                        <div class="model-option-label">{{ model.model_label }}</div>
+                        <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
+                      </div>
+                    </a-select-option>
+                  </a-select>
+                </div>
+              </div>
+
+              <div class="field-block ref-upload-block">
                 <div class="panel-head">
                   <h3>参考图</h3>
                   <span class="panel-hint">(可选，最多 {{ MAX_REFS }} 张)</span>
@@ -666,8 +729,15 @@ onMounted(async () => {
                 />
 
                 <div class="upload-grid">
-                  <div v-for="(url, idx) in referenceUrls" :key="idx" class="upload-thumb">
-                    <img :src="url" alt="参考图" />
+                  <div v-for="(item, idx) in referenceItems" :key="item.id" class="upload-thumb">
+                    <img :src="getReferencePreviewUrl(item)" alt="参考图" />
+                    <div v-if="item.status !== 'success'" class="upload-thumb-mask" :class="{ error: item.status === 'failed' }">
+                      <a-spin
+                        v-if="item.status === 'uploading'"
+                        :indicator="h(LoadingOutlined, { style: { fontSize: '18px', color: '#ff9f1a' } })"
+                      />
+                      <span v-else>上传失败</span>
+                    </div>
                     <a-button
                       type="text"
                       shape="circle"
@@ -679,7 +749,7 @@ onMounted(async () => {
                   </div>
 
                   <div
-                    v-if="referenceUrls.length < MAX_REFS"
+                    v-if="referenceItems.length < MAX_REFS"
                     class="upload-add"
                     @click="triggerUpload"
                   >
@@ -695,29 +765,71 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <div class="field-block">
-                <label>图片数量：{{ numImages }}</label>
-                <a-slider
-                  v-model:value="numImages"
-                  :min="1"
-                  :max="6"
-                  :marks="{ 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6' }"
-                  class="num-slider"
+              <div class="prompt-block">
+                <div class="prompt-label-row">
+                  <label>提示词</label>
+                  <a-button type="text" class="history-btn" @click="openHistory">
+                    <template #icon><ClockCircleOutlined /></template>
+                  </a-button>
+                </div>
+                <a-textarea
+                  v-model:value="prompt"
+                  :rows="5"
+                  placeholder="描述您想要生成的图片..."
+                  class="prompt-input"
+                  :maxlength="2000"
+                  show-count
                 />
               </div>
 
-              <a-button
-                type="primary"
-                block
-                size="large"
-                :loading="loading"
-                :disabled="!activePrompt.trim()"
-                class="generate-btn"
-                @click="handleGenerate"
-              >
-                <template #icon><ThunderboltOutlined /></template>
-                {{ generateButtonText }}
-              </a-button>
+              <div class="settings-row settings-row-inline">
+                <div class="setting-item setting-item-inline">
+                  <label>宽高比</label>
+                  <a-select
+                    v-model:value="size"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="sizeOptions"
+                  />
+                </div>
+                <div v-if="!hideResolution" class="setting-item setting-item-inline">
+                  <label>分辨率</label>
+                  <a-select
+                    v-model:value="resolution"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="resolutionOptions"
+                  />
+                </div>
+              </div>
+
+              <div class="generate-actions-block">
+                <div class="field-block">
+                  <label>图片数量：{{ numImages }}</label>
+                  <a-slider
+                    v-model:value="numImages"
+                    :min="1"
+                    :max="4"
+                    :marks="{ 1: '1', 2: '2', 3: '3', 4: '4' }"
+                    class="num-slider"
+                  />
+                </div>
+
+                <a-button
+                  type="primary"
+                  block
+                  size="large"
+                  :loading="loading"
+                  :disabled="!activePrompt.trim() || hasBlockedUploads"
+                  class="generate-btn"
+                  @click="handleGenerate"
+                >
+                  <template #icon><ThunderboltOutlined /></template>
+                  {{ generateButtonText }}
+                </a-button>
+              </div>
             </section>
           </a-tab-pane>
 
@@ -774,7 +886,7 @@ onMounted(async () => {
               </a-button>
 
               <div v-if="reversePromptResult" class="reverse-result-card">
-                <div class="panel-head" style="margin-bottom: 10px">
+                <div class="panel-head">
                   <h3>反推结果</h3>
                 </div>
                 <a-textarea
@@ -817,7 +929,7 @@ onMounted(async () => {
                 />
 
                 <div
-                  v-if="!sourceImageUrl"
+                  v-if="!sourceDisplayUrl"
                   class="source-upload-empty"
                   @click="triggerSourceUpload"
                 >
@@ -840,6 +952,9 @@ onMounted(async () => {
                     <div class="repaint-status-desc">
                       {{ hasRepaintMask ? "提交后只会修改已涂抹部分，未涂抹区域保持不变。" : "先上传原图，再直接在图片上绘制需要重绘的局部范围。" }}
                     </div>
+                    <div v-if="sourceUploading || (!sourceImageUrl && sourcePreviewUrl)" class="repaint-status-uploading">
+                      {{ sourceUploading ? "原图上传中，完成后可提交任务" : "原图上传未完成，请重新上传后再试" }}
+                    </div>
                   </div>
 
                   <div class="repaint-canvas-shell">
@@ -848,7 +963,7 @@ onMounted(async () => {
                     </button>
                     <RepaintCanvas
                       ref="repaintCanvasRef"
-                      :image-url="sourceImageUrl"
+                      :image-url="sourceDisplayUrl"
                       :brush-size="brushSize"
                       :tool="repaintTool"
                       @mask-change="handleMaskChange"
@@ -928,7 +1043,7 @@ onMounted(async () => {
                 block
                 size="large"
                 :loading="loading || sourceUploading"
-                :disabled="!activePrompt.trim()"
+                :disabled="!activePrompt.trim() || hasBlockedUploads"
                 class="generate-btn"
                 @click="handleGenerate"
               >
@@ -945,16 +1060,22 @@ onMounted(async () => {
           <h3>生成结果</h3>
         </div>
 
-        <div v-if="loading || pendingCount > 0" class="result-hero">
-          <div class="hero-ring spinning">
-            <component :is="LoadingOutlined" />
+        <div class="result-tips">
+          <div class="result-tip-line">
+            生图任务结果可在
+            <router-link to="/history" class="result-tip-link">历史记录</router-link>
+            中查看；
           </div>
-          <div class="hero-title">AI 正在生成您的图片...</div>
-          <div class="hero-subtitle">{{ resultSummary }}</div>
+          <div class="result-tip-line">服务器只保留原图15天，请尽快下载原图；</div>
         </div>
 
-        <div v-if="images.length" class="result-list">
-          <div v-for="(img, index) in images" :key="img.id" class="result-card">
+        <div v-if="images.length" class="result-list" :class="resultLayoutClass">
+          <div
+            v-for="(img, index) in images"
+            :key="img.id"
+            class="result-card"
+            :class="{ 'result-card-single': images.length === 1 }"
+          >
             <div class="result-card-head">
               <span>第 {{ index + 1 }} 张</span>
               <a-tag :color="img.status === 'success' ? 'blue' : img.status === 'failed' ? 'red' : 'gold'">
@@ -971,26 +1092,27 @@ onMounted(async () => {
             <div
               class="result-frame"
               :class="{
+                single: images.length === 1,
                 pending: img.status === 'pending',
                 failed: img.status === 'failed',
-                clickable: !!img.image_url,
+                clickable: !!getResultDisplayUrl(img),
               }"
-              @click="img.image_url && handlePreview(img.image_url)"
+              @click="getResultDisplayUrl(img) && handlePreview(getResultDisplayUrl(img))"
             >
-              <template v-if="img.status === 'success' && img.image_url">
-                <img :src="img.image_url" alt="生成结果" />
+              <template v-if="img.status === 'success' && getResultDisplayUrl(img)">
+                <img :src="getResultDisplayUrl(img)" alt="生成结果" />
                 <div class="result-actions">
-                  <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(img.image_url)">
+                  <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultDisplayUrl(img))">
                     <template #icon><EyeOutlined /></template>
                   </a-button>
-                  <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(img.id, img.image_url)">
+                  <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(img.id, img.image_url, img.preview_url)">
                     <template #icon><DownloadOutlined /></template>
                   </a-button>
                 </div>
               </template>
 
-              <template v-else-if="img.status === 'failed' && img.image_url">
-                <img :src="img.image_url" alt="生成失败" class="failed-image" />
+              <template v-else-if="img.status === 'failed'">
+                <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
                 <div class="frame-state error">
                   <span>生成失败，请重试</span>
                 </div>
@@ -1075,6 +1197,9 @@ onMounted(async () => {
 <style scoped lang="scss">
 .generate-page {
   min-height: calc(100vh - 112px);
+  --config-title-size: 14px;
+  --config-title-gap: 10px;
+  --config-title-color: #5e4524;
 }
 
 .generate-workbench {
@@ -1132,12 +1257,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--config-title-gap);
 
   label {
-    color: #5e4524;
-    font-size: 14px;
+    color: var(--config-title-color);
+    font-size: var(--config-title-size);
     font-weight: 700;
+    line-height: 1.4;
   }
 }
 
@@ -1175,21 +1301,47 @@ onMounted(async () => {
   gap: 16px;
 }
 
+.settings-row-inline {
+  align-items: center;
+}
+
 .setting-item {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--config-title-gap);
 
   label {
-    color: #5e4524;
-    font-size: 13px;
+    color: var(--config-title-color);
+    font-size: var(--config-title-size);
     font-weight: 700;
+    line-height: 1.4;
   }
 }
 
 .setting-item-full {
   flex: 1 1 100%;
+}
+
+.setting-item-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+
+  label {
+    margin: 0;
+    min-width: 56px;
+    flex: 0 0 auto;
+  }
+
+  .flat-select {
+    flex: 1;
+  }
+}
+
+.generate-actions-block {
+  display: flex;
+  flex-direction: column;
 }
 
 /* --- Card panel --- */
@@ -1205,13 +1357,14 @@ onMounted(async () => {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: var(--config-title-gap);
 
   h3 {
-    font-size: 16px;
-    line-height: 1.2;
-    color: #48321a;
+    font-size: var(--config-title-size);
+    line-height: 1.4;
+    color: var(--config-title-color);
     margin: 0;
+    font-weight: 700;
   }
 }
 
@@ -1242,6 +1395,25 @@ onMounted(async () => {
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+}
+
+.upload-thumb-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: rgba(255, 250, 240, 0.72);
+  color: #8f7558;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+
+  &.error {
+    background: rgba(255, 245, 243, 0.84);
+    color: #d6574b;
   }
 }
 
@@ -1288,10 +1460,11 @@ onMounted(async () => {
 
 .field-block label {
   display: block;
-  margin-bottom: 8px;
-  color: #5e4524;
-  font-size: 13px;
+  margin-bottom: var(--config-title-gap);
+  color: var(--config-title-color);
+  font-size: var(--config-title-size);
   font-weight: 700;
+  line-height: 1.4;
 }
 
 .flat-select {
@@ -1523,6 +1696,13 @@ onMounted(async () => {
   line-height: 1.7;
 }
 
+.repaint-status-uploading {
+  margin-top: 8px;
+  color: #c98511;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .repaint-canvas-shell {
   position: relative;
   border-radius: 18px;
@@ -1677,49 +1857,39 @@ onMounted(async () => {
   flex-direction: column;
 }
 
-.result-hero {
-  padding: 26px 20px;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fff8e8, #fffdf8);
-  border: 1px solid #f1dfbe;
-  text-align: center;
-}
-
-.hero-ring {
-  width: 60px;
-  height: 60px;
-  margin: 0 auto 14px;
-  border-radius: 50%;
-  border: 4px solid #f6ddab;
-  color: #f4a01d;
+.result-tips {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-
-  &.spinning {
-    animation: spin 1.1s linear infinite;
-  }
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
 }
 
-.hero-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #4e3820;
-}
-
-.hero-subtitle {
-  margin-top: 6px;
+.result-tip-line {
   color: #8f7558;
   font-size: 13px;
   line-height: 1.7;
 }
 
+.result-tip-link {
+  color: #d38a12;
+  font-weight: 700;
+  text-decoration: none;
+
+  &:hover {
+    color: #b87408;
+    text-decoration: underline;
+  }
+}
+
 .result-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-top: 16px;
+  grid-template-columns: 1fr;
+}
+
+.result-list-double {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .result-card {
@@ -1727,6 +1897,10 @@ onMounted(async () => {
   border-radius: 20px;
   border: 1px solid #f1dfbe;
   background: rgba(255, 255, 255, 0.78);
+}
+
+.result-card-single {
+  padding: 16px;
 }
 
 .result-card-head {
@@ -1747,6 +1921,10 @@ onMounted(async () => {
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
+
+  &.single {
+    min-height: 520px;
+  }
 
   img {
     width: 100%;
@@ -1769,7 +1947,10 @@ onMounted(async () => {
 }
 
 .failed-image {
-  opacity: 0.9;
+  object-fit: contain !important;
+  padding: 28px;
+  background: #fffdfb;
+  opacity: 0.96;
 }
 
 .result-actions {
@@ -1942,8 +2123,16 @@ onMounted(async () => {
     min-height: auto;
   }
 
-  .result-list {
+  .result-list-double {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .result-list-single {
+    grid-template-columns: 1fr;
+  }
+
+  .result-frame.single {
+    min-height: 420px;
   }
 }
 
@@ -1965,6 +2154,10 @@ onMounted(async () => {
 
   .result-list {
     grid-template-columns: 1fr;
+  }
+
+  .result-frame.single {
+    min-height: 320px;
   }
 }
 </style>

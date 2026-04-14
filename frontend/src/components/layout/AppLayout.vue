@@ -416,21 +416,24 @@ async function handleAvatarChange(e: Event) {
 
     <a-modal
       v-model:open="creditsContactVisible"
-      title="联系我们获取积分"
+      title="联系我们"
       :footer="null"
       :width="420"
       centered
     >
       <div class="credits-contact-modal">
-        <div class="credits-contact-text">
-          积分获取、api调用、技术支持、其他业务需求定制
-        </div>
         <div v-if="contactQrImage" class="credits-contact-qr">
           <img :src="contactQrImage" alt="contact qr code" />
         </div>
         <div v-else class="credits-contact-empty">
           暂未配置联系二维码，请联系管理员
         </div>
+        <ul class="credits-contact-list">
+          <li>积分获取</li>
+          <li>API调用</li>
+          <li>技术支持</li>
+          <li>需求定制</li>
+        </ul>
       </div>
     </a-modal>
 
@@ -805,10 +808,33 @@ async function handleAvatarChange(e: Event) {
   text-align: center;
 }
 
-.credits-contact-text {
+.credits-contact-list {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: center;
+  justify-items: start;
+  column-gap: 28px;
+  row-gap: 8px;
+  margin: 0 auto;
+  width: max-content;
+  max-width: 100%;
+  padding: 0 0 0 1.15em;
+  box-sizing: border-box;
+  list-style: disc;
+  list-style-position: outside;
+  text-align: left;
   color: #7b6544;
   font-size: 14px;
-  line-height: 1.8;
+  line-height: 1.6;
+
+  li {
+    display: list-item;
+
+    &::marker {
+      font-size: 0.75em;
+      color: #a88e68;
+    }
+  }
 }
 
 .credits-contact-qr {

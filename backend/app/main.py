@@ -25,6 +25,7 @@ def on_startup():
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
+    _ensure_image_required_columns()
     _ensure_template_required_columns()
     if settings.should_run_schema_compat:
         _ensure_schema_compat()
@@ -59,6 +60,19 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
         if "mask_image" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN mask_image VARCHAR(500) DEFAULT ''"))
+
+    image_columns = {col["name"] for col in inspector.get_columns("images")}
+    with engine.begin() as conn:
+        if "is_deleted" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
+        if "deleted_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN deleted_at DATETIME"))
+        if "preview_url" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN preview_url VARCHAR(500) DEFAULT ''"))
+        if "image_format" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
+        if "image_size_bytes" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
 
     api_key_tables = set(inspector.get_table_names())
     if "api_keys" in api_key_tables:
@@ -156,6 +170,25 @@ def _ensure_template_required_columns():
             conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
         if "sort_order" not in template_columns:
             conn.execute(text("ALTER TABLE templates ADD COLUMN sort_order INTEGER DEFAULT 0"))
+
+
+def _ensure_image_required_columns():
+    inspector = inspect(engine)
+    if "images" not in inspector.get_table_names():
+        return
+
+    image_columns = {col["name"] for col in inspector.get_columns("images")}
+    with engine.begin() as conn:
+        if "is_deleted" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
+        if "deleted_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN deleted_at DATETIME"))
+        if "preview_url" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN preview_url VARCHAR(500) DEFAULT ''"))
+        if "image_format" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
+        if "image_size_bytes" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
 
 
 def _initialize_template_sort_orders():

@@ -37,6 +37,7 @@ const columns = [
   { title: "提示词", dataIndex: "prompt", width: 200, ellipsis: true },
   { title: "尺寸", dataIndex: "size", width: 100 },
   { title: "状态", dataIndex: "status", width: 90 },
+  { title: "软删除", key: "softDelete", width: 110 },
   { title: "图片", key: "imgCount", width: 70 },
   { title: "时间", dataIndex: "created_at" },
 ];
@@ -199,6 +200,12 @@ const statCards = [
           </template>
           <template v-else-if="column.dataIndex === 'status'">
             <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'softDelete'">
+            <a-tag v-if="record.is_soft_deleted" color="orange">
+              已软删除<span v-if="record.soft_deleted_count">({{ record.soft_deleted_count }})</span>
+            </a-tag>
+            <a-tag v-else color="green">正常</a-tag>
           </template>
           <template v-else-if="column.key === 'imgCount'">
             {{ record.images.length }}
