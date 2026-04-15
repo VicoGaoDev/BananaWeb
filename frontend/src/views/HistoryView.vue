@@ -3,11 +3,13 @@ import { computed, ref, onMounted } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import {
+  CheckSquareOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
-  EditOutlined,
   PictureOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
 import { getGenerationModels } from "@/api/config";
@@ -29,6 +31,8 @@ const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const generationModels = ref<GenerationModelOption[]>([]);
 const detailOpen = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
+const selectedImageIds = ref<number[]>([]);
+const batchMode = ref(false);
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
@@ -52,6 +56,17 @@ const activeFilterCount = computed(() => {
   return count;
 });
 
+const currentPageIds = computed(() => items.value.map((item) => item.image_id));
+const selectedItems = computed(() => (
+  items.value.filter((item) => selectedImageIds.value.includes(item.image_id))
+));
+const selectedCount = computed(() => selectedItems.value.length);
+const selectableCount = computed(() => items.value.length);
+const downloadableSelectedItems = computed(() => selectedItems.value.filter((item) => !!item.image_url));
+const allVisibleSelected = computed(() => (
+  !!items.value.length && items.value.every((item) => selectedImageIds.value.includes(item.image_id))
+));
+
 async function loadHistory() {
   loading.value = true;
   try {
@@ -65,6 +80,7 @@ async function loadHistory() {
     });
     items.value = res.items;
     total.value = res.total;
+    selectedImageIds.value = selectedImageIds.value.filter((id) => res.items.some((item) => item.image_id === id));
   } catch {
     message.error("获取历史记录失败");
   } finally {
@@ -117,11 +133,29 @@ function formatTime(t: string) {
   return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
 }
 
+function getModelLabel(model?: string) {
+  if (!model) return "-";
+  return generationModels.value.find((item) => item.model_key === model)?.model_label || model;
+}
+
 function formatImageSize(size?: number) {
   const bytes = Number(size || 0);
   if (!bytes) return "-";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function detailMetaList(item: UserHistoryCard) {
+  return [
+    `状态：${statusLabel(item.status)}`,
+    `类型：${modeLabel(item.mode)}`,
+    `模型：${getModelLabel(item.model)}`,
+    `比例：${item.size || "-"}`,
+    item.resolution ? `分辨率：${item.resolution}` : "",
+    item.image_format ? `格式：${item.image_format}` : "",
+    item.image_size_bytes ? `大小：${formatImageSize(item.image_size_bytes)}` : "",
+    `时间：${formatTime(item.created_at)}`,
+  ].filter(Boolean);
 }
 
 function applyFilters() {
@@ -155,6 +189,45 @@ function openDetail(item: UserHistoryCard) {
   detailOpen.value = true;
 }
 
+function isSelected(imageId: number) {
+  return selectedImageIds.value.includes(imageId);
+}
+
+function toggleSelect(imageId: number, checked: boolean) {
+  if (checked) {
+    if (!selectedImageIds.value.includes(imageId)) selectedImageIds.value = [...selectedImageIds.value, imageId];
+    return;
+  }
+  selectedImageIds.value = selectedImageIds.value.filter((id) => id !== imageId);
+}
+
+function selectAllVisible() {
+  selectedImageIds.value = [...currentPageIds.value];
+}
+
+function invertVisibleSelection() {
+  selectedImageIds.value = currentPageIds.value.filter((id) => !selectedImageIds.value.includes(id));
+}
+
+function clearSelection() {
+  selectedImageIds.value = [];
+}
+
+function toggleBatchMode() {
+  batchMode.value = !batchMode.value;
+  if (!batchMode.value) clearSelection();
+}
+
+async function copyPrompt(text?: string) {
+  if (!text?.trim()) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success("已复制提示词");
+  } catch {
+    message.error("复制失败，请重试");
+  }
+}
+
 function download(imageId: number, imageUrl: string) {
   const a = document.createElement("a");
   a.href = getDownloadUrl(imageId, imageUrl);
@@ -170,9 +243,61 @@ async function handleDelete(item: UserHistoryCard) {
     async onOk() {
       await deleteImage(item.image_id);
       message.success("删除成功");
+      selectedImageIds.value = selectedImageIds.value.filter((id) => id !== item.image_id);
       if (items.value.length === 1 && page.value > 1) page.value -= 1;
       if (detailItem.value?.image_id === item.image_id) detailOpen.value = false;
       await loadHistory();
+    },
+  });
+}
+
+function handleBatchDownload() {
+  if (!selectedCount.value) {
+    message.warning("请先选择需要下载的记录");
+    return;
+  }
+  if (!downloadableSelectedItems.value.length) {
+    message.warning("选中项中没有可下载的原图");
+    return;
+  }
+  downloadableSelectedItems.value.forEach((item) => {
+    download(item.image_id, item.image_url);
+  });
+  message.success(`已开始下载 ${downloadableSelectedItems.value.length} 张图片`);
+}
+
+async function deleteSelectedItems() {
+  const ids = selectedImageIds.value.slice();
+  const results = await Promise.allSettled(ids.map((id) => deleteImage(id)));
+  const successIds = ids.filter((_, index) => results[index].status === "fulfilled");
+  const failedCount = ids.length - successIds.length;
+
+  if (successIds.length) {
+    selectedImageIds.value = selectedImageIds.value.filter((id) => !successIds.includes(id));
+    if (detailItem.value && successIds.includes(detailItem.value.image_id)) detailOpen.value = false;
+    if (successIds.length === items.value.length && page.value > 1) page.value -= 1;
+  }
+
+  await loadHistory();
+
+  if (failedCount) {
+    message.warning(`已删除 ${successIds.length} 项，${failedCount} 项删除失败`);
+    return;
+  }
+  message.success(`已删除 ${successIds.length} 项`);
+}
+
+function handleBatchDelete() {
+  if (!selectedCount.value) {
+    message.warning("请先选择需要删除的记录");
+    return;
+  }
+  Modal.confirm({
+    title: `确认删除已选中的 ${selectedCount.value} 条历史结果？`,
+    content: "仅删除当前选中的结果图；若任务下已无结果图，系统会自动清理空任务记录。",
+    centered: true,
+    async onOk() {
+      await deleteSelectedItems();
     },
   });
 }
@@ -255,7 +380,25 @@ function handleReedit(item: UserHistoryCard) {
       />
       <a-button type="primary" @click="applyFilters">筛选</a-button>
       <a-button @click="resetFilters">重置</a-button>
-      <span class="history-filter-tip">已启用 {{ activeFilterCount }} 个筛选条件</span>
+      <a-tooltip :title="batchMode ? '退出批量模式' : '进入批量模式'">
+        <a-button type="text" class="batch-mode-btn" :class="{ active: batchMode }" @click="toggleBatchMode">
+          <template #icon><CheckSquareOutlined /></template>
+        </a-button>
+      </a-tooltip>
+    </div>
+
+    <div v-if="batchMode && items.length" class="history-batch-bar warm-card">
+      <div class="history-batch-summary">
+        <span>已选 {{ selectedCount }} 项</span>
+        <span>当前页 {{ selectableCount }} 项</span>
+      </div>
+      <div class="history-batch-actions">
+        <a-button size="small" :disabled="!items.length || allVisibleSelected" @click="selectAllVisible">全选</a-button>
+        <a-button size="small" :disabled="!items.length" @click="invertVisibleSelection">反选</a-button>
+        <a-button size="small" :disabled="!selectedCount" @click="clearSelection">清空</a-button>
+        <a-button size="small" :disabled="!downloadableSelectedItems.length" @click="handleBatchDownload">批量下载</a-button>
+        <a-button danger size="small" :disabled="!selectedCount" @click="handleBatchDelete">批量删除</a-button>
+      </div>
     </div>
 
     <a-spin :spinning="loading">
@@ -265,6 +408,10 @@ function handleReedit(item: UserHistoryCard) {
 
       <div v-else class="history-grid">
         <div v-for="item in items" :key="item.image_id" class="result-card warm-card" @click="openDetail(item)">
+          <div v-if="batchMode" class="result-card-select" @click.stop>
+            <a-checkbox :checked="isSelected(item.image_id)" @change="(e) => toggleSelect(item.image_id, e.target.checked)" />
+          </div>
+
           <div class="result-card-media">
             <img
               v-if="getHistoryImageSrc(item)"
@@ -282,7 +429,6 @@ function handleReedit(item: UserHistoryCard) {
             <div class="result-card-meta">
               <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
               <a-tag class="warm-tag" :color="modeColor(item.mode)">{{ modeLabel(item.mode) }}</a-tag>
-              <span class="result-card-time">{{ formatTime(item.created_at) }}</span>
             </div>
 
             <div class="result-card-file-meta">
@@ -292,17 +438,23 @@ function handleReedit(item: UserHistoryCard) {
 
             <div class="result-card-actions">
               <a-tooltip title="重新编辑">
-                <a-button shape="circle" size="small" @click.stop="handleReedit(item)">
-                  <template #icon><EditOutlined /></template>
+                <a-button type="text" size="small" class="ghost-icon-btn" @click.stop="handleReedit(item)">
+                  <template #icon><ReloadOutlined /></template>
                 </a-button>
               </a-tooltip>
               <a-tooltip title="下载">
-                <a-button shape="circle" size="small" :disabled="!item.image_url" @click.stop="download(item.image_id, item.image_url)">
+                <a-button
+                  type="text"
+                  size="small"
+                  class="ghost-icon-btn"
+                  :disabled="!item.image_url"
+                  @click.stop="download(item.image_id, item.image_url)"
+                >
                   <template #icon><DownloadOutlined /></template>
                 </a-button>
               </a-tooltip>
               <a-tooltip title="删除">
-                <a-button shape="circle" size="small" danger @click.stop="handleDelete(item)">
+                <a-button type="text" size="small" class="ghost-icon-btn ghost-icon-btn-danger" @click.stop="handleDelete(item)">
                   <template #icon><DeleteOutlined /></template>
                 </a-button>
               </a-tooltip>
@@ -326,68 +478,100 @@ function handleReedit(item: UserHistoryCard) {
       v-model:open="detailOpen"
       title="任务详情"
       :footer="null"
-      :width="840"
+      :width="1040"
       centered
     >
       <template v-if="detailItem">
-        <div class="detail-section">
-          <div class="detail-label">提示词</div>
-          <div class="detail-prompt">{{ detailItem.prompt || "-" }}</div>
-        </div>
-
-        <div class="detail-tags">
-          <a-tag class="warm-tag" :color="modeColor(detailItem.mode)">{{ modeLabel(detailItem.mode) }}</a-tag>
-          <a-tag v-if="detailItem.model" class="warm-tag">{{ detailItem.model }}</a-tag>
-          <a-tag class="warm-tag">{{ detailItem.size }}</a-tag>
-          <a-tag v-if="detailItem.resolution" class="warm-tag">{{ detailItem.resolution }}</a-tag>
-          <a-tag class="warm-tag">{{ formatTime(detailItem.created_at) }}</a-tag>
-        </div>
-
-        <div v-if="detailItem.mode === 'inpaint' && detailItem.source_image" class="detail-section">
-          <div class="detail-label">局部重绘原图</div>
-          <div class="detail-thumb-row">
-            <div class="detail-thumb" @click="openPreview(detailItem.source_image)">
-              <img :src="detailItem.source_image" alt="局部重绘原图" />
-            </div>
-          </div>
-        </div>
-
-        <div v-if="detailItem.reference_images.length" class="detail-section">
-          <div class="detail-label">
-            <PictureOutlined />
-            <span>参考图</span>
-          </div>
-          <div class="detail-thumb-row">
-            <div
-              v-for="(ref, index) in detailItem.reference_images"
-              :key="index"
-              class="detail-thumb"
-              @click="openPreview(ref)"
-            >
-              <img :src="ref" alt="参考图" />
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <div class="detail-label">该任务全部结果</div>
-          <div class="detail-thumb-row">
-            <div
-              v-for="img in detailItem.images"
-              :key="img.id"
-              class="detail-thumb detail-result-thumb"
-              @click="img.image_url && openPreview(img.image_url)"
-            >
-              <img
-                v-if="img.image_url || img.status === 'failed'"
-                :src="img.image_url || '/failed-result.svg'"
-                :alt="img.status === 'failed' ? '生成失败' : '结果图'"
-                :class="{ 'failed-result-image': img.status === 'failed' }"
-              />
-              <div v-else class="result-card-placeholder">
-                等待中...
+        <div class="detail-layout">
+          <div class="detail-left">
+            <div class="detail-section">
+              <div class="detail-label">该任务全部结果</div>
+              <div class="detail-result-grid">
+                <div
+                  v-for="img in detailItem.images"
+                  :key="img.id"
+                  class="detail-result-card"
+                  :class="{
+                    single: detailItem.images.length === 1,
+                    pending: !img.image_url && img.status !== 'failed',
+                    failed: img.status === 'failed',
+                  }"
+                  @click="img.image_url && openPreview(img.image_url)"
+                >
+                  <img
+                    v-if="img.image_url || img.status === 'failed'"
+                    :src="img.image_url || '/failed-result.svg'"
+                    :alt="img.status === 'failed' ? '生成失败' : '结果图'"
+                    :class="{ 'failed-result-image': img.status === 'failed' }"
+                  />
+                  <div v-else class="result-card-placeholder">
+                    等待中...
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+
+          <div class="detail-right">
+            <div class="detail-section">
+              <div class="detail-label-row">
+                <div class="detail-label">提示词</div>
+                <a-button type="text" class="detail-copy-btn" @click="copyPrompt(detailItem.prompt)">
+                  <template #icon><CopyOutlined /></template>
+                  复制提示词
+                </a-button>
+              </div>
+              <div class="detail-prompt">{{ detailItem.prompt || "-" }}</div>
+            </div>
+
+            <div v-if="detailItem.mode === 'inpaint' && detailItem.source_image" class="detail-section">
+              <div class="detail-label">局部重绘原图</div>
+              <div class="detail-thumb-row">
+                <div class="detail-thumb" @click="openPreview(detailItem.source_image)">
+                  <img :src="detailItem.source_image" alt="局部重绘原图" />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="detailItem.reference_images.length" class="detail-section">
+              <div class="detail-label">
+                <PictureOutlined />
+                <span>参考图</span>
+              </div>
+              <div class="detail-thumb-row">
+                <div
+                  v-for="(ref, index) in detailItem.reference_images"
+                  :key="index"
+                  class="detail-thumb"
+                  @click="openPreview(ref)"
+                >
+                  <img :src="ref" alt="参考图" />
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <div class="detail-meta">
+                <span v-for="meta in detailMetaList(detailItem)" :key="meta">{{ meta }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="detail-floating-actions">
+            <a-tooltip title="重新编辑">
+              <a-button type="text" class="ghost-icon-btn detail-action-btn" @click="handleReedit(detailItem)">
+                <template #icon><ReloadOutlined /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="下载">
+              <a-button
+                type="text"
+                class="ghost-icon-btn detail-action-btn"
+                :disabled="!detailItem.image_url"
+                @click="download(detailItem.image_id, detailItem.image_url)"
+              >
+                <template #icon><DownloadOutlined /></template>
+              </a-button>
+            </a-tooltip>
           </div>
         </div>
       </template>
@@ -444,9 +628,51 @@ function handleReedit(item: UserHistoryCard) {
   color: #9b825f;
 }
 
+.batch-mode-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #8f7558 !important;
+
+  &:hover,
+  &:focus {
+    color: #c7800c !important;
+    background: #fff4df !important;
+  }
+
+  &.active {
+    color: #c7800c !important;
+    background: #fff4df !important;
+  }
+}
+
 .empty-state {
   padding: 80px 0;
   text-align: center;
+}
+
+.history-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+}
+
+.history-batch-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #8f7558;
+}
+
+.history-batch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .history-grid {
@@ -456,8 +682,22 @@ function handleReedit(item: UserHistoryCard) {
 }
 
 .result-card {
+  position: relative;
   padding: 14px;
   cursor: pointer;
+}
+
+.result-card-select {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(241, 221, 183, 0.92);
+  box-shadow: 0 6px 16px rgba(76, 52, 26, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 .result-card-media {
@@ -512,11 +752,6 @@ function handleReedit(item: UserHistoryCard) {
   flex-wrap: wrap;
 }
 
-.result-card-time {
-  font-size: 12px;
-  color: #9b825f;
-}
-
 .result-card-file-meta {
   display: flex;
   gap: 12px;
@@ -533,18 +768,97 @@ function handleReedit(item: UserHistoryCard) {
   margin-top: 12px;
 }
 
+.ghost-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: #8f7558 !important;
+
+  &:hover,
+  &:focus {
+    color: #c7800c !important;
+    background: #fff4df !important;
+  }
+}
+
+.ghost-icon-btn-danger {
+  color: #b97d72 !important;
+
+  &:hover,
+  &:focus {
+    color: #d6574b !important;
+    background: #fff1ef !important;
+  }
+}
+
 .detail-section + .detail-section {
   margin-top: 18px;
+}
+
+.detail-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 20px;
+  align-items: start;
+  padding-bottom: 0;
+}
+
+.detail-left,
+.detail-right {
+  min-width: 0;
+}
+
+.detail-right {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-action-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.detail-floating-actions {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 6px;
+  padding: 0 2px 2px 0;
 }
 
 .detail-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 10px;
   font-size: 13px;
   font-weight: 700;
   color: #8a6d45;
+}
+
+.detail-section > .detail-label {
+  margin-bottom: 10px;
+}
+
+.detail-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.detail-copy-btn {
+  height: 30px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  color: #a9772e !important;
+
+  &:hover {
+    background: #fff4df !important;
+    color: #c7800c !important;
+  }
 }
 
 .detail-prompt {
@@ -556,12 +870,6 @@ function handleReedit(item: UserHistoryCard) {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.detail-tags {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .detail-thumb-row {
@@ -587,9 +895,64 @@ function handleReedit(item: UserHistoryCard) {
   }
 }
 
-.detail-result-thumb {
-  width: 96px;
-  height: 96px;
+.detail-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.detail-result-card {
+  height: clamp(220px, 36vh, 340px);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #f1ddb7;
+  background: #fff8ee;
+  cursor: pointer;
+
+  img,
+  .result-card-placeholder {
+    width: 100%;
+    height: 100%;
+  }
+
+  img {
+    object-fit: contain;
+    display: block;
+    background: #fffdfb;
+  }
+
+  &.pending {
+    cursor: default;
+  }
+
+  &.failed img {
+    object-fit: contain;
+    padding: 18px;
+    background: #fffdfb;
+  }
+
+  &.single {
+    height: clamp(440px, 72vh, 680px);
+  }
+}
+
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fffaf2;
+  border: 1px solid #f2e3c6;
+  color: #8f7558;
+  font-size: 13px;
+  line-height: 1.8;
+
+  span:not(:last-child)::after {
+    content: "｜";
+    margin: 0 8px;
+    color: #d3b487;
+  }
 }
 
 @media (max-width: 900px) {
@@ -598,8 +961,32 @@ function handleReedit(item: UserHistoryCard) {
     align-items: stretch;
   }
 
+  .history-batch-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-batch-actions {
+    justify-content: flex-start;
+  }
+
   .history-grid {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-floating-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: 14px;
+    padding: 0;
+  }
+
+  .detail-result-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 }
 </style>
