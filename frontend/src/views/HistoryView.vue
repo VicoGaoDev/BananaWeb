@@ -201,6 +201,10 @@ function toggleSelect(imageId: number, checked: boolean) {
   selectedImageIds.value = selectedImageIds.value.filter((id) => id !== imageId);
 }
 
+function handleSelectChange(imageId: number, event: { target: { checked: boolean } }) {
+  toggleSelect(imageId, event.target.checked);
+}
+
 function selectAllVisible() {
   selectedImageIds.value = [...currentPageIds.value];
 }
@@ -235,6 +239,38 @@ function download(imageId: number, imageUrl: string) {
   a.click();
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getDownloadFilename(imageId: number, imageUrl?: string) {
+  const cleanPath = (imageUrl || "").split("?")[0] || "";
+  const suffix = cleanPath.includes(".") ? cleanPath.slice(cleanPath.lastIndexOf(".")) : ".png";
+  return `banana_${imageId}${suffix || ".png"}`;
+}
+
+async function downloadBlob(imageId: number, imageUrl: string) {
+  const url = getDownloadUrl(imageId, imageUrl);
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem("token");
+  if (token && !/^https?:\/\//.test(url)) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error("download_failed");
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = getDownloadFilename(imageId, imageUrl);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 async function handleDelete(item: UserHistoryCard) {
   Modal.confirm({
     title: "确认删除这张历史结果？",
@@ -251,7 +287,7 @@ async function handleDelete(item: UserHistoryCard) {
   });
 }
 
-function handleBatchDownload() {
+async function handleBatchDownload() {
   if (!selectedCount.value) {
     message.warning("请先选择需要下载的记录");
     return;
@@ -260,10 +296,27 @@ function handleBatchDownload() {
     message.warning("选中项中没有可下载的原图");
     return;
   }
-  downloadableSelectedItems.value.forEach((item) => {
-    download(item.image_id, item.image_url);
-  });
-  message.success(`已开始下载 ${downloadableSelectedItems.value.length} 张图片`);
+
+  let successCount = 0;
+  for (const item of downloadableSelectedItems.value) {
+    try {
+      await downloadBlob(item.image_id, item.image_url);
+      successCount += 1;
+      await wait(180);
+    } catch {
+      // continue downloading remaining items
+    }
+  }
+
+  if (!successCount) {
+    message.error("批量下载失败，请重试");
+    return;
+  }
+  if (successCount < downloadableSelectedItems.value.length) {
+    message.warning(`已下载 ${successCount} 张，部分图片下载失败`);
+    return;
+  }
+  message.success(`已开始下载 ${successCount} 张图片`);
 }
 
 async function deleteSelectedItems() {
@@ -409,7 +462,7 @@ function handleReedit(item: UserHistoryCard) {
       <div v-else class="history-grid">
         <div v-for="item in items" :key="item.image_id" class="result-card warm-card" @click="openDetail(item)">
           <div v-if="batchMode" class="result-card-select" @click.stop>
-            <a-checkbox :checked="isSelected(item.image_id)" @change="(e) => toggleSelect(item.image_id, e.target.checked)" />
+            <a-checkbox :checked="isSelected(item.image_id)" @change="handleSelectChange(item.image_id, $event)" />
           </div>
 
           <div class="result-card-media">

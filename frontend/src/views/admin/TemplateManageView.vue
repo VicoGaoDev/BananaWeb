@@ -56,7 +56,7 @@ const form = reactive<TemplatePayload>({
 
 const columns = [
   { title: "结果图", dataIndex: "result_image", width: 110 },
-  { title: "提示词", dataIndex: "prompt", ellipsis: true },
+  { title: "提示词", dataIndex: "prompt", width: 280, ellipsis: true },
   { title: "标签", key: "tags", width: 220 },
   { title: "排序", dataIndex: "sort_order", width: 90 },
   { title: "参数", key: "meta", width: 180 },
@@ -369,6 +369,8 @@ function fmtTime(t: string) {
         :loading="loading"
         row-key="id"
         :pagination="false"
+        :scroll="{ x: 1220 }"
+        class="admin-mobile-table"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'result_image'">
@@ -393,15 +395,17 @@ function fmtTime(t: string) {
             {{ fmtTime(record.created_at) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-button type="link" size="small" @click="openEdit(record)">
-              <template #icon><EditOutlined /></template>
-              编辑
-            </a-button>
-            <a-divider type="vertical" />
-            <a-button type="link" danger size="small" @click="handleDelete(record)">
-              <template #icon><DeleteOutlined /></template>
-              删除
-            </a-button>
+            <div class="table-actions">
+              <a-button type="link" size="small" @click="openEdit(record)">
+                <template #icon><EditOutlined /></template>
+                编辑
+              </a-button>
+              <a-divider type="vertical" />
+              <a-button type="link" danger size="small" @click="handleDelete(record)">
+                <template #icon><DeleteOutlined /></template>
+                删除
+              </a-button>
+            </div>
           </template>
         </template>
       </a-table>
@@ -638,6 +642,12 @@ function fmtTime(t: string) {
   font-weight: 600;
 }
 
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -714,6 +724,10 @@ function fmtTime(t: string) {
 }
 
 @media (max-width: 720px) {
+  :deep(.admin-mobile-table .ant-table-content) {
+    overflow-x: auto !important;
+  }
+
   .page-actions,
   .tag-manage-header,
   .tag-create-box {

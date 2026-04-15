@@ -24,7 +24,6 @@ import { getDownloadUrl, regenerateImage, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
 import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
-import { usePolling } from "@/composables/usePolling";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
 import type { GenerationModelOption, ImageResult, TaskResult, TaskSceneConfig } from "@/types";
@@ -49,9 +48,28 @@ const selectedModel = ref("banana_pro");
 const numImages = ref(1);
 const resolution = ref("2K");
 const size = ref("9:16");
-const loading = ref(false);
-const images = ref<ImageResult[]>([]);
-const currentTaskId = ref<number | null>(null);
+
+type GeneratedTaskStatus = TaskResult["status"] | "submitting";
+type SubmitMode = Exclude<GenerateMode, "promptReverse">;
+
+interface GeneratedTaskItem {
+  localId: string;
+  taskId: number | null;
+  mode: SubmitMode;
+  prompt: string;
+  model?: string;
+  numImages: number;
+  size: string;
+  resolution: string;
+  referenceImages: string[];
+  sourceImage?: string;
+  createdAt: string;
+  status: GeneratedTaskStatus;
+  images: ImageResult[];
+}
+
+const generatedTasks = ref<GeneratedTaskItem[]>([]);
+const taskPollTimers = new Map<number, ReturnType<typeof setInterval>>();
 
 type UploadItemStatus = "uploading" | "success" | "failed";
 
@@ -117,19 +135,14 @@ const sizeOptions = [
   { label: "▬  16:9", value: "16:9" },
 ];
 
-const pendingCount = computed(() => images.value.filter((img) => img.status === "pending").length);
 const resultEmptyTitle = computed(() => (
   generateMode.value === "promptReverse" ? "提示词反推结果会在左侧展示" : "生图结果将在这里展示"
 ));
 const resultEmptyDesc = computed(() => (
   generateMode.value === "promptReverse"
     ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
-    : "在左侧设置提示词和参数，点击「开始生成」即可"
+    : "在左侧设置提示词和参数后可连续发起任务，右侧会统一展示你本次提交的所有生图结果"
 ));
-const resultLayoutClass = computed(() => ({
-  "result-list-single": images.value.length === 1,
-  "result-list-double": images.value.length >= 2,
-}));
 const referenceUrls = computed(() => (
   referenceItems.value
     .filter((item) => item.status === "success" && item.remoteUrl)
@@ -159,22 +172,100 @@ const selectedModelCreditCost = computed(() => (
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
 
-const polling = usePolling<TaskResult>(
-  () => getTask(currentTaskId.value!),
-  {
-    interval: 2000,
-    shouldStop: (data) => data.status === "success" || data.status === "failed",
-    onResult: (data) => {
-      images.value = data.images;
-      if (data.status === "success" || data.status === "failed") {
-        loading.value = false;
-        data.status === "success"
-          ? message.success("图片生成完成！")
-          : message.warning("部分图片生成失败");
-      }
-    },
+type GenerateTaskPayload = {
+  model?: string;
+  prompt: string;
+  num_images: number;
+  size: string;
+  resolution: string;
+  mode?: "generate" | "inpaint";
+  reference_images?: string[];
+  source_image?: string;
+  mask_image?: string;
+};
+
+function createPendingImages(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: -(Date.now() + index + Math.floor(Math.random() * 1000)),
+    image_url: "",
+    status: "pending" as const,
+  }));
+}
+
+const resultItems = computed(() => (
+  generatedTasks.value.flatMap((task) => task.images.map((img, index) => ({
+    taskLocalId: task.localId,
+    taskId: task.taskId,
+    task,
+    image: img,
+    index,
+  })))
+));
+
+function updateGeneratedTask(localId: string, updater: (task: GeneratedTaskItem) => GeneratedTaskItem) {
+  generatedTasks.value = generatedTasks.value.map((task) => (
+    task.localId === localId ? updater(task) : task
+  ));
+}
+
+function updateGeneratedTaskByTaskId(taskId: number, updater: (task: GeneratedTaskItem) => GeneratedTaskItem) {
+  generatedTasks.value = generatedTasks.value.map((task) => (
+    task.taskId === taskId ? updater(task) : task
+  ));
+}
+
+function stopTaskPolling(taskId: number) {
+  const timer = taskPollTimers.get(taskId);
+  if (timer) {
+    clearInterval(timer);
+    taskPollTimers.delete(taskId);
   }
-);
+}
+
+function stopAllTaskPolling() {
+  taskPollTimers.forEach((timer) => clearInterval(timer));
+  taskPollTimers.clear();
+}
+
+function syncTaskFromResult(taskId: number, data: TaskResult) {
+  const current = generatedTasks.value.find((task) => task.taskId === taskId);
+  if (!current) return;
+  const previousStatus = current.status;
+  updateGeneratedTaskByTaskId(taskId, (task) => ({
+    ...task,
+    status: data.status,
+    createdAt: data.created_at || task.createdAt,
+    model: data.model || task.model,
+    size: data.size || task.size,
+    resolution: data.resolution || task.resolution,
+    numImages: data.num_images || task.numImages,
+    images: data.images.length ? data.images : task.images,
+  }));
+  if (previousStatus !== data.status && (data.status === "success" || data.status === "failed")) {
+    data.status === "success"
+      ? message.success(`任务 #${taskId} 已完成`)
+      : message.warning(`任务 #${taskId} 生成失败`);
+  }
+}
+
+async function refreshTask(taskId: number) {
+  const data = await getTask(taskId);
+  syncTaskFromResult(taskId, data);
+  if (data.status === "success" || data.status === "failed") stopTaskPolling(taskId);
+  return data;
+}
+
+function startTaskPolling(taskId: number) {
+  stopTaskPolling(taskId);
+  const timer = setInterval(async () => {
+    try {
+      await refreshTask(taskId);
+    } catch {
+      stopTaskPolling(taskId);
+    }
+  }, 2000);
+  taskPollTimers.set(taskId, timer);
+}
 
 async function ensureAuthenticated() {
   if (!auth.isLoggedIn) {
@@ -387,9 +478,6 @@ const creditCost = computed(() => (
 const userCredits = computed(() => auth.user?.credits ?? 0);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const generateButtonText = computed(() => {
-  if (loading.value) {
-    return generateMode.value === "inpaint" ? "AI 局部重绘中..." : "AI 绘制中...";
-  }
   if (generateMode.value === "inpaint" && sourceUploading.value) {
     return "原图上传中...";
   }
@@ -469,17 +557,7 @@ async function handleGenerate() {
     return;
   }
 
-  let payload: {
-    model?: string;
-    prompt: string;
-    num_images: number;
-    size: string;
-    resolution: string;
-    mode?: "generate" | "inpaint";
-    reference_images?: string[];
-    source_image?: string;
-    mask_image?: string;
-  };
+  let payload: GenerateTaskPayload;
 
   if (generateMode.value === "inpaint") {
     if (!sourceImageUrl.value.trim()) {
@@ -525,30 +603,88 @@ async function handleGenerate() {
     };
   }
 
-  loading.value = true;
-  images.value = [];
+  const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const submitMode: SubmitMode = generateMode.value === "inpaint" ? "inpaint" : "generate";
+  generatedTasks.value = [
+    {
+      localId,
+      taskId: null,
+      mode: submitMode,
+      prompt: activePrompt.value.trim(),
+      model: payload.model,
+      numImages: payload.num_images,
+      size: payload.size,
+      resolution: payload.resolution,
+      referenceImages: payload.reference_images ? [...payload.reference_images] : [],
+      sourceImage: payload.source_image,
+      createdAt: new Date().toISOString(),
+      status: "submitting",
+      images: createPendingImages(payload.num_images),
+    },
+    ...generatedTasks.value,
+  ];
   try {
     const res = await createTask(payload);
-    currentTaskId.value = res.task_id;
-    const taskData = await getTask(res.task_id);
-    images.value = taskData.images;
-    polling.start();
+    updateGeneratedTask(localId, (task) => ({ ...task, taskId: res.task_id, status: "pending" }));
+    try {
+      const taskData = await refreshTask(res.task_id);
+      if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(res.task_id);
+    } catch {
+      startTaskPolling(res.task_id);
+    }
     getMe().then((u) => auth.updateUser(u)).catch(() => {});
   } catch (err: any) {
-    loading.value = false;
+    generatedTasks.value = generatedTasks.value.filter((task) => task.localId !== localId);
     message.error(err.response?.data?.detail || "创建任务失败");
   }
 }
 
-async function handleRegenerate(imageId: number) {
+function handleReeditTask(task: GeneratedTaskItem) {
+  generateMode.value = task.mode;
+  size.value = task.size || "9:16";
+  resolution.value = task.resolution || "2K";
+
+  if (task.mode === "inpaint") {
+    repaintPrompt.value = task.prompt;
+    prompt.value = "";
+    syncReferenceItems([]);
+    revokeObjectUrl(sourcePreviewUrl.value);
+    sourcePreviewUrl.value = "";
+    sourceImageUrl.value = task.sourceImage || "";
+    hasRepaintMask.value = false;
+    canUndoMask.value = false;
+    canRedoMask.value = false;
+    repaintCanvasRef.value?.clearMask();
+  } else {
+    prompt.value = task.prompt;
+    repaintPrompt.value = "";
+    if (task.model) selectedModel.value = task.model;
+    numImages.value = Math.min(4, Math.max(1, Number(task.numImages || 1)));
+    syncReferenceItems(task.referenceImages);
+    revokeObjectUrl(sourcePreviewUrl.value);
+    sourcePreviewUrl.value = "";
+    sourceImageUrl.value = "";
+    hasRepaintMask.value = false;
+    canUndoMask.value = false;
+    canRedoMask.value = false;
+    repaintCanvasRef.value?.clearMask();
+  }
+  message.success("已回填到编辑区");
+}
+
+async function handleRegenerate(taskId: number, imageId: number) {
   try {
     await regenerateImage(imageId);
     message.success("已提交重新生成");
-    if (currentTaskId.value) {
-      const taskData = await getTask(currentTaskId.value);
-      images.value = taskData.images;
-      if (taskData.images.some((img) => img.status === "pending")) polling.start();
-    }
+    updateGeneratedTaskByTaskId(taskId, (task) => ({
+      ...task,
+      status: "processing",
+      images: task.images.map((img) => (
+        img.id === imageId ? { ...img, status: "pending", image_url: "", preview_url: undefined } : img
+      )),
+    }));
+    const taskData = await refreshTask(taskId);
+    if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(taskId);
   } catch (err: any) {
     message.error(err.response?.data?.detail || "重新生成失败");
   }
@@ -683,6 +819,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  stopAllTaskPolling();
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
   revokeObjectUrl(sourcePreviewUrl.value);
 });
@@ -821,7 +958,6 @@ onBeforeUnmount(() => {
                   type="primary"
                   block
                   size="large"
-                  :loading="loading"
                   :disabled="!activePrompt.trim() || hasBlockedUploads"
                   class="generate-btn"
                   @click="handleGenerate"
@@ -1042,7 +1178,7 @@ onBeforeUnmount(() => {
                 type="primary"
                 block
                 size="large"
-                :loading="loading || sourceUploading"
+                :loading="sourceUploading"
                 :disabled="!activePrompt.trim() || hasBlockedUploads"
                 class="generate-btn"
                 @click="handleGenerate"
@@ -1057,7 +1193,7 @@ onBeforeUnmount(() => {
 
       <section class="work-panel result-panel">
         <div class="panel-head">
-          <h3>生成结果</h3>
+          <h3>生成任务</h3>
         </div>
 
         <div class="result-tips">
@@ -1069,81 +1205,70 @@ onBeforeUnmount(() => {
           <div class="result-tip-line">服务器只保留原图15天，请尽快下载原图；</div>
         </div>
 
-        <div v-if="images.length" class="result-list" :class="resultLayoutClass">
-          <div
-            v-for="(img, index) in images"
-            :key="img.id"
-            class="result-card"
-            :class="{ 'result-card-single': images.length === 1 }"
-          >
-            <div class="result-card-head">
-              <span>第 {{ index + 1 }} 张</span>
-              <a-tag :color="img.status === 'success' ? 'blue' : img.status === 'failed' ? 'red' : 'gold'">
-                {{
-                  img.status === "success"
-                    ? "已完成"
-                    : img.status === "failed"
-                      ? "生成失败"
-                      : "生成中"
-                }}
-              </a-tag>
-            </div>
-
+        <div class="result-body">
+          <div v-if="resultItems.length" class="result-list">
             <div
-              class="result-frame"
-              :class="{
-                single: images.length === 1,
-                pending: img.status === 'pending',
-                failed: img.status === 'failed',
-                clickable: !!getResultDisplayUrl(img),
-              }"
-              @click="getResultDisplayUrl(img) && handlePreview(getResultDisplayUrl(img))"
+              v-for="item in resultItems"
+              :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
+              class="result-card"
+              :class="{ pending: item.image.status === 'pending' }"
             >
-              <template v-if="img.status === 'success' && getResultDisplayUrl(img)">
-                <img :src="getResultDisplayUrl(img)" alt="生成结果" />
-                <div class="result-actions">
-                  <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultDisplayUrl(img))">
-                    <template #icon><EyeOutlined /></template>
-                  </a-button>
-                  <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(img.id, img.image_url, img.preview_url)">
-                    <template #icon><DownloadOutlined /></template>
-                  </a-button>
-                </div>
-              </template>
+              <div
+                class="result-frame"
+                :class="{
+                  pending: item.image.status === 'pending',
+                  failed: item.image.status === 'failed',
+                  clickable: !!getResultDisplayUrl(item.image),
+                }"
+                @click="getResultDisplayUrl(item.image) && handlePreview(getResultDisplayUrl(item.image))"
+              >
+                <template v-if="item.image.status === 'success' && getResultDisplayUrl(item.image)">
+                  <img :src="getResultDisplayUrl(item.image)" alt="生成结果" />
+                  <div class="result-actions">
+                    <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultDisplayUrl(item.image))">
+                      <template #icon><EyeOutlined /></template>
+                    </a-button>
+                    <a-button
+                      shape="circle"
+                      class="icon-chip"
+                      :disabled="!item.taskId"
+                      @click.stop="item.taskId && handleRegenerate(item.taskId, item.image.id)"
+                    >
+                      <template #icon><ReloadOutlined /></template>
+                    </a-button>
+                    <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(item.image.id, item.image.image_url, item.image.preview_url)">
+                      <template #icon><DownloadOutlined /></template>
+                    </a-button>
+                  </div>
+                </template>
 
-              <template v-else-if="img.status === 'failed'">
-                <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
-                <div class="frame-state error">
-                  <span>生成失败，请重试</span>
-                </div>
-              </template>
+                <template v-else-if="item.image.status === 'failed'">
+                  <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
+                  <div class="frame-state error">
+                    <span>生成失败，请重试</span>
+                  <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
+                    <template #icon><EditOutlined /></template>
+                  </a-button>
+                  </div>
+                </template>
 
-              <template v-else>
-                <div class="frame-state">
-                  <a-spin
-                    :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#7c8db5' } })"
-                  />
-                  <span>正在生成图片...</span>
-                </div>
-              </template>
+                <template v-else>
+                  <div class="frame-state">
+                    <a-spin
+                      :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#7c8db5' } })"
+                    />
+                    <span>正在生成图片...</span>
+                  </div>
+                </template>
+              </div>
             </div>
-
-            <a-button
-              block
-              class="flat-action-btn"
-              :disabled="img.status === 'pending'"
-              @click="handleRegenerate(img.id)"
-            >
-              <template #icon><ReloadOutlined /></template>
-              重新生成
-            </a-button>
           </div>
-        </div>
 
-        <div v-else-if="!loading && pendingCount === 0" class="result-empty">
-          <PictureOutlined class="empty-icon" />
-          <div class="empty-title">{{ resultEmptyTitle }}</div>
-          <div class="empty-desc">{{ resultEmptyDesc }}</div>
+          <div v-else class="result-empty">
+            <PictureOutlined class="empty-icon" />
+            <div class="empty-title">{{ resultEmptyTitle }}</div>
+            <div class="empty-desc">{{ resultEmptyDesc }}</div>
+          </div>
         </div>
       </section>
     </div>
@@ -1197,6 +1322,7 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .generate-page {
   min-height: calc(100vh - 112px);
+  height: calc(100vh - 112px);
   --config-title-size: 14px;
   --config-title-gap: 10px;
   --config-title-color: #5e4524;
@@ -1206,12 +1332,15 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 382fr 618fr;
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 100%;
+  height: 100%;
 }
 
 .left-col {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .generate-tabs {
@@ -1852,9 +1981,11 @@ onBeforeUnmount(() => {
 
 /* --- Results --- */
 .result-panel {
-  min-height: calc(100vh - 156px);
+  min-height: 100%;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .result-tips {
@@ -1885,33 +2016,45 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 16px;
   margin-top: 16px;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.result-list-double {
-  grid-template-columns: repeat(2, 1fr);
+.result-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 16px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 188, 150, 0.45) transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    background: rgba(210, 188, 150, 0.45);
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: rgba(193, 164, 116, 0.58);
+  }
 }
 
 .result-card {
-  padding: 14px;
   border-radius: 20px;
-  border: 1px solid #f1dfbe;
-  background: rgba(255, 255, 255, 0.78);
-}
 
-.result-card-single {
-  padding: 16px;
-}
-
-.result-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-  color: #594223;
-  font-size: 13px;
-  font-weight: 700;
+  &.pending .result-frame {
+    aspect-ratio: 1 / 1;
+    min-height: auto;
+  }
 }
 
 .result-frame {
@@ -1921,10 +2064,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
-
-  &.single {
-    min-height: 520px;
-  }
 
   img {
     width: 100%;
@@ -1979,22 +2118,6 @@ onBeforeUnmount(() => {
       rgba(255, 247, 245, 0.86)
     );
     color: #d45b4d;
-  }
-}
-
-.flat-action-btn {
-  margin-top: 10px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid #f0ddbb;
-  background: #fff !important;
-  color: #6f583a !important;
-  font-weight: 700;
-
-  &:hover,
-  &:focus {
-    border-color: #f5b64c !important;
-    color: #d38a12 !important;
   }
 }
 
@@ -2115,25 +2238,29 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 960px) {
+  .generate-page {
+    height: auto;
+  }
+
   .generate-workbench {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .result-panel {
     min-height: auto;
+    height: auto;
   }
 
-  .result-list-double {
-    grid-template-columns: repeat(2, 1fr);
+  .result-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .result-list-single {
-    grid-template-columns: 1fr;
+  .result-body {
+    overflow-y: visible;
+    padding-right: 0;
   }
 
-  .result-frame.single {
-    min-height: 420px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -2154,10 +2281,6 @@ onBeforeUnmount(() => {
 
   .result-list {
     grid-template-columns: 1fr;
-  }
-
-  .result-frame.single {
-    min-height: 320px;
   }
 }
 </style>

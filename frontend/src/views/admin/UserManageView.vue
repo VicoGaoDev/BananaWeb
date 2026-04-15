@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { PlusOutlined, TeamOutlined, WalletOutlined } from "@ant-design/icons-vue";
+import { PlusOutlined, TeamOutlined, WalletOutlined, SearchOutlined, UndoOutlined } from "@ant-design/icons-vue";
 import { listUsers, createUser, updateUserStatus, updateUserRole, resetUserPassword, allocateCredits } from "@/api/admin";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser } from "@/types";
@@ -14,6 +14,11 @@ const loading = ref(false);
 const modalOpen = ref(false);
 const creating = ref(false);
 const form = reactive({ username: "", password: "", role: "user" });
+const filters = reactive({
+  username: "",
+  status: undefined as "active" | "disabled" | undefined,
+  sort: "created_at_desc" as "created_at_desc" | "credits_desc",
+});
 
 const resetPwdOpen = ref(false);
 const resetPwdLoading = ref(false);
@@ -34,6 +39,23 @@ const columns = [
   { title: "创建时间", dataIndex: "created_at", width: 170 },
   { title: "操作", key: "action", width: 320 },
 ];
+
+const filteredUsers = computed(() => {
+  const keyword = filters.username.trim().toLowerCase();
+  const list = users.value.filter((user) => {
+    const matchUsername = !keyword || user.username.toLowerCase().includes(keyword);
+    const matchStatus = !filters.status || user.status === filters.status;
+    return matchUsername && matchStatus;
+  });
+
+  return [...list].sort((a, b) => {
+    if (filters.sort === "credits_desc") {
+      if (b.credits !== a.credits) return b.credits - a.credits;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+});
 
 async function load() {
   loading.value = true;
@@ -120,9 +142,13 @@ async function handleAllocateCredits() {
     message.warning("请输入有效的积分数量");
     return;
   }
+  if (!creditsForm.description.trim()) {
+    message.warning("请填写备注说明");
+    return;
+  }
   creditsLoading.value = true;
   try {
-    await allocateCredits(creditsTarget.value.id, creditsForm.amount, creditsForm.description);
+    await allocateCredits(creditsTarget.value.id, creditsForm.amount, creditsForm.description.trim());
     message.success("积分分配成功");
     creditsOpen.value = false;
     load();
@@ -138,6 +164,12 @@ function isFirstAdmin(u: AdminUser) {
   if (!admins.length) return false;
   admins.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   return admins[0].id === u.id;
+}
+
+function resetFilters() {
+  filters.username = "";
+  filters.status = undefined;
+  filters.sort = "created_at_desc";
 }
 
 function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "-"; }
@@ -161,13 +193,49 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       </a-button>
     </div>
 
+    <div class="warm-card filter-bar">
+      <a-input
+        v-model:value="filters.username"
+        allow-clear
+        placeholder="按用户名筛选"
+        class="filter-input"
+      >
+        <template #prefix><SearchOutlined /></template>
+      </a-input>
+      <a-select
+        v-model:value="filters.status"
+        allow-clear
+        placeholder="用户状态"
+        class="filter-select"
+      >
+        <a-select-option value="active">正常</a-select-option>
+        <a-select-option value="disabled">禁用</a-select-option>
+      </a-select>
+      <a-select
+        v-model:value="filters.sort"
+        class="filter-select"
+      >
+        <a-select-option value="created_at_desc">创建时间（默认）</a-select-option>
+        <a-select-option value="credits_desc">剩余积分（从高到低）</a-select-option>
+      </a-select>
+      <a-button class="filter-reset-btn" @click="resetFilters">
+        <template #icon><UndoOutlined /></template>
+        重置
+      </a-button>
+      <div class="filter-result-count">
+        共筛出 <span>{{ filteredUsers.length }}</span> 个用户
+      </div>
+    </div>
+
     <div class="warm-card warm-table-card">
       <a-table
         :columns="columns"
-        :data-source="users"
+        :data-source="filteredUsers"
         :loading="loading"
         row-key="id"
         :pagination="false"
+        :scroll="{ x: 1050 }"
+        class="admin-mobile-table"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'username'">
@@ -194,35 +262,37 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
             {{ fmtTime(record.created_at) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-button type="link" size="small" @click="openCredits(record)">
-              <template #icon><WalletOutlined /></template>
-              分配积分
-            </a-button>
-            <template v-if="isSuperAdmin">
-              <a-divider type="vertical" />
-              <a-button
-                type="link"
-                size="small"
-                :danger="record.status === 'active'"
-                :disabled="isFirstAdmin(record) && record.status === 'active'"
-                @click="toggleStatus(record)"
-              >
-                {{ record.status === "active" ? "禁用" : "启用" }}
+            <div class="table-actions">
+              <a-button type="link" size="small" @click="openCredits(record)">
+                <template #icon><WalletOutlined /></template>
+                分配积分
               </a-button>
-              <a-divider type="vertical" />
-              <a-button
-                type="link"
-                size="small"
-                :disabled="isFirstAdmin(record)"
-                @click="toggleRole(record)"
-              >
-                {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
-              </a-button>
-              <a-divider type="vertical" />
-              <a-button type="link" size="small" @click="openResetPwd(record)">
-                重置密码
-              </a-button>
-            </template>
+              <template v-if="isSuperAdmin">
+                <a-divider type="vertical" />
+                <a-button
+                  type="link"
+                  size="small"
+                  :danger="record.status === 'active'"
+                  :disabled="isFirstAdmin(record) && record.status === 'active'"
+                  @click="toggleStatus(record)"
+                >
+                  {{ record.status === "active" ? "禁用" : "启用" }}
+                </a-button>
+                <a-divider type="vertical" />
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="isFirstAdmin(record)"
+                  @click="toggleRole(record)"
+                >
+                  {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
+                </a-button>
+                <a-divider type="vertical" />
+                <a-button type="link" size="small" @click="openResetPwd(record)">
+                  重置密码
+                </a-button>
+              </template>
+            </div>
           </template>
         </template>
       </a-table>
@@ -289,7 +359,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
           <a-input-number v-model:value="creditsForm.amount" style="width: 100%" placeholder="请输入积分数量" />
         </a-form-item>
         <a-form-item label="备注说明" style="margin-bottom: 0">
-          <a-input v-model:value="creditsForm.description" placeholder="可选" />
+          <a-input v-model:value="creditsForm.description" placeholder="请输入备注说明" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -297,6 +367,48 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 </template>
 
 <style scoped lang="scss">
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-input {
+  width: 220px;
+}
+
+.filter-select {
+  width: 180px;
+}
+
+.filter-reset-btn {
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid #e8d5c0 !important;
+  background: linear-gradient(180deg, #fffaf5, #fef3e8) !important;
+  color: #8c7458 !important;
+
+  &:hover {
+    border-color: #d4b896 !important;
+    color: #5d4526 !important;
+  }
+}
+
+.filter-result-count {
+  margin-left: auto;
+  color: #8c7458;
+  font-size: 14px;
+  white-space: nowrap;
+
+  span {
+    color: #b26c04;
+    font-weight: 700;
+  }
+}
+
 .user-cell {
   display: flex;
   align-items: center;
@@ -314,8 +426,34 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
   font-weight: 700;
 }
 
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 :deep(.ant-badge-status-text) {
   color: #6b5436;
   font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  :deep(.admin-mobile-table .ant-table-content) {
+    overflow-x: auto !important;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-input,
+  .filter-select {
+    width: 100%;
+  }
+
+  .filter-result-count {
+    margin-left: 0;
+  }
 }
 </style>

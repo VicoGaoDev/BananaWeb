@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, h, provide, nextTick } from "vue";
+import { ref, reactive, computed, onMounted, h, provide, nextTick, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message } from "ant-design-vue";
@@ -28,6 +28,7 @@ import {
   UserOutlined,
   UserAddOutlined,
   ThunderboltOutlined,
+  MenuOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -35,6 +36,31 @@ const route = useRoute();
 const auth = useAuthStore();
 const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
+const mobileDrawerOpen = ref(false);
+
+const primaryMenuItems = [
+  { key: "templates", label: "创意模版", icon: PictureOutlined },
+  { key: "generate", label: "自定义绘图", icon: ThunderboltOutlined },
+  { key: "history", label: "历史记录", icon: HistoryOutlined },
+];
+
+const adminMenuItems = computed(() =>
+  [
+    { key: "/admin/templates", label: "模版管理", icon: PictureOutlined, superAdminOnly: false },
+    { key: "/admin/users", label: "用户管理", icon: TeamOutlined, superAdminOnly: false },
+    { key: "/admin/dashboard", label: "数据统计", icon: BarChartOutlined, superAdminOnly: false },
+    { key: "/admin/api-key", label: "配置管理", icon: KeyOutlined, superAdminOnly: false },
+    { key: "/admin/cos-config", label: "COS 配置", icon: CloudUploadOutlined, superAdminOnly: true },
+    { key: "/admin/external-api-configs", label: "接口管理", icon: KeyOutlined, superAdminOnly: true },
+  ].filter((item) => !item.superAdminOnly || isSuperAdmin.value)
+);
+
+const userMenuItems = [
+  { key: "avatar", label: "上传头像", icon: UploadOutlined, danger: false },
+  { key: "password", label: "修改密码", icon: LockOutlined, danger: false },
+  { key: "credits", label: "积分记录", icon: ThunderboltOutlined, danger: false },
+  { key: "logout", label: "退出登录", icon: LogoutOutlined, danger: true },
+];
 
 const selectedKeys = computed(() => {
   const p = route.path;
@@ -50,6 +76,7 @@ const adminSelectedKeys = computed(() => {
 });
 
 function handleMenuClick({ key }: { key: string }) {
+  mobileDrawerOpen.value = false;
   if (key === "templates") router.push("/templates");
   else if (key === "generate") router.push("/generate");
   else if (key === "history") {
@@ -62,10 +89,12 @@ function handleMenuClick({ key }: { key: string }) {
 }
 
 function handleAdminMenu({ key }: { key: string }) {
+  mobileDrawerOpen.value = false;
   router.push(key);
 }
 
 function handleUserMenu({ key }: { key: string }) {
+  mobileDrawerOpen.value = false;
   if (key === "avatar") avatarVisible.value = true;
   else if (key === "password") pwdVisible.value = true;
   else if (key === "credits") router.push("/credit-logs");
@@ -84,6 +113,7 @@ const registerForm = reactive({ username: "", password: "", confirmPassword: "" 
 const registerLoading = ref(false);
 
 function openAuthModal(tab: "login" | "register") {
+  mobileDrawerOpen.value = false;
   authTab.value = tab;
   loginModalVisible.value = true;
 }
@@ -227,8 +257,20 @@ onMounted(async () => {
 });
 
 function openCreditsContact() {
+  mobileDrawerOpen.value = false;
   creditsContactVisible.value = true;
 }
+
+function toggleMobileDrawer() {
+  mobileDrawerOpen.value = !mobileDrawerOpen.value;
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    mobileDrawerOpen.value = false;
+  }
+);
 
 async function handleChangePwd() {
   if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) {
@@ -300,23 +342,25 @@ async function handleAvatarChange(e: Event) {
           </div>
         </div>
 
+        <div class="mobile-nav-entry">
+          <div v-if="auth.isLoggedIn" class="mobile-nav-credits" @click="openCreditsContact">
+            <ThunderboltOutlined />
+            <span>{{ auth.user?.credits ?? 0 }}</span>
+          </div>
+          <a-button class="mobile-nav-fab" type="primary" shape="circle" @click="toggleMobileDrawer">
+            <template #icon><MenuOutlined /></template>
+          </a-button>
+        </div>
+
         <a-menu
           mode="horizontal"
           :selected-keys="selectedKeys"
           class="header-menu"
           @click="handleMenuClick"
         >
-          <a-menu-item key="templates">
-            <PictureOutlined />
-            <span>创意模版</span>
-          </a-menu-item>
-          <a-menu-item key="generate">
-            <ThunderboltOutlined />
-            <span>自定义绘图</span>
-          </a-menu-item>
-          <a-menu-item key="history">
-            <HistoryOutlined />
-            <span>历史记录</span>
+          <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
+            <component :is="item.icon" />
+            <span>{{ item.label }}</span>
           </a-menu-item>
         </a-menu>
 
@@ -330,29 +374,9 @@ async function handleAvatarChange(e: Event) {
               </a-button>
               <template #overlay>
                 <a-menu :selected-keys="adminSelectedKeys" @click="handleAdminMenu">
-                  <a-menu-item key="/admin/templates">
-                    <PictureOutlined />
-                    <span style="margin-left: 8px">模版管理</span>
-                  </a-menu-item>
-                  <a-menu-item key="/admin/users">
-                    <TeamOutlined />
-                    <span style="margin-left: 8px">用户管理</span>
-                  </a-menu-item>
-                  <a-menu-item key="/admin/dashboard">
-                    <BarChartOutlined />
-                    <span style="margin-left: 8px">数据统计</span>
-                  </a-menu-item>
-                  <a-menu-item key="/admin/api-key">
-                    <KeyOutlined />
-                    <span style="margin-left: 8px">配置管理</span>
-                  </a-menu-item>
-                  <a-menu-item v-if="isSuperAdmin" key="/admin/cos-config">
-                    <CloudUploadOutlined />
-                    <span style="margin-left: 8px">COS 配置</span>
-                  </a-menu-item>
-                  <a-menu-item v-if="isSuperAdmin" key="/admin/external-api-configs">
-                    <KeyOutlined />
-                    <span style="margin-left: 8px">接口管理</span>
+                  <a-menu-item v-for="item in adminMenuItems" :key="item.key">
+                    <component :is="item.icon" />
+                    <span style="margin-left: 8px">{{ item.label }}</span>
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -372,22 +396,21 @@ async function handleAvatarChange(e: Event) {
               </div>
               <template #overlay>
                 <a-menu @click="handleUserMenu">
-                  <a-menu-item key="avatar">
-                    <UploadOutlined />
-                    <span style="margin-left: 8px">上传头像</span>
-                  </a-menu-item>
-                  <a-menu-item key="password">
-                    <LockOutlined />
-                    <span style="margin-left: 8px">修改密码</span>
-                  </a-menu-item>
-                  <a-menu-item key="credits">
-                    <ThunderboltOutlined />
-                    <span style="margin-left: 8px">积分记录</span>
+                  <a-menu-item
+                    v-for="item in userMenuItems.filter((entry) => !entry.danger)"
+                    :key="item.key"
+                  >
+                    <component :is="item.icon" />
+                    <span style="margin-left: 8px">{{ item.label }}</span>
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item key="logout" danger>
-                    <LogoutOutlined />
-                    <span style="margin-left: 8px">退出登录</span>
+                  <a-menu-item
+                    v-for="item in userMenuItems.filter((entry) => entry.danger)"
+                    :key="item.key"
+                    danger
+                  >
+                    <component :is="item.icon" />
+                    <span style="margin-left: 8px">{{ item.label }}</span>
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -413,6 +436,99 @@ async function handleAvatarChange(e: Event) {
         <router-view />
       </div>
     </a-layout-content>
+
+    <a-drawer
+      v-model:open="mobileDrawerOpen"
+      placement="right"
+      :width="320"
+      class="mobile-nav-drawer"
+      title="导航菜单"
+    >
+      <div class="mobile-drawer-content">
+        <div class="mobile-drawer-brand">
+          <div class="brand-mark">🍌</div>
+          <div class="brand-copy">
+            <span class="brand-name">Banana Web</span>
+            <span class="brand-sub">AI Creative Studio</span>
+          </div>
+        </div>
+
+        <div v-if="auth.isLoggedIn" class="mobile-user-card">
+          <a-avatar :size="48" class="user-avatar" :src="avatarUrl || undefined">
+            {{ avatarFallback }}
+          </a-avatar>
+          <div class="mobile-user-meta">
+            <span class="mobile-user-name">{{ auth.user?.username }}</span>
+            <span class="mobile-user-role">
+              {{ isSuperAdmin ? "超级管理员" : isAdmin ? "管理员" : "普通用户" }}
+            </span>
+          </div>
+          <div class="mobile-user-credits" @click="openCreditsContact">
+            <ThunderboltOutlined />
+            <span>{{ auth.user?.credits ?? 0 }}</span>
+          </div>
+        </div>
+
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-section-title">功能导航</div>
+          <a-menu
+            mode="inline"
+            :selected-keys="selectedKeys"
+            class="mobile-drawer-menu"
+            @click="handleMenuClick"
+          >
+            <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
+              <component :is="item.icon" />
+              <span>{{ item.label }}</span>
+            </a-menu-item>
+          </a-menu>
+        </div>
+
+        <div v-if="auth.isLoggedIn && isAdmin" class="mobile-drawer-section">
+          <div class="mobile-drawer-section-title">管理后台</div>
+          <a-menu
+            mode="inline"
+            :selected-keys="adminSelectedKeys"
+            class="mobile-drawer-menu"
+            @click="handleAdminMenu"
+          >
+            <a-menu-item v-for="item in adminMenuItems" :key="item.key">
+              <component :is="item.icon" />
+              <span>{{ item.label }}</span>
+            </a-menu-item>
+          </a-menu>
+        </div>
+
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-section-title">
+            {{ auth.isLoggedIn ? "账户操作" : "账户入口" }}
+          </div>
+
+          <div v-if="auth.isLoggedIn">
+            <a-menu mode="inline" class="mobile-drawer-menu" @click="handleUserMenu">
+              <a-menu-item
+                v-for="item in userMenuItems"
+                :key="item.key"
+                :danger="item.danger"
+              >
+                <component :is="item.icon" />
+                <span>{{ item.label }}</span>
+              </a-menu-item>
+            </a-menu>
+          </div>
+          <div v-else class="mobile-auth-actions">
+            <a-button type="primary" class="login-header-btn" block @click="openAuthModal('login')">
+              <template #icon><UserOutlined /></template>
+              登录
+            </a-button>
+            <a-button class="register-header-btn" block @click="openAuthModal('register')">
+              <template #icon><UserAddOutlined /></template>
+              注册
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </a-drawer>
 
     <a-modal
       v-model:open="creditsContactVisible"
@@ -732,6 +848,145 @@ async function handleAvatarChange(e: Event) {
   flex-shrink: 0;
 }
 
+.mobile-nav-fab {
+  width: 54px;
+  height: 54px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none !important;
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  box-shadow: 0 16px 30px rgba(255, 169, 37, 0.26);
+}
+
+.mobile-nav-entry {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.mobile-nav-credits {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 247, 232, 0.92);
+  border: 1px solid #efcf93;
+  color: #d48806;
+  font-weight: 700;
+  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.14);
+  cursor: pointer;
+}
+
+.mobile-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mobile-drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mobile-user-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fff7e8, #ffefcf);
+  border: 1px solid #efcf93;
+  box-shadow: 0 12px 24px rgba(239, 183, 73, 0.12);
+}
+
+.mobile-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mobile-user-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #4c341a;
+  word-break: break-all;
+}
+
+.mobile-user-role {
+  font-size: 12px;
+  color: #9a7948;
+}
+
+.mobile-user-credits {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #d48806;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mobile-drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-drawer-section-title {
+  padding-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b8883f;
+}
+
+.mobile-drawer-menu {
+  border-inline-end: none !important;
+  background: transparent !important;
+
+  :deep(.ant-menu-item) {
+    height: 48px;
+    line-height: 48px;
+    margin: 4px 0 !important;
+    border-radius: 16px;
+    font-weight: 700;
+    color: #6f5837;
+  }
+
+  :deep(.ant-menu-item-selected) {
+    background: linear-gradient(180deg, #ffd06d, #ffb02b) !important;
+    color: #523713 !important;
+    box-shadow: 0 10px 18px rgba(255, 176, 43, 0.18);
+  }
+
+  :deep(.ant-menu-item-danger) {
+    color: #c85a49 !important;
+  }
+
+  :deep(.ant-menu-item-danger:hover) {
+    background: #fff1ee !important;
+    color: #b84b3b !important;
+  }
+}
+
+.mobile-auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .admin-btn {
   height: 40px;
   padding-inline: 14px;
@@ -897,6 +1152,22 @@ async function handleAvatarChange(e: Event) {
   margin: 0 auto;
 }
 
+:deep(.mobile-nav-drawer .ant-drawer-header) {
+  padding: 20px 20px 0;
+  border-bottom: none;
+  background: linear-gradient(180deg, #fffdf8, #fff9ef);
+}
+
+:deep(.mobile-nav-drawer .ant-drawer-title) {
+  color: #4c341a;
+  font-weight: 700;
+}
+
+:deep(.mobile-nav-drawer .ant-drawer-body) {
+  padding: 18px 20px 24px;
+  background: linear-gradient(180deg, #fffdf8, #fff6ea);
+}
+
 :deep(.warm-dropdown .ant-dropdown-menu) {
   padding: 10px;
   border-radius: 20px;
@@ -1051,27 +1322,34 @@ async function handleAvatarChange(e: Event) {
 @media (max-width: 960px) {
   .app-header {
     padding-inline: 12px !important;
+    height: auto;
   }
 
   .header-inner {
-    padding: 0 14px;
+    padding: 0 16px;
     gap: 12px;
-    flex-wrap: wrap;
-    height: auto;
+    height: 74px;
     min-height: 74px;
   }
 
   .header-brand {
-    margin-right: 8px;
+    margin-right: 0;
   }
 
   .header-menu {
-    order: 3;
-    width: 100%;
+    display: none;
   }
 
   .header-actions {
-    margin-left: 0;
+    display: none;
+  }
+
+  .mobile-nav-entry {
+    display: inline-flex;
+  }
+
+  .mobile-nav-fab {
+    display: inline-flex;
   }
 }
 
@@ -1087,6 +1365,10 @@ async function handleAvatarChange(e: Event) {
 
   .app-content {
     padding-inline: 14px;
+  }
+
+  :deep(.mobile-nav-drawer .ant-drawer-content-wrapper) {
+    width: min(88vw, 320px) !important;
   }
 }
 </style>

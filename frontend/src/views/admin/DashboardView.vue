@@ -39,7 +39,7 @@ const columns = [
   { title: "状态", dataIndex: "status", width: 90 },
   { title: "软删除", key: "softDelete", width: 110 },
   { title: "图片", key: "imgCount", width: 70 },
-  { title: "时间", dataIndex: "created_at" },
+  { title: "时间", dataIndex: "created_at", width: 180 },
 ];
 
 function buildFilter(): HistoryFilter | undefined {
@@ -188,6 +188,8 @@ const statCards = [
         :loading="loading"
         row-key="task_id"
         :pagination="false"
+        :scroll="{ x: 980 }"
+        class="admin-mobile-table"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'username'">
@@ -323,6 +325,10 @@ const statCards = [
 }
 
 @media (max-width: 768px) {
+  :deep(.admin-mobile-table .ant-table-content) {
+    overflow-x: auto !important;
+  }
+
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
