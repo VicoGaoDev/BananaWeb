@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import {
@@ -33,6 +33,8 @@ const detailOpen = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
 const selectedImageIds = ref<number[]>([]);
 const batchMode = ref(false);
+const HISTORY_POLL_INTERVAL_MS = 10000;
+let historyPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
@@ -67,7 +69,30 @@ const allVisibleSelected = computed(() => (
   !!items.value.length && items.value.every((item) => selectedImageIds.value.includes(item.image_id))
 ));
 
-async function loadHistory() {
+function hasRunningTasks(list: UserHistoryCard[]) {
+  return list.some((item) => item.status === "pending" || item.status === "processing");
+}
+
+function stopHistoryPolling() {
+  if (historyPollTimer) {
+    clearInterval(historyPollTimer);
+    historyPollTimer = null;
+  }
+}
+
+function syncHistoryPolling() {
+  if (!hasRunningTasks(items.value)) {
+    stopHistoryPolling();
+    return;
+  }
+  if (historyPollTimer) return;
+  historyPollTimer = window.setInterval(() => {
+    if (loading.value) return;
+    loadHistory(true);
+  }, HISTORY_POLL_INTERVAL_MS);
+}
+
+async function loadHistory(silent = false) {
   loading.value = true;
   try {
     const res = await fetchHistory(page.value, pageSize.value, {
@@ -81,8 +106,13 @@ async function loadHistory() {
     items.value = res.items;
     total.value = res.total;
     selectedImageIds.value = selectedImageIds.value.filter((id) => res.items.some((item) => item.image_id === id));
+    if (detailItem.value) {
+      const refreshedDetail = res.items.find((item) => item.image_id === detailItem.value?.image_id);
+      if (refreshedDetail) detailItem.value = refreshedDetail;
+    }
+    syncHistoryPolling();
   } catch {
-    message.error("获取历史记录失败");
+    if (!silent) message.error("获取历史记录失败");
   } finally {
     loading.value = false;
   }
@@ -98,6 +128,7 @@ async function loadModels() {
 
 onMounted(loadHistory);
 onMounted(loadModels);
+onBeforeUnmount(stopHistoryPolling);
 
 function handlePageChange(p: number) {
   page.value = p;
