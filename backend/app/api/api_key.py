@@ -8,15 +8,18 @@ from app.database import get_db
 from app.models.api_key import ApiKey
 from app.models.user import User
 from app.schemas.api_key import (
+    AdminConfigOut,
+    AdminConfigUpdate,
     AnnouncementConfigOut,
-    ApiKeyOut,
-    ApiKeyUpdate,
     CosConfigOut,
     CosConfigUpdate,
+    ExternalApiSecretConfigOut,
+    ExternalApiSecretConfigUpdate,
 )
 
 router = APIRouter(prefix="/api/admin/api-key", tags=["API Key 管理"])
 cos_router = APIRouter(prefix="/api/admin/cos-config", tags=["COS 配置"])
+secret_router = APIRouter(prefix="/api/admin/external-api-secrets", tags=["接口密钥配置"])
 public_router = APIRouter(prefix="/api/config", tags=["公开配置"])
 
 
@@ -52,7 +55,7 @@ def get_announcement_config(db: Session = Depends(get_db)):
     )
 
 
-@router.get("", response_model=ApiKeyOut | None)
+@router.get("", response_model=AdminConfigOut | None)
 def get_api_key(
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -60,9 +63,9 @@ def get_api_key(
     return _get_record(db)
 
 
-@router.put("", response_model=ApiKeyOut)
+@router.put("", response_model=AdminConfigOut)
 def set_api_key(
-    body: ApiKeyUpdate,
+    body: AdminConfigUpdate,
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -72,8 +75,6 @@ def set_api_key(
         bool(record.announcement_enabled) != bool(body.announcement_enabled)
         or (record.announcement_content or "") != normalized_announcement_content
     )
-    record.key = body.key
-    record.tongyi_key = body.tongyi_key
     record.contact_qr_image = body.contact_qr_image
     record.announcement_enabled = 1 if body.announcement_enabled else 0
     record.announcement_content = normalized_announcement_content
@@ -93,14 +94,34 @@ def delete_api_key(
 ):
     record = _get_record(db)
     if record:
-        record.key = ""
-        record.tongyi_key = ""
         record.contact_qr_image = ""
         record.announcement_enabled = 0
         record.announcement_content = ""
         record.announcement_updated_at = None
         db.commit()
     return {"detail": "已删除"}
+
+
+@secret_router.get("", response_model=ExternalApiSecretConfigOut | None)
+def get_external_api_secrets(
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return _get_record(db)
+
+
+@secret_router.put("", response_model=ExternalApiSecretConfigOut)
+def set_external_api_secrets(
+    body: ExternalApiSecretConfigUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    record = _get_or_create_record(db)
+    record.key = body.key
+    record.tongyi_key = body.tongyi_key
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 @cos_router.get("", response_model=CosConfigOut | None)

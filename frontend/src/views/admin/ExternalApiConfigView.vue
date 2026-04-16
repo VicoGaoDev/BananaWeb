@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { CopyOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import {
+  CopyOutlined,
+  EditOutlined,
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  SaveOutlined,
+} from "@ant-design/icons-vue";
 import {
   createExternalApiConfig,
+  getExternalApiSecrets,
   listExternalApiConfigs,
   listExternalApiSceneBindings,
+  setExternalApiSecrets,
   testExternalApiConfig,
   updateExternalApiConfig,
   updateExternalApiConfigStatus,
@@ -21,6 +30,7 @@ import type {
 const configs = ref<ExternalApiConfig[]>([]);
 const sceneBindings = ref<ExternalApiSceneBinding[]>([]);
 const loading = ref(false);
+const secretSaving = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const bindingSavingKey = ref("");
@@ -29,6 +39,10 @@ const editingId = ref<number | null>(null);
 const isCopyMode = ref(false);
 const configGroupFilter = ref("all");
 const bindingGroupFilter = ref("all");
+const secretVisible = ref(false);
+const tongyiSecretVisible = ref(false);
+const geminiKey = ref("");
+const tongyiKey = ref("");
 
 const configColumns = [
   { title: "名称", dataIndex: "name", width: 180 },
@@ -41,6 +55,7 @@ const configColumns = [
 
 const bindingColumns = [
   { title: "调用场景", key: "scene", width: 220 },
+  { title: "显示文案", key: "copy", width: 320 },
   { title: "当前绑定接口", key: "current", width: 220 },
   { title: "选择接口", key: "bind", width: 360 },
   { title: "消耗积分", key: "credit", width: 180 },
@@ -70,6 +85,18 @@ const filteredConfigs = computed(() => (
     ? configs.value
     : configs.value.filter((item) => item.group_name === configGroupFilter.value)
 ));
+const maskedGeminiKey = computed(() => {
+  if (!geminiKey.value) return "";
+  const value = geminiKey.value;
+  if (value.length <= 8) return "••••••••";
+  return value.slice(0, 4) + "••••••••" + value.slice(-4);
+});
+const maskedTongyiKey = computed(() => {
+  if (!tongyiKey.value) return "";
+  const value = tongyiKey.value;
+  if (value.length <= 8) return "••••••••";
+  return value.slice(0, 4) + "••••••••" + value.slice(-4);
+});
 
 function resetForm() {
   editingId.value = null;
@@ -121,12 +148,15 @@ function getBindingOptions() {
 async function load() {
   loading.value = true;
   try {
-    const [configRows, bindingRows] = await Promise.all([
+    const [configRows, bindingRows, secretConfig] = await Promise.all([
       listExternalApiConfigs(),
       listExternalApiSceneBindings(),
+      getExternalApiSecrets(),
     ]);
     configs.value = configRows;
     sceneBindings.value = bindingRows;
+    geminiKey.value = secretConfig?.key || "";
+    tongyiKey.value = secretConfig?.tongyi_key || "";
   } catch (err: any) {
     message.error(err.response?.data?.detail || "获取接口管理数据失败");
   } finally {
@@ -284,6 +314,8 @@ async function handleBindingChange(
   payload: {
     api_config_id: number | null;
     credit_cost: number;
+    display_name: string;
+    subtitle: string;
   },
 ) {
   bindingSavingKey.value = sceneKey;
@@ -297,11 +329,106 @@ async function handleBindingChange(
     bindingSavingKey.value = "";
   }
 }
+
+function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial<{
+  api_config_id: number | null;
+  credit_cost: number;
+  display_name: string;
+  subtitle: string;
+}> = {}) {
+  return {
+    api_config_id: overrides.api_config_id ?? record.api_config_id ?? null,
+    credit_cost: overrides.credit_cost ?? record.credit_cost,
+    display_name: overrides.display_name ?? record.display_name ?? "",
+    subtitle: overrides.subtitle ?? record.subtitle ?? "",
+  };
+}
+
+async function handleSaveSecrets() {
+  secretSaving.value = true;
+  try {
+    await setExternalApiSecrets({
+      key: geminiKey.value.trim(),
+      tongyi_key: tongyiKey.value.trim(),
+    });
+    message.success("接口密钥保存成功");
+    await load();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "接口密钥保存失败");
+  } finally {
+    secretSaving.value = false;
+  }
+}
+
+function copySecret(value: string, label: string) {
+  if (!value) return;
+  navigator.clipboard.writeText(value).then(() => {
+    message.success(`${label}已复制到剪贴板`);
+  });
+}
 </script>
 
 <template>
   <div class="page">
     <a-space direction="vertical" :size="16" style="width: 100%">
+      <a-card title="接口密钥" :loading="loading">
+        <a-alert
+          type="info"
+          show-icon
+          message="Gemini API Key 与通义千问 API Key 仅超级管理员可见，可在接口模板中通过 {{ api_key }} 和 {{ bearer_token }} 占位符使用。"
+          style="margin-bottom: 16px"
+        />
+        <div class="secret-grid">
+          <div>
+            <div class="secret-label">Gemini API Key</div>
+            <div class="secret-input-row">
+              <a-input
+                v-if="secretVisible"
+                v-model:value="geminiKey"
+                placeholder="请输入 Gemini API Key"
+              />
+              <div v-else class="secret-masked" @click="secretVisible = true">
+                {{ geminiKey ? maskedGeminiKey : "暂未配置" }}
+              </div>
+              <a-button @click="secretVisible = !secretVisible">
+                <template #icon>
+                  <EyeInvisibleOutlined v-if="secretVisible" />
+                  <EyeOutlined v-else />
+                </template>
+              </a-button>
+              <a-button :disabled="!geminiKey" @click="copySecret(geminiKey, 'Gemini Key')">
+                <template #icon><CopyOutlined /></template>
+              </a-button>
+            </div>
+          </div>
+          <div>
+            <div class="secret-label">通义千问 API Key</div>
+            <div class="secret-input-row">
+              <a-input
+                v-if="tongyiSecretVisible"
+                v-model:value="tongyiKey"
+                placeholder="请输入通义千问 API Key"
+              />
+              <div v-else class="secret-masked" @click="tongyiSecretVisible = true">
+                {{ tongyiKey ? maskedTongyiKey : "暂未配置" }}
+              </div>
+              <a-button @click="tongyiSecretVisible = !tongyiSecretVisible">
+                <template #icon>
+                  <EyeInvisibleOutlined v-if="tongyiSecretVisible" />
+                  <EyeOutlined v-else />
+                </template>
+              </a-button>
+              <a-button :disabled="!tongyiKey" @click="copySecret(tongyiKey, '通义 Key')">
+                <template #icon><CopyOutlined /></template>
+              </a-button>
+            </div>
+          </div>
+        </div>
+        <a-button type="primary" :icon="h(SaveOutlined)" :loading="secretSaving" @click="handleSaveSecrets">
+          保存接口密钥
+        </a-button>
+      </a-card>
+
       <a-card title="接口配置">
         <template #extra>
           <a-space>
@@ -370,12 +497,31 @@ async function handleBindingChange(
           :data-source="sceneBindings"
           :loading="loading"
           :pagination="false"
-          :scroll="{ x: 900 }"
+          :scroll="{ x: 1240 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'scene'">
               <div class="scene-title">{{ record.scene_label }}</div>
               <div class="scene-desc">{{ record.scene_description }}</div>
+            </template>
+            <template v-else-if="column.key === 'copy'">
+              <div class="binding-copy-cell">
+                <a-input
+                  v-model:value="record.display_name"
+                  placeholder="显示名称，为空则使用默认名称"
+                />
+                <a-input
+                  v-model:value="record.subtitle"
+                  placeholder="副标题，为空则使用默认副标题"
+                />
+                <a-button
+                  size="small"
+                  :loading="bindingSavingKey === record.scene_key"
+                  @click="handleBindingChange(record.scene_key, buildBindingPayload(record))"
+                >
+                  保存文案
+                </a-button>
+              </div>
             </template>
             <template v-else-if="column.key === 'current'">
               <div v-if="record.api_config_name">
@@ -396,7 +542,7 @@ async function handleBindingChange(
                 placeholder="请选择接口"
                 style="width: 320px"
                 :loading="bindingSavingKey === record.scene_key"
-                @change="(value: number | undefined) => handleBindingChange(record.scene_key, { api_config_id: value ?? null, credit_cost: record.credit_cost })"
+                @change="(value: number | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { api_config_id: value ?? null }))"
               >
                 <a-select-option
                   v-for="option in getBindingOptions()"
@@ -414,7 +560,7 @@ async function handleBindingChange(
                 :precision="0"
                 style="width: 120px"
                 :disabled="bindingSavingKey === record.scene_key"
-                @change="(value: number | null) => handleBindingChange(record.scene_key, { api_config_id: record.api_config_id ?? null, credit_cost: Number(value ?? 0) })"
+                @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { credit_cost: Number(value ?? 0) }))"
               />
               <span class="credit-unit">积分</span>
             </template>
@@ -514,6 +660,36 @@ async function handleBindingChange(
   padding: 4px;
 }
 
+.secret-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.secret-label {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.secret-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.secret-masked {
+  min-height: 32px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 4px 11px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .scene-title {
   font-weight: 600;
 }
@@ -521,6 +697,12 @@ async function handleBindingChange(
 .scene-desc {
   color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
+}
+
+.binding-copy-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .doc-block {

@@ -8,7 +8,6 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    style_id = Column(Integer, ForeignKey("styles.id"), nullable=True)
     model = Column(String(50), default="")
     mode = Column(String(20), default="generate")
     prompt = Column(Text, default="")
@@ -20,9 +19,9 @@ class Task(Base):
     source_image = Column(String(500), default="")
     mask_image = Column(String(500), default="")
     status = Column(String(20), default="pending")
+    error_message = Column(Text, default="")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", backref="tasks")
-    style = relationship("Style", backref="tasks")
     images = relationship("Image", back_populates="task", lazy="selectin")

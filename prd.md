@@ -554,7 +554,6 @@ CREATE TABLE users (
 CREATE TABLE tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
-  style_id INTEGER,
   model VARCHAR(50) DEFAULT '',
   mode VARCHAR(20) DEFAULT 'generate',       -- generate | inpaint
   prompt TEXT NOT NULL DEFAULT '',

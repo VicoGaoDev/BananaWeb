@@ -63,8 +63,9 @@ def create_external_api_config(
 def test_external_api_config_endpoint(
     body: ExternalApiConfigCreate,
     _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
 ):
-    return test_external_api_config(body)
+    return test_external_api_config(db, body)
 
 
 @router.put("/{config_id}", response_model=ExternalApiConfigOut)

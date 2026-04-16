@@ -117,6 +117,8 @@ class GenerationModelOptionOut(BaseModel):
     model_key: str
     model_label: str
     model_description: str
+    display_name: str
+    subtitle: str
     sort_order: int
     hide_resolution: bool
     credit_cost: int
@@ -124,7 +126,14 @@ class GenerationModelOptionOut(BaseModel):
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
+    display_name: str = ""
+    subtitle: str = ""
     credit_cost: int
+
+    @field_validator("display_name", "subtitle")
+    @classmethod
+    def validate_scene_text(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator("credit_cost")
     @classmethod
@@ -138,6 +147,8 @@ class ExternalApiSceneBindingOut(BaseModel):
     scene_key: SceneKeyType
     scene_label: str
     scene_description: str
+    display_name: str
+    subtitle: str
     sort_order: int
     hide_resolution: bool
     api_config_id: int | None = None
@@ -151,6 +162,8 @@ class TaskSceneConfigOut(BaseModel):
     scene_key: SceneKeyType
     scene_label: str
     scene_description: str
+    display_name: str
+    subtitle: str
     sort_order: int
     hide_resolution: bool
     credit_cost: int

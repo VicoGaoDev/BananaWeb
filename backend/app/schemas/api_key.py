@@ -2,10 +2,8 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class ApiKeyOut(BaseModel):
+class AdminConfigOut(BaseModel):
     id: int
-    key: str
-    tongyi_key: str = ""
     contact_qr_image: str = ""
     announcement_enabled: bool = False
     announcement_content: str = ""
@@ -15,12 +13,24 @@ class ApiKeyOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ApiKeyUpdate(BaseModel):
-    key: str = ""
-    tongyi_key: str = ""
+class AdminConfigUpdate(BaseModel):
     contact_qr_image: str = ""
     announcement_enabled: bool = False
     announcement_content: str = ""
+
+
+class ExternalApiSecretConfigOut(BaseModel):
+    id: int
+    key: str = ""
+    tongyi_key: str = ""
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ExternalApiSecretConfigUpdate(BaseModel):
+    key: str = ""
+    tongyi_key: str = ""
 
 
 class AnnouncementConfigOut(BaseModel):

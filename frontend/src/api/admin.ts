@@ -1,12 +1,13 @@
 import client from "./client";
 import type {
   AdminStats,
-  ApiKeyConfig,
+  AdminConfig,
   CosConfig,
   AdminUser,
   CreditLog,
   ExternalApiConfig,
   ExternalApiConfigPayload,
+  ExternalApiSecretConfig,
   ExternalApiSceneBinding,
   ExternalApiConfigStatus,
   ExternalApiConfigTestResult,
@@ -61,22 +62,31 @@ export function getAdminHistory(
   return client.get("/admin/history", { params });
 }
 
-export function getApiKey(): Promise<ApiKeyConfig | null> {
+export function getAdminConfig(): Promise<AdminConfig | null> {
   return client.get("/admin/api-key");
 }
 
-export function setApiKey(payload: {
-  key?: string;
-  tongyi_key?: string;
+export function setAdminConfig(payload: {
   contact_qr_image?: string;
   announcement_enabled?: boolean;
   announcement_content?: string;
-}): Promise<ApiKeyConfig> {
+}): Promise<AdminConfig> {
   return client.put("/admin/api-key", payload);
 }
 
-export function deleteApiKey(): Promise<void> {
+export function deleteAdminConfig(): Promise<void> {
   return client.delete("/admin/api-key");
+}
+
+export function getExternalApiSecrets(): Promise<ExternalApiSecretConfig | null> {
+  return client.get("/admin/external-api-secrets");
+}
+
+export function setExternalApiSecrets(payload: {
+  key?: string;
+  tongyi_key?: string;
+}): Promise<ExternalApiSecretConfig> {
+  return client.put("/admin/external-api-secrets", payload);
 }
 
 export function getCosConfig(): Promise<CosConfig | null> {
@@ -122,6 +132,8 @@ export function updateExternalApiSceneBinding(
   payload: {
     api_config_id: number | null;
     credit_cost: number;
+    display_name: string;
+    subtitle: string;
   },
 ): Promise<ExternalApiSceneBinding> {
   return client.put(`/admin/external-api-scene-bindings/${sceneKey}`, payload);

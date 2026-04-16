@@ -151,15 +151,30 @@ def get_default_credit_cost(scene_key: str) -> int:
     return SCENE_DEFAULT_CREDIT_COSTS.get(scene_key, 0)
 
 
+def _resolve_scene_copy(
+    definition: dict[str, Any],
+    binding: ExternalApiSceneBinding | None,
+) -> tuple[str, str]:
+    display_name = (binding.display_name or "").strip() if binding else ""
+    subtitle = (binding.subtitle or "").strip() if binding else ""
+    return (
+        display_name or definition["scene_label"],
+        subtitle or definition["scene_description"],
+    )
+
+
 def _serialize_scene_binding(
     definition: dict[str, Any],
     binding: ExternalApiSceneBinding | None,
     config: ExternalApiConfig | None,
 ) -> ExternalApiSceneBindingOut:
+    scene_label, scene_description = _resolve_scene_copy(definition, binding)
     return ExternalApiSceneBindingOut(
         scene_key=definition["scene_key"],
-        scene_label=definition["scene_label"],
-        scene_description=definition["scene_description"],
+        scene_label=scene_label,
+        scene_description=scene_description,
+        display_name=(binding.display_name or "").strip() if binding else "",
+        subtitle=(binding.subtitle or "").strip() if binding else "",
         sort_order=definition["sort_order"],
         hide_resolution=definition["hide_resolution"],
         api_config_id=config.id if config else None,
@@ -181,20 +196,23 @@ def list_configs(db: Session) -> list[ExternalApiConfigOut]:
 
 def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
     scene_bindings = {row.scene_key: row for row in db.query(ExternalApiSceneBinding).all()}
-    return [
-        GenerationModelOptionOut(
+    items: list[GenerationModelOptionOut] = []
+    for item in SCENE_DEFINITIONS:
+        if item["scene_key"] not in GENERATION_SCENE_KEYS:
+            continue
+        binding = scene_bindings.get(item["scene_key"])
+        model_label, model_description = _resolve_scene_copy(item, binding)
+        items.append(GenerationModelOptionOut(
             model_key=item["scene_key"],
-            model_label=item["scene_label"],
-            model_description=item["scene_description"],
+            model_label=model_label,
+            model_description=model_description,
+            display_name=(binding.display_name or "").strip() if binding else "",
+            subtitle=(binding.subtitle or "").strip() if binding else "",
             sort_order=item["sort_order"],
             hide_resolution=item["hide_resolution"],
-            credit_cost=scene_bindings.get(item["scene_key"]).credit_cost
-            if scene_bindings.get(item["scene_key"])
-            else get_default_credit_cost(item["scene_key"]),
-        )
-        for item in SCENE_DEFINITIONS
-        if item["scene_key"] in GENERATION_SCENE_KEYS
-    ]
+            credit_cost=binding.credit_cost if binding else get_default_credit_cost(item["scene_key"]),
+        ))
+    return items
 
 
 def get_default_generation_model_key(db: Session) -> str:
@@ -260,6 +278,8 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             scene_key=item.scene_key,
             scene_label=item.scene_label,
             scene_description=item.scene_description,
+            display_name=item.display_name,
+            subtitle=item.subtitle,
             sort_order=item.sort_order,
             hide_resolution=item.hide_resolution,
             credit_cost=item.credit_cost,
@@ -286,11 +306,15 @@ def set_scene_binding(
         binding = ExternalApiSceneBinding(
             scene_key=scene_key,
             api_config_id=body.api_config_id,
+            display_name=body.display_name,
+            subtitle=body.subtitle,
             credit_cost=body.credit_cost,
         )
         db.add(binding)
     else:
         binding.api_config_id = body.api_config_id
+        binding.display_name = body.display_name
+        binding.subtitle = body.subtitle
         binding.credit_cost = body.credit_cost
     db.commit()
     return next(item for item in list_scene_bindings(db) if item.scene_key == scene_key)
@@ -337,7 +361,17 @@ def render_config(config: ExternalApiConfig, variables: dict[str, Any]) -> Rende
     )
 
 
-def _build_test_variables() -> dict[str, Any]:
+def build_secret_variables(db: Session) -> dict[str, str]:
+    record = db.query(ApiKey).first()
+    generation_key = (record.key or "").strip() if record else ""
+    prompt_reverse_key = (record.tongyi_key or "").strip() if record else ""
+    return {
+        "api_key": generation_key,
+        "bearer_token": prompt_reverse_key or generation_key,
+    }
+
+
+def _build_test_variables(db: Session) -> dict[str, Any]:
     one_pixel_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XGJ0AAAAASUVORK5CYII="
     return {
         "prompt": "连接测试",
@@ -348,14 +382,13 @@ def _build_test_variables() -> dict[str, Any]:
         "mode": "generate",
         "image_data_url": f"data:image/png;base64,{one_pixel_png}",
         "prompt_reverse_text": "请返回测试提示词",
-        "api_key": "test-api-key",
-        "bearer_token": "test-api-key",
+        **build_secret_variables(db),
     }
 
 
-def test_external_api_config(body: ExternalApiConfigCreate) -> ExternalApiConfigTestResult:
+def test_external_api_config(db: Session, body: ExternalApiConfigCreate) -> ExternalApiConfigTestResult:
     config = ExternalApiConfig(**body.model_dump())
-    rendered = render_config(config, _build_test_variables())
+    rendered = render_config(config, _build_test_variables(db))
 
     try:
         with httpx.Client(timeout=20) as client:

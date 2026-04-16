@@ -13,6 +13,7 @@ class Image(Base):
     image_format = Column(String(20), default="")
     image_size_bytes = Column(Integer, default=0)
     status = Column(String(20), default="pending")
+    error_message = Column(String(2000), default="")
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

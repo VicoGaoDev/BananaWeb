@@ -69,12 +69,13 @@ def create_task(
         source_image=source_image.strip(),
         mask_image=mask_image.strip(),
         status="pending",
+        error_message="",
     )
     db.add(task)
     db.flush()
 
     for _ in range(num_images):
-        image = Image(task_id=task.id, image_url="", status="pending")
+        image = Image(task_id=task.id, image_url="", status="pending", error_message="")
         db.add(image)
 
     if not _is_credit_exempt_user(user):

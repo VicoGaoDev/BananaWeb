@@ -18,11 +18,9 @@ import app.models  # noqa: F401
 
 TABLE_ORDER = [
     "users",
-    "styles",
     "template_tags",
     "api_keys",
     "external_api_configs",
-    "style_prompts",
     "templates",
     "external_api_scene_bindings",
     "template_tag_relations",
@@ -44,30 +42,12 @@ FK_CHECKS = [
         """,
     ),
     (
-        "tasks.style_id -> styles.id",
-        """
-        SELECT COUNT(*)
-        FROM tasks AS child
-        LEFT JOIN styles AS parent ON parent.id = child.style_id
-        WHERE child.style_id IS NOT NULL AND parent.id IS NULL
-        """,
-    ),
-    (
         "images.task_id -> tasks.id",
         """
         SELECT COUNT(*)
         FROM images AS child
         LEFT JOIN tasks AS parent ON parent.id = child.task_id
         WHERE child.task_id IS NOT NULL AND parent.id IS NULL
-        """,
-    ),
-    (
-        "style_prompts.style_id -> styles.id",
-        """
-        SELECT COUNT(*)
-        FROM style_prompts AS child
-        LEFT JOIN styles AS parent ON parent.id = child.style_id
-        WHERE child.style_id IS NOT NULL AND parent.id IS NULL
         """,
     ),
     (

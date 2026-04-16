@@ -60,6 +60,8 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
         if "mask_image" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN mask_image VARCHAR(500) DEFAULT ''"))
+        if "error_message" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN error_message TEXT"))
 
     image_columns = {col["name"] for col in inspector.get_columns("images")}
     with engine.begin() as conn:
@@ -73,6 +75,8 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
         if "image_size_bytes" not in image_columns:
             conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
+        if "error_message" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN error_message VARCHAR(2000) DEFAULT ''"))
 
     api_key_tables = set(inspector.get_table_names())
     if "api_keys" in api_key_tables:
@@ -125,6 +129,10 @@ def _ensure_schema_compat():
         with engine.begin() as conn:
             if "api_config_id" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN api_config_id INTEGER"))
+            if "display_name" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN display_name VARCHAR(100) DEFAULT ''"))
+            if "subtitle" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN subtitle VARCHAR(255) DEFAULT ''"))
             if "credit_cost" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
                 credit_cost_added = True
@@ -220,12 +228,10 @@ def _initialize_template_sort_orders():
 
 
 def _seed_default_data():
-    """Create default admin, superadmin, and sample styles on first run."""
+    """Create default superadmin/admin users and seed runtime configs."""
     from app.database import SessionLocal
     from app.services.external_api_config_service import seed_legacy_configs
     from app.models.user import User
-    from app.models.style import Style
-    from app.models.style_prompt import StylePrompt
     from app.utils.security import hash_password
 
     db = SessionLocal()
@@ -242,63 +248,6 @@ def _seed_default_data():
             db.add(User(username="admin", password_hash=hash_password("admin123"), role="admin"))
             db.commit()
 
-        if not db.query(Style).first():
-            styles_data = [
-                {
-                    "name": "赛博朋克",
-                    "description": "未来科技感的霓虹城市风格",
-                    "cover_image": "",
-                    "prompts": [
-                        {"prompt": "cyberpunk city skyline, neon lights, rain, futuristic buildings, 8k ultra detailed", "negative_prompt": "blurry, low quality"},
-                        {"prompt": "cyberpunk street scene, holographic signs, flying cars, dramatic lighting", "negative_prompt": "blurry, low quality"},
-                        {"prompt": "cyberpunk character portrait, neon glow, tech implants, cinematic", "negative_prompt": "blurry, low quality, deformed"},
-                    ],
-                },
-                {
-                    "name": "水墨山水",
-                    "description": "中国传统水墨画风格",
-                    "cover_image": "",
-                    "prompts": [
-                        {"prompt": "traditional chinese ink wash painting, mountains and rivers, misty landscape, elegant brushstrokes", "negative_prompt": "modern, colorful, cartoon"},
-                        {"prompt": "chinese ink painting style, bamboo forest, waterfall, peaceful atmosphere", "negative_prompt": "modern, cartoon"},
-                        {"prompt": "ink wash painting, lone fisherman on lake, mountains in background, minimalist", "negative_prompt": "modern, colorful"},
-                    ],
-                },
-                {
-                    "name": "油画风景",
-                    "description": "印象派风格的油画",
-                    "cover_image": "",
-                    "prompts": [
-                        {"prompt": "impressionist oil painting landscape, golden wheat field, blue sky, thick brushstrokes, vivid colors", "negative_prompt": "photo, realistic, digital"},
-                        {"prompt": "oil painting style, sunset over ocean, dramatic clouds, impasto technique", "negative_prompt": "photo, digital art"},
-                        {"prompt": "oil painting, autumn forest path, fallen leaves, warm light filtering through trees", "negative_prompt": "photo, digital"},
-                    ],
-                },
-                {
-                    "name": "动漫插画",
-                    "description": "日系动漫风格插画",
-                    "cover_image": "",
-                    "prompts": [
-                        {"prompt": "anime style illustration, cherry blossom tree, school rooftop, blue sky, studio ghibli inspired", "negative_prompt": "realistic, photo, 3d"},
-                        {"prompt": "anime landscape, fantasy castle in clouds, floating islands, magical atmosphere, vibrant colors", "negative_prompt": "realistic, photo"},
-                        {"prompt": "anime style, cozy room interior, rain outside window, warm lighting, detailed", "negative_prompt": "realistic, 3d render"},
-                    ],
-                },
-            ]
-
-            for s_data in styles_data:
-                style = Style(name=s_data["name"], description=s_data["description"], cover_image=s_data["cover_image"])
-                db.add(style)
-                db.flush()
-                for i, p_data in enumerate(s_data["prompts"]):
-                    db.add(StylePrompt(
-                        style_id=style.id,
-                        prompt=p_data["prompt"],
-                        negative_prompt=p_data["negative_prompt"],
-                        sort_order=i,
-                    ))
-            db.commit()
-
         seed_legacy_configs(
             db,
             ai_api_url=settings.AI_API_URL,
@@ -312,9 +261,8 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, styles, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config  # noqa: E402
+from app.api import auth, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config  # noqa: E402
 app.include_router(auth.router)
-app.include_router(styles.router)
 app.include_router(templates.router)
 app.include_router(tasks.router)
 app.include_router(images.router)
@@ -323,6 +271,7 @@ app.include_router(admin.router)
 app.include_router(upload.router)
 app.include_router(api_key.router)
 app.include_router(api_key.cos_router)
+app.include_router(api_key.secret_router)
 app.include_router(api_key.public_router)
 app.include_router(prompt_reverse.router)
 app.include_router(external_api_config.router)

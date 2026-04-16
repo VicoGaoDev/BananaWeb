@@ -20,6 +20,7 @@ backend/uploads/
 # Environment
 .env
 backend/.env
+backend/data/
 
 # IDE
 .vscode/

@@ -7,6 +7,7 @@ from app.models.credit_log import CreditLog
 from app.models.user import User
 from app.services.cos_service import load_image_as_data_url
 from app.services.external_api_config_service import (
+    build_secret_variables,
     get_scene_credit_cost,
     render_config,
     require_scene_config,
@@ -65,6 +66,7 @@ def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
     rendered = render_config(
         api_config,
         {
+            **build_secret_variables(db),
             "image_data_url": image_data_url,
             "prompt_reverse_text": PROMPT_REVERSE_TEXT,
         },
