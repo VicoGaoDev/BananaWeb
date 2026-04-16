@@ -27,6 +27,7 @@ class HistoryItem(BaseModel):
     num_images: int = 1
     size: str
     resolution: str = ""
+    credit_cost: int = 0
     status: str
     is_soft_deleted: bool = False
     soft_deleted_count: int = 0
@@ -36,6 +37,7 @@ class HistoryItem(BaseModel):
 
 class HistoryResponse(BaseModel):
     total: int
+    total_credit_cost: int = 0
     items: list[HistoryItem]
 
 
@@ -59,6 +61,7 @@ class UserHistoryCardItem(BaseModel):
     num_images: int = 1
     size: str
     resolution: str = ""
+    credit_cost: int = 0
     created_at: datetime | None = None
     error_message: str = ""
     images: list[HistoryImageOut] = []

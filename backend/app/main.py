@@ -2,7 +2,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from app.database import engine, Base
 from app.config import settings
 import app.models  # noqa: F401 — ensure all models are registered
@@ -26,9 +26,11 @@ def on_startup():
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
     _ensure_image_required_columns()
+    _ensure_task_credit_cost_column()
     _ensure_template_required_columns()
     if settings.should_run_schema_compat:
         _ensure_schema_compat()
+    _backfill_task_credit_costs()
     _initialize_template_sort_orders()
     if settings.should_run_seed:
         _seed_default_data()
@@ -60,6 +62,8 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
         if "mask_image" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN mask_image VARCHAR(500) DEFAULT ''"))
+        if "credit_cost" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN credit_cost INTEGER DEFAULT 0"))
         if "error_message" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN error_message TEXT"))
 
@@ -197,6 +201,59 @@ def _ensure_image_required_columns():
             conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
         if "image_size_bytes" not in image_columns:
             conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
+
+
+def _ensure_task_credit_cost_column():
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+    if "credit_cost" in task_columns:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN credit_cost INTEGER DEFAULT 0"))
+
+
+def _backfill_task_credit_costs():
+    from app.database import SessionLocal
+    from app.models.task import Task
+    from app.models.credit_log import CreditLog
+
+    db = SessionLocal()
+    try:
+        tasks = db.query(Task).order_by(Task.id.asc()).all()
+        if not tasks:
+            return
+
+        task_log_costs = {
+            task_id: cost
+            for task_id, cost in (
+                db.query(CreditLog.task_id, func.coalesce(func.sum(-CreditLog.amount), 0))
+                .filter(CreditLog.type == "consume", CreditLog.task_id.is_not(None))
+                .group_by(CreditLog.task_id)
+                .all()
+            )
+        }
+
+        changed = False
+        for task in tasks:
+            if (task.credit_cost or 0) > 0:
+                continue
+
+            logged_cost = int(task_log_costs.get(task.id) or 0)
+            if logged_cost <= 0:
+                continue
+
+            if int(task.credit_cost or 0) != logged_cost:
+                task.credit_cost = logged_cost
+                changed = True
+
+        if changed:
+            db.commit()
+    finally:
+        db.close()
 
 
 def _initialize_template_sort_orders():

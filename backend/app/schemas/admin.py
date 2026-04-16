@@ -54,3 +54,58 @@ class StatsOut(BaseModel):
     last_30_days: int
     total_users: int
     active_users: int
+
+
+class AnalyticsMetricOut(BaseModel):
+    current: int
+    previous: int
+    delta: int
+    delta_pct: float | None = None
+
+
+class AnalyticsSummaryOut(BaseModel):
+    granularity: str
+    current_range_label: str
+    previous_range_label: str
+    total_users: int
+    tasks_created: AnalyticsMetricOut
+    success_tasks: AnalyticsMetricOut
+    failed_tasks: AnalyticsMetricOut
+    credits_consumed: AnalyticsMetricOut
+    new_users: AnalyticsMetricOut
+    active_users: AnalyticsMetricOut
+
+
+class AnalyticsTimeseriesPointOut(BaseModel):
+    label: str
+    bucket_start: datetime | None = None
+    bucket_end: datetime | None = None
+    tasks_created: int = 0
+    success_tasks: int = 0
+    failed_tasks: int = 0
+    credits_consumed: int = 0
+    new_users: int = 0
+    active_users: int = 0
+
+
+class AnalyticsTimeseriesOut(BaseModel):
+    granularity: str
+    current_range_label: str
+    previous_range_label: str
+    current: list[AnalyticsTimeseriesPointOut]
+    previous: list[AnalyticsTimeseriesPointOut]
+
+
+class AnalyticsBreakdownItemOut(BaseModel):
+    name: str
+    count: int = 0
+    credit_cost: int = 0
+
+
+class AnalyticsBreakdownOut(BaseModel):
+    range_label: str
+    status_breakdown: list[AnalyticsBreakdownItemOut]
+    mode_breakdown: list[AnalyticsBreakdownItemOut]
+    model_breakdown: list[AnalyticsBreakdownItemOut]
+    top_users_by_tasks: list[AnalyticsBreakdownItemOut]
+    top_users_by_credit: list[AnalyticsBreakdownItemOut]

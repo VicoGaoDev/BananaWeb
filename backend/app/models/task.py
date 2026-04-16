@@ -18,6 +18,7 @@ class Task(Base):
     reference_images = Column(Text, default="")
     source_image = Column(String(500), default="")
     mask_image = Column(String(500), default="")
+    credit_cost = Column(Integer, nullable=False, default=0, server_default="0")
     status = Column(String(20), default="pending")
     error_message = Column(Text, default="")
     created_at = Column(DateTime, server_default=func.now())

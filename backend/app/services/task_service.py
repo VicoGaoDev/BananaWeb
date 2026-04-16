@@ -49,7 +49,8 @@ def create_task(
     scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
     unit_cost = get_scene_credit_cost(db, scene_key)
     cost = unit_cost if mode == "inpaint" else num_images * unit_cost
-    if not _is_credit_exempt_user(user) and user.credits < cost:
+    actual_credit_cost = 0 if _is_credit_exempt_user(user) else cost
+    if actual_credit_cost and user.credits < cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"积分不足，需要 {cost} 积分，当前余额 {user.credits if user else 0}",
@@ -68,6 +69,7 @@ def create_task(
         reference_images=ref_json,
         source_image=source_image.strip(),
         mask_image=mask_image.strip(),
+        credit_cost=actual_credit_cost,
         status="pending",
         error_message="",
     )
@@ -78,7 +80,7 @@ def create_task(
         image = Image(task_id=task.id, image_url="", status="pending", error_message="")
         db.add(image)
 
-    if not _is_credit_exempt_user(user):
+    if actual_credit_cost:
         user.credits -= cost
         credit_log = CreditLog(
             user_id=user_id,

@@ -30,6 +30,7 @@ export interface TaskResult {
   num_images: number;
   size: string;
   resolution: string;
+  credit_cost: number;
   status: "pending" | "processing" | "success" | "failed";
   error_message?: string;
   created_at: string;
@@ -47,6 +48,7 @@ export interface HistoryItem {
   num_images: number;
   size: string;
   resolution: string;
+  credit_cost: number;
   status: string;
   error_message?: string;
   is_soft_deleted?: boolean;
@@ -67,6 +69,7 @@ export interface HistoryFilter {
 
 export interface HistoryResponse {
   total: number;
+  total_credit_cost: number;
   items: HistoryItem[];
 }
 
@@ -90,6 +93,7 @@ export interface UserHistoryCard {
   num_images: number;
   size: string;
   resolution: string;
+  credit_cost: number;
   created_at: string;
   error_message?: string;
   images: ImageResult[];
@@ -149,6 +153,73 @@ export interface AdminStats {
   last_30_days: number;
   total_users: number;
   active_users: number;
+}
+
+export type AdminAnalyticsGranularity = "day" | "week" | "month";
+
+export interface AdminAnalyticsQuery {
+  granularity: AdminAnalyticsGranularity;
+  start_date?: string;
+  end_date?: string;
+  user_id?: number;
+  model?: string;
+  mode?: "generate" | "inpaint";
+  status?: string;
+}
+
+export interface AdminAnalyticsMetric {
+  current: number;
+  previous: number;
+  delta: number;
+  delta_pct?: number | null;
+}
+
+export interface AdminAnalyticsSummary {
+  granularity: AdminAnalyticsGranularity;
+  current_range_label: string;
+  previous_range_label: string;
+  total_users: number;
+  tasks_created: AdminAnalyticsMetric;
+  success_tasks: AdminAnalyticsMetric;
+  failed_tasks: AdminAnalyticsMetric;
+  credits_consumed: AdminAnalyticsMetric;
+  new_users: AdminAnalyticsMetric;
+  active_users: AdminAnalyticsMetric;
+}
+
+export interface AdminAnalyticsTimeseriesPoint {
+  label: string;
+  bucket_start?: string | null;
+  bucket_end?: string | null;
+  tasks_created: number;
+  success_tasks: number;
+  failed_tasks: number;
+  credits_consumed: number;
+  new_users: number;
+  active_users: number;
+}
+
+export interface AdminAnalyticsTimeseries {
+  granularity: AdminAnalyticsGranularity;
+  current_range_label: string;
+  previous_range_label: string;
+  current: AdminAnalyticsTimeseriesPoint[];
+  previous: AdminAnalyticsTimeseriesPoint[];
+}
+
+export interface AdminAnalyticsBreakdownItem {
+  name: string;
+  count: number;
+  credit_cost: number;
+}
+
+export interface AdminAnalyticsBreakdown {
+  range_label: string;
+  status_breakdown: AdminAnalyticsBreakdownItem[];
+  mode_breakdown: AdminAnalyticsBreakdownItem[];
+  model_breakdown: AdminAnalyticsBreakdownItem[];
+  top_users_by_tasks: AdminAnalyticsBreakdownItem[];
+  top_users_by_credit: AdminAnalyticsBreakdownItem[];
 }
 
 export interface AdminConfig {

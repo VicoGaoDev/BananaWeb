@@ -1,119 +1,307 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { message } from "ant-design-vue";
+import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+import { BarChartOutlined } from "@ant-design/icons-vue";
+import { getGenerationModels } from "@/api/config";
 import {
-  BarChartOutlined,
-  ThunderboltOutlined,
-  CalendarOutlined,
-  TeamOutlined,
-  UserOutlined,
-  SearchOutlined,
-  UndoOutlined,
-} from "@ant-design/icons-vue";
-import { getStats, getAdminHistory, listUsers } from "@/api/admin";
-import type { AdminStats, AdminUser, HistoryItem, HistoryFilter } from "@/types";
+  getAdminAnalyticsBreakdown,
+  getAdminAnalyticsSummary,
+  getAdminAnalyticsTimeseries,
+  getAdminHistory,
+  listUsers,
+} from "@/api/admin";
+import AnalyticsFilterBar from "@/components/admin/AnalyticsFilterBar.vue";
+import BreakdownCharts from "@/components/admin/BreakdownCharts.vue";
+import KpiCards from "@/components/admin/KpiCards.vue";
+import TrendCharts from "@/components/admin/TrendCharts.vue";
+import type {
+  AdminAnalyticsBreakdown,
+  AdminAnalyticsGranularity,
+  AdminAnalyticsQuery,
+  AdminAnalyticsSummary,
+  AdminAnalyticsTimeseries,
+  AdminUser,
+  GenerationModelOption,
+  HistoryFilter,
+  HistoryItem,
+} from "@/types";
 
-const stats = ref<AdminStats>({ last_7_days: 0, last_30_days: 0, total_users: 0, active_users: 0 });
+const analyticsLoading = ref(false);
+const historyLoading = ref(false);
+const summary = ref<AdminAnalyticsSummary | null>(null);
+const timeseries = ref<AdminAnalyticsTimeseries | null>(null);
+const breakdown = ref<AdminAnalyticsBreakdown | null>(null);
+const users = ref<AdminUser[]>([]);
+const generationModels = ref<GenerationModelOption[]>([]);
 const history = ref<HistoryItem[]>([]);
 const historyTotal = ref(0);
+const historyCreditTotal = ref(0);
 const page = ref(1);
-const loading = ref(false);
-const users = ref<AdminUser[]>([]);
+const granularity = ref<AdminAnalyticsGranularity>("day");
+const preset = ref("7d");
+const ready = ref(false);
 
-const filter = reactive<{
+const filters = reactive<{
   status: string | undefined;
   user_id: number | undefined;
+  model: string | undefined;
+  mode: "generate" | "inpaint" | undefined;
   dateRange: [Dayjs, Dayjs] | null;
 }>({
   status: undefined,
   user_id: undefined,
+  model: undefined,
+  mode: undefined,
   dateRange: null,
 });
 
 const columns = [
   { title: "ID", dataIndex: "task_id", width: 70 },
-  { title: "用户", dataIndex: "username", width: 160 },
-  { title: "提示词", dataIndex: "prompt", width: 200, ellipsis: true },
-  { title: "尺寸", dataIndex: "size", width: 100 },
+  { title: "用户", dataIndex: "username", width: 150 },
+  { title: "类型", dataIndex: "mode", width: 100 },
+  { title: "模型", dataIndex: "model", width: 120 },
+  { title: "消耗积分", dataIndex: "credit_cost", width: 110 },
+  { title: "提示词", dataIndex: "prompt", width: 220, ellipsis: true },
   { title: "状态", dataIndex: "status", width: 90 },
-  { title: "软删除", key: "softDelete", width: 110 },
   { title: "图片", key: "imgCount", width: 70 },
   { title: "时间", dataIndex: "created_at", width: 180 },
 ];
 
-function buildFilter(): HistoryFilter | undefined {
-  const f: HistoryFilter = {};
-  if (filter.status) f.status = filter.status;
-  if (filter.user_id) f.user_id = filter.user_id;
-  if (filter.dateRange) {
-    f.start_date = filter.dateRange[0].startOf("day").toISOString();
-    f.end_date = filter.dateRange[1].endOf("day").toISOString();
+const modelOptions = computed(() => {
+  const options = generationModels.value.map((item) => ({
+    label: item.model_label,
+    value: item.model_key,
+  }));
+  options.push({ label: "局部重绘", value: "inpaint" });
+  return options;
+});
+
+const activeFilterSummary = computed(() => {
+  const chips: string[] = [];
+  if (filters.user_id) {
+    const user = users.value.find((item) => item.id === filters.user_id);
+    if (user) chips.push(`用户：${user.username}`);
   }
-  return Object.keys(f).length ? f : undefined;
+  if (filters.mode) chips.push(`类型：${modeLabel(filters.mode)}`);
+  if (filters.model) chips.push(`模型：${modelLabel(filters.model)}`);
+  if (filters.status) chips.push(`状态：${statusLabel(filters.status)}`);
+  if (filters.dateRange) {
+    chips.push(
+      `${filters.dateRange[0].format("YYYY-MM-DD")} ~ ${filters.dateRange[1].format("YYYY-MM-DD")}`,
+    );
+  }
+  if (!chips.length && summary.value) chips.push(`统计范围：${summary.value.current_range_label}`);
+  return chips;
+});
+
+const filterSignature = computed(() => JSON.stringify({
+  granularity: granularity.value,
+  preset: preset.value,
+  status: filters.status || null,
+  user_id: filters.user_id || null,
+  model: filters.model || null,
+  mode: filters.mode || null,
+  start: filters.dateRange?.[0]?.valueOf() || null,
+  end: filters.dateRange?.[1]?.valueOf() || null,
+}));
+
+function defaultPresetByGranularity(value: AdminAnalyticsGranularity) {
+  if (value === "week") return "8w";
+  if (value === "month") return "6m";
+  return "3d";
 }
 
-async function loadStats() {
-  try { stats.value = await getStats(); }
-  catch { message.error("获取统计失败"); }
+function applyPresetRange(value: string) {
+  const now = dayjs();
+  if (value === "3d") {
+    filters.dateRange = [now.subtract(2, "day").startOf("day"), now.endOf("day")];
+    return;
+  }
+  if (value === "30d") {
+    filters.dateRange = [now.subtract(29, "day").startOf("day"), now.endOf("day")];
+    return;
+  }
+  if (value === "8w") {
+    filters.dateRange = [now.subtract(7, "week").startOf("day"), now.endOf("day")];
+    return;
+  }
+  if (value === "12w") {
+    filters.dateRange = [now.subtract(11, "week").startOf("day"), now.endOf("day")];
+    return;
+  }
+  if (value === "6m") {
+    filters.dateRange = [now.subtract(5, "month").startOf("day"), now.endOf("day")];
+    return;
+  }
+  if (value === "12m") {
+    filters.dateRange = [now.subtract(11, "month").startOf("day"), now.endOf("day")];
+    return;
+  }
+  filters.dateRange = [now.subtract(2, "day").startOf("day"), now.endOf("day")];
+}
+
+function buildAnalyticsQuery(): AdminAnalyticsQuery {
+  return {
+    granularity: granularity.value,
+    status: filters.status,
+    user_id: filters.user_id,
+    model: filters.model,
+    mode: filters.mode,
+    start_date: filters.dateRange?.[0].startOf("day").toISOString(),
+    end_date: filters.dateRange?.[1].endOf("day").toISOString(),
+  };
+}
+
+function buildHistoryFilter(): HistoryFilter {
+  return {
+    status: filters.status,
+    user_id: filters.user_id,
+    model: filters.model,
+    mode: filters.mode,
+    start_date: filters.dateRange?.[0].startOf("day").toISOString(),
+    end_date: filters.dateRange?.[1].endOf("day").toISOString(),
+  };
 }
 
 async function loadUsers() {
-  try { users.value = await listUsers(); }
-  catch { /* ignore */ }
+  try {
+    users.value = await listUsers();
+  } catch {
+    users.value = [];
+  }
+}
+
+async function loadModels() {
+  try {
+    generationModels.value = await getGenerationModels();
+  } catch {
+    generationModels.value = [];
+  }
+}
+
+async function loadAnalytics() {
+  analyticsLoading.value = true;
+  try {
+    const query = buildAnalyticsQuery();
+    const [summaryRes, timeseriesRes, breakdownRes] = await Promise.all([
+      getAdminAnalyticsSummary(query),
+      getAdminAnalyticsTimeseries(query),
+      getAdminAnalyticsBreakdown(query),
+    ]);
+    summary.value = summaryRes;
+    timeseries.value = timeseriesRes;
+    breakdown.value = breakdownRes;
+  } catch {
+    message.error("获取统计分析失败");
+  } finally {
+    analyticsLoading.value = false;
+  }
 }
 
 async function loadHistory() {
-  loading.value = true;
+  historyLoading.value = true;
   try {
-    const res = await getAdminHistory(page.value, 10, buildFilter());
+    const res = await getAdminHistory(page.value, 10, buildHistoryFilter());
     history.value = res.items;
     historyTotal.value = res.total;
-  } catch { message.error("获取记录失败"); }
-  finally { loading.value = false; }
+    historyCreditTotal.value = res.total_credit_cost;
+  } catch {
+    message.error("获取生成记录失败");
+  } finally {
+    historyLoading.value = false;
+  }
 }
 
-function handleSearch() {
-  page.value = 1;
-  loadHistory();
+async function loadPageData() {
+  await Promise.all([loadAnalytics(), loadHistory()]);
 }
 
 function handleReset() {
-  filter.status = undefined;
-  filter.user_id = undefined;
-  filter.dateRange = null;
-  page.value = 1;
+  filters.status = undefined;
+  filters.user_id = undefined;
+  filters.model = undefined;
+  filters.mode = undefined;
+  preset.value = defaultPresetByGranularity(granularity.value);
+  applyPresetRange(preset.value);
+}
+
+function handleGranularityChange(value: AdminAnalyticsGranularity) {
+  granularity.value = value;
+  preset.value = defaultPresetByGranularity(value);
+  applyPresetRange(preset.value);
+}
+
+function handlePresetChange(value: string) {
+  preset.value = value;
+  applyPresetRange(value);
+}
+
+function handlePageChange(nextPage: number) {
+  page.value = nextPage;
   loadHistory();
 }
 
-onMounted(() => { loadStats(); loadUsers(); loadHistory(); });
-
-function handlePageChange(p: number) { page.value = p; loadHistory(); }
-function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "-"; }
-function statusLabel(s: string) {
-  const m: Record<string, string> = { success: "成功", failed: "失败", processing: "处理中", pending: "等待中" };
-  return m[s] || s;
+function handleBucketClick(payload: { start?: string | null; end?: string | null }) {
+  if (!payload.start || !payload.end) return;
+  filters.dateRange = [dayjs(payload.start), dayjs(payload.end)];
+  preset.value = "custom";
 }
-function statusColor(s: string) {
-  if (s === "success") return "green";
-  if (s === "failed") return "red";
-  if (s === "processing") return "orange";
+
+function handleBreakdownFilter(payload: { type: "status" | "mode" | "model" | "user"; value: string }) {
+  if (payload.type === "status") filters.status = payload.value;
+  if (payload.type === "mode") filters.mode = payload.value as "generate" | "inpaint";
+  if (payload.type === "model") filters.model = payload.value;
+  if (payload.type === "user") {
+    const matchedUser = users.value.find((item) => item.username === payload.value);
+    if (matchedUser) filters.user_id = matchedUser.id;
+  }
+}
+
+function fmtTime(value: string) {
+  return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-";
+}
+
+function modeLabel(value: string) {
+  return value === "inpaint" ? "局部重绘" : "生图";
+}
+
+function modelLabel(value: string) {
+  if (!value) return "-";
+  return modelOptions.value.find((item) => item.value === value)?.label || value;
+}
+
+function statusLabel(value: string) {
+  const map: Record<string, string> = {
+    pending: "等待中",
+    processing: "处理中",
+    success: "成功",
+    failed: "失败",
+  };
+  return map[value] || value;
+}
+
+function statusColor(value: string) {
+  if (value === "success") return "green";
+  if (value === "failed") return "red";
+  if (value === "processing") return "orange";
   return "default";
 }
 
-const statusOptions = [
-  { value: "pending", label: "等待中" },
-  { value: "processing", label: "处理中" },
-  { value: "success", label: "成功" },
-  { value: "failed", label: "失败" },
-];
+onMounted(async () => {
+  preset.value = defaultPresetByGranularity(granularity.value);
+  applyPresetRange(preset.value);
+  await Promise.all([loadUsers(), loadModels()]);
+  await loadPageData();
+  ready.value = true;
+});
 
-const statCards = [
-  { key: "last_7_days", label: "近 7 天生成", icon: ThunderboltOutlined, color: "#1890ff" },
-  { key: "last_30_days", label: "近 30 天生成", icon: CalendarOutlined, color: "#722ed1" },
-  { key: "total_users", label: "总用户数", icon: TeamOutlined, color: "#13c2c2" },
-  { key: "active_users", label: "活跃用户", icon: UserOutlined, color: "#52c41a" },
-];
+watch(filterSignature, async () => {
+  if (!ready.value) return;
+  page.value = 1;
+  await loadPageData();
+});
 </script>
 
 <template>
@@ -125,189 +313,237 @@ const statCards = [
         </div>
         <div>
           <div class="warm-page-title">数据统计</div>
-          <div class="warm-page-desc">查看用户活跃情况、生成任务趋势与全站记录。</div>
+          <div class="warm-page-desc">查看日、周、月趋势对比，了解任务、用户和积分消耗的整体情况。</div>
         </div>
+      </div>
+      <div v-if="summary" class="page-period-meta">
+        <span class="page-period-chip">当前周期：{{ summary.current_range_label }}</span>
+        <span class="page-period-chip">对比周期：{{ summary.previous_range_label }}</span>
       </div>
     </div>
 
-    <div class="stats-grid">
-      <div v-for="sc in statCards" :key="sc.key" class="stat-card warm-card">
-        <div class="stat-icon" :style="{ background: sc.color + '15', color: sc.color }">
-          <component :is="sc.icon" style="font-size: 24px" />
-        </div>
-        <div class="stat-body">
-          <div class="stat-val">{{ (stats as any)[sc.key] }}</div>
-          <div class="stat-lbl">{{ sc.label }}</div>
-        </div>
+    <AnalyticsFilterBar
+      :users="users"
+      :model-options="modelOptions"
+      :filters="filters"
+      :granularity="granularity"
+      :preset="preset"
+      :loading="analyticsLoading || historyLoading"
+      @update:granularity="handleGranularityChange"
+      @preset-change="handlePresetChange"
+      @reset="handleReset"
+    />
+
+    <section class="dashboard-section">
+      <div class="section-title-row">
+        <h3 class="section-title">核心指标</h3>
+        <span class="section-kicker">Overview</span>
       </div>
-    </div>
+      <KpiCards :summary="summary" :loading="analyticsLoading" />
+    </section>
 
-    <h3 class="section-title">全部生成记录</h3>
+    <section class="dashboard-section">
+      <div class="section-title-row">
+        <h3 class="section-title">趋势分析</h3>
+        <span class="section-tip">点击图表任意时间点可直接下钻到该时间范围明细。</span>
+      </div>
+      <div class="section-filter-chips">
+        <span v-for="item in activeFilterSummary" :key="item" class="section-filter-chip">{{ item }}</span>
+      </div>
+      <TrendCharts :data="timeseries" :loading="analyticsLoading" @bucket-click="handleBucketClick" />
+    </section>
 
-    <div class="filter-bar warm-card">
-      <a-select
-        v-model:value="filter.status"
-        placeholder="状态"
-        allow-clear
-        :options="statusOptions"
-        class="filter-select"
-      />
-      <a-select
-        v-model:value="filter.user_id"
-        placeholder="用户"
-        allow-clear
-        show-search
-        option-filter-prop="label"
-        class="filter-select"
-      >
-        <a-select-option
-          v-for="u in users"
-          :key="u.id"
-          :value="u.id"
-          :label="u.username"
-        >
-          {{ u.username }}
-        </a-select-option>
-      </a-select>
-      <a-range-picker
-        v-model:value="filter.dateRange"
-        class="filter-date"
-      />
-      <a-button type="primary" class="warm-primary-btn filter-btn" @click="handleSearch">
-        <template #icon><SearchOutlined /></template>查询
-      </a-button>
-      <a-button class="filter-btn filter-reset" @click="handleReset">
-        <template #icon><UndoOutlined /></template>重置
-      </a-button>
-    </div>
+    <section class="dashboard-section">
+      <div class="section-title-row">
+        <h3 class="section-title">结构分布</h3>
+        <span class="section-tip">点击占比或排行图可自动带筛选查看记录。</span>
+      </div>
+      <div class="section-filter-chips">
+        <span v-for="item in activeFilterSummary" :key="item" class="section-filter-chip">{{ item }}</span>
+      </div>
+      <BreakdownCharts :data="breakdown" :loading="analyticsLoading" @filter-click="handleBreakdownFilter" />
+    </section>
 
-    <div class="warm-card warm-table-card">
-      <a-table
-        :columns="columns"
-        :data-source="history"
-        :loading="loading"
-        row-key="task_id"
-        :pagination="false"
-        :scroll="{ x: 980 }"
-        class="admin-mobile-table"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.dataIndex === 'username'">
-            <div class="table-user-cell">
-              <a-avatar :size="30" :src="record.avatar_url || undefined" class="table-user-avatar">
-                {{ record.username?.charAt(0)?.toUpperCase() }}
-              </a-avatar>
-              <span>{{ record.username || "-" }}</span>
+    <section class="dashboard-section">
+      <div class="warm-card warm-table-card">
+        <div class="table-card-head">
+          <div>
+            <div class="table-card-title-row">
+              <h3 class="section-title">全部生成记录</h3>
+              <span class="section-kicker">Details</span>
             </div>
-          </template>
-          <template v-else-if="column.dataIndex === 'status'">
-            <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
-          </template>
-          <template v-else-if="column.key === 'softDelete'">
-            <a-tag v-if="record.is_soft_deleted" color="orange">
-              已软删除<span v-if="record.soft_deleted_count">({{ record.soft_deleted_count }})</span>
-            </a-tag>
-            <a-tag v-else color="green">正常</a-tag>
-          </template>
-          <template v-else-if="column.key === 'imgCount'">
-            {{ record.images.length }}
-          </template>
-          <template v-else-if="column.dataIndex === 'created_at'">
-            {{ fmtTime(record.created_at) }}
-          </template>
-        </template>
-      </a-table>
-    </div>
+            <div class="table-card-desc">当前图表与筛选条件对应的任务明细列表。</div>
+          </div>
+          <div class="history-summary">
+            <span class="history-summary-chip">筛选结果 {{ historyTotal }} 条</span>
+            <span class="history-summary-chip">总消耗积分 {{ historyCreditTotal }}</span>
+          </div>
+        </div>
 
-    <div v-if="historyTotal > 10" class="warm-pagination">
-      <a-pagination
-        :current="page"
-        :total="historyTotal"
-        :page-size="10"
-        show-less-items
-        @change="handlePageChange"
-      />
-    </div>
+        <a-table
+          :columns="columns"
+          :data-source="history"
+          :loading="historyLoading"
+          row-key="task_id"
+          :pagination="false"
+          sticky
+          :scroll="{ x: 1200, y: 560 }"
+          class="admin-mobile-table"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'username'">
+              <div class="table-user-cell">
+                <a-avatar :size="30" :src="record.avatar_url || undefined" class="table-user-avatar">
+                  {{ record.username?.charAt(0)?.toUpperCase() }}
+                </a-avatar>
+                <span>{{ record.username || "-" }}</span>
+              </div>
+            </template>
+            <template v-else-if="column.dataIndex === 'mode'">
+              {{ modeLabel(record.mode) }}
+            </template>
+            <template v-else-if="column.dataIndex === 'model'">
+              {{ modelLabel(record.model) }}
+            </template>
+            <template v-else-if="column.dataIndex === 'status'">
+              <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'imgCount'">
+              {{ record.images.length }}
+            </template>
+            <template v-else-if="column.dataIndex === 'created_at'">
+              {{ fmtTime(record.created_at) }}
+            </template>
+          </template>
+        </a-table>
+      </div>
+
+      <div v-if="historyTotal > 10" class="warm-pagination">
+        <a-pagination
+          :current="page"
+          :total="historyTotal"
+          :page-size="10"
+          show-less-items
+          @change="handlePageChange"
+        />
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped lang="scss">
+.dashboard-section + .dashboard-section {
+  margin-top: 18px;
+}
+
+.dashboard-section {
+  padding-top: 2px;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
 .section-title {
   font-size: 16px;
   font-weight: 700;
   color: #5d4526;
-  margin: 6px 0 -2px;
+  margin: 0;
+  position: relative;
+  padding-left: 14px;
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 18px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ffc45b, #ffab25);
+    box-shadow: 0 6px 12px rgba(255, 169, 37, 0.24);
+  }
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-}
-
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 24px;
-}
-
-.stat-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.section-kicker {
   flex-shrink: 0;
-}
-
-.stat-val {
-  font-size: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 245, 223, 0.9);
+  color: #a07d49;
+  font-size: 11px;
   font-weight: 700;
-  color: #4c341a;
-  line-height: 1.2;
+  letter-spacing: 0.04em;
 }
 
-.stat-lbl {
+.section-tip,
+.page-period-meta,
+.history-summary {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
   font-size: 13px;
   color: #8c7458;
-  margin-top: 2px;
 }
 
-.filter-bar {
+.section-filter-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -2px 2px 12px;
+}
+
+.section-filter-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #8c7458;
+  background: rgba(255, 253, 248, 0.92);
+  border: 1px solid rgba(240, 223, 190, 0.95);
+}
+
+.page-period-meta {
+  justify-content: flex-end;
+}
+
+.page-period-chip,
+.history-summary-chip {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.92);
+  border: 1px solid rgba(240, 223, 190, 0.95);
+  box-shadow: 0 10px 18px rgba(236, 185, 88, 0.08);
+}
+
+.table-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(240, 223, 190, 0.9);
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.2));
+}
+
+.table-card-title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  margin-bottom: 0;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.filter-select {
-  width: 140px;
-}
-
-.filter-date {
-  width: 260px;
-}
-
-.filter-btn {
-  height: 36px;
-  border-radius: 12px;
-  font-weight: 600;
-  padding-inline: 16px;
-}
-
-.filter-reset {
-  border: 1px solid #e8d5c0 !important;
-  background: linear-gradient(180deg, #fffaf5, #fef3e8) !important;
-  color: #8c7458 !important;
-
-  &:hover {
-    border-color: #d4b896 !important;
-    color: #5d4526 !important;
-  }
+.table-card-desc {
+  margin-top: 8px;
+  color: #9a805b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .table-user-cell {
@@ -324,23 +560,35 @@ const statCards = [
   font-weight: 700;
 }
 
+:deep(.admin-mobile-table .ant-table-header) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+:deep(.admin-mobile-table .ant-table-thead > tr > th) {
+  background: #fff8ed;
+  color: #7a5b2d;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(240, 223, 190, 0.95);
+}
+
+:deep(.admin-mobile-table .ant-table-body) {
+  scrollbar-width: thin;
+}
+
 @media (max-width: 768px) {
   :deep(.admin-mobile-table .ant-table-content) {
     overflow-x: auto !important;
   }
 
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .page-period-meta {
+    justify-content: flex-start;
   }
 
-  .filter-bar {
+  .table-card-head {
     flex-direction: column;
-    align-items: stretch;
-  }
-
-  .filter-select,
-  .filter-date {
-    width: 100%;
+    padding: 16px;
   }
 }
 </style>

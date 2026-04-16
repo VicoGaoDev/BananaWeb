@@ -1,0 +1,201 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import type { PropType } from "vue";
+import type { AdminAnalyticsSummary, AdminAnalyticsMetric } from "@/types";
+
+type CardItem = {
+  key: string;
+  label: string;
+  color: string;
+  metric?: AdminAnalyticsMetric;
+  plainValue?: number;
+};
+
+const props = defineProps({
+  summary: {
+    type: Object as PropType<AdminAnalyticsSummary | null>,
+    default: null,
+  },
+  loading: {
+    type: Boolean,
+    default: false,
+  },
+});
+
+const cards = computed<CardItem[]>(() => {
+  if (!props.summary) return [];
+  return [
+    { key: "tasks_created", label: "生成任务数", color: "#1890ff", metric: props.summary.tasks_created },
+    { key: "success_tasks", label: "成功任务数", color: "#52c41a", metric: props.summary.success_tasks },
+    { key: "failed_tasks", label: "失败任务数", color: "#ff4d4f", metric: props.summary.failed_tasks },
+    { key: "credits_consumed", label: "消耗积分", color: "#fa8c16", metric: props.summary.credits_consumed },
+    { key: "new_users", label: "新增用户数", color: "#722ed1", metric: props.summary.new_users },
+    { key: "active_users", label: "活跃用户数", color: "#13c2c2", metric: props.summary.active_users },
+    { key: "total_users", label: "总用户数", color: "#8c8c8c", plainValue: props.summary.total_users },
+  ];
+});
+
+function formatDelta(metric?: AdminAnalyticsMetric) {
+  if (!metric) return "";
+  const sign = metric.delta > 0 ? "+" : "";
+  if (metric.delta_pct == null) return `较上期 ${sign}${metric.delta}`;
+  return `较上期 ${sign}${metric.delta} (${sign}${metric.delta_pct}%)`;
+}
+</script>
+
+<template>
+  <a-spin :spinning="loading">
+    <div class="kpi-grid">
+      <div
+        v-for="card in cards"
+        :key="card.key"
+        class="kpi-card warm-card"
+      >
+        <div class="kpi-head">
+          <div class="kpi-label-wrap">
+            <span class="kpi-dot" :style="{ background: card.color }" />
+            <div class="kpi-label">{{ card.label }}</div>
+          </div>
+          <div class="kpi-chip">{{ card.metric ? "周期对比" : "累计" }}</div>
+        </div>
+        <div class="kpi-value" :style="{ color: card.color }">
+          {{ card.metric ? card.metric.current : card.plainValue }}
+        </div>
+        <div v-if="card.metric" class="kpi-meta">
+          <span class="kpi-meta-label">上期</span>
+          <span class="kpi-meta-value">{{ card.metric.previous }}</span>
+        </div>
+        <div
+          class="kpi-delta"
+          :class="{ positive: (card.metric?.delta || 0) > 0, negative: (card.metric?.delta || 0) < 0 }"
+        >
+          {{ card.metric ? formatDelta(card.metric) : "当前总量" }}
+        </div>
+      </div>
+    </div>
+  </a-spin>
+</template>
+
+<style scoped lang="scss">
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.kpi-card {
+  min-height: 126px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px 20px;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255, 193, 90, 0.85), rgba(255, 193, 90, 0));
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 24px 42px rgba(236, 185, 88, 0.16);
+    border-color: rgba(241, 210, 154, 0.92);
+  }
+}
+
+.kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kpi-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kpi-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(255, 193, 90, 0.14);
+}
+
+.kpi-label {
+  font-size: 13px;
+  color: #8c7458;
+  font-weight: 600;
+}
+
+.kpi-chip {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 245, 223, 0.9);
+  color: #a07d49;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kpi-value {
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #4c341a;
+  letter-spacing: -0.02em;
+}
+
+.kpi-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.kpi-meta-label {
+  color: #ad8a58;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.kpi-meta-value {
+  color: #7b6342;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.kpi-delta {
+  font-size: 12px;
+  color: #8c7458;
+  line-height: 1.5;
+  padding: 8px 10px 0;
+  border-top: 1px dashed rgba(232, 213, 192, 0.9);
+  margin: 0 -2px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+
+  &.positive {
+    color: #389e0d;
+  }
+
+  &.negative {
+    color: #cf1322;
+  }
+}
+
+@media (max-width: 700px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -39,6 +39,7 @@ class TaskOut(BaseModel):
     num_images: int = 4
     size: str
     resolution: str = ""
+    credit_cost: int = 0
     status: str
     error_message: str = ""
     created_at: datetime | None = None

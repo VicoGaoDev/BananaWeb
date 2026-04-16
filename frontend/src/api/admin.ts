@@ -1,6 +1,10 @@
 import client from "./client";
 import type {
   AdminStats,
+  AdminAnalyticsBreakdown,
+  AdminAnalyticsQuery,
+  AdminAnalyticsSummary,
+  AdminAnalyticsTimeseries,
   AdminConfig,
   CosConfig,
   AdminUser,
@@ -14,6 +18,19 @@ import type {
   HistoryFilter,
   HistoryResponse,
 } from "@/types";
+
+function buildAnalyticsParams(query: AdminAnalyticsQuery): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    granularity: query.granularity,
+  };
+  if (query.start_date) params.start_date = query.start_date;
+  if (query.end_date) params.end_date = query.end_date;
+  if (query.user_id) params.user_id = query.user_id;
+  if (query.model) params.model = query.model;
+  if (query.mode) params.mode = query.mode;
+  if (query.status) params.status = query.status;
+  return params;
+}
 
 export function listUsers(): Promise<AdminUser[]> {
   return client.get("/admin/users");
@@ -57,9 +74,23 @@ export function getAdminHistory(
   const params: Record<string, unknown> = { page, page_size: pageSize };
   if (filter?.status) params.status = filter.status;
   if (filter?.user_id) params.user_id = filter.user_id;
+  if (filter?.model) params.model = filter.model;
+  if (filter?.mode) params.mode = filter.mode;
   if (filter?.start_date) params.start_date = filter.start_date;
   if (filter?.end_date) params.end_date = filter.end_date;
   return client.get("/admin/history", { params });
+}
+
+export function getAdminAnalyticsSummary(query: AdminAnalyticsQuery): Promise<AdminAnalyticsSummary> {
+  return client.get("/admin/analytics/summary", { params: buildAnalyticsParams(query) });
+}
+
+export function getAdminAnalyticsTimeseries(query: AdminAnalyticsQuery): Promise<AdminAnalyticsTimeseries> {
+  return client.get("/admin/analytics/timeseries", { params: buildAnalyticsParams(query) });
+}
+
+export function getAdminAnalyticsBreakdown(query: AdminAnalyticsQuery): Promise<AdminAnalyticsBreakdown> {
+  return client.get("/admin/analytics/breakdown", { params: buildAnalyticsParams(query) });
 }
 
 export function getAdminConfig(): Promise<AdminConfig | null> {

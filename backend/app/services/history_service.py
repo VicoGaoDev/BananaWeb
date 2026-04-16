@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, selectinload
 from app.models.task import Task
 from app.models.image import Image
@@ -118,6 +118,7 @@ def get_user_history(
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
+            "credit_cost": int(task.credit_cost or 0),
             "created_at": task.created_at,
             "error_message": task.error_message or "",
             "images": visible_images,
@@ -152,23 +153,36 @@ def get_all_history(
     page_size: int = 20,
     status: Optional[str] = None,
     user_id: Optional[int] = None,
+    model: Optional[str] = None,
+    mode: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
 ):
     cos_config = get_optional_cos_config(db)
-    query = db.query(Task).order_by(Task.created_at.desc())
+    base_query = db.query(Task)
 
     if status:
-        query = query.filter(Task.status == status)
+        base_query = base_query.filter(Task.status == status)
     if user_id:
-        query = query.filter(Task.user_id == user_id)
+        base_query = base_query.filter(Task.user_id == user_id)
+    if model:
+        base_query = base_query.filter(Task.model == model)
+    if mode:
+        base_query = base_query.filter(Task.mode == mode)
     if start_date:
-        query = query.filter(Task.created_at >= start_date)
+        base_query = base_query.filter(Task.created_at >= start_date)
     if end_date:
-        query = query.filter(Task.created_at <= end_date)
+        base_query = base_query.filter(Task.created_at <= end_date)
 
-    total = query.count()
-    tasks = query.offset((page - 1) * page_size).limit(page_size).all()
+    total = base_query.count()
+    total_credit_cost = base_query.with_entities(func.coalesce(func.sum(Task.credit_cost), 0)).scalar() or 0
+    tasks = (
+        base_query
+        .order_by(Task.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
 
     user_cache: dict[int, dict[str, str]] = {}
     items = []
@@ -193,6 +207,7 @@ def get_all_history(
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
+            "credit_cost": int(task.credit_cost or 0),
             "status": task.status,
             "error_message": task.error_message or "",
             "is_soft_deleted": soft_deleted_count > 0,
@@ -205,4 +220,4 @@ def get_all_history(
             ),
         })
 
-    return {"total": total, "items": items}
+    return {"total": total, "total_credit_cost": total_credit_cost, "items": items}
