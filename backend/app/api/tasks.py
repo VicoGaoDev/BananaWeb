@@ -4,6 +4,7 @@ from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskCreateResponse, TaskOut
+from app.services.image_delivery_service import get_optional_cos_config, serialize_task
 from app.services.external_api_config_service import (
     get_default_generation_model_key,
     require_scene_config,
@@ -60,4 +61,4 @@ def get_task(
     db: Session = Depends(get_db),
 ):
     task = get_task_detail(db, task_id, user.id)
-    return task
+    return serialize_task(task, cos_config=get_optional_cos_config(db))

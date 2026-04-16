@@ -14,8 +14,8 @@ import {
 import { useRouter } from "vue-router";
 import { getGenerationModels } from "@/api/config";
 import { fetchHistory } from "@/api/history";
-import { deleteImage, getDownloadUrl } from "@/api/images";
-import type { GenerationModelOption, UserHistoryCard } from "@/types";
+import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import type { GenerationModelOption, ImageResult, UserHistoryCard } from "@/types";
 
 const router = useRouter();
 const items = ref<UserHistoryCard[]>([]);
@@ -139,17 +139,6 @@ function modeLabel(mode: UserHistoryCard["mode"]) {
   return mode === "inpaint" ? "局部重绘" : "生图";
 }
 
-function modeColor(mode: UserHistoryCard["mode"]) {
-  return mode === "inpaint" ? "purple" : "gold";
-}
-
-function statusColor(status: UserHistoryCard["status"]) {
-  if (status === "success") return "green";
-  if (status === "failed") return "red";
-  if (status === "processing") return "orange";
-  return "default";
-}
-
 function statusLabel(status: UserHistoryCard["status"]) {
   const mapping: Record<string, string> = {
     pending: "等待中",
@@ -210,9 +199,22 @@ function openPreview(url: string) {
   previewVisible.value = true;
 }
 
-function getHistoryImageSrc(image: Pick<UserHistoryCard, "image_url" | "status">) {
-  if (image.image_url) return image.image_url;
+function getHistoryImageSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_url" | "preview_url" | "status">) {
+  const displayUrl = getDisplayImageUrl(image);
+  if (displayUrl) return displayUrl;
   return image.status === "failed" ? "/failed-result.svg" : "";
+}
+
+function getHistoryPreviewSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_url" | "preview_url">) {
+  return getPreviewImageUrl(image);
+}
+
+function getNestedImageSrc(image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url" | "status">) {
+  return getHistoryImageSrc(image);
+}
+
+function getNestedPreviewSrc(image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url">) {
+  return getPreviewImageUrl(image);
 }
 
 function openDetail(item: UserHistoryCard) {
@@ -502,19 +504,15 @@ function handleReedit(item: UserHistoryCard) {
               :src="getHistoryImageSrc(item)"
               :alt="item.status === 'failed' ? '生成失败' : '历史结果图'"
               :class="{ 'failed-result-image': item.status === 'failed' }"
-              @click.stop="openPreview(getHistoryImageSrc(item))"
+              loading="lazy"
+              @click.stop="openPreview(getHistoryPreviewSrc(item))"
             />
             <div v-else class="result-card-placeholder">
-              {{ item.status === "failed" ? "生成失败" : item.status === "processing" ? "生成中..." : "等待中..." }}
+              <ClockCircleOutlined />
             </div>
           </div>
 
           <div class="result-card-body">
-            <div class="result-card-meta">
-              <a-tag class="warm-tag" :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-              <a-tag class="warm-tag" :color="modeColor(item.mode)">{{ modeLabel(item.mode) }}</a-tag>
-            </div>
-
             <div class="result-card-file-meta">
               <span>格式：{{ item.image_format || "-" }}</span>
               <span>大小：{{ formatImageSize(item.image_size_bytes) }}</span>
@@ -577,16 +575,17 @@ function handleReedit(item: UserHistoryCard) {
                   class="detail-result-card"
                   :class="{
                     single: detailItem.images.length === 1,
-                    pending: !img.image_url && img.status !== 'failed',
+                    pending: !getNestedImageSrc(img) && img.status !== 'failed',
                     failed: img.status === 'failed',
                   }"
-                  @click="img.image_url && openPreview(img.image_url)"
+                  @click="getNestedPreviewSrc(img) && openPreview(getNestedPreviewSrc(img))"
                 >
                   <img
-                    v-if="img.image_url || img.status === 'failed'"
-                    :src="img.image_url || '/failed-result.svg'"
+                    v-if="getNestedImageSrc(img) || img.status === 'failed'"
+                    :src="getNestedImageSrc(img) || '/failed-result.svg'"
                     :alt="img.status === 'failed' ? '生成失败' : '结果图'"
                     :class="{ 'failed-result-image': img.status === 'failed' }"
+                    loading="lazy"
                   />
                   <div v-else class="result-card-placeholder">
                     等待中...
@@ -611,8 +610,8 @@ function handleReedit(item: UserHistoryCard) {
             <div v-if="detailItem.mode === 'inpaint' && detailItem.source_image" class="detail-section">
               <div class="detail-label">局部重绘原图</div>
               <div class="detail-thumb-row">
-                <div class="detail-thumb" @click="openPreview(detailItem.source_image)">
-                  <img :src="detailItem.source_image" alt="局部重绘原图" />
+                <div class="detail-thumb" @click="openPreview(resolveImageUrl(detailItem.source_image))">
+                  <img :src="resolveImageUrl(detailItem.source_image_thumb || detailItem.source_image)" alt="局部重绘原图" loading="lazy" />
                 </div>
               </div>
             </div>
@@ -627,9 +626,9 @@ function handleReedit(item: UserHistoryCard) {
                   v-for="(ref, index) in detailItem.reference_images"
                   :key="index"
                   class="detail-thumb"
-                  @click="openPreview(ref)"
+                  @click="openPreview(resolveImageUrl(ref))"
                 >
-                  <img :src="ref" alt="参考图" />
+                  <img :src="resolveImageUrl(detailItem.reference_image_thumbs[index] || ref)" alt="参考图" loading="lazy" />
                 </div>
               </div>
             </div>
@@ -815,7 +814,7 @@ function handleReedit(item: UserHistoryCard) {
   padding: 16px;
   color: #9b825f;
   text-align: center;
-  font-size: 14px;
+  font-size: 28px;
   background: #fff8ee;
 }
 
@@ -827,13 +826,6 @@ function handleReedit(item: UserHistoryCard) {
 
 .result-card-body {
   padding-top: 12px;
-}
-
-.result-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .result-card-file-meta {

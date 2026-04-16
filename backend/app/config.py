@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     AI_TIMEOUT: int = 120
     COS_STS_DURATION_SECONDS: int = 1800
     IMAGE_FETCH_TIMEOUT: int = 30
+    COS_IMAGE_THUMBNAIL_RULE: str = ""
+    COS_IMAGE_STYLE_SEPARATOR: str = "!"
+    GENERATED_PREVIEW_TTL_SECONDS: int = 3600
+    GENERATED_IMAGE_CACHE_CONTROL: str = "public, max-age=31536000, immutable"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

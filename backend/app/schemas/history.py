@@ -5,7 +5,10 @@ from datetime import datetime
 class HistoryImageOut(BaseModel):
     id: int
     image_url: str
+    preview_url: str = ""
+    thumb_url: str = ""
     status: str
+    error_message: str = ""
     image_format: str = ""
     image_size_bytes: int = 0
     is_deleted: bool = False
@@ -40,6 +43,8 @@ class UserHistoryCardItem(BaseModel):
     task_id: int
     image_id: int
     image_url: str = ""
+    preview_url: str = ""
+    thumb_url: str = ""
     status: str
     image_format: str = ""
     image_size_bytes: int = 0
@@ -48,11 +53,14 @@ class UserHistoryCardItem(BaseModel):
     mode: str = "generate"
     prompt: str = ""
     reference_images: list[str] = []
+    reference_image_thumbs: list[str] = []
     source_image: str = ""
+    source_image_thumb: str = ""
     num_images: int = 1
     size: str
     resolution: str = ""
     created_at: datetime | None = None
+    error_message: str = ""
     images: list[HistoryImageOut] = []
 
 

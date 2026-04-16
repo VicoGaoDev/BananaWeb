@@ -4,6 +4,7 @@ import { message } from "ant-design-vue";
 import { PictureOutlined, TagsOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
 import { getTemplateDetail, listTemplates, listTemplateTags } from "@/api/templates";
+import { resolveImageUrl } from "@/api/images";
 import type { CreativeTemplate, TemplateTag } from "@/types";
 
 const router = useRouter();
@@ -130,7 +131,7 @@ onMounted(() => {
           @click="openDetail(item.id)"
         >
           <div class="template-cover">
-            <img v-if="item.result_image" :src="item.result_image" alt="模版结果图" />
+            <img v-if="item.result_image" :src="resolveImageUrl(item.result_image_thumb || item.result_image)" alt="模版结果图" loading="lazy" />
             <div v-else class="template-cover-empty">暂无结果图</div>
             <div class="template-overlay">
               <div class="template-overlay-text">查看详情</div>
@@ -150,7 +151,7 @@ onMounted(() => {
       <a-spin :spinning="detailLoading">
         <div v-if="detail" class="detail-layout">
           <div class="detail-preview">
-            <img v-if="detail.result_image" :src="detail.result_image" alt="模版结果图" />
+            <img v-if="detail.result_image" :src="resolveImageUrl(detail.result_image)" alt="模版结果图" />
             <div v-else class="detail-preview-empty">暂无结果图</div>
           </div>
 
@@ -170,7 +171,13 @@ onMounted(() => {
             <div v-if="detail.reference_images.length" class="detail-block">
               <div class="detail-label">参考图</div>
               <div class="detail-refs">
-                <img v-for="(url, idx) in detail.reference_images" :key="url + idx" :src="url" alt="参考图" />
+                <img
+                  v-for="(url, idx) in detail.reference_images"
+                  :key="url + idx"
+                  :src="resolveImageUrl(detail.reference_image_thumbs?.[idx] || url)"
+                  alt="参考图"
+                  loading="lazy"
+                />
               </div>
             </div>
 

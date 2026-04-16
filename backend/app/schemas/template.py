@@ -39,6 +39,7 @@ class TemplateListItemOut(BaseModel):
     prompt: str
     model: str = ""
     result_image: str
+    result_image_thumb: str = ""
     sort_order: int = 0
     size: str
     resolution: str
@@ -52,10 +53,12 @@ class TemplateDetailOut(BaseModel):
     prompt: str
     model: str = ""
     reference_images: list[str] = []
+    reference_image_thumbs: list[str] = []
     sort_order: int = 0
     size: str
     resolution: str
     num_images: int
     result_image: str
+    result_image_thumb: str = ""
     tags: list[TemplateTagOut]
     created_at: datetime | None = None

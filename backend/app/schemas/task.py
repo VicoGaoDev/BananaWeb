@@ -22,7 +22,11 @@ class ImageOut(BaseModel):
     id: int
     image_url: str
     preview_url: str = ""
+    thumb_url: str = ""
     status: str
+    error_message: str = ""
+    image_format: str = ""
+    image_size_bytes: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -36,6 +40,7 @@ class TaskOut(BaseModel):
     size: str
     resolution: str = ""
     status: str
+    error_message: str = ""
     created_at: datetime | None = None
     images: list[ImageOut] = []
 

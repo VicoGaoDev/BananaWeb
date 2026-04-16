@@ -23,6 +23,7 @@ import {
   updateTemplate,
   type TemplatePayload,
 } from "@/api/templates";
+import { resolveImageUrl } from "@/api/images";
 import type { CreativeTemplate, GenerationModelOption, TemplateTag } from "@/types";
 
 const templates = ref<CreativeTemplate[]>([]);
@@ -375,7 +376,7 @@ function fmtTime(t: string) {
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'result_image'">
             <div class="thumb-box">
-              <img v-if="record.result_image" :src="record.result_image" alt="结果图" />
+              <img v-if="record.result_image" :src="resolveImageUrl(record.result_image_thumb || record.result_image)" alt="结果图" loading="lazy" />
             </div>
           </template>
           <template v-else-if="column.key === 'tags'">

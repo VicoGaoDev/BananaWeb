@@ -15,7 +15,9 @@ export interface ImageResult {
   id: number;
   image_url: string;
   preview_url?: string;
+  thumb_url?: string;
   status: "pending" | "success" | "failed";
+  error_message?: string;
   image_format?: string;
   image_size_bytes?: number;
   is_deleted?: boolean;
@@ -29,6 +31,7 @@ export interface TaskResult {
   size: string;
   resolution: string;
   status: "pending" | "processing" | "success" | "failed";
+  error_message?: string;
   created_at: string;
   images: ImageResult[];
 }
@@ -45,6 +48,7 @@ export interface HistoryItem {
   size: string;
   resolution: string;
   status: string;
+  error_message?: string;
   is_soft_deleted?: boolean;
   soft_deleted_count?: number;
   created_at: string;
@@ -70,6 +74,8 @@ export interface UserHistoryCard {
   task_id: number;
   image_id: number;
   image_url: string;
+  preview_url?: string;
+  thumb_url?: string;
   status: "pending" | "processing" | "success" | "failed";
   image_format?: string;
   image_size_bytes?: number;
@@ -78,11 +84,14 @@ export interface UserHistoryCard {
   mode: "generate" | "inpaint";
   prompt: string;
   reference_images: string[];
+  reference_image_thumbs: string[];
   source_image: string;
+  source_image_thumb: string;
   num_images: number;
   size: string;
   resolution: string;
   created_at: string;
+  error_message?: string;
   images: ImageResult[];
 }
 
@@ -124,10 +133,12 @@ export interface CreativeTemplate {
   prompt: string;
   model: string;
   reference_images: string[];
+  reference_image_thumbs?: string[];
   num_images: number;
   size: string;
   resolution: string;
   result_image: string;
+  result_image_thumb?: string;
   sort_order: number;
   tags: TemplateTag[];
   created_at: string;
@@ -140,15 +151,20 @@ export interface AdminStats {
   active_users: number;
 }
 
-export interface ApiKeyConfig {
+export interface AdminConfig {
   id: number;
-  key: string;
-  tongyi_key: string;
   contact_qr_image: string;
   announcement_enabled: boolean;
   announcement_content: string;
   announcement_updated_at?: string | null;
   updated_at: string;
+}
+
+export interface ExternalApiSecretConfig {
+  id: number;
+  key: string;
+  tongyi_key: string;
+  updated_at?: string | null;
 }
 
 export interface CosConfig {
@@ -196,6 +212,8 @@ export interface ExternalApiSceneBinding {
   scene_key: "banana" | "banana2" | "banana_pro" | "banana_pro_plus" | "prompt_reverse" | "inpaint";
   scene_label: string;
   scene_description: string;
+  display_name: string;
+  subtitle: string;
   sort_order: number;
   hide_resolution: boolean;
   api_config_id?: number | null;
@@ -216,6 +234,8 @@ export interface GenerationModelOption {
   model_key: string;
   model_label: string;
   model_description: string;
+  display_name: string;
+  subtitle: string;
   sort_order: number;
   hide_resolution: boolean;
   credit_cost: number;
@@ -225,6 +245,8 @@ export interface TaskSceneConfig {
   scene_key: "banana" | "banana2" | "banana_pro" | "banana_pro_plus" | "prompt_reverse" | "inpaint";
   scene_label: string;
   scene_description: string;
+  display_name: string;
+  subtitle: string;
   sort_order: number;
   hide_resolution: boolean;
   credit_cost: number;

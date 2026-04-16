@@ -17,6 +17,7 @@ from app.schemas.template import (
     TemplateTagOut,
     TemplateUpdate,
 )
+from app.services.image_delivery_service import get_optional_cos_config, serialize_asset_urls
 
 router = APIRouter(prefix="/api/templates", tags=["创意模版"])
 
@@ -48,12 +49,14 @@ def _serialize_tag(tag: TemplateTag) -> dict:
     }
 
 
-def _serialize_template_list_item(template: Template) -> dict:
+def _serialize_template_list_item(template: Template, *, cos_config=None) -> dict:
+    result_asset = serialize_asset_urls(template.result_image or "", cos_config=cos_config)
     return {
         "id": template.id,
         "prompt": template.prompt or "",
         "model": template.model or "",
-        "result_image": template.result_image or "",
+        "result_image": result_asset["image_url"],
+        "result_image_thumb": result_asset["thumb_url"],
         "sort_order": template.sort_order or 0,
         "size": template.size,
         "resolution": template.resolution or "",
@@ -67,10 +70,15 @@ def _serialize_template_list_item(template: Template) -> dict:
     }
 
 
-def _serialize_template_detail(template: Template) -> dict:
+def _serialize_template_detail(template: Template, *, cos_config=None) -> dict:
+    reference_assets = [
+        serialize_asset_urls(url, cos_config=cos_config)
+        for url in json.loads(template.reference_images or "[]")
+    ]
     return {
-        **_serialize_template_list_item(template),
-        "reference_images": json.loads(template.reference_images or "[]"),
+        **_serialize_template_list_item(template, cos_config=cos_config),
+        "reference_images": [asset["image_url"] for asset in reference_assets],
+        "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
     }
 
 
@@ -93,11 +101,12 @@ def list_templates(
     tag_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
+    cos_config = get_optional_cos_config(db)
     query = db.query(Template).order_by(Template.sort_order.desc(), Template.created_at.desc())
     if tag_id is not None:
         query = query.join(TemplateTagRelation).filter(TemplateTagRelation.tag_id == tag_id)
     templates = query.all()
-    return [_serialize_template_list_item(template) for template in templates]
+    return [_serialize_template_list_item(template, cos_config=cos_config) for template in templates]
 
 
 @router.get("/tags", response_model=list[TemplateTagOut])
@@ -172,16 +181,18 @@ def list_admin_templates(
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    cos_config = get_optional_cos_config(db)
     templates = db.query(Template).order_by(Template.sort_order.desc(), Template.created_at.desc()).all()
-    return [_serialize_template_list_item(template) for template in templates]
+    return [_serialize_template_list_item(template, cos_config=cos_config) for template in templates]
 
 
 @router.get("/{template_id}", response_model=TemplateDetailOut)
 def get_template_detail(template_id: int, db: Session = Depends(get_db)):
+    cos_config = get_optional_cos_config(db)
     template = db.query(Template).filter(Template.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="模版不存在")
-    return _serialize_template_detail(template)
+    return _serialize_template_detail(template, cos_config=cos_config)
 
 
 @router.post("", response_model=TemplateDetailOut)
@@ -207,7 +218,7 @@ def create_template(
     _sync_template_tags(db, template, body.tag_names)
     db.commit()
     db.refresh(template)
-    return _serialize_template_detail(template)
+    return _serialize_template_detail(template, cos_config=get_optional_cos_config(db))
 
 
 @router.put("/{template_id}", response_model=TemplateDetailOut)
@@ -234,7 +245,7 @@ def update_template(
     _sync_template_tags(db, template, body.tag_names)
     db.commit()
     db.refresh(template)
-    return _serialize_template_detail(template)
+    return _serialize_template_detail(template, cos_config=get_optional_cos_config(db))
 
 
 @router.delete("/{template_id}")

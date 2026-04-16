@@ -20,7 +20,7 @@ import {
 } from "@ant-design/icons-vue";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { createTask, getTask } from "@/api/tasks";
-import { getDownloadUrl, regenerateImage, resolveImageUrl } from "@/api/images";
+import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
 import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
@@ -63,6 +63,7 @@ interface GeneratedTaskItem {
   resolution: string;
   referenceImages: string[];
   sourceImage?: string;
+  maskImage?: string;
   createdAt: string;
   status: GeneratedTaskStatus;
   images: ImageResult[];
@@ -265,6 +266,50 @@ function startTaskPolling(taskId: number) {
     }
   }, 2000);
   taskPollTimers.set(taskId, timer);
+}
+
+function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
+  if (task.mode === "inpaint") return inpaintCreditCost.value;
+  const perImageCost = task.model
+    ? generationModels.value.find((item) => item.model_key === task.model)?.credit_cost
+      ?? sceneCostMap.value[task.model]
+      ?? DEFAULT_SCENE_COSTS[task.model]
+      ?? selectedModelCreditCost.value
+    : selectedModelCreditCost.value;
+  return nextNumImages * perImageCost;
+}
+
+async function submitGeneratedTask(
+  payload: GenerateTaskPayload,
+  taskDraft: Omit<GeneratedTaskItem, "localId" | "taskId" | "createdAt" | "status" | "images">
+) {
+  const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  generatedTasks.value = [
+    {
+      localId,
+      taskId: null,
+      ...taskDraft,
+      createdAt: new Date().toISOString(),
+      status: "submitting",
+      images: createPendingImages(payload.num_images),
+    },
+    ...generatedTasks.value,
+  ];
+
+  try {
+    const res = await createTask(payload);
+    updateGeneratedTask(localId, (task) => ({ ...task, taskId: res.task_id, status: "pending" }));
+    try {
+      const taskData = await refreshTask(res.task_id);
+      if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(res.task_id);
+    } catch {
+      startTaskPolling(res.task_id);
+    }
+    getMe().then((u) => auth.updateUser(u)).catch(() => {});
+  } catch (err: any) {
+    generatedTasks.value = generatedTasks.value.filter((task) => task.localId !== localId);
+    throw err;
+  }
 }
 
 async function ensureAuthenticated() {
@@ -603,12 +648,9 @@ async function handleGenerate() {
     };
   }
 
-  const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const submitMode: SubmitMode = generateMode.value === "inpaint" ? "inpaint" : "generate";
-  generatedTasks.value = [
-    {
-      localId,
-      taskId: null,
+  try {
+    await submitGeneratedTask(payload, {
       mode: submitMode,
       prompt: activePrompt.value.trim(),
       model: payload.model,
@@ -617,24 +659,9 @@ async function handleGenerate() {
       resolution: payload.resolution,
       referenceImages: payload.reference_images ? [...payload.reference_images] : [],
       sourceImage: payload.source_image,
-      createdAt: new Date().toISOString(),
-      status: "submitting",
-      images: createPendingImages(payload.num_images),
-    },
-    ...generatedTasks.value,
-  ];
-  try {
-    const res = await createTask(payload);
-    updateGeneratedTask(localId, (task) => ({ ...task, taskId: res.task_id, status: "pending" }));
-    try {
-      const taskData = await refreshTask(res.task_id);
-      if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(res.task_id);
-    } catch {
-      startTaskPolling(res.task_id);
-    }
-    getMe().then((u) => auth.updateUser(u)).catch(() => {});
+      maskImage: payload.mask_image,
+    });
   } catch (err: any) {
-    generatedTasks.value = generatedTasks.value.filter((task) => task.localId !== localId);
     message.error(err.response?.data?.detail || "创建任务失败");
   }
 }
@@ -672,19 +699,49 @@ function handleReeditTask(task: GeneratedTaskItem) {
   message.success("已回填到编辑区");
 }
 
-async function handleRegenerate(taskId: number, imageId: number) {
+async function handleRegenerate(task: GeneratedTaskItem) {
+  const payload: GenerateTaskPayload = task.mode === "inpaint"
+    ? {
+        mode: "inpaint",
+        prompt: task.prompt,
+        num_images: 1,
+        size: task.size,
+        resolution: task.resolution,
+        source_image: task.sourceImage,
+        mask_image: task.maskImage,
+      }
+    : {
+        mode: "generate",
+        model: task.model,
+        prompt: task.prompt,
+        num_images: 1,
+        size: task.size,
+        resolution: task.resolution,
+        reference_images: task.referenceImages.length ? task.referenceImages : undefined,
+      };
+
+  if (task.mode === "inpaint" && (!task.sourceImage || !task.maskImage)) {
+    message.warning("当前局部重绘任务缺少完整参数，请使用重新编辑后再提交");
+    return;
+  }
+  const regenerateCost = getTaskDraftCreditCost(task, 1);
+  if (!isSuperAdmin.value && userCredits.value < regenerateCost) {
+    message.warning(`积分不足，需要 ${regenerateCost} 积分，当前余额 ${userCredits.value}`);
+    return;
+  }
   try {
-    await regenerateImage(imageId);
-    message.success("已提交重新生成");
-    updateGeneratedTaskByTaskId(taskId, (task) => ({
-      ...task,
-      status: "processing",
-      images: task.images.map((img) => (
-        img.id === imageId ? { ...img, status: "pending", image_url: "", preview_url: undefined } : img
-      )),
-    }));
-    const taskData = await refreshTask(taskId);
-    if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(taskId);
+    await submitGeneratedTask(payload, {
+      mode: task.mode,
+      prompt: task.prompt,
+      model: task.model,
+      numImages: 1,
+      size: task.size,
+      resolution: task.resolution,
+      referenceImages: [...task.referenceImages],
+      sourceImage: task.sourceImage,
+      maskImage: task.maskImage,
+    });
+    message.success("已发起新的生图任务");
   } catch (err: any) {
     message.error(err.response?.data?.detail || "重新生成失败");
   }
@@ -696,7 +753,11 @@ function handlePreview(url: string) {
 }
 
 function getResultDisplayUrl(img: ImageResult) {
-  return resolveImageUrl(img.image_url || img.preview_url || "");
+  return getDisplayImageUrl(img);
+}
+
+function getResultPreviewUrl(img: ImageResult) {
+  return getPreviewImageUrl(img);
 }
 
 function handleDownload(imageId: number, imageUrl: string, previewUrl?: string) {
@@ -1220,19 +1281,19 @@ onBeforeUnmount(() => {
                   failed: item.image.status === 'failed',
                   clickable: !!getResultDisplayUrl(item.image),
                 }"
-                @click="getResultDisplayUrl(item.image) && handlePreview(getResultDisplayUrl(item.image))"
+                @click="getResultPreviewUrl(item.image) && handlePreview(getResultPreviewUrl(item.image))"
               >
                 <template v-if="item.image.status === 'success' && getResultDisplayUrl(item.image)">
-                  <img :src="getResultDisplayUrl(item.image)" alt="生成结果" />
+                  <img :src="getResultDisplayUrl(item.image)" alt="生成结果" loading="lazy" />
                   <div class="result-actions">
-                    <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultDisplayUrl(item.image))">
+                    <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultPreviewUrl(item.image))">
                       <template #icon><EyeOutlined /></template>
                     </a-button>
                     <a-button
                       shape="circle"
                       class="icon-chip"
                       :disabled="!item.taskId"
-                      @click.stop="item.taskId && handleRegenerate(item.taskId, item.image.id)"
+                      @click.stop="handleRegenerate(item.task)"
                     >
                       <template #icon><ReloadOutlined /></template>
                     </a-button>

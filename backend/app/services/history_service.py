@@ -9,6 +9,11 @@ from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
 from app.models.credit_log import CreditLog
 from app.models.user import User
+from app.services.image_delivery_service import (
+    get_optional_cos_config,
+    serialize_asset_urls,
+    serialize_image,
+)
 
 
 def _parse_refs(raw: str | None) -> list[str]:
@@ -27,19 +32,17 @@ def _resolve_history_card_status(task_status: str | None, image_status: str | No
     return image_status or task_status or "pending"
 
 
-def _serialize_history_images(images: list[Image], include_deleted: bool = False) -> list[dict]:
+def _serialize_history_images(
+    images: list[Image],
+    *,
+    cos_config,
+    include_deleted: bool = False,
+) -> list[dict]:
     result: list[dict] = []
     for img in sorted(images, key=lambda item: item.id, reverse=True):
         if not include_deleted and img.is_deleted:
             continue
-        result.append({
-            "id": img.id,
-            "image_url": img.image_url,
-            "status": img.status,
-            "image_format": img.image_format or "",
-            "image_size_bytes": int(img.image_size_bytes or 0),
-            "is_deleted": bool(img.is_deleted),
-        })
+        result.append(serialize_image(img, cos_config=cos_config))
     return result
 
 
@@ -55,6 +58,7 @@ def get_user_history(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
 ):
+    cos_config = get_optional_cos_config(db)
     query = (
         db.query(Image)
         .join(Task, Image.task_id == Task.id)
@@ -90,24 +94,32 @@ def get_user_history(
     items = []
     for image in images:
         task = image.task
-        visible_images = _serialize_history_images(task.images)
+        image_payload = serialize_image(image, cos_config=cos_config)
+        source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
+        reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
+        visible_images = _serialize_history_images(task.images, cos_config=cos_config)
         items.append({
             "task_id": task.id,
             "image_id": image.id,
-            "image_url": image.image_url or "",
+            "image_url": image_payload["image_url"],
+            "preview_url": image_payload["preview_url"],
+            "thumb_url": image_payload["thumb_url"],
             "status": _resolve_history_card_status(task.status, image.status),
-            "image_format": image.image_format or "",
-            "image_size_bytes": int(image.image_size_bytes or 0),
+            "image_format": image_payload["image_format"],
+            "image_size_bytes": image_payload["image_size_bytes"],
             "is_soft_deleted": False,
             "model": task.model or "",
             "mode": task.mode or "generate",
             "prompt": task.prompt or "",
-            "reference_images": _parse_refs(task.reference_images),
-            "source_image": task.source_image or "",
+            "reference_images": [asset["image_url"] for asset in reference_assets],
+            "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
+            "source_image": source_asset["image_url"],
+            "source_image_thumb": source_asset["thumb_url"],
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
             "created_at": task.created_at,
+            "error_message": task.error_message or "",
             "images": visible_images,
         })
 
@@ -143,6 +155,7 @@ def get_all_history(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
 ):
+    cos_config = get_optional_cos_config(db)
     query = db.query(Task).order_by(Task.created_at.desc())
 
     if status:
@@ -181,10 +194,15 @@ def get_all_history(
             "size": task.size,
             "resolution": task.resolution or "",
             "status": task.status,
+            "error_message": task.error_message or "",
             "is_soft_deleted": soft_deleted_count > 0,
             "soft_deleted_count": soft_deleted_count,
             "created_at": task.created_at,
-            "images": _serialize_history_images(task.images, include_deleted=True),
+            "images": _serialize_history_images(
+                task.images,
+                cos_config=cos_config,
+                include_deleted=True,
+            ),
         })
 
     return {"total": total, "items": items}

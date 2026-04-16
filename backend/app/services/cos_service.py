@@ -191,6 +191,7 @@ def upload_bytes_to_cos(
     data: bytes,
     key: str,
     content_type: str = "image/png",
+    cache_control: str | None = None,
 ) -> str:
     config = get_cos_config(db)
     try:
@@ -206,12 +207,17 @@ def upload_bytes_to_cos(
         )
     )
     try:
+        extra_args = {
+            "Bucket": config.bucket,
+            "Body": data,
+            "Key": key,
+            "ContentType": content_type,
+            "EnableMD5": False,
+        }
+        if cache_control:
+            extra_args["CacheControl"] = cache_control
         client.put_object(
-            Bucket=config.bucket,
-            Body=data,
-            Key=key,
-            ContentType=content_type,
-            EnableMD5=False,
+            **extra_args,
         )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"上传图片到 COS 失败：{exc}") from exc
