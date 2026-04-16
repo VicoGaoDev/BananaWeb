@@ -185,12 +185,26 @@ type GenerateTaskPayload = {
   mask_image?: string;
 };
 
+type GeneratedTaskDraft = Omit<GeneratedTaskItem, "localId" | "taskId" | "createdAt" | "status" | "images">;
+
 function createPendingImages(count: number) {
   return Array.from({ length: count }, (_, index) => ({
     id: -(Date.now() + index + Math.floor(Math.random() * 1000)),
     image_url: "",
     status: "pending" as const,
   }));
+}
+
+function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskItem {
+  return {
+    localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    taskId: null,
+    ...taskDraft,
+    numImages: 1,
+    createdAt: new Date().toISOString(),
+    status: "submitting",
+    images: createPendingImages(1),
+  };
 }
 
 const resultItems = computed(() => (
@@ -281,33 +295,59 @@ function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.nu
 
 async function submitGeneratedTask(
   payload: GenerateTaskPayload,
-  taskDraft: Omit<GeneratedTaskItem, "localId" | "taskId" | "createdAt" | "status" | "images">
+  taskDraft: GeneratedTaskDraft
 ) {
-  const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  generatedTasks.value = [
-    {
-      localId,
-      taskId: null,
-      ...taskDraft,
-      createdAt: new Date().toISOString(),
-      status: "submitting",
-      images: createPendingImages(payload.num_images),
-    },
-    ...generatedTasks.value,
-  ];
+  const taskCount = Math.max(1, payload.num_images);
+  const localTasks = Array.from({ length: taskCount }, () => createLocalGeneratedTask(taskDraft));
+  const localTaskIds = new Set(localTasks.map((task) => task.localId));
+  generatedTasks.value = [...localTasks, ...generatedTasks.value];
 
   try {
     const res = await createTask(payload);
-    updateGeneratedTask(localId, (task) => ({ ...task, taskId: res.task_id, status: "pending" }));
-    try {
-      const taskData = await refreshTask(res.task_id);
-      if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(res.task_id);
-    } catch {
-      startTaskPolling(res.task_id);
+    const taskIds = res.task_ids?.length ? res.task_ids : (res.task_id ? [res.task_id] : []);
+    if (taskIds.length === localTasks.length) {
+      await Promise.all(localTasks.map(async (localTask, index) => {
+        const taskId = taskIds[index];
+        updateGeneratedTask(localTask.localId, (task) => ({ ...task, taskId, status: "pending" }));
+        try {
+          const taskData = await refreshTask(taskId);
+          if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(taskId);
+        } catch {
+          startTaskPolling(taskId);
+        }
+      }));
+    } else if (taskIds.length === 1) {
+      const legacyTaskId = taskIds[0];
+      const [primaryTask, ...extraTasks] = localTasks;
+      const extraTaskIds = new Set(extraTasks.map((task) => task.localId));
+
+      generatedTasks.value = generatedTasks.value
+        .filter((task) => !extraTaskIds.has(task.localId))
+        .map((task) => (
+          task.localId === primaryTask.localId
+            ? {
+                ...task,
+                taskId: legacyTaskId,
+                numImages: taskCount,
+                status: "pending",
+                images: createPendingImages(taskCount),
+              }
+            : task
+        ));
+
+      try {
+        const taskData = await refreshTask(legacyTaskId);
+        if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(legacyTaskId);
+      } catch {
+        startTaskPolling(legacyTaskId);
+      }
+    } else {
+      throw new Error("服务端返回的任务数量异常");
     }
+
     getMe().then((u) => auth.updateUser(u)).catch(() => {});
   } catch (err: any) {
-    generatedTasks.value = generatedTasks.value.filter((task) => task.localId !== localId);
+    generatedTasks.value = generatedTasks.value.filter((task) => !localTaskIds.has(task.localId));
     throw err;
   }
 }

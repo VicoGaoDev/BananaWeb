@@ -15,7 +15,8 @@ class TaskCreate(BaseModel):
 
 
 class TaskCreateResponse(BaseModel):
-    task_id: int
+    task_id: int | None = None
+    task_ids: list[int] = Field(default_factory=list)
 
 
 class ImageOut(BaseModel):

@@ -1,6 +1,11 @@
 import client from "./client";
 import type { TaskResult } from "@/types";
 
+export interface CreateTaskResponse {
+  task_id?: number | null;
+  task_ids: number[];
+}
+
 export function createTask(data: {
   model?: string;
   prompt: string;
@@ -11,7 +16,7 @@ export function createTask(data: {
   reference_images?: string[];
   source_image?: string;
   mask_image?: string;
-}): Promise<{ task_id: number }> {
+}): Promise<CreateTaskResponse> {
   return client.post("/tasks", data);
 }
 

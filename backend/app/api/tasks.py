@@ -10,7 +10,7 @@ from app.services.external_api_config_service import (
     require_scene_config,
     SCENE_INPAINT,
 )
-from app.services.task_service import create_task, get_task_detail
+from app.services.task_service import create_tasks, get_task_detail
 
 router = APIRouter(prefix="/api/tasks", tags=["生成任务"])
 
@@ -30,7 +30,7 @@ def create(
         require_scene_config(db, task_model)
         resolved_resolution = "" if task_model == "banana" else body.resolution
 
-    task = create_task(
+    tasks = create_tasks(
         db,
         user_id=user.id,
         model=task_model,
@@ -46,12 +46,15 @@ def create(
 
     try:
         from app.workers.generation import generate_images_task
-        generate_images_task.delay(task.id)
+        for task in tasks:
+            generate_images_task.delay(task.id)
     except Exception:
         from app.workers.generation import generate_images_sync
-        generate_images_sync(task.id)
+        for task in tasks:
+            generate_images_sync(task.id)
 
-    return TaskCreateResponse(task_id=task.id)
+    task_ids = [task.id for task in tasks]
+    return TaskCreateResponse(task_id=task_ids[0] if task_ids else None, task_ids=task_ids)
 
 
 @router.get("/{task_id}", response_model=TaskOut)

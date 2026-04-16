@@ -13,19 +13,13 @@ def _is_credit_exempt_user(user: User | None) -> bool:
     return bool(user and user.role == "superadmin")
 
 
-def create_task(
-    db: Session,
-    user_id: int,
-    model: str,
+def _validate_task_create_payload(
     mode: str,
     prompt: str,
     num_images: int,
-    size: str,
-    resolution: str = "4K",
-    reference_images: list[str] | None = None,
-    source_image: str = "",
-    mask_image: str = "",
-) -> Task:
+    source_image: str,
+    mask_image: str,
+) -> tuple[str, int]:
     mode = (mode or "generate").strip().lower()
     if mode not in {"generate", "inpaint"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的生成模式")
@@ -39,6 +33,29 @@ def create_task(
         if not mask_image.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先涂抹需要重绘的区域")
         num_images = 1
+    return mode, num_images
+
+
+def create_tasks(
+    db: Session,
+    user_id: int,
+    model: str,
+    mode: str,
+    prompt: str,
+    num_images: int,
+    size: str,
+    resolution: str = "4K",
+    reference_images: list[str] | None = None,
+    source_image: str = "",
+    mask_image: str = "",
+) -> list[Task]:
+    mode, num_images = _validate_task_create_payload(
+        mode=mode,
+        prompt=prompt,
+        num_images=num_images,
+        source_image=source_image,
+        mask_image=mask_image,
+    )
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -48,54 +65,67 @@ def create_task(
         )
     scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
     unit_cost = get_scene_credit_cost(db, scene_key)
-    cost = unit_cost if mode == "inpaint" else num_images * unit_cost
-    actual_credit_cost = 0 if _is_credit_exempt_user(user) else cost
-    if actual_credit_cost and user.credits < cost:
+    task_count = 1 if mode == "inpaint" else num_images
+    total_cost = task_count * unit_cost
+    per_task_credit_cost = 0 if _is_credit_exempt_user(user) else unit_cost
+    actual_total_cost = 0 if _is_credit_exempt_user(user) else total_cost
+    if actual_total_cost and user.credits < total_cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"积分不足，需要 {cost} 积分，当前余额 {user.credits if user else 0}",
+            detail=f"积分不足，需要 {total_cost} 积分，当前余额 {user.credits if user else 0}",
         )
 
     ref_json = json.dumps(reference_images or [])
 
-    task = Task(
-        user_id=user_id,
-        model=model.strip(),
-        mode=mode,
-        prompt=prompt.strip(),
-        num_images=num_images,
-        size=size,
-        resolution=resolution,
-        reference_images=ref_json,
-        source_image=source_image.strip(),
-        mask_image=mask_image.strip(),
-        credit_cost=actual_credit_cost,
-        status="pending",
-        error_message="",
-    )
-    db.add(task)
-    db.flush()
+    if actual_total_cost:
+        user.credits -= total_cost
 
-    for _ in range(num_images):
+    tasks: list[Task] = []
+    normalized_prompt = prompt.strip()
+    normalized_model = model.strip()
+    normalized_source_image = source_image.strip()
+    normalized_mask_image = mask_image.strip()
+    credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
+
+    for _ in range(task_count):
+        task = Task(
+            user_id=user_id,
+            model=normalized_model,
+            mode=mode,
+            prompt=normalized_prompt,
+            num_images=1,
+            size=size,
+            resolution=resolution,
+            reference_images=ref_json,
+            source_image=normalized_source_image,
+            mask_image=normalized_mask_image,
+            credit_cost=per_task_credit_cost,
+            status="pending",
+            error_message="",
+        )
+        db.add(task)
+        db.flush()
+
         image = Image(task_id=task.id, image_url="", status="pending", error_message="")
         db.add(image)
 
-    if actual_credit_cost:
-        user.credits -= cost
-        credit_log = CreditLog(
-            user_id=user_id,
-            amount=-cost,
-            type="consume",
-            description="局部重绘 1 张图片" if mode == "inpaint" else f"生成 {num_images} 张图片",
-            task_id=task.id,
-        )
-        db.add(credit_log)
+        if per_task_credit_cost:
+            credit_log = CreditLog(
+                user_id=user_id,
+                amount=-per_task_credit_cost,
+                type="consume",
+                description=credit_log_description,
+                task_id=task.id,
+            )
+            db.add(credit_log)
 
-    db.add(PromptHistory(user_id=user_id, prompt=prompt.strip()))
+        tasks.append(task)
 
+    db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt))
     db.commit()
-    db.refresh(task)
-    return task
+    for task in tasks:
+        db.refresh(task)
+    return tasks
 
 
 def get_task_detail(db: Session, task_id: int, user_id: int | None = None) -> Task:
