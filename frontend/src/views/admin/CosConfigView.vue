@@ -173,6 +173,7 @@ function copyText(value: string) {
               <div class="secret-actions">
                 <a-button
                   type="text"
+                  class="cos-icon-btn"
                   @click="cosSecretIdVisible = !cosSecretIdVisible"
                   :title="cosSecretIdVisible ? '隐藏' : '显示'"
                 >
@@ -181,7 +182,7 @@ function copyText(value: string) {
                     <EyeOutlined v-else />
                   </template>
                 </a-button>
-                <a-button type="text" @click="copyText(cosSecretId)" :disabled="!cosSecretId" title="复制">
+                <a-button type="text" class="cos-icon-btn" @click="copyText(cosSecretId)" :disabled="!cosSecretId" title="复制">
                   <template #icon><CopyOutlined /></template>
                 </a-button>
               </div>
@@ -204,6 +205,7 @@ function copyText(value: string) {
               <div class="secret-actions">
                 <a-button
                   type="text"
+                  class="cos-icon-btn"
                   @click="cosSecretKeyVisible = !cosSecretKeyVisible"
                   :title="cosSecretKeyVisible ? '隐藏' : '显示'"
                 >
@@ -212,7 +214,7 @@ function copyText(value: string) {
                     <EyeOutlined v-else />
                   </template>
                 </a-button>
-                <a-button type="text" @click="copyText(cosSecretKey)" :disabled="!cosSecretKey" title="复制">
+                <a-button type="text" class="cos-icon-btn" @click="copyText(cosSecretKey)" :disabled="!cosSecretKey" title="复制">
                   <template #icon><CopyOutlined /></template>
                 </a-button>
               </div>
@@ -302,15 +304,22 @@ function copyText(value: string) {
 .secret-actions {
   display: flex;
   gap: 6px;
+}
 
-  :deep(.ant-btn) {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    background: #fff7e6;
-    border: 1px solid #f0dfbe;
-    color: #7a613f;
-  }
+.cos-icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px !important;
+  background: #fff7e8 !important;
+  border: 1px solid #efc784 !important;
+  color: #b16d10 !important;
+}
+
+.cos-icon-btn:hover,
+.cos-icon-btn:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
 }
 
 .cos-footer {

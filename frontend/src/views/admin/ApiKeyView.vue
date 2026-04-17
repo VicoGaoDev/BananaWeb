@@ -139,7 +139,7 @@ async function handleQrUpload(event: Event) {
                 style="display: none"
                 @change="handleQrUpload"
               />
-              <a-button :loading="qrUploading" @click="triggerQrUpload">
+              <a-button class="config-secondary-btn" :loading="qrUploading" @click="triggerQrUpload">
                 <template #icon><UploadOutlined /></template>
                 {{ contactQrImage ? "重新上传" : "上传二维码" }}
               </a-button>
@@ -149,10 +149,10 @@ async function handleQrUpload(event: Event) {
 
         <div class="announcement-section">
           <div class="key-label">系统公告</div>
-          <a-switch v-model:checked="announcementEnabled" checked-children="开启" un-checked-children="关闭" />
+          <a-switch v-model:checked="announcementEnabled" class="warm-switch" checked-children="开启" un-checked-children="关闭" />
           <a-textarea
             v-model:value="announcementContent"
-            class="announcement-textarea"
+            class="announcement-textarea warm-textarea"
             :rows="6"
             :maxlength="2000"
             show-count
@@ -185,6 +185,21 @@ async function handleQrUpload(event: Event) {
 .key-footer {
   display: flex;
   gap: 12px;
+}
+
+.config-secondary-btn {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+  border-radius: 12px !important;
+  font-weight: 600;
+}
+
+.config-secondary-btn:hover,
+.config-secondary-btn:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
 }
 
 .qr-section {

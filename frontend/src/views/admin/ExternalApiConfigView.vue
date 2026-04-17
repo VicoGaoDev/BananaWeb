@@ -369,10 +369,11 @@ function copySecret(value: string, label: string) {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page warm-page">
     <a-space direction="vertical" :size="16" style="width: 100%">
-      <a-card title="接口密钥" :loading="loading">
+      <a-card title="接口密钥" class="warm-card api-card" :loading="loading">
         <a-alert
+          class="warm-alert"
           type="info"
           show-icon
           message="Gemini API Key 与通义千问 API Key 仅超级管理员可见，可在接口模板中通过 {{ api_key }} 和 {{ bearer_token }} 占位符使用。"
@@ -385,18 +386,19 @@ function copySecret(value: string, label: string) {
               <a-input
                 v-if="secretVisible"
                 v-model:value="geminiKey"
+                class="warm-input"
                 placeholder="请输入 Gemini API Key"
               />
               <div v-else class="secret-masked" @click="secretVisible = true">
                 {{ geminiKey ? maskedGeminiKey : "暂未配置" }}
               </div>
-              <a-button @click="secretVisible = !secretVisible">
+              <a-button class="api-secondary-btn api-icon-btn" @click="secretVisible = !secretVisible">
                 <template #icon>
                   <EyeInvisibleOutlined v-if="secretVisible" />
                   <EyeOutlined v-else />
                 </template>
               </a-button>
-              <a-button :disabled="!geminiKey" @click="copySecret(geminiKey, 'Gemini Key')">
+              <a-button class="api-secondary-btn api-icon-btn" :disabled="!geminiKey" @click="copySecret(geminiKey, 'Gemini Key')">
                 <template #icon><CopyOutlined /></template>
               </a-button>
             </div>
@@ -407,38 +409,39 @@ function copySecret(value: string, label: string) {
               <a-input
                 v-if="tongyiSecretVisible"
                 v-model:value="tongyiKey"
+                class="warm-input"
                 placeholder="请输入通义千问 API Key"
               />
               <div v-else class="secret-masked" @click="tongyiSecretVisible = true">
                 {{ tongyiKey ? maskedTongyiKey : "暂未配置" }}
               </div>
-              <a-button @click="tongyiSecretVisible = !tongyiSecretVisible">
+              <a-button class="api-secondary-btn api-icon-btn" @click="tongyiSecretVisible = !tongyiSecretVisible">
                 <template #icon>
                   <EyeInvisibleOutlined v-if="tongyiSecretVisible" />
                   <EyeOutlined v-else />
                 </template>
               </a-button>
-              <a-button :disabled="!tongyiKey" @click="copySecret(tongyiKey, '通义 Key')">
+              <a-button class="api-secondary-btn api-icon-btn" :disabled="!tongyiKey" @click="copySecret(tongyiKey, '通义 Key')">
                 <template #icon><CopyOutlined /></template>
               </a-button>
             </div>
           </div>
         </div>
-        <a-button type="primary" :icon="h(SaveOutlined)" :loading="secretSaving" @click="handleSaveSecrets">
+        <a-button type="primary" class="api-primary-btn" :icon="h(SaveOutlined)" :loading="secretSaving" @click="handleSaveSecrets">
           保存接口密钥
         </a-button>
       </a-card>
 
-      <a-card title="接口配置">
+      <a-card title="接口配置" class="warm-card warm-table-card api-card">
         <template #extra>
           <a-space>
-            <a-select v-model:value="configGroupFilter" style="width: 180px">
+            <a-select v-model:value="configGroupFilter" class="warm-select" style="width: 180px">
               <a-select-option value="all">全部分组</a-select-option>
               <a-select-option v-for="group in groupOptions" :key="group" :value="group">
                 {{ group }}
               </a-select-option>
             </a-select>
-            <a-button type="primary" :icon="h(PlusOutlined)" @click="openCreate">
+            <a-button type="primary" class="api-primary-btn" :icon="h(PlusOutlined)" @click="openCreate">
               新增接口
             </a-button>
           </a-space>
@@ -449,23 +452,23 @@ function copySecret(value: string, label: string) {
           :columns="configColumns"
           :data-source="filteredConfigs"
           :loading="loading"
-          :pagination="{ pageSize: 10 }"
+          :pagination="{ pageSize: 10, class: 'warm-pagination' }"
           :scroll="{ x: 980 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'group_name'">
-              <a-tag color="blue">{{ record.group_name || "未分组" }}</a-tag>
+              <a-tag class="api-tag api-tag-group">{{ record.group_name || "未分组" }}</a-tag>
             </template>
             <template v-else-if="column.dataIndex === 'status'">
-              <a-tag :color="record.status === 'enabled' ? 'green' : 'default'">
+              <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
                 {{ record.status === "enabled" ? "启用" : "停用" }}
               </a-tag>
             </template>
             <template v-else-if="column.key === 'action'">
               <a-space>
-                <a-button size="small" :icon="h(EditOutlined)" @click="openEdit(record)">编辑</a-button>
-                <a-button size="small" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
-                <a-button size="small" @click="handleToggleStatus(record)">
+                <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEdit(record)">编辑</a-button>
+                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
+                <a-button size="small" :class="record.status === 'enabled' ? 'api-danger-btn' : 'api-secondary-btn'" @click="handleToggleStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
                 </a-button>
               </a-space>
@@ -474,9 +477,9 @@ function copySecret(value: string, label: string) {
         </a-table>
       </a-card>
 
-      <a-card title="场景绑定">
+      <a-card title="场景绑定" class="warm-card warm-table-card api-card">
         <template #extra>
-          <a-select v-model:value="bindingGroupFilter" style="width: 180px">
+          <a-select v-model:value="bindingGroupFilter" class="warm-select" style="width: 180px">
             <a-select-option value="all">全部分组</a-select-option>
             <a-select-option v-for="group in groupOptions" :key="group" :value="group">
               {{ group }}
@@ -485,6 +488,7 @@ function copySecret(value: string, label: string) {
         </template>
 
         <a-alert
+          class="warm-alert"
           type="info"
           show-icon
           message="调用场景固定内置，接口分组只用于页面筛选，不影响实际调用逻辑。"
@@ -508,14 +512,17 @@ function copySecret(value: string, label: string) {
               <div class="binding-copy-cell">
                 <a-input
                   v-model:value="record.display_name"
+                  class="warm-input"
                   placeholder="显示名称，为空则使用默认名称"
                 />
                 <a-input
                   v-model:value="record.subtitle"
+                  class="warm-input"
                   placeholder="副标题，为空则使用默认副标题"
                 />
                 <a-button
                   size="small"
+                  class="api-secondary-btn"
                   :loading="bindingSavingKey === record.scene_key"
                   @click="handleBindingChange(record.scene_key, buildBindingPayload(record))"
                 >
@@ -527,8 +534,8 @@ function copySecret(value: string, label: string) {
               <div v-if="record.api_config_name">
                 <div>{{ record.api_config_name }}</div>
                 <a-space size="small">
-                  <a-tag color="blue">{{ record.api_group_name || "未分组" }}</a-tag>
-                  <a-tag :color="record.api_status === 'enabled' ? 'green' : 'default'">
+                  <a-tag class="api-tag api-tag-group">{{ record.api_group_name || "未分组" }}</a-tag>
+                  <a-tag class="api-tag" :class="record.api_status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
                     {{ record.api_status === "enabled" ? "启用" : "停用" }}
                   </a-tag>
                 </a-space>
@@ -538,6 +545,7 @@ function copySecret(value: string, label: string) {
             <template v-else-if="column.key === 'bind'">
               <a-select
                 :value="record.api_config_id ?? undefined"
+                class="warm-select"
                 allow-clear
                 placeholder="请选择接口"
                 style="width: 320px"
@@ -556,9 +564,9 @@ function copySecret(value: string, label: string) {
             <template v-else-if="column.key === 'credit'">
               <a-input-number
                 :value="record.credit_cost"
+                class="warm-input-number"
                 :min="0"
                 :precision="0"
-                style="width: 120px"
                 :disabled="bindingSavingKey === record.scene_key"
                 @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { credit_cost: Number(value ?? 0) }))"
               />
@@ -568,8 +576,8 @@ function copySecret(value: string, label: string) {
         </a-table>
       </a-card>
 
-      <a-card title="占位符用法">
-        <a-collapse>
+      <a-card title="占位符用法" class="warm-card api-card">
+        <a-collapse class="warm-collapse">
           <a-collapse-panel key="common" header="通用占位符">
             <div class="doc-block">
               <div>可用于 Header JSON 或 请求 JSON：</div>
@@ -610,45 +618,45 @@ function copySecret(value: string, label: string) {
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="配置名称" required>
-              <a-input v-model:value="form.name" placeholder="例如：Banana 主接口" />
+              <a-input v-model:value="form.name" class="warm-input" placeholder="例如：Banana 主接口" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="接口分组">
-              <a-input v-model:value="form.group_name" placeholder="例如：Banana 系列 / 反推接口" />
+              <a-input v-model:value="form.group_name" class="warm-input" placeholder="例如：Banana 系列 / 反推接口" />
             </a-form-item>
           </a-col>
         </a-row>
 
         <a-form-item label="描述">
-          <a-input v-model:value="form.description" placeholder="可选，用于备注该接口用途" />
+          <a-input v-model:value="form.description" class="warm-input" placeholder="可选，用于备注该接口用途" />
         </a-form-item>
 
         <a-form-item label="请求地址" required>
-          <a-input v-model:value="form.request_url" placeholder="https://example.com/api" />
+          <a-input v-model:value="form.request_url" class="warm-input" placeholder="https://example.com/api" />
         </a-form-item>
 
         <a-form-item label="Header JSON" required>
-          <a-textarea v-model:value="form.headers_json" :rows="7" />
+          <a-textarea v-model:value="form.headers_json" class="warm-textarea" :rows="7" />
         </a-form-item>
 
         <a-form-item label="请求 JSON" required>
-          <a-textarea v-model:value="form.payload_json" :rows="12" />
+          <a-textarea v-model:value="form.payload_json" class="warm-textarea" :rows="12" />
         </a-form-item>
 
         <a-form-item label="状态">
-          <a-radio-group v-model:value="form.status">
-            <a-radio value="enabled">启用</a-radio>
-            <a-radio value="disabled">停用</a-radio>
+          <a-radio-group v-model:value="form.status" class="warm-radio-group" button-style="solid">
+            <a-radio-button value="enabled">启用</a-radio-button>
+            <a-radio-button value="disabled">停用</a-radio-button>
           </a-radio-group>
         </a-form-item>
       </a-form>
 
       <template #footer>
         <a-space>
-          <a-button @click="modalOpen = false">取消</a-button>
-          <a-button :loading="testing" @click="handleTestConnection">测试连接</a-button>
-          <a-button type="primary" :loading="saving" @click="handleSave">保存</a-button>
+          <a-button class="api-secondary-btn" @click="modalOpen = false">取消</a-button>
+          <a-button class="api-secondary-btn" :loading="testing" @click="handleTestConnection">测试连接</a-button>
+          <a-button type="primary" class="api-primary-btn" :loading="saving" @click="handleSave">保存</a-button>
         </a-space>
       </template>
     </a-modal>
@@ -658,6 +666,20 @@ function copySecret(value: string, label: string) {
 <style scoped>
 .page {
   padding: 4px;
+}
+
+.api-card :deep(.ant-card-head) {
+  border-bottom: 1px solid #f0dfbe;
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.22));
+}
+
+.api-card :deep(.ant-card-head-title) {
+  color: #5d4526;
+  font-weight: 700;
+}
+
+.api-card :deep(.ant-card-body) {
+  padding: 20px;
 }
 
 .secret-grid {
@@ -677,6 +699,55 @@ function copySecret(value: string, label: string) {
   gap: 8px;
 }
 
+.api-primary-btn {
+  border-color: #df8b1d !important;
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+  color: #fff8eb !important;
+  border-radius: 12px !important;
+  font-weight: 600;
+}
+
+.api-primary-btn:hover,
+.api-primary-btn:focus {
+  border-color: #c7770d !important;
+  background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
+  color: #ffffff !important;
+}
+
+.api-secondary-btn {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+  border-radius: 12px !important;
+  font-weight: 600;
+}
+
+.api-secondary-btn:hover,
+.api-secondary-btn:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
+}
+
+.api-danger-btn {
+  border-color: #efb5ae !important;
+  background: #fff1ef !important;
+  color: #d6574b !important;
+  border-radius: 12px !important;
+  font-weight: 600;
+}
+
+.api-danger-btn:hover,
+.api-danger-btn:focus {
+  border-color: #e28980 !important;
+  background: #ffe5e1 !important;
+  color: #c9483d !important;
+}
+
+.api-icon-btn {
+  padding-inline: 10px;
+}
+
 .secret-masked {
   min-height: 32px;
   flex: 1;
@@ -688,6 +759,30 @@ function copySecret(value: string, label: string) {
   background: #fafafa;
   cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.api-tag {
+  border-radius: 999px;
+  border-width: 1px;
+  font-weight: 600;
+}
+
+.api-tag-group {
+  color: #c7770d;
+  background: #fff4df;
+  border-color: #efc784;
+}
+
+.api-tag-enabled {
+  color: #b16d10;
+  background: #fff1d9;
+  border-color: #efc784;
+}
+
+.api-tag-muted {
+  color: #8f7558;
+  background: #fffaf2;
+  border-color: #f2e3c6;
 }
 
 .scene-title {

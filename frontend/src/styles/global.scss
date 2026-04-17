@@ -315,6 +315,24 @@ html, body, #app {
   font-weight: 700;
 }
 
+.warm-secondary-btn.ant-btn {
+  height: 44px;
+  padding-inline: 18px;
+  border-radius: 16px;
+  border: 1px solid #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+  box-shadow: none !important;
+  font-weight: 700;
+}
+
+.warm-secondary-btn.ant-btn:hover,
+.warm-secondary-btn.ant-btn:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
+}
+
 .warm-danger-btn.ant-btn {
   height: 44px;
   padding-inline: 18px;
@@ -363,6 +381,182 @@ html, body, #app {
   display: flex;
   justify-content: center;
   margin-top: 28px;
+}
+
+.warm-pagination .ant-pagination-item {
+  border-radius: 10px;
+  border-color: #f2d8a7;
+}
+
+.warm-pagination .ant-pagination-item:hover {
+  border-color: #e1a64a;
+}
+
+.warm-pagination .ant-pagination-item a {
+  color: #8f7558;
+}
+
+.warm-pagination .ant-pagination-item-active {
+  border-color: #df8b1d;
+  background: #fff4df;
+}
+
+.warm-pagination .ant-pagination-item-active a {
+  color: #c7770d;
+  font-weight: 600;
+}
+
+.warm-pagination .ant-pagination-prev button,
+.warm-pagination .ant-pagination-next button {
+  border-radius: 10px;
+  color: #8f7558;
+}
+
+.warm-pagination .ant-pagination-options .ant-select-selector {
+  border-radius: 10px !important;
+  border-color: #f2d8a7 !important;
+}
+
+.warm-select .ant-select-selector,
+.warm-picker.ant-picker {
+  border-radius: 12px !important;
+  border-color: #f2d8a7 !important;
+  background: #fffdf8 !important;
+  box-shadow: none !important;
+}
+
+.warm-select.ant-select-focused .ant-select-selector,
+.warm-picker.ant-picker-focused {
+  border-color: #df8b1d !important;
+  box-shadow: 0 0 0 2px rgba(223, 139, 29, 0.12) !important;
+}
+
+.warm-input.ant-input,
+.warm-input.ant-input-affix-wrapper,
+.warm-textarea.ant-input {
+  border-radius: 14px !important;
+  border-color: #f2d8a7 !important;
+  background: #fffdf8 !important;
+  box-shadow: none !important;
+}
+
+.warm-input.ant-input:hover,
+.warm-input.ant-input-affix-wrapper:hover,
+.warm-textarea.ant-input:hover {
+  border-color: #e1a64a !important;
+}
+
+.warm-input.ant-input:focus,
+.warm-input.ant-input-affix-wrapper-focused,
+.warm-textarea.ant-input:focus {
+  border-color: #df8b1d !important;
+  box-shadow: 0 0 0 2px rgba(223, 139, 29, 0.12) !important;
+}
+
+.warm-input-number.ant-input-number {
+  width: 100%;
+  border-radius: 14px !important;
+  border-color: #f2d8a7 !important;
+  background: #fffdf8 !important;
+  box-shadow: none !important;
+}
+
+.warm-input-number.ant-input-number:hover {
+  border-color: #e1a64a !important;
+}
+
+.warm-input-number.ant-input-number-focused {
+  border-color: #df8b1d !important;
+  box-shadow: 0 0 0 2px rgba(223, 139, 29, 0.12) !important;
+}
+
+.warm-switch.ant-switch {
+  background: #e8d8bc;
+}
+
+.warm-switch.ant-switch.ant-switch-checked {
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+}
+
+.warm-radio-group.ant-radio-group {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffaf4, #fff4e5);
+  border: 1px solid rgba(236, 204, 151, 0.95);
+}
+
+.warm-radio-group .ant-radio-button-wrapper {
+  height: 36px;
+  line-height: 34px;
+  padding-inline: 18px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #6f5634;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.warm-radio-group .ant-radio-button-wrapper:not(:first-child)::before {
+  display: none;
+}
+
+.warm-radio-group .ant-radio-button-wrapper:hover {
+  color: #8d6121;
+  background: rgba(255, 196, 91, 0.12);
+}
+
+.warm-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #fffdf8;
+  background: linear-gradient(180deg, #ffc45b, #ffab25);
+  box-shadow: 0 10px 18px rgba(255, 169, 37, 0.22);
+}
+
+.warm-alert.ant-alert {
+  border-radius: 16px;
+  border: 1px solid #f2d8a7;
+  background: linear-gradient(180deg, #fff9ef, #fff4e5);
+}
+
+.warm-alert.ant-alert .ant-alert-message {
+  color: #6f5634;
+  font-weight: 700;
+}
+
+.warm-alert.ant-alert .ant-alert-description,
+.warm-alert.ant-alert .ant-alert-icon {
+  color: #8c7458;
+}
+
+.warm-collapse.ant-collapse {
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #f0dfbe;
+  background: #fffaf2;
+}
+
+.warm-collapse.ant-collapse > .ant-collapse-item {
+  border-bottom-color: #f3e4c8;
+}
+
+.warm-collapse.ant-collapse > .ant-collapse-item > .ant-collapse-header {
+  color: #5d4526;
+  font-weight: 700;
+  background: rgba(255, 248, 235, 0.8);
+}
+
+.warm-collapse.ant-collapse .ant-collapse-content {
+  border-top-color: #f3e4c8;
+  background: #fffdf8;
+}
+
+.warm-empty .ant-empty-description {
+  color: #8c7458;
+}
+
+.warm-empty .ant-empty-image {
+  opacity: 0.92;
 }
 
 .warm-summary-grid {

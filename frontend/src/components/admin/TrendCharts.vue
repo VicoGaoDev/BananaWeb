@@ -188,7 +188,7 @@ function handlePointClick(params: { dataIndex?: number }) {
       </div>
     </div>
     <div v-else class="trend-empty warm-card">
-      <a-empty description="当前筛选条件下暂无趋势数据">
+      <a-empty class="warm-empty" description="当前筛选条件下暂无趋势数据">
         <template #description>
           <div class="empty-title">当前筛选条件下暂无趋势数据</div>
           <div class="empty-desc">调整时间范围、用户或状态后，可查看趋势图和周期对比。</div>

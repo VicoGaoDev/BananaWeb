@@ -137,11 +137,11 @@ onMounted(() => {
         style="width: 260px"
       />
 
-      <a-button type="primary" @click="handleFilter">
+      <a-button type="primary" class="credit-filter-btn credit-filter-btn-primary" @click="handleFilter">
         <template #icon><FilterOutlined /></template>
         筛选
       </a-button>
-      <a-button @click="handleReset">重置</a-button>
+      <a-button class="credit-filter-btn credit-filter-btn-secondary" @click="handleReset">重置</a-button>
     </div>
 
     <a-table
@@ -157,7 +157,7 @@ onMounted(() => {
           {{ formatTime(record.created_at) }}
         </template>
         <template v-else-if="column.dataIndex === 'type'">
-          <a-tag :color="record.type === 'allocate' ? 'blue' : 'orange'">
+          <a-tag class="credit-type-tag" :class="record.type === 'allocate' ? 'credit-type-tag-income' : 'credit-type-tag-expense'">
             {{ record.type === "allocate" ? "充值" : "消耗" }}
           </a-tag>
         </template>
@@ -234,6 +234,57 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+.credit-filter-btn {
+  height: 36px;
+  border-radius: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.credit-filter-btn-primary {
+  border-color: #df8b1d !important;
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+  color: #fff8eb !important;
+}
+
+.credit-filter-btn-primary:hover,
+.credit-filter-btn-primary:focus {
+  border-color: #c7770d !important;
+  background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
+  color: #ffffff !important;
+}
+
+.credit-filter-btn-secondary {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+}
+
+.credit-filter-btn-secondary:hover,
+.credit-filter-btn-secondary:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
+}
+
+.credit-type-tag {
+  border-radius: 999px;
+  border-width: 1px;
+  font-weight: 600;
+}
+
+.credit-type-tag-income {
+  color: #c7770d;
+  background: #fff4df;
+  border-color: #efc784;
+}
+
+.credit-type-tag-expense {
+  color: #a9772e;
+  background: #fff8ee;
+  border-color: #f2d8a7;
+}
+
 .amount-plus {
   color: #52c41a;
   font-weight: 600;
@@ -248,5 +299,39 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+.pagination-wrap :deep(.ant-pagination-item) {
+  border-radius: 10px;
+  border-color: #f2d8a7;
+}
+
+.pagination-wrap :deep(.ant-pagination-item:hover) {
+  border-color: #e1a64a;
+}
+
+.pagination-wrap :deep(.ant-pagination-item a) {
+  color: #8f7558;
+}
+
+.pagination-wrap :deep(.ant-pagination-item-active) {
+  border-color: #df8b1d;
+  background: #fff4df;
+}
+
+.pagination-wrap :deep(.ant-pagination-item-active a) {
+  color: #c7770d;
+  font-weight: 600;
+}
+
+.pagination-wrap :deep(.ant-pagination-prev button),
+.pagination-wrap :deep(.ant-pagination-next button) {
+  border-radius: 10px;
+  color: #8f7558;
+}
+
+.pagination-wrap :deep(.ant-pagination-options .ant-select-selector) {
+  border-radius: 10px;
+  border-color: #f2d8a7 !important;
 }
 </style>

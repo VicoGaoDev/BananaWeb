@@ -464,10 +464,15 @@ function handleReedit(item: UserHistoryCard) {
         :placeholder="['开始日期', '结束日期']"
         style="width: 250px"
       />
-      <a-button type="primary" @click="applyFilters">筛选</a-button>
-      <a-button @click="resetFilters">重置</a-button>
+      <a-button type="primary" class="history-filter-btn history-filter-btn-primary" @click="applyFilters">筛选</a-button>
+      <a-button class="history-filter-btn history-filter-btn-secondary" @click="resetFilters">重置</a-button>
       <a-tooltip :title="batchMode ? '退出批量模式' : '进入批量模式'">
-        <a-button type="text" class="batch-mode-btn" :class="{ active: batchMode }" @click="toggleBatchMode">
+        <a-button
+          type="text"
+          class="history-filter-btn batch-mode-btn"
+          :class="{ active: batchMode }"
+          @click="toggleBatchMode"
+        >
           <template #icon><CheckSquareOutlined /></template>
         </a-button>
       </a-tooltip>
@@ -479,11 +484,37 @@ function handleReedit(item: UserHistoryCard) {
         <span>当前页 {{ selectableCount }} 项</span>
       </div>
       <div class="history-batch-actions">
-        <a-button size="small" :disabled="!items.length || allVisibleSelected" @click="selectAllVisible">全选</a-button>
-        <a-button size="small" :disabled="!items.length" @click="invertVisibleSelection">反选</a-button>
-        <a-button size="small" :disabled="!selectedCount" @click="clearSelection">清空</a-button>
-        <a-button size="small" :disabled="!downloadableSelectedItems.length" @click="handleBatchDownload">批量下载</a-button>
-        <a-button danger size="small" :disabled="!selectedCount" @click="handleBatchDelete">批量删除</a-button>
+        <a-button
+          size="small"
+          class="history-batch-btn history-batch-btn-secondary"
+          :disabled="!items.length || allVisibleSelected"
+          @click="selectAllVisible"
+        >
+          全选
+        </a-button>
+        <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!items.length" @click="invertVisibleSelection">
+          反选
+        </a-button>
+        <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!selectedCount" @click="clearSelection">
+          清空
+        </a-button>
+        <a-button
+          size="small"
+          class="history-batch-btn history-batch-btn-primary"
+          :disabled="!downloadableSelectedItems.length"
+          @click="handleBatchDownload"
+        >
+          批量下载
+        </a-button>
+        <a-button
+          danger
+          size="small"
+          class="history-batch-btn history-batch-btn-danger"
+          :disabled="!selectedCount"
+          @click="handleBatchDelete"
+        >
+          批量删除
+        </a-button>
       </div>
     </div>
 
@@ -711,21 +742,58 @@ function handleReedit(item: UserHistoryCard) {
   color: #9b825f;
 }
 
-.batch-mode-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  color: #8f7558 !important;
+.history-filter-btn {
+  height: 36px;
+  border-radius: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.history-filter-btn-primary {
+  border-color: #df8b1d !important;
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+  color: #fff8eb !important;
 
   &:hover,
   &:focus {
-    color: #c7800c !important;
-    background: #fff4df !important;
+    border-color: #c7770d !important;
+    background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
+    color: #ffffff !important;
+  }
+}
+
+.history-filter-btn-secondary {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+
+  &:hover,
+  &:focus {
+    border-color: #e1a64a !important;
+    background: #fff0d3 !important;
+    color: #c7770d !important;
+  }
+}
+
+.batch-mode-btn {
+  width: 34px;
+  border-radius: 10px;
+  padding: 0 !important;
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+
+  &:hover,
+  &:focus {
+    border-color: #e1a64a !important;
+    color: #c7770d !important;
+    background: #fff0d3 !important;
   }
 
   &.active {
-    color: #c7800c !important;
-    background: #fff4df !important;
+    border-color: #df8b1d !important;
+    background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+    color: #fff8eb !important;
   }
 }
 
@@ -756,6 +824,70 @@ function handleReedit(item: UserHistoryCard) {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.history-batch-btn {
+  min-width: 64px;
+  border-radius: 10px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.history-batch-btn-secondary {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+
+  &:hover,
+  &:focus {
+    border-color: #e1a64a !important;
+    background: #fff0d3 !important;
+    color: #c7770d !important;
+  }
+
+  &[disabled] {
+    border-color: #f3dfba !important;
+    background: #fffaf2 !important;
+    color: #d2b489 !important;
+  }
+}
+
+.history-batch-btn-primary {
+  border-color: #df8b1d !important;
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+  color: #fff8eb !important;
+
+  &:hover,
+  &:focus {
+    border-color: #c7770d !important;
+    background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
+    color: #ffffff !important;
+  }
+
+  &[disabled] {
+    border-color: #f0d29f !important;
+    background: linear-gradient(135deg, #f7ddb1 0%, #efcb8a 100%) !important;
+    color: #fff8eb !important;
+  }
+}
+
+.history-batch-btn-danger {
+  border-color: #efb2a9 !important;
+  background: #fff4f2 !important;
+  color: #c25b4e !important;
+
+  &:hover,
+  &:focus {
+    border-color: #e38779 !important;
+    background: #ffe8e4 !important;
+    color: #d6574b !important;
+  }
+
+  &[disabled] {
+    border-color: #f5d5cf !important;
+    background: #fff8f6 !important;
+    color: #d8aaa2 !important;
+  }
 }
 
 .history-grid {

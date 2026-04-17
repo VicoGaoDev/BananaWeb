@@ -241,7 +241,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         v-model:value="filters.username"
         allow-clear
         placeholder="按用户名筛选"
-        class="filter-input"
+        class="filter-input warm-input"
       >
         <template #prefix><SearchOutlined /></template>
       </a-input>
@@ -249,14 +249,14 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         v-model:value="filters.status"
         allow-clear
         placeholder="用户状态"
-        class="filter-select"
+        class="filter-select warm-select"
       >
         <a-select-option value="active">正常</a-select-option>
         <a-select-option value="disabled">禁用</a-select-option>
       </a-select>
       <a-select
         v-model:value="filters.sort"
-        class="filter-select"
+        class="filter-select warm-select"
       >
         <a-select-option value="created_at_desc">创建时间（默认）</a-select-option>
         <a-select-option value="credits_desc">剩余积分（从高到低）</a-select-option>
@@ -290,12 +290,12 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'role'">
-            <a-tag class="warm-tag" :color="record.role === 'admin' ? 'volcano' : 'gold'">
+            <a-tag class="warm-tag" :class="record.role === 'admin' ? 'warm-tag-role-admin' : 'warm-tag-role-user'">
               {{ record.role === "admin" ? "管理员" : "普通用户" }}
             </a-tag>
           </template>
           <template v-else-if="column.dataIndex === 'is_whitelisted'">
-            <a-tag :color="record.is_whitelisted ? 'processing' : 'default'">
+            <a-tag class="warm-tag" :class="record.is_whitelisted ? 'warm-tag-whitelist' : 'warm-tag-muted'">
               {{ record.is_whitelisted ? "白名单" : "-" }}
             </a-tag>
           </template>
@@ -311,7 +311,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
           </template>
           <template v-else-if="column.key === 'action'">
             <div class="table-actions">
-              <a-button type="link" size="small" @click="openCredits(record)">
+              <a-button type="link" size="small" class="user-action-btn user-action-btn-primary" @click="openCredits(record)">
                 <template #icon><WalletOutlined /></template>
                 分配积分
               </a-button>
@@ -320,6 +320,8 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
                 <a-button
                   type="link"
                   size="small"
+                  class="user-action-btn"
+                  :class="record.status === 'active' ? 'user-action-btn-danger' : 'user-action-btn-secondary'"
                   :danger="record.status === 'active'"
                   :disabled="isFirstAdmin(record) && record.status === 'active'"
                   @click="toggleStatus(record)"
@@ -330,13 +332,14 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
                 <a-button
                   type="link"
                   size="small"
+                  class="user-action-btn user-action-btn-secondary"
                   :disabled="isFirstAdmin(record)"
                   @click="toggleRole(record)"
                 >
                   {{ record.role === "admin" ? "取消管理员" : "设为管理员" }}
                 </a-button>
                 <a-divider type="vertical" />
-                <a-button type="link" size="small" @click="openResetPwd(record)">
+                <a-button type="link" size="small" class="user-action-btn user-action-btn-secondary" @click="openResetPwd(record)">
                   重置密码
                 </a-button>
               </template>
@@ -351,6 +354,8 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       v-model:open="modalOpen"
       title="新增用户"
       :confirm-loading="creating"
+      :ok-button-props="{ class: 'warm-primary-btn' }"
+      :cancel-button-props="{ class: 'warm-secondary-btn' }"
       ok-text="创建"
       cancel-text="取消"
       centered
@@ -359,19 +364,19 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
     >
       <a-form layout="vertical" style="margin-top: 16px">
         <a-form-item label="用户名">
-          <a-input v-model:value="form.username" placeholder="请输入用户名" />
+          <a-input v-model:value="form.username" class="warm-input" placeholder="请输入用户名" />
         </a-form-item>
         <a-form-item label="密码">
-          <a-input-password v-model:value="form.password" placeholder="至少6位" />
+          <a-input-password v-model:value="form.password" class="warm-input" placeholder="至少6位" />
         </a-form-item>
         <a-form-item v-if="isSuperAdmin" label="角色" style="margin-bottom: 0">
-          <a-radio-group v-model:value="form.role">
+          <a-radio-group v-model:value="form.role" class="warm-radio-group">
             <a-radio value="user">普通用户</a-radio>
             <a-radio value="admin">管理员</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item v-else label="角色" style="margin-bottom: 0">
-          <a-input value="普通用户" disabled />
+          <a-input value="普通用户" class="warm-input" disabled />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -381,6 +386,8 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       v-model:open="resetPwdOpen"
       :title="`重置密码 — ${resetTarget?.username}`"
       :confirm-loading="resetPwdLoading"
+      :ok-button-props="{ class: 'warm-primary-btn' }"
+      :cancel-button-props="{ class: 'warm-secondary-btn' }"
       ok-text="确认重置"
       cancel-text="取消"
       centered
@@ -389,7 +396,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
     >
       <a-form layout="vertical" style="margin-top: 16px">
         <a-form-item label="新密码" style="margin-bottom: 0">
-          <a-input-password v-model:value="resetForm.newPassword" placeholder="至少6位" />
+          <a-input-password v-model:value="resetForm.newPassword" class="warm-input" placeholder="至少6位" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -399,6 +406,8 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       v-model:open="creditsOpen"
       :title="`分配积分 — ${creditsTarget?.username}`"
       :confirm-loading="creditsLoading"
+      :ok-button-props="{ class: 'warm-primary-btn' }"
+      :cancel-button-props="{ class: 'warm-secondary-btn' }"
       ok-text="确认"
       cancel-text="取消"
       centered
@@ -407,10 +416,10 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
     >
       <a-form layout="vertical" style="margin-top: 16px">
         <a-form-item label="积分数量（正数充值，负数扣减）">
-          <a-input-number v-model:value="creditsForm.amount" style="width: 100%" placeholder="请输入积分数量" />
+          <a-input-number v-model:value="creditsForm.amount" class="warm-input-number" placeholder="请输入积分数量" />
         </a-form-item>
         <a-form-item label="备注说明" style="margin-bottom: 0">
-          <a-input v-model:value="creditsForm.description" placeholder="请输入备注说明" />
+          <a-input v-model:value="creditsForm.description" class="warm-input" placeholder="请输入备注说明" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -428,7 +437,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
             v-model:value="whitelistKeyword"
             allow-clear
             placeholder="筛选用户名"
-            class="whitelist-search"
+            class="whitelist-search warm-input"
           >
             <template #prefix><SearchOutlined /></template>
           </a-input>
@@ -446,7 +455,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               <div class="whitelist-user-meta">
                 <div class="user-cell-name">
                   {{ user.username }}
-                  <a-tag v-if="user.is_whitelisted" color="processing">白名单</a-tag>
+                  <a-tag v-if="user.is_whitelisted" class="warm-tag warm-tag-whitelist">白名单</a-tag>
                 </div>
                 <div class="whitelist-user-sub">
                   {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
@@ -457,6 +466,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               :type="user.is_whitelisted ? 'default' : 'primary'"
               :loading="whitelistLoadingId === user.id"
               class="whitelist-action-btn"
+              :class="user.is_whitelisted ? 'whitelist-action-btn-secondary' : 'whitelist-action-btn-primary'"
               @click="handleToggleWhitelist(user)"
             >
               {{ user.is_whitelisted ? "移出白名单" : "加入白名单" }}
@@ -496,13 +506,14 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 .filter-reset-btn {
   height: 36px;
   border-radius: 12px;
-  border: 1px solid #e8d5c0 !important;
-  background: linear-gradient(180deg, #fffaf5, #fef3e8) !important;
-  color: #8c7458 !important;
+  border: 1px solid #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
 
   &:hover {
-    border-color: #d4b896 !important;
-    color: #5d4526 !important;
+    border-color: #e1a64a !important;
+    background: #fff0d3 !important;
+    color: #c7770d !important;
   }
 }
 
@@ -538,7 +549,70 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 .table-actions {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   white-space: nowrap;
+}
+
+.table-actions :deep(.ant-divider-vertical) {
+  margin-inline: 2px;
+  border-inline-start-color: #efd7b1;
+}
+
+.user-action-btn {
+  height: 30px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.user-action-btn.user-action-btn-primary {
+  color: #c7770d !important;
+  background: #fff4df !important;
+}
+
+.user-action-btn.user-action-btn-secondary {
+  color: #a9772e !important;
+  background: #fff8ee !important;
+}
+
+.user-action-btn.user-action-btn-danger {
+  color: #d6574b !important;
+  background: #fff1ef !important;
+}
+
+.user-action-btn:hover,
+.user-action-btn:focus {
+  opacity: 0.92;
+}
+
+.warm-tag {
+  border-radius: 999px;
+  border-width: 1px;
+  font-weight: 600;
+}
+
+.warm-tag-role-admin {
+  color: #c7770d;
+  background: #fff4df;
+  border-color: #efc784;
+}
+
+.warm-tag-role-user {
+  color: #a9772e;
+  background: #fff8ee;
+  border-color: #f2d8a7;
+}
+
+.warm-tag-whitelist {
+  color: #b16d10;
+  background: #fff1d9;
+  border-color: #efc784;
+}
+
+.warm-tag-muted {
+  color: #8f7558;
+  background: #fffaf2;
+  border-color: #f2e3c6;
 }
 
 .whitelist-dialog {
@@ -605,6 +679,32 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
   flex-shrink: 0;
   min-width: 104px;
   border-radius: 12px;
+}
+
+.whitelist-action-btn-primary {
+  border-color: #df8b1d !important;
+  background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
+  color: #fff8eb !important;
+}
+
+.whitelist-action-btn-primary:hover,
+.whitelist-action-btn-primary:focus {
+  border-color: #c7770d !important;
+  background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
+  color: #ffffff !important;
+}
+
+.whitelist-action-btn-secondary {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+}
+
+.whitelist-action-btn-secondary:hover,
+.whitelist-action-btn-secondary:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
 }
 
 :deep(.ant-badge-status-text) {

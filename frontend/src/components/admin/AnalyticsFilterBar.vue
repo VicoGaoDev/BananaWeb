@@ -248,6 +248,20 @@ const presetOptions = computed(() => {
   width: 240px;
 }
 
+:deep(.analytics-filter-select .ant-select-selector),
+:deep(.analytics-filter-date.ant-picker) {
+  border-radius: 12px !important;
+  border-color: #f2d8a7 !important;
+  background: #fffdf8 !important;
+  box-shadow: none !important;
+}
+
+:deep(.analytics-filter-select.ant-select-focused .ant-select-selector),
+:deep(.analytics-filter-date.ant-picker-focused) {
+  border-color: #df8b1d !important;
+  box-shadow: 0 0 0 2px rgba(223, 139, 29, 0.12) !important;
+}
+
 .analytics-action-btn {
   height: 36px;
   min-width: 72px;
@@ -273,16 +287,16 @@ const presetOptions = computed(() => {
 }
 
 .analytics-action-btn-secondary {
-  border: 1px solid #e8d5c0 !important;
-  background: linear-gradient(180deg, #fffaf5, #fef3e8) !important;
-  color: #8c7458 !important;
-  box-shadow: 0 8px 18px rgba(236, 185, 88, 0.08);
+  border: 1px solid #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+  box-shadow: none !important;
 
   &:hover,
   &:focus {
-    border-color: #d4b896 !important;
-    background: linear-gradient(180deg, #fff6ee, #fcebd8) !important;
-    color: #5d4526 !important;
+    border-color: #e1a64a !important;
+    background: #fff0d3 !important;
+    color: #c7770d !important;
   }
 }
 

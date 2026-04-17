@@ -231,7 +231,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
       </div>
     </div>
     <div v-else class="breakdown-empty warm-card">
-      <a-empty description="当前筛选条件下暂无分布数据">
+      <a-empty class="warm-empty" description="当前筛选条件下暂无分布数据">
         <template #description>
           <div class="empty-title">当前筛选条件下暂无分布数据</div>
           <div class="empty-desc">当有任务、积分或用户数据时，这里会自动展示占比和排行图。</div>

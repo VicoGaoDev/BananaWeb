@@ -932,8 +932,9 @@ onBeforeUnmount(() => {
       <div class="left-col">
         <a-tabs v-model:activeKey="generateMode" class="generate-tabs">
           <a-tab-pane key="generate" tab="文生图/图编辑">
-            <section class="work-panel settings-panel">
-              <div class="settings-row model-row">
+            <section class="work-panel settings-panel generate-config-panel">
+              <div class="settings-scroll">
+              <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
                   <label>模型</label>
                   <a-select
@@ -952,7 +953,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div class="field-block ref-upload-block">
+              <div class="field-block ref-upload-block config-section">
                 <div class="panel-head">
                   <h3>参考图</h3>
                   <span class="panel-hint">(可选，最多 {{ MAX_REFS }} 张)</span>
@@ -997,13 +998,13 @@ onBeforeUnmount(() => {
                     />
                     <template v-else>
                       <CloudUploadOutlined style="font-size: 22px; color: #f0a62a" />
-                      <span>Import</span>
+                      <span>上传</span>
                     </template>
                   </div>
                 </div>
               </div>
 
-              <div class="prompt-block">
+              <div class="prompt-block config-section">
                 <div class="prompt-label-row">
                   <label>提示词</label>
                   <a-button type="text" class="history-btn" @click="openHistory">
@@ -1020,7 +1021,7 @@ onBeforeUnmount(() => {
                 />
               </div>
 
-              <div class="settings-row settings-row-inline">
+              <div class="settings-row settings-row-inline config-section compact-config-section">
                 <div class="setting-item setting-item-inline">
                   <label>宽高比</label>
                   <a-select
@@ -1043,7 +1044,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div class="generate-actions-block">
+              <div class="generate-actions-block config-section action-config-section">
                 <div class="field-block">
                   <label>图片数量：{{ numImages }}</label>
                   <a-slider
@@ -1054,7 +1055,11 @@ onBeforeUnmount(() => {
                     class="num-slider"
                   />
                 </div>
+              </div>
 
+              </div>
+
+              <div class="settings-footer">
                 <a-button
                   type="primary"
                   block
@@ -1072,6 +1077,7 @@ onBeforeUnmount(() => {
 
           <a-tab-pane key="promptReverse" tab="提示词反推">
             <section class="work-panel settings-panel prompt-reverse-panel">
+              <div class="settings-scroll">
               <div class="field-block">
                 <div class="panel-head">
                   <h3>上传图片</h3>
@@ -1110,18 +1116,6 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <a-button
-                type="primary"
-                block
-                size="large"
-                :loading="reverseLoading || reverseUploading"
-                class="generate-btn"
-                @click="handlePromptReverse"
-              >
-                <template #icon><ThunderboltOutlined /></template>
-                {{ promptReverseButtonText }}
-              </a-button>
-
               <div v-if="reversePromptResult" class="reverse-result-card">
                 <div class="panel-head">
                   <h3>反推结果</h3>
@@ -1146,11 +1140,27 @@ onBeforeUnmount(() => {
               <div v-else class="reverse-result-placeholder">
                 上传图片后，点击「开始反推」即可获得适合 AI 绘画的中文提示词。
               </div>
+              </div>
+
+              <div class="settings-footer">
+                <a-button
+                  type="primary"
+                  block
+                  size="large"
+                  :loading="reverseLoading || reverseUploading"
+                  class="generate-btn"
+                  @click="handlePromptReverse"
+                >
+                  <template #icon><ThunderboltOutlined /></template>
+                  {{ promptReverseButtonText }}
+                </a-button>
+              </div>
             </section>
           </a-tab-pane>
 
           <a-tab-pane key="inpaint" tab="局部重绘">
             <section class="work-panel settings-panel inpaint-panel">
+              <div class="settings-scroll">
               <div class="field-block">
                 <div class="panel-head">
                   <h3>绘制区域</h3>
@@ -1274,19 +1284,22 @@ onBeforeUnmount(() => {
                   show-count
                 />
               </div>
+              </div>
 
-              <a-button
-                type="primary"
-                block
-                size="large"
-                :loading="sourceUploading"
-                :disabled="!activePrompt.trim() || hasBlockedUploads"
-                class="generate-btn"
-                @click="handleGenerate"
-              >
-                <template #icon><ThunderboltOutlined /></template>
-                {{ generateButtonText }}
-              </a-button>
+              <div class="settings-footer">
+                <a-button
+                  type="primary"
+                  block
+                  size="large"
+                  :loading="sourceUploading"
+                  :disabled="!activePrompt.trim() || hasBlockedUploads"
+                  class="generate-btn"
+                  @click="handleGenerate"
+                >
+                  <template #icon><ThunderboltOutlined /></template>
+                  {{ generateButtonText }}
+                </a-button>
+              </div>
             </section>
           </a-tab-pane>
         </a-tabs>
@@ -1425,8 +1438,9 @@ onBeforeUnmount(() => {
   min-height: calc(100vh - 112px);
   height: calc(100vh - 112px);
   --config-title-size: 14px;
-  --config-title-gap: 10px;
+  --config-title-gap: 8px;
   --config-title-color: #5e4524;
+  --config-section-gap: 12px;
 }
 
 .generate-workbench {
@@ -1445,15 +1459,26 @@ onBeforeUnmount(() => {
 }
 
 .generate-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+
   :deep(.ant-tabs-nav) {
-    margin-bottom: 18px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
   }
 
   :deep(.ant-tabs-tab) {
-    padding: 10px 0 14px;
+    padding: 10px 2px 14px;
     font-size: 15px;
     font-weight: 700;
     color: #8f7558;
+    transition: color 0.2s ease;
+  }
+
+  :deep(.ant-tabs-tab:hover) {
+    color: #b77a17;
   }
 
   :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
@@ -1467,17 +1492,75 @@ onBeforeUnmount(() => {
   }
 
   :deep(.ant-tabs-content-holder) {
-    overflow: visible;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  :deep(.ant-tabs-content) {
+    height: 100%;
   }
 
   :deep(.ant-tabs-tabpane) {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    min-height: 0;
+    height: 100%;
   }
 }
 
 /* --- Prompt (standalone) --- */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.generate-config-panel {
+  padding: 18px;
+  border-radius: 28px;
+  border-color: rgba(239, 195, 113, 0.42);
+  box-shadow:
+    0 20px 44px rgba(246, 178, 70, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.generate-config-panel > * + * {
+  margin-top: var(--config-section-gap);
+}
+
+.settings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px 0 6px;
+}
+
+.settings-footer {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 10px;
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0), rgba(255, 250, 240, 0.94) 28%, rgba(255, 254, 251, 1));
+}
+
+.config-section {
+  position: relative;
+  padding: 0 0 12px;
+}
+
+.compact-config-section {
+  padding-top: 0;
+  padding-bottom: 10px;
+}
+
+.action-config-section {
+  padding-bottom: 0;
+}
+
 .prompt-block {
   display: flex;
   flex-direction: column;
@@ -1491,37 +1574,56 @@ onBeforeUnmount(() => {
 
   label {
     color: var(--config-title-color);
-    font-size: var(--config-title-size);
+    font-size: 15px;
     font-weight: 700;
     line-height: 1.4;
+    letter-spacing: 0.01em;
   }
 }
 
 .history-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
   color: #a88962 !important;
   font-size: 17px;
+  background: rgba(255, 250, 242, 0.92) !important;
+  border: 1px solid rgba(241, 221, 183, 0.95) !important;
 
   &:hover {
     color: #d38a12 !important;
-    background: rgba(255, 214, 140, 0.28) !important;
+    background: rgba(255, 238, 205, 0.92) !important;
+    border-color: #efc784 !important;
   }
 }
 
-.prompt-input {
+.generate-config-panel .prompt-input {
   border-radius: 14px !important;
-  border-color: #efdcb9 !important;
+  border-color: #ecd5aa !important;
   background: #fffdf8 !important;
-  padding: 10px 14px;
+  padding: 12px 15px;
   font-size: 14px;
   resize: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 
   &:focus,
   &:hover {
     border-color: #f0b85a !important;
     box-shadow: 0 0 0 3px rgba(255, 184, 90, 0.12);
+  }
+
+  :deep(textarea) {
+    min-height: 144px;
+    line-height: 1.7;
+  }
+
+  :deep(.ant-input-data-count) {
+    color: #9d835f;
+    font-size: 12px;
+  }
+
+  :deep(textarea::placeholder) {
+    color: #b9a180;
   }
 }
 
@@ -1543,7 +1645,7 @@ onBeforeUnmount(() => {
 
   label {
     color: var(--config-title-color);
-    font-size: var(--config-title-size);
+    font-size: 15px;
     font-weight: 700;
     line-height: 1.4;
   }
@@ -1556,11 +1658,11 @@ onBeforeUnmount(() => {
 .setting-item-inline {
   flex-direction: row;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 
   label {
     margin: 0;
-    min-width: 56px;
+    min-width: 62px;
     flex: 0 0 auto;
   }
 
@@ -1590,7 +1692,7 @@ onBeforeUnmount(() => {
   margin-bottom: var(--config-title-gap);
 
   h3 {
-    font-size: var(--config-title-size);
+    font-size: 15px;
     line-height: 1.4;
     color: var(--config-title-color);
     margin: 0;
@@ -1600,25 +1702,27 @@ onBeforeUnmount(() => {
 
 .panel-hint {
   font-size: 12px;
-  color: #a88962;
-  font-weight: 400;
+  color: #9f845d;
+  font-weight: 500;
 }
 
 /* --- Upload (compact) --- */
-.upload-grid {
+.generate-config-panel .upload-grid {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.upload-thumb {
+.generate-config-panel .upload-thumb {
   position: relative;
   width: 72px;
   height: 72px;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
-  border: 1px solid #f0ddbb;
+  border: 1px solid #ecd5aa;
+  background: linear-gradient(180deg, #fffdf9, #fff7ec);
   flex-shrink: 0;
+  box-shadow: 0 8px 18px rgba(241, 190, 103, 0.12);
 
   img {
     width: 100%;
@@ -1628,7 +1732,7 @@ onBeforeUnmount(() => {
   }
 }
 
-.upload-thumb-mask {
+.generate-config-panel .upload-thumb-mask {
   position: absolute;
   inset: 0;
   display: flex;
@@ -1642,7 +1746,7 @@ onBeforeUnmount(() => {
   text-align: center;
 
   &.error {
-    background: rgba(255, 245, 243, 0.84);
+    background: rgba(255, 245, 243, 0.9);
     color: #d6574b;
   }
 }
@@ -1656,67 +1760,100 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
-.upload-add {
+.generate-config-panel .upload-add {
   width: 72px;
   height: 72px;
-  border-radius: 14px;
-  border: 2px dashed #e8d7b7;
+  border-radius: 16px;
+  border: 1px dashed #e7c98d;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
   cursor: pointer;
-  color: #8f7558;
-  font-size: 11px;
+  color: #8a6d45;
+  font-size: 12px;
+  font-weight: 700;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.9),
-    rgba(255, 248, 232, 0.92)
+    rgba(255, 253, 248, 0.96),
+    rgba(255, 242, 214, 0.92)
   );
-  transition: border-color 0.2s, transform 0.2s;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 10px 22px rgba(241, 190, 103, 0.12);
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
   flex-shrink: 0;
 
   &:hover {
     border-color: #f1bd57;
     transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.84),
+      0 14px 24px rgba(241, 190, 103, 0.16);
   }
 }
 
 /* --- Fields --- */
 .field-block + .field-block {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .field-block label {
   display: block;
   margin-bottom: var(--config-title-gap);
   color: var(--config-title-color);
-  font-size: var(--config-title-size);
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
 }
 
-.flat-select {
+.generate-config-panel .flat-select {
   width: 100%;
-  background: #fff;
-  border-radius: 14px;
-  border: 1px solid #f0ddbb;
-  box-shadow: 0 8px 18px rgba(244, 182, 84, 0.08);
+  background: linear-gradient(180deg, #fffdf9, #fff8ef);
+  border-radius: 16px;
+  border: 1px solid #ecd5aa;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 10px 22px rgba(244, 182, 84, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    border-color: #e7bb68;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.82),
+      0 12px 22px rgba(244, 182, 84, 0.12);
+  }
+
+  &:focus-within {
+    border-color: #df8b1d;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 0 0 3px rgba(255, 184, 90, 0.12),
+      0 12px 22px rgba(244, 182, 84, 0.12);
+  }
 
   :deep(.ant-select-selector) {
-    height: 44px !important;
-    padding: 0 14px !important;
+    height: 48px !important;
+    padding: 0 15px !important;
     border: none !important;
     box-shadow: none !important;
     background: transparent !important;
-    border-radius: 14px !important;
+    border-radius: 16px !important;
     font-weight: 600;
     color: #4b3318;
   }
 
   :deep(.ant-select-selection-item) {
-    line-height: 44px !important;
+    line-height: 48px !important;
+  }
+
+  :deep(.ant-select-arrow) {
+    color: #c39247;
+  }
+
+  :deep(.ant-select-selection-placeholder) {
+    color: #b7a07d;
   }
 }
 
@@ -1738,24 +1875,24 @@ onBeforeUnmount(() => {
 
 /* --- Slider --- */
 .num-slider {
-  margin: 4px 6px 18px;
+  margin: 4px 8px 2px;
 
   :deep(.ant-slider-rail) {
-    background: #f0ddbb;
-    height: 6px;
-    border-radius: 3px;
+    background: linear-gradient(90deg, #f4e4c2, #efdbb1);
+    height: 8px;
+    border-radius: 999px;
   }
 
   :deep(.ant-slider-track) {
     background: linear-gradient(90deg, #ffc45b, #ffab25);
-    height: 6px;
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 999px;
   }
 
   :deep(.ant-slider-handle) {
     width: 22px;
     height: 22px;
-    margin-top: -8px;
+      margin-top: -7px;
     border: none;
     background: transparent;
     box-shadow: none;
@@ -1803,14 +1940,27 @@ onBeforeUnmount(() => {
 }
 
 .generate-btn {
-  margin-top: 12px;
+  margin-top: 10px;
   height: 50px;
-  border-radius: 16px;
-  font-size: 15px;
+  border-radius: 18px;
+  font-size: 16px;
   font-weight: 700;
   background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
   border: none !important;
-  box-shadow: 0 16px 28px rgba(255, 169, 37, 0.28) !important;
+  box-shadow: 0 18px 32px rgba(255, 169, 37, 0.26) !important;
+
+  &:hover,
+  &:focus {
+    background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
+    box-shadow: 0 20px 34px rgba(255, 169, 37, 0.3) !important;
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    background: linear-gradient(180deg, #f0dcb1, #ead3a3) !important;
+    color: rgba(111, 88, 58, 0.72) !important;
+    box-shadow: none !important;
+  }
 }
 
 .source-upload-empty {
@@ -2327,6 +2477,20 @@ onBeforeUnmount(() => {
   padding: 6px;
   background: #fffefb;
   border: 1px solid #f0ddbb;
+  box-shadow: 0 18px 32px rgba(212, 155, 59, 0.14);
+}
+
+:deep(.generate-dropdown .ant-select-item) {
+  border-radius: 10px;
+}
+
+:deep(.generate-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled)) {
+  background: #fff5e1;
+}
+
+:deep(.generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled)) {
+  background: #fff0d3;
+  color: #8a5b14;
 }
 
 @keyframes spin {
@@ -2362,6 +2526,21 @@ onBeforeUnmount(() => {
     padding-right: 0;
   }
 
+  .generate-tabs {
+    min-height: unset;
+  }
+
+  .settings-panel,
+  .generate-tabs :deep(.ant-tabs-content),
+  .generate-tabs :deep(.ant-tabs-tabpane) {
+    height: auto;
+  }
+
+  .settings-scroll {
+    overflow-y: visible;
+    padding: 0;
+  }
+
 }
 
 @media (max-width: 640px) {
@@ -2370,12 +2549,16 @@ onBeforeUnmount(() => {
     border-radius: 20px;
   }
 
+  .generate-config-panel {
+    padding: 15px;
+  }
+
   .settings-row {
     flex-direction: column;
   }
 
-  .upload-thumb,
-  .upload-add {
+  .generate-config-panel .upload-thumb,
+  .generate-config-panel .upload-add {
     width: 60px;
     height: 60px;
   }

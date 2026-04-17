@@ -397,12 +397,12 @@ function fmtTime(t: string) {
           </template>
           <template v-else-if="column.key === 'action'">
             <div class="table-actions">
-              <a-button type="link" size="small" @click="openEdit(record)">
+              <a-button type="link" size="small" class="template-action-btn template-action-btn-primary" @click="openEdit(record)">
                 <template #icon><EditOutlined /></template>
                 编辑
               </a-button>
               <a-divider type="vertical" />
-              <a-button type="link" danger size="small" @click="handleDelete(record)">
+              <a-button type="link" danger size="small" class="template-action-btn template-action-btn-danger" @click="handleDelete(record)">
                 <template #icon><DeleteOutlined /></template>
                 删除
               </a-button>
@@ -416,6 +416,8 @@ function fmtTime(t: string) {
       v-model:open="modalOpen"
       :title="editingId ? '编辑模版' : '新增模版'"
       :confirm-loading="saving"
+      :ok-button-props="{ class: 'warm-primary-btn' }"
+      :cancel-button-props="{ class: 'warm-secondary-btn' }"
       ok-text="保存"
       cancel-text="取消"
       centered
@@ -425,29 +427,30 @@ function fmtTime(t: string) {
     >
       <a-form layout="vertical" style="margin-top: 16px">
         <a-form-item label="提示词">
-          <a-textarea v-model:value="form.prompt" :rows="5" :maxlength="2000" show-count />
+          <a-textarea v-model:value="form.prompt" class="warm-textarea" :rows="5" :maxlength="2000" show-count />
         </a-form-item>
 
         <div class="form-grid">
           <a-form-item label="模型">
-            <a-select v-model:value="form.model" placeholder="请选择模型">
+            <a-select v-model:value="form.model" class="warm-select" placeholder="请选择模型">
               <a-select-option v-for="model in modelOptions" :key="model.model_key" :value="model.model_key">
                 {{ model.model_label }}
               </a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="宽高比">
-            <a-select v-model:value="form.size" :options="sizeOptions" />
+            <a-select v-model:value="form.size" class="warm-select" :options="sizeOptions" />
           </a-form-item>
           <a-form-item label="排序值">
-            <a-input-number v-model:value="form.sort_order" style="width: 100%" :min="0" :precision="0" />
+            <a-input-number v-model:value="form.sort_order" class="warm-input-number" :min="0" :precision="0" />
           </a-form-item>
           <a-form-item v-if="!hideResolution" label="分辨率">
-            <a-select v-model:value="form.resolution" :options="resolutionOptions" />
+            <a-select v-model:value="form.resolution" class="warm-select" :options="resolutionOptions" />
           </a-form-item>
           <a-form-item label="所属标签">
             <a-select
               v-model:value="form.tag_names"
+              class="warm-select"
               mode="tags"
               :options="tagOptions"
               placeholder="输入或选择标签"
@@ -462,7 +465,7 @@ function fmtTime(t: string) {
               <div v-else class="result-placeholder">请上传结果图</div>
             </div>
             <input ref="resultInput" type="file" accept="image/*" hidden @change="handleResultUpload" />
-            <a-button :loading="resultUploading" @click="triggerResultUpload">
+            <a-button class="template-secondary-btn" :loading="resultUploading" @click="triggerResultUpload">
               <template #icon><UploadOutlined /></template>
               上传结果图
             </a-button>
@@ -478,7 +481,7 @@ function fmtTime(t: string) {
                 <template #icon><DeleteOutlined /></template>
               </a-button>
             </div>
-            <a-button class="ref-add" :loading="refUploading" @click="triggerRefUpload">
+            <a-button class="ref-add template-secondary-btn" :loading="refUploading" @click="triggerRefUpload">
               <template #icon><UploadOutlined /></template>
               上传参考图
             </a-button>
@@ -491,6 +494,8 @@ function fmtTime(t: string) {
       v-model:open="tagManageOpen"
       title="标签管理"
       :confirm-loading="savingTag"
+      :ok-button-props="{ class: 'warm-primary-btn' }"
+      :cancel-button-props="{ class: 'warm-secondary-btn' }"
       ok-text="提交"
       cancel-text="取消"
       centered
@@ -503,11 +508,12 @@ function fmtTime(t: string) {
           <div class="tag-create-box">
             <a-input
               v-model:value="renameForm.name"
+              class="warm-input"
               :maxlength="50"
               :placeholder="editingTag ? '请输入新的标签名称' : '输入新标签名称'"
               @pressEnter="handleSaveTag"
             />
-            <a-button v-if="editingTag" @click="resetTagForm">取消编辑</a-button>
+            <a-button v-if="editingTag" class="template-secondary-btn" @click="resetTagForm">取消编辑</a-button>
           </div>
         </a-form-item>
       </a-form>
@@ -519,13 +525,13 @@ function fmtTime(t: string) {
             <span class="tag-manage-count">关联 {{ tag.template_count ?? 0 }} 个模版</span>
           </div>
           <div class="tag-manage-actions">
-            <a-button type="link" size="small" @click="openRenameTag(tag)">重命名</a-button>
+            <a-button type="link" size="small" class="template-action-btn template-action-btn-primary" @click="openRenameTag(tag)">重命名</a-button>
             <a-divider type="vertical" />
-            <a-button type="link" danger size="small" @click="handleDeleteTag(tag)">删除</a-button>
+            <a-button type="link" danger size="small" class="template-action-btn template-action-btn-danger" @click="handleDeleteTag(tag)">删除</a-button>
           </div>
         </div>
       </div>
-      <a-empty v-else description="暂无标签，可先新增标签" />
+      <a-empty v-else class="warm-empty" description="暂无标签，可先新增标签" />
     </a-modal>
   </div>
 </template>
@@ -646,7 +652,51 @@ function fmtTime(t: string) {
 .table-actions {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   white-space: nowrap;
+}
+
+.table-actions :deep(.ant-divider-vertical),
+.tag-manage-actions :deep(.ant-divider-vertical) {
+  margin-inline: 2px;
+  border-inline-start-color: #efd7b1;
+}
+
+.template-action-btn {
+  height: 30px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.template-action-btn.template-action-btn-primary {
+  color: #c7770d !important;
+  background: #fff4df !important;
+}
+
+.template-action-btn.template-action-btn-danger {
+  color: #d6574b !important;
+  background: #fff1ef !important;
+}
+
+.template-action-btn:hover,
+.template-action-btn:focus {
+  opacity: 0.92;
+}
+
+.template-secondary-btn {
+  border-color: #efc784 !important;
+  background: #fff7e8 !important;
+  color: #b16d10 !important;
+  border-radius: 12px !important;
+  font-weight: 600;
+}
+
+.template-secondary-btn:hover,
+.template-secondary-btn:focus {
+  border-color: #e1a64a !important;
+  background: #fff0d3 !important;
+  color: #c7770d !important;
 }
 
 .form-grid {
