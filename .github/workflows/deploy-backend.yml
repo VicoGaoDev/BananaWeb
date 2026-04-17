@@ -27,7 +27,6 @@ jobs:
         run: npm install -g @cloudbase/cli
 
       - name: 部署到云函数
-        run: cloudbase deploy --force
         run: cloudbase deploy --config-file ./cloudbaserc.json --force
         env:
           SECRET_ID: ${{ secrets.TENCENT_CLOUD_SECRET_ID }}
