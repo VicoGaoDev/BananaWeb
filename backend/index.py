@@ -12,7 +12,7 @@ app.add_middleware(
         "https://www.bananaimage.cn",
         "https://bananaimage.cn",
         "http://localhost:5173",
-    ], 
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

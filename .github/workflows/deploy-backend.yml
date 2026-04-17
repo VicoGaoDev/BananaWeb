@@ -28,6 +28,7 @@ jobs:
 
       - name: 部署到云函数
         run: cloudbase deploy --force
+        run: cloudbase deploy --config-file ./cloudbaserc.json --force
         env:
           SECRET_ID: ${{ secrets.TENCENT_CLOUD_SECRET_ID }}
           SECRET_KEY: ${{ secrets.TENCENT_CLOUD_SECRET_KEY }}
