@@ -2,7 +2,15 @@
 import { ref, onMounted, reactive, computed } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { PlusOutlined, TeamOutlined, WalletOutlined, SearchOutlined, UndoOutlined } from "@ant-design/icons-vue";
-import { listUsers, createUser, updateUserStatus, updateUserRole, resetUserPassword, allocateCredits } from "@/api/admin";
+import {
+  listUsers,
+  createUser,
+  updateUserStatus,
+  updateUserRole,
+  updateUserWhitelist,
+  resetUserPassword,
+  allocateCredits,
+} from "@/api/admin";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser } from "@/types";
 
@@ -29,11 +37,15 @@ const creditsOpen = ref(false);
 const creditsLoading = ref(false);
 const creditsTarget = ref<AdminUser | null>(null);
 const creditsForm = reactive({ amount: 0, description: "" });
+const whitelistOpen = ref(false);
+const whitelistKeyword = ref("");
+const whitelistLoadingId = ref<number | null>(null);
 
 const columns = [
   { title: "ID", dataIndex: "id", width: 70 },
   { title: "用户", dataIndex: "username", width: 200 },
   { title: "角色", dataIndex: "role", width: 100 },
+  { title: "白名单", dataIndex: "is_whitelisted", width: 100 },
   { title: "积分", dataIndex: "credits", width: 100 },
   { title: "状态", dataIndex: "status", width: 90 },
   { title: "创建时间", dataIndex: "created_at", width: 170 },
@@ -56,6 +68,18 @@ const filteredUsers = computed(() => {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 });
+
+const filteredWhitelistUsers = computed(() => {
+  const keyword = whitelistKeyword.value.trim().toLowerCase();
+  return [...users.value]
+    .filter((user) => !keyword || user.username.toLowerCase().includes(keyword))
+    .sort((a, b) => {
+      if (a.is_whitelisted !== b.is_whitelisted) return a.is_whitelisted ? -1 : 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+});
+
+const whitelistedCount = computed(() => users.value.filter((user) => user.is_whitelisted).length);
 
 async function load() {
   loading.value = true;
@@ -159,6 +183,20 @@ async function handleAllocateCredits() {
   }
 }
 
+async function handleToggleWhitelist(user: AdminUser) {
+  whitelistLoadingId.value = user.id;
+  const next = !user.is_whitelisted;
+  try {
+    await updateUserWhitelist(user.id, next);
+    message.success(next ? "已加入白名单" : "已移出白名单");
+    await load();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "白名单更新失败");
+  } finally {
+    whitelistLoadingId.value = null;
+  }
+}
+
 function isFirstAdmin(u: AdminUser) {
   const admins = users.value.filter((x) => x.role === "admin");
   if (!admins.length) return false;
@@ -184,13 +222,18 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         </div>
         <div>
           <div class="warm-page-title">用户管理</div>
-          <div class="warm-page-desc">超级管理员可管理账号权限，普通管理员仅可分配积分。</div>
+          <div class="warm-page-desc">管理员可创建普通用户、管理白名单与分配积分，超级管理员可额外管理权限。</div>
         </div>
       </div>
-      <a-button v-if="isSuperAdmin" type="primary" class="warm-primary-btn" @click="modalOpen = true">
-        <template #icon><PlusOutlined /></template>
-        新增用户
-      </a-button>
+      <div class="header-actions">
+        <a-button class="filter-reset-btn" @click="whitelistOpen = true">
+          白名单用户
+        </a-button>
+        <a-button type="primary" class="warm-primary-btn" @click="modalOpen = true">
+          <template #icon><PlusOutlined /></template>
+          新增用户
+        </a-button>
+      </div>
     </div>
 
     <div class="warm-card filter-bar">
@@ -249,6 +292,11 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
           <template v-else-if="column.dataIndex === 'role'">
             <a-tag class="warm-tag" :color="record.role === 'admin' ? 'volcano' : 'gold'">
               {{ record.role === "admin" ? "管理员" : "普通用户" }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.dataIndex === 'is_whitelisted'">
+            <a-tag :color="record.is_whitelisted ? 'processing' : 'default'">
+              {{ record.is_whitelisted ? "白名单" : "-" }}
             </a-tag>
           </template>
           <template v-else-if="column.dataIndex === 'credits'">
@@ -316,11 +364,14 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         <a-form-item label="密码">
           <a-input-password v-model:value="form.password" placeholder="至少6位" />
         </a-form-item>
-        <a-form-item label="角色" style="margin-bottom: 0">
+        <a-form-item v-if="isSuperAdmin" label="角色" style="margin-bottom: 0">
           <a-radio-group v-model:value="form.role">
             <a-radio value="user">普通用户</a-radio>
             <a-radio value="admin">管理员</a-radio>
           </a-radio-group>
+        </a-form-item>
+        <a-form-item v-else label="角色" style="margin-bottom: 0">
+          <a-input value="普通用户" disabled />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -363,10 +414,68 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="whitelistOpen"
+      title="白名单用户"
+      :footer="null"
+      centered
+      :width="720"
+    >
+      <div class="whitelist-dialog">
+        <div class="whitelist-toolbar">
+          <a-input
+            v-model:value="whitelistKeyword"
+            allow-clear
+            placeholder="筛选用户名"
+            class="whitelist-search"
+          >
+            <template #prefix><SearchOutlined /></template>
+          </a-input>
+          <div class="whitelist-summary">
+            当前白名单 <span>{{ whitelistedCount }}</span> 人
+          </div>
+        </div>
+
+        <div class="whitelist-list">
+          <div v-for="user in filteredWhitelistUsers" :key="user.id" class="whitelist-item">
+            <div class="user-cell">
+              <a-avatar :size="36" :src="user.avatar_url || undefined" class="table-avatar">
+                {{ user.username?.charAt(0)?.toUpperCase() }}
+              </a-avatar>
+              <div class="whitelist-user-meta">
+                <div class="user-cell-name">
+                  {{ user.username }}
+                  <a-tag v-if="user.is_whitelisted" color="processing">白名单</a-tag>
+                </div>
+                <div class="whitelist-user-sub">
+                  {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
+                </div>
+              </div>
+            </div>
+            <a-button
+              :type="user.is_whitelisted ? 'default' : 'primary'"
+              :loading="whitelistLoadingId === user.id"
+              class="whitelist-action-btn"
+              @click="handleToggleWhitelist(user)"
+            >
+              {{ user.is_whitelisted ? "移出白名单" : "加入白名单" }}
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <style scoped lang="scss">
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .filter-bar {
   display: flex;
   align-items: center;
@@ -432,6 +541,72 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
   white-space: nowrap;
 }
 
+.whitelist-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.whitelist-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.whitelist-search {
+  width: 240px;
+}
+
+.whitelist-summary {
+  color: #8c7458;
+  font-size: 14px;
+
+  span {
+    color: #b26c04;
+    font-weight: 700;
+  }
+}
+
+.whitelist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.whitelist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 223, 190, 0.95);
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.82));
+}
+
+.whitelist-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.whitelist-user-sub {
+  color: #8c7458;
+  font-size: 12px;
+}
+
+.whitelist-action-btn {
+  flex-shrink: 0;
+  min-width: 104px;
+  border-radius: 12px;
+}
+
 :deep(.ant-badge-status-text) {
   color: #6b5436;
   font-weight: 600;
@@ -449,6 +624,17 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 
   .filter-input,
   .filter-select {
+    width: 100%;
+  }
+
+  .header-actions,
+  .whitelist-toolbar,
+  .whitelist-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .whitelist-search {
     width: 100%;
   }
 

@@ -6,6 +6,7 @@ import type { Dayjs } from "dayjs";
 import { BarChartOutlined } from "@ant-design/icons-vue";
 import { getGenerationModels } from "@/api/config";
 import {
+  getStats,
   getAdminAnalyticsBreakdown,
   getAdminAnalyticsSummary,
   getAdminAnalyticsTimeseries,
@@ -22,6 +23,7 @@ import type {
   AdminAnalyticsQuery,
   AdminAnalyticsSummary,
   AdminAnalyticsTimeseries,
+  AdminStats,
   AdminUser,
   GenerationModelOption,
   HistoryFilter,
@@ -29,7 +31,9 @@ import type {
 } from "@/types";
 
 const analyticsLoading = ref(false);
+const statsLoading = ref(false);
 const historyLoading = ref(false);
+const stats = ref<AdminStats | null>(null);
 const summary = ref<AdminAnalyticsSummary | null>(null);
 const timeseries = ref<AdminAnalyticsTimeseries | null>(null);
 const breakdown = ref<AdminAnalyticsBreakdown | null>(null);
@@ -94,6 +98,40 @@ const activeFilterSummary = computed(() => {
   }
   if (!chips.length && summary.value) chips.push(`统计范围：${summary.value.current_range_label}`);
   return chips;
+});
+
+const overviewStats = computed(() => {
+  if (!stats.value) return [];
+  return [
+    {
+      key: "total_tasks",
+      label: "所有时间总任务数",
+      value: stats.value.total_tasks,
+      desc: "累计发起的全部任务数量",
+      color: "#1890ff",
+    },
+    {
+      key: "total_credit_cost",
+      label: "所有时间总积分消耗",
+      value: stats.value.total_credit_cost,
+      desc: "累计任务实际扣减的积分总量",
+      color: "#722ed1",
+    },
+    {
+      key: "active_users",
+      label: "近 7 天活跃用户",
+      value: stats.value.active_users,
+      desc: "按最近 7 天内发起任务计算",
+      color: "#13c2c2",
+    },
+    {
+      key: "total_users",
+      label: "总用户数",
+      value: stats.value.total_users,
+      desc: "当前系统内非超级管理员用户",
+      color: "#fa8c16",
+    },
+  ];
 });
 
 const filterSignature = computed(() => JSON.stringify({
@@ -167,7 +205,7 @@ function buildHistoryFilter(): HistoryFilter {
 
 async function loadUsers() {
   try {
-    users.value = await listUsers();
+    users.value = (await listUsers()).filter((item) => !item.is_whitelisted);
   } catch {
     users.value = [];
   }
@@ -197,6 +235,17 @@ async function loadAnalytics() {
     message.error("获取统计分析失败");
   } finally {
     analyticsLoading.value = false;
+  }
+}
+
+async function loadStatsData() {
+  statsLoading.value = true;
+  try {
+    stats.value = await getStats();
+  } catch {
+    message.error("获取概览统计失败");
+  } finally {
+    statsLoading.value = false;
   }
 }
 
@@ -293,7 +342,7 @@ onMounted(async () => {
   preset.value = defaultPresetByGranularity(granularity.value);
   applyPresetRange(preset.value);
   await Promise.all([loadUsers(), loadModels()]);
-  await loadPageData();
+  await Promise.all([loadPageData(), loadStatsData()]);
   ready.value = true;
 });
 
@@ -333,6 +382,25 @@ watch(filterSignature, async () => {
       @preset-change="handlePresetChange"
       @reset="handleReset"
     />
+
+    <section class="dashboard-section">
+      <div class="section-title-row">
+        <h3 class="section-title">固定概览</h3>
+        <span class="section-tip">这一组为固定口径统计，不随当前筛选条件变化。</span>
+      </div>
+      <a-spin :spinning="statsLoading">
+        <div class="overview-grid">
+          <div v-for="item in overviewStats" :key="item.key" class="overview-card warm-card">
+            <div class="overview-card-head">
+              <span class="overview-card-label">{{ item.label }}</span>
+              <span class="overview-card-dot" :style="{ background: item.color }" />
+            </div>
+            <div class="overview-card-value" :style="{ color: item.color }">{{ item.value }}</div>
+            <div class="overview-card-desc">{{ item.desc }}</div>
+          </div>
+        </div>
+      </a-spin>
+    </section>
 
     <section class="dashboard-section">
       <div class="section-title-row">
@@ -438,6 +506,54 @@ watch(filterSignature, async () => {
 
 .dashboard-section {
   padding-top: 2px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.overview-card {
+  min-height: 116px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overview-card-label {
+  color: #8c7458;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.overview-card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(255, 193, 90, 0.14);
+}
+
+.overview-card-value {
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.overview-card-desc {
+  color: #9a805b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .section-title-row {

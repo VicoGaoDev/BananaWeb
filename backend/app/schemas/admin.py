@@ -14,6 +14,7 @@ class UserOut(BaseModel):
     avatar_url: str = ""
     role: str
     status: str
+    is_whitelisted: bool = False
     credits: int = 0
     created_at: datetime | None = None
 
@@ -45,14 +46,18 @@ class UpdateRoleRequest(BaseModel):
     role: str  # "user" | "admin"
 
 
+class UpdateWhitelistRequest(BaseModel):
+    is_whitelisted: bool
+
+
 class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
 class StatsOut(BaseModel):
-    last_7_days: int
-    last_30_days: int
     total_users: int
+    total_tasks: int
+    total_credit_cost: int
     active_users: int
 
 

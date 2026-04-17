@@ -31,7 +31,6 @@ const cards = computed<CardItem[]>(() => {
     { key: "credits_consumed", label: "消耗积分", color: "#fa8c16", metric: props.summary.credits_consumed },
     { key: "new_users", label: "新增用户数", color: "#722ed1", metric: props.summary.new_users },
     { key: "active_users", label: "活跃用户数", color: "#13c2c2", metric: props.summary.active_users },
-    { key: "total_users", label: "总用户数", color: "#8c8c8c", plainValue: props.summary.total_users },
   ];
 });
 

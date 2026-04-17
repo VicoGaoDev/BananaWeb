@@ -8,13 +8,13 @@ from app.api.deps import require_admin, require_superadmin
 from app.models.user import User
 from app.schemas.admin import (
     CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest,
-    ResetPasswordRequest, StatsOut, AllocateCreditsRequest, CreditLogOut,
+    UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, CreditLogOut,
     AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut,
 )
 from app.schemas.history import HistoryResponse
 from app.services.admin_service import (
     create_user, list_users, update_user_status, update_user_role,
-    reset_user_password, get_stats, allocate_credits, get_credit_logs,
+    update_user_whitelist, reset_user_password, get_stats, allocate_credits, get_credit_logs,
     get_analytics_summary, get_analytics_timeseries, get_analytics_breakdown,
 )
 from app.services.history_service import get_all_history
@@ -25,10 +25,10 @@ router = APIRouter(prefix="/api/admin", tags=["管理员"])
 @router.post("/users", response_model=UserOut)
 def admin_create_user(
     body: CreateUserRequest,
-    _user: User = Depends(require_superadmin),
+    _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return create_user(db, body.username, body.password, body.role)
+    return create_user(db, body.username, body.password, body.role, operator=_user)
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -57,6 +57,16 @@ def admin_update_role(
     db: Session = Depends(get_db),
 ):
     return update_user_role(db, user_id, body.role)
+
+
+@router.put("/users/{user_id}/whitelist", response_model=UserOut)
+def admin_update_whitelist(
+    user_id: int,
+    body: UpdateWhitelistRequest,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return update_user_whitelist(db, user_id, body.is_whitelisted)
 
 
 @router.put("/users/{user_id}/reset-password", response_model=UserOut)

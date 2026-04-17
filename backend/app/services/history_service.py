@@ -159,7 +159,11 @@ def get_all_history(
     end_date: Optional[datetime] = None,
 ):
     cos_config = get_optional_cos_config(db)
-    base_query = db.query(Task)
+    base_query = (
+        db.query(Task)
+        .join(User, User.id == Task.user_id)
+        .filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+    )
 
     if status:
         base_query = base_query.filter(Task.status == status)

@@ -13,12 +13,16 @@ from app.utils.security import hash_password
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 
+def _non_whitelisted_user_filter():
+    return User.is_whitelisted.is_(False)
+
+
 def _get_first_admin_id(db: Session) -> int | None:
     first = db.query(User).filter(User.role == "admin").order_by(User.created_at.asc()).first()
     return first.id if first else None
 
 
-def create_user(db: Session, username: str, password: str, role: str = "user") -> User:
+def create_user(db: Session, username: str, password: str, role: str = "user", operator: User | None = None) -> User:
     if username == "administrator":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户名为系统保留，不可使用")
     exists = db.query(User).filter(User.username == username).first()
@@ -28,6 +32,8 @@ def create_user(db: Session, username: str, password: str, role: str = "user") -
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少6位")
     if role not in ("user", "admin"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色必须是 user 或 admin")
+    if role == "admin" and operator and operator.role != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可创建管理员账号")
 
     user = User(username=username, password_hash=hash_password(password), role=role)
     db.add(user)
@@ -76,6 +82,19 @@ def update_user_role(db: Session, user_id: int, new_role: str) -> User:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="初始管理员不允许被降级")
 
     user.role = new_role
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_whitelist(db: Session, user_id: int, is_whitelisted: bool) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    if user.role == "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无法修改超级管理员")
+
+    user.is_whitelisted = is_whitelisted
     db.commit()
     db.refresh(user)
     return user
@@ -158,15 +177,34 @@ def get_credit_logs(
 
 def get_stats(db: Session) -> dict:
     now = datetime.now(timezone.utc)
-    last_7 = db.query(func.count(Task.id)).filter(Task.created_at >= now - timedelta(days=7)).scalar()
-    last_30 = db.query(func.count(Task.id)).filter(Task.created_at >= now - timedelta(days=30)).scalar()
-    total_users = db.query(func.count(User.id)).filter(User.role != "superadmin").scalar()
-    active_users = db.query(func.count(User.id)).filter(User.status == "active", User.role != "superadmin").scalar()
+    total_users = db.query(func.count(User.id)).filter(User.role != "superadmin", _non_whitelisted_user_filter()).scalar()
+    total_tasks = (
+        db.query(func.count(Task.id))
+        .join(User, User.id == Task.user_id)
+        .filter(User.role != "superadmin", _non_whitelisted_user_filter())
+        .scalar()
+    )
+    total_credit_cost = (
+        db.query(func.coalesce(func.sum(Task.credit_cost), 0))
+        .join(User, User.id == Task.user_id)
+        .filter(User.role != "superadmin", _non_whitelisted_user_filter())
+        .scalar()
+    )
+    active_users = (
+        db.query(func.count(func.distinct(Task.user_id)))
+        .join(User, User.id == Task.user_id)
+        .filter(
+            Task.created_at >= now - timedelta(days=7),
+            User.role != "superadmin",
+            _non_whitelisted_user_filter(),
+        )
+        .scalar()
+    )
 
     return {
-        "last_7_days": last_7 or 0,
-        "last_30_days": last_30 or 0,
         "total_users": total_users or 0,
+        "total_tasks": total_tasks or 0,
+        "total_credit_cost": int(total_credit_cost or 0),
         "active_users": active_users or 0,
     }
 
@@ -329,9 +367,11 @@ def _task_query(
     model: str | None = None,
     mode: str | None = None,
 ):
-    query = db.query(Task).filter(
+    query = db.query(Task).join(User, User.id == Task.user_id).filter(
         Task.created_at >= _to_db_datetime(start_date),
         Task.created_at <= _to_db_datetime(end_date),
+        User.role != "superadmin",
+        _non_whitelisted_user_filter(),
     )
     if status_filter:
         query = query.filter(Task.status == status_filter)
@@ -351,7 +391,7 @@ def _user_query(
     end_date: datetime | None = None,
     user_id: int | None = None,
 ):
-    query = db.query(User).filter(User.role != "superadmin")
+    query = db.query(User).filter(User.role != "superadmin", _non_whitelisted_user_filter())
     if start_date is not None:
         query = query.filter(User.created_at >= _to_db_datetime(start_date))
     if end_date is not None:

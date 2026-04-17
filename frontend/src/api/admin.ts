@@ -48,6 +48,10 @@ export function updateUserRole(userId: number, role: string): Promise<AdminUser>
   return client.put(`/admin/users/${userId}/role`, { role });
 }
 
+export function updateUserWhitelist(userId: number, isWhitelisted: boolean): Promise<AdminUser> {
+  return client.put(`/admin/users/${userId}/whitelist`, { is_whitelisted: isWhitelisted });
+}
+
 export function resetUserPassword(userId: number, newPassword: string): Promise<AdminUser> {
   return client.put(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
 }

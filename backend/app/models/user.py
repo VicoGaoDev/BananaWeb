@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, func
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, func
 from app.database import Base
 
 
@@ -11,6 +11,7 @@ class User(Base):
     avatar_url = Column(String(500), default="")
     role = Column(String(20), default="user")
     status = Column(String(10), default="active")
+    is_whitelisted = Column(Boolean, default=False, nullable=False, server_default="0")
     credits = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

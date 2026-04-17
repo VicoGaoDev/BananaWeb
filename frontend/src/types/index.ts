@@ -110,6 +110,7 @@ export interface AdminUser {
   avatar_url?: string;
   role: string;
   status: string;
+  is_whitelisted: boolean;
   credits: number;
   created_at: string;
 }
@@ -149,9 +150,9 @@ export interface CreativeTemplate {
 }
 
 export interface AdminStats {
-  last_7_days: number;
-  last_30_days: number;
   total_users: number;
+  total_tasks: number;
+  total_credit_cost: number;
   active_users: number;
 }
 

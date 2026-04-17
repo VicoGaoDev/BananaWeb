@@ -25,6 +25,7 @@ def on_startup():
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
+    _ensure_user_whitelist_column()
     _ensure_image_required_columns()
     _ensure_task_credit_cost_column()
     _ensure_template_required_columns()
@@ -43,6 +44,8 @@ def _ensure_schema_compat():
     with engine.begin() as conn:
         if "avatar_url" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500) DEFAULT ''"))
+        if "is_whitelisted" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN is_whitelisted BOOLEAN DEFAULT 0"))
 
     task_columns = {col["name"] for col in inspector.get_columns("tasks")}
     with engine.begin() as conn:
@@ -182,6 +185,19 @@ def _ensure_template_required_columns():
             conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
         if "sort_order" not in template_columns:
             conn.execute(text("ALTER TABLE templates ADD COLUMN sort_order INTEGER DEFAULT 0"))
+
+
+def _ensure_user_whitelist_column():
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
+    if "is_whitelisted" in user_columns:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN is_whitelisted BOOLEAN DEFAULT 0"))
 
 
 def _ensure_image_required_columns():
