@@ -1127,11 +1127,11 @@ onBeforeUnmount(() => {
                   class="prompt-input reverse-result-input"
                 />
                 <div class="reverse-actions">
-                  <a-button @click="copyReversePrompt">
+                  <a-button class="reverse-action-btn reverse-action-btn-secondary" @click="copyReversePrompt">
                     <template #icon><CopyOutlined /></template>
                     复制提示词
                   </a-button>
-                  <a-button type="primary" @click="applyReversePrompt">
+                  <a-button class="reverse-action-btn reverse-action-btn-primary" type="primary" @click="applyReversePrompt">
                     带入文生图/图编辑
                   </a-button>
                 </div>
@@ -2038,6 +2038,44 @@ onBeforeUnmount(() => {
   gap: 10px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+.reverse-action-btn {
+  height: 42px;
+  border-radius: 14px;
+  font-weight: 700;
+  border: none !important;
+  box-shadow: none !important;
+
+  &:hover,
+  &:focus {
+    transform: translateY(-1px);
+  }
+}
+
+.reverse-action-btn-secondary {
+  color: #c67a00 !important;
+  background: linear-gradient(180deg, #fff7e6, #ffe6bb) !important;
+  border: 1px solid #f2cb81 !important;
+
+  &:hover,
+  &:focus {
+    color: #b96e00 !important;
+    background: linear-gradient(180deg, #fff2d8, #ffddb0) !important;
+    border-color: #ecbc61 !important;
+  }
+}
+
+.reverse-action-btn-primary {
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  border: none !important;
+  box-shadow: 0 14px 24px rgba(255, 169, 37, 0.22) !important;
+
+  &:hover,
+  &:focus {
+    background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
+    box-shadow: 0 16px 28px rgba(255, 169, 37, 0.26) !important;
+  }
 }
 
 .reverse-result-placeholder {

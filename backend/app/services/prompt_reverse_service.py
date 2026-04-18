@@ -62,7 +62,7 @@ def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
             detail=f"积分不足，需要 {credit_cost} 积分，当前余额 {user.credits if user else 0}",
         )
 
-    image_data_url = _load_image_as_data_url(image_url)
+    image_data_url = load_image_as_data_url(image_url)
     rendered = render_config(
         api_config,
         {
