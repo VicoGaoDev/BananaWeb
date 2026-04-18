@@ -13,7 +13,7 @@
 | 层     | 技术                                                         |
 | ----- | ---------------------------------------------------------- |
 | 前端    | Vue 3 + TypeScript + Vue Router + Pinia + Ant Design Vue 4 |
-| 后端    | FastAPI + SQLAlchemy 2.0 + SQLite（WAL 模式）                  |
+| 后端    | FastAPI + SQLAlchemy 2.0 + MySQL                              |
 | AI 能力 | Gemini（文生图 / 图编辑 / 局部重绘）、通义千问 Qwen-VL（提示词反推）               |
 | 异步任务  | Celery + Redis（可选，无 Redis 自动降级为后台线程）                       |
 | 部署    | 前端 Vercel / 后端 VPS 或 Railway                               |
@@ -959,8 +959,7 @@ CREATE TABLE external_api_scene_bindings (
 1. Root Directory: `backend`
 2. Build: `pip install -r requirements.txt`
 3. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. 挂载目录：
-  - `/app/data`
+4. 如需兼容旧的本地上传文件，可挂载目录：
   - `/app/uploads`
 
 ## 13.3 环境变量
@@ -970,7 +969,13 @@ CREATE TABLE external_api_scene_bindings (
 | ----------------------------- | -------------------------------- | ------------------------- |
 | `SECRET_KEY`                  | `change-me-in-production`        | JWT 签名密钥                  |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                           | Token 有效期（分钟）             |
-| `DB_PATH`                     | `backend/data/banana.db`         | SQLite 数据库路径              |
+| `DATABASE_URL`                | 空                                  | 完整 MySQL 连接串，优先级高于 `DB_*` |
+| `DB_HOST`                     | `sh-cynosdbmysql-grp-kmfw4ojg.sql.tencentcdb.com` | 开发环境 MySQL 主机 |
+| `DB_PORT`                     | `20396`                            | 开发环境 MySQL 端口             |
+| `DB_USER`                     | 无默认值                             | MySQL 用户名                  |
+| `DB_PASSWORD`                 | 无默认值                             | MySQL 密码                   |
+| `DB_NAME`                     | 无默认值                             | MySQL 数据库名                 |
+| `DB_CHARSET`                  | `utf8mb4`                          | MySQL 连接字符集               |
 | `UPLOAD_DIR`                  | `backend/uploads`                | 上传文件与生成结果存储路径             |
 | `AI_API_URL`                  | `https://nanoapi.poloai.top/...` | 默认生图接口迁移种子地址              |
 | `AI_TIMEOUT`                  | `120`                            | AI 接口超时时间                 |

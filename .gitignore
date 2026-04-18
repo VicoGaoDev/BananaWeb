@@ -15,12 +15,10 @@ __pycache__/
 venv/
 backend/venv/
 backend/uploads/
-*.db
 
 # Environment
 .env
 backend/.env
-backend/data/
 
 # IDE
 .vscode/

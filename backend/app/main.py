@@ -20,8 +20,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    if settings.is_sqlite:
-        Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)

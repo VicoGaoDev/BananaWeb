@@ -7,7 +7,7 @@
 | 模块 | 技术 |
 |------|------|
 | 前端 | Vue 3 + TypeScript + Ant Design Vue 4 + Pinia |
-| 后端 | Python FastAPI + SQLAlchemy + SQLite / MySQL |
+| 后端 | Python FastAPI + SQLAlchemy + MySQL |
 | 异步任务 | Celery + Redis（可选，开发环境自动降级为线程） |
 | 图片存储 | 腾讯云 COS（前端临时凭证直传 + 后端结果图上传） |
 | 部署 | 前端 Vercel / 后端 VPS |
@@ -32,7 +32,6 @@ Banana_Web/
 │   │   ├── services/      # 业务逻辑层
 │   │   ├── workers/       # Celery 异步任务
 │   │   └── utils/         # 工具函数
-│   └── data/              # SQLite 数据库（自动创建）
 └── prd.md                 # 产品需求文档
 ```
 
@@ -55,6 +54,13 @@ pip install -r requirements.txt
 
 # 复制环境变量（按需修改）
 cp .env.example .env
+
+# 填写数据库账号信息（默认连开发环境 MySQL 主机）
+# DB_HOST=sh-cynosdbmysql-grp-kmfw4ojg.sql.tencentcdb.com
+# DB_PORT=20396
+# DB_USER=<user>
+# DB_PASSWORD=<password>
+# DB_NAME=<database>
 
 # 启动服务（首次启动自动建表 + 创建默认管理员）
 uvicorn app.main:app --reload --port 8000
@@ -134,7 +140,7 @@ celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 
 ### 后端 — VPS / Railway / Render
 
-后端默认使用 SQLite，也支持通过 `DATABASE_URL` 切换到 MySQL：
+后端统一通过 `DATABASE_URL` 连接云端 MySQL：
 
 **方案 A：VPS 部署**
 ```bash
@@ -148,54 +154,62 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 配合 Nginx 反向代理 + HTTPS。
 
-如果启用腾讯云 COS，后端服务器不再依赖本地磁盘保存业务图片，但 SQLite 数据库目录仍需持久化。
-
 **方案 B：Railway**
 1. 在 Railway 创建项目，选择 GitHub 仓库
 2. Root Directory 设为 `backend`
 3. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. 添加持久化 Volume 挂载到 `/app/data` 和 `/app/uploads`
+4. 如需兼容旧的本地上传文件，可添加持久化 Volume 挂载到 `/app/uploads`
 
 如果已全面切换到腾讯云 COS，`/app/uploads` 主要只用于兼容旧数据与失败占位图，核心业务图片将写入 COS。
 
-### 数据库切换到 MySQL
+### MySQL 配置
 
-1. 在 `backend/.env` 中配置 MySQL 连接串：
+项目运行时优先读取 `DATABASE_URL`；如果未提供，会自动用 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME` 拼接 MySQL 连接串。建议按环境分开配置：
+
+- 本地开发：在 `backend/.env` 中填写 `DB_*`
+- 正式环境：通过部署平台环境变量或 CI 注入 `DATABASE_URL` 或 `DB_*`，不要把生产库连接串提交进仓库
+
+1. 本地开发在 `backend/.env` 中配置 MySQL：
 
 ```env
-DATABASE_URL=mysql+pymysql://user:password@host:3306/database?charset=utf8mb4
+DB_HOST=sh-cynosdbmysql-grp-kmfw4ojg.sql.tencentcdb.com
+DB_PORT=20396
+DB_USER=user
+DB_PASSWORD=password
+DB_NAME=database
+DB_CHARSET=utf8mb4
 DB_AUTO_CREATE_TABLES=true
 DB_RUN_SCHEMA_COMPAT=false
 DB_RUN_SEED=false
 ```
 
-2. 安装新增依赖：
+2. 正式环境可继续直接注入完整 `DATABASE_URL`，例如内网 MySQL：
+
+```env
+DATABASE_URL=mysql+pymysql://user:password@172.17.0.17:3306/database?charset=utf8mb4
+DB_RUN_SCHEMA_COMPAT=false
+DB_RUN_SEED=false
+```
+
+如果使用当前仓库中的 GitHub Actions + CloudBase 工作流，需要在仓库 Secrets 中配置：
+
+- `TENCENT_CLOUD_SECRET_ID`
+- `TENCENT_CLOUD_SECRET_KEY`
+- `PROD_DATABASE_URL`
+
+工作流会在部署前生成 `backend/.env`，再执行 `cloudbase deploy`。
+
+3. 安装依赖：
 
 ```bash
 cd backend
 pip install -r requirements.txt
 ```
 
-3. 在切换窗口前备份 SQLite：
-
-```bash
-cp backend/data/banana.db backend/data/banana.db.bak
-```
-
-4. 执行一次性迁移：
-
-```bash
-cd backend
-python scripts/migrate_sqlite_to_mysql.py \
-  --sqlite-path data/banana.db \
-  --target-url "mysql+pymysql://user:password@host:3306/database?charset=utf8mb4"
-```
-
-5. 迁移完成后再启动后端，并检查登录、历史记录、管理配置和任务查询是否正常。
+4. 启动后端前，请确认目标 MySQL 已可访问，并检查登录、历史记录、管理配置和任务查询是否正常。
 
 说明：
-- `scripts/migrate_sqlite_to_mysql.py` 会先建表，再按外键顺序导入数据，并自动做行数与关键外键校验。
-- 如果只想复核迁移结果，可加 `--validate-only`。
+- 项目不再提供 SQLite 回退；缺少 `DATABASE_URL` 时，需要提供完整的 `DB_*` MySQL 配置。
 - MySQL 生产环境建议禁用运行时补列与种子逻辑，即 `DB_RUN_SCHEMA_COMPAT=false`、`DB_RUN_SEED=false`。
 
 ## API 概览
