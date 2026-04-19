@@ -60,13 +60,15 @@ def my_credit_logs(
     user_id: Optional[int] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
+    direction: Optional[str] = Query(None, pattern="^(increase|decrease)$"),
+    mode: Optional[str] = Query(None, pattern="^(generate|inpaint|promptReverse|manual)$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     is_admin = user.role in ("admin", "superadmin")
     effective_user_id = user_id if is_admin else user.id
     return get_credit_logs(db, user_id=effective_user_id, page=page, page_size=page_size,
-                           start_date=start_date, end_date=end_date)
+                           start_date=start_date, end_date=end_date, direction=direction, mode=mode)
 
 
 @router.get("/prompt-history")

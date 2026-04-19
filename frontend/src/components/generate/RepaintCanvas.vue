@@ -7,9 +7,11 @@ const EXPORT_MASK_BG = "#000";
 
 const props = withDefaults(defineProps<{
   imageUrl: string;
+  maskUrl?: string;
   brushSize?: number;
   tool?: "paint" | "erase";
 }>(), {
+  maskUrl: "",
   brushSize: 28,
   tool: "paint",
 });
@@ -63,7 +65,67 @@ function setupViewCanvas() {
   ctx.clearRect(0, 0, rect.width, rect.height);
 }
 
-function initializeCanvas() {
+function renderPreviewFromExport() {
+  const canvas = canvasRef.value;
+  if (!canvas || !exportCtx || !exportCanvas.width || !exportCanvas.height) return;
+  const viewCtx = canvas.getContext("2d");
+  if (!viewCtx) return;
+
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = Math.max(1, Math.round(rect.width));
+  tempCanvas.height = Math.max(1, Math.round(rect.height));
+  const tempCtx = tempCanvas.getContext("2d");
+  if (!tempCtx) return;
+
+  tempCtx.drawImage(exportCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+  const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const isMasked = data[i] > 0 || data[i + 1] > 0 || data[i + 2] > 0;
+    data[i] = 255;
+    data[i + 1] = 171;
+    data[i + 2] = 37;
+    data[i + 3] = isMasked ? 128 : 0;
+  }
+
+  tempCtx.putImageData(imageData, 0, 0);
+  viewCtx.clearRect(0, 0, rect.width, rect.height);
+  viewCtx.drawImage(tempCanvas, 0, 0, rect.width, rect.height);
+}
+
+function loadImage(url: string): Promise<HTMLImageElement | null> {
+  const resolvedUrl = (url || "").trim();
+  if (!resolvedUrl) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = resolvedUrl;
+  });
+}
+
+async function applyInitialMask() {
+  if (!props.maskUrl || !exportCtx) {
+    renderPreviewFromExport();
+    recomputeMaskState();
+    return;
+  }
+  const maskImage = await loadImage(props.maskUrl);
+  if (!maskImage) {
+    renderPreviewFromExport();
+    recomputeMaskState();
+    return;
+  }
+  exportCtx.drawImage(maskImage, 0, 0, exportCanvas.width, exportCanvas.height);
+  renderPreviewFromExport();
+  recomputeMaskState();
+}
+
+async function initializeCanvas() {
   const image = imageRef.value;
   const canvas = canvasRef.value;
   if (!image || !image.naturalWidth || !image.naturalHeight) return;
@@ -77,11 +139,12 @@ function initializeCanvas() {
   redoStack.length = 0;
   hasMask.value = false;
   emit("mask-change", false);
+  await applyInitialMask();
 }
 
 async function handleImageLoad() {
   await nextTick();
-  initializeCanvas();
+  await initializeCanvas();
 }
 
 function drawLine(
@@ -159,8 +222,7 @@ function getPoints(event: PointerEvent) {
 function handlePointerDown(event: PointerEvent) {
   const points = getPoints(event);
   const canvas = canvasRef.value;
-  const viewCtx = canvas?.getContext("2d");
-  if (!points || !canvas || !viewCtx || !exportCtx) return;
+  if (!points || !canvas || !exportCtx) return;
 
   drawing = true;
   canvas.setPointerCapture(event.pointerId);
@@ -168,14 +230,6 @@ function handlePointerDown(event: PointerEvent) {
   lastViewPoint = points.viewPoint;
   lastExportPoint = points.exportPoint;
 
-  drawLine(
-    viewCtx,
-    points.viewPoint,
-    points.viewPoint,
-    props.brushSize,
-    PREVIEW_MASK_COLOR,
-    props.tool
-  );
   drawLine(
     exportCtx,
     points.exportPoint,
@@ -185,24 +239,14 @@ function handlePointerDown(event: PointerEvent) {
     props.tool
   );
 
+  renderPreviewFromExport();
   recomputeMaskState();
 }
 
 function handlePointerMove(event: PointerEvent) {
   if (!drawing) return;
   const points = getPoints(event);
-  const canvas = canvasRef.value;
-  const viewCtx = canvas?.getContext("2d");
-  if (!points || !viewCtx || !exportCtx || !lastViewPoint || !lastExportPoint) return;
-
-  drawLine(
-    viewCtx,
-    lastViewPoint,
-    points.viewPoint,
-    props.brushSize,
-    PREVIEW_MASK_COLOR,
-    props.tool
-  );
+  if (!points || !exportCtx || !lastViewPoint || !lastExportPoint) return;
   drawLine(
     exportCtx,
     lastExportPoint,
@@ -214,6 +258,7 @@ function handlePointerMove(event: PointerEvent) {
 
   lastViewPoint = points.viewPoint;
   lastExportPoint = points.exportPoint;
+  renderPreviewFromExport();
 }
 
 function stopDrawing(event?: PointerEvent) {
@@ -290,7 +335,12 @@ defineExpose({
 
 watch(() => props.imageUrl, async () => {
   await nextTick();
-  initializeCanvas();
+  await initializeCanvas();
+});
+
+watch(() => props.maskUrl, async () => {
+  await nextTick();
+  await initializeCanvas();
 });
 </script>
 

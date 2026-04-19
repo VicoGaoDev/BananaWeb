@@ -62,6 +62,8 @@ class UserHistoryCardItem(BaseModel):
     reference_image_thumbs: list[str] = []
     source_image: str = ""
     source_image_thumb: str = ""
+    mask_image: str = ""
+    mask_image_thumb: str = ""
     num_images: int = 1
     size: str
     resolution: str = ""

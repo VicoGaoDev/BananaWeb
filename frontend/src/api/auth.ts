@@ -42,6 +42,8 @@ export function getCreditLogs(params: {
   user_id?: number;
   start_date?: string;
   end_date?: string;
+  direction?: "increase" | "decrease";
+  mode?: "generate" | "inpaint" | "promptReverse" | "manual";
 }): Promise<{ total: number; items: CreditLog[] }> {
   return client.get("/auth/credit-logs", { params });
 }

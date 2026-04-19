@@ -10,6 +10,7 @@ import {
   updateUserWhitelist,
   resetUserPassword,
   allocateCredits,
+  resetUserCredits,
 } from "@/api/admin";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser } from "@/types";
@@ -49,7 +50,7 @@ const columns = [
   { title: "积分", dataIndex: "credits", width: 100 },
   { title: "状态", dataIndex: "status", width: 90 },
   { title: "创建时间", dataIndex: "created_at", width: 170 },
-  { title: "操作", key: "action", width: 320 },
+  { title: "操作", key: "action", width: 420 },
 ];
 
 const filteredUsers = computed(() => {
@@ -183,6 +184,25 @@ async function handleAllocateCredits() {
   }
 }
 
+function handleResetCredits(user: AdminUser) {
+  Modal.confirm({
+    title: `确认将 "${user.username}" 的积分清零？`,
+    content: `当前剩余积分为 ${user.credits}，清零后会写入积分日志。`,
+    okText: "确认清零",
+    okButtonProps: { danger: true },
+    centered: true,
+    async onOk() {
+      try {
+        await resetUserCredits(user.id);
+        message.success("积分已清零");
+        await load();
+      } catch (err: any) {
+        message.error(err.response?.data?.detail || "积分清零失败");
+      }
+    },
+  });
+}
+
 async function handleToggleWhitelist(user: AdminUser) {
   whitelistLoadingId.value = user.id;
   const next = !user.is_whitelisted;
@@ -222,7 +242,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         </div>
         <div>
           <div class="warm-page-title">用户管理</div>
-          <div class="warm-page-desc">管理员可创建普通用户、管理白名单与分配积分，超级管理员可额外管理权限。</div>
+          <div class="warm-page-desc">管理员可创建普通用户、管理白名单、分配积分与积分清零，超级管理员可额外管理权限。</div>
         </div>
       </div>
       <div class="header-actions">
@@ -277,7 +297,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
         :loading="loading"
         row-key="id"
         :pagination="false"
-        :scroll="{ x: 1050 }"
+        :scroll="{ x: 1180 }"
         class="admin-mobile-table"
       >
         <template #bodyCell="{ column, record }">
@@ -314,6 +334,17 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               <a-button type="link" size="small" class="user-action-btn user-action-btn-primary" @click="openCredits(record)">
                 <template #icon><WalletOutlined /></template>
                 分配积分
+              </a-button>
+              <a-divider type="vertical" />
+              <a-button
+                type="link"
+                size="small"
+                class="user-action-btn user-action-btn-danger"
+                :danger="true"
+                :disabled="record.credits <= 0"
+                @click="handleResetCredits(record)"
+              >
+                积分清零
               </a-button>
               <template v-if="isSuperAdmin">
                 <a-divider type="vertical" />

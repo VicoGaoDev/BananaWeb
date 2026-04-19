@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, h, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import {
@@ -8,6 +8,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  LoadingOutlined,
   PictureOutlined,
   ReloadOutlined,
 } from "@ant-design/icons-vue";
@@ -36,6 +37,7 @@ const selectedImageIds = ref<number[]>([]);
 const batchMode = ref(false);
 const HISTORY_POLL_INTERVAL_MS = 10000;
 let historyPollTimer: ReturnType<typeof setInterval> | null = null;
+let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
@@ -130,7 +132,13 @@ async function loadModels() {
 
 onMounted(loadHistory);
 onMounted(loadModels);
-onBeforeUnmount(stopHistoryPolling);
+onBeforeUnmount(() => {
+  stopHistoryPolling();
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = null;
+  }
+});
 
 function handlePageChange(p: number) {
   page.value = p;
@@ -182,20 +190,30 @@ function detailMetaList(item: UserHistoryCard) {
   ].filter(Boolean);
 }
 
-function applyFilters() {
-  page.value = 1;
-  loadHistory();
-}
-
 function resetFilters() {
   typeFilter.value = undefined;
   modelFilter.value = undefined;
   statusFilter.value = undefined;
   promptFilter.value = "";
   dateRangeFilter.value = null;
-  page.value = 1;
-  loadHistory();
 }
+
+watch(
+  [
+    typeFilter,
+    modelFilter,
+    statusFilter,
+    promptFilter,
+    dateRangeFilter,
+  ],
+  () => {
+    if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = window.setTimeout(() => {
+      page.value = 1;
+      loadHistory(true);
+    }, 250);
+  }
+);
 
 function openPreview(url: string) {
   if (!url) return;
@@ -423,7 +441,8 @@ function handleReedit(item: UserHistoryCard) {
     localStorage.setItem(
       "generateDraftFromHistory",
       JSON.stringify({
-        mode: "generate",
+        mode: "promptReverse",
+        source_image: item.source_image,
         prompt: item.prompt,
       })
     );
@@ -436,6 +455,7 @@ function handleReedit(item: UserHistoryCard) {
         size: item.size,
         resolution: item.resolution,
         source_image: item.source_image,
+        mask_image: item.mask_image,
       })
     );
   } else {
@@ -496,14 +516,12 @@ function handleReedit(item: UserHistoryCard) {
         placeholder="按提示词筛选"
         style="width: min(320px, 100%)"
         allow-clear
-        @pressEnter="applyFilters"
       />
       <a-range-picker
         v-model:value="dateRangeFilter"
         :placeholder="['开始日期', '结束日期']"
         style="width: 250px"
       />
-      <a-button type="primary" class="history-filter-btn history-filter-btn-primary" @click="applyFilters">筛选</a-button>
       <a-button class="history-filter-btn history-filter-btn-secondary" @click="resetFilters">重置</a-button>
       <a-tooltip :title="batchMode ? '退出批量模式' : '进入批量模式'">
         <a-button
@@ -578,7 +596,12 @@ function handleReedit(item: UserHistoryCard) {
               @click.stop="getHistoryCardPreview(item) && openPreview(getHistoryCardPreview(item))"
             />
             <div v-else class="result-card-placeholder">
-              <ClockCircleOutlined />
+              <template v-if="item.status === 'pending' || item.status === 'processing'">
+                <a-spin
+                  :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
+                />
+              </template>
+              <ClockCircleOutlined v-else />
             </div>
           </div>
 
@@ -666,7 +689,9 @@ function handleReedit(item: UserHistoryCard) {
                     loading="lazy"
                   />
                   <div v-else class="result-card-placeholder">
-                    等待中...
+                    <a-spin
+                      :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
+                    />
                   </div>
                 </div>
               </div>

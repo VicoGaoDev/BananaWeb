@@ -87,6 +87,7 @@ const referenceItems = ref<UploadPreviewItem[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
 const sourceImageUrl = ref("");
 const sourcePreviewUrl = ref("");
+const repaintMaskUrl = ref("");
 const sourceUploading = ref(false);
 const sourceInput = ref<HTMLInputElement | null>(null);
 const reverseImageUrl = ref("");
@@ -471,6 +472,7 @@ async function handleSourceFileChange(e: Event) {
   try {
     const res = await uploadReferenceImage(file, "source");
     sourceImageUrl.value = res.url;
+    repaintMaskUrl.value = "";
     hasRepaintMask.value = false;
     repaintCanvasRef.value?.clearMask();
     message.success("原图上传成功");
@@ -486,6 +488,7 @@ function removeSourceImage() {
   revokeObjectUrl(sourcePreviewUrl.value);
   sourcePreviewUrl.value = "";
   sourceImageUrl.value = "";
+  repaintMaskUrl.value = "";
   hasRepaintMask.value = false;
   canUndoMask.value = false;
   canRedoMask.value = false;
@@ -527,6 +530,7 @@ function removeReverseImage() {
 }
 
 function clearRepaintMask() {
+  repaintMaskUrl.value = "";
   repaintCanvasRef.value?.clearMask();
   hasRepaintMask.value = false;
   canUndoMask.value = false;
@@ -718,10 +722,10 @@ function handleReeditTask(task: GeneratedTaskItem) {
     revokeObjectUrl(sourcePreviewUrl.value);
     sourcePreviewUrl.value = "";
     sourceImageUrl.value = task.sourceImage || "";
+    repaintMaskUrl.value = task.maskImage || "";
     hasRepaintMask.value = false;
     canUndoMask.value = false;
     canRedoMask.value = false;
-    repaintCanvasRef.value?.clearMask();
   } else {
     prompt.value = task.prompt;
     repaintPrompt.value = "";
@@ -731,6 +735,7 @@ function handleReeditTask(task: GeneratedTaskItem) {
     revokeObjectUrl(sourcePreviewUrl.value);
     sourcePreviewUrl.value = "";
     sourceImageUrl.value = "";
+    repaintMaskUrl.value = "";
     hasRepaintMask.value = false;
     canUndoMask.value = false;
     canRedoMask.value = false;
@@ -845,7 +850,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
   if (!raw) return;
   try {
     const draft = JSON.parse(raw) as {
-      mode?: "generate" | "inpaint";
+      mode?: "generate" | "inpaint" | "promptReverse";
       prompt?: string;
       model?: string;
       reference_images?: string[];
@@ -853,8 +858,13 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       size?: string;
       resolution?: string;
       source_image?: string;
+      mask_image?: string;
     };
-    const draftMode = draft.mode === "inpaint" ? "inpaint" : "generate";
+    const draftMode = draft.mode === "inpaint"
+      ? "inpaint"
+      : draft.mode === "promptReverse"
+        ? "promptReverse"
+        : "generate";
     generateMode.value = draftMode;
     size.value = draft.size || "9:16";
     resolution.value = draft.resolution || "2K";
@@ -864,12 +874,28 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       revokeObjectUrl(sourcePreviewUrl.value);
       sourceImageUrl.value = draft.source_image || "";
       sourcePreviewUrl.value = "";
+      repaintMaskUrl.value = draft.mask_image || "";
       hasRepaintMask.value = false;
       canUndoMask.value = false;
       canRedoMask.value = false;
-      repaintCanvasRef.value?.clearMask();
       prompt.value = "";
       syncReferenceItems([]);
+      numImages.value = 1;
+      reverseImageUrl.value = "";
+      reversePromptResult.value = "";
+    } else if (draftMode === "promptReverse") {
+      reverseImageUrl.value = draft.source_image || "";
+      reversePromptResult.value = draft.prompt || "";
+      prompt.value = "";
+      repaintPrompt.value = "";
+      syncReferenceItems([]);
+      revokeObjectUrl(sourcePreviewUrl.value);
+      sourcePreviewUrl.value = "";
+      sourceImageUrl.value = "";
+      repaintMaskUrl.value = "";
+      hasRepaintMask.value = false;
+      canUndoMask.value = false;
+      canRedoMask.value = false;
       numImages.value = 1;
     } else {
       prompt.value = draft.prompt || "";
@@ -880,6 +906,9 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       revokeObjectUrl(sourcePreviewUrl.value);
       sourcePreviewUrl.value = "";
       sourceImageUrl.value = "";
+      repaintMaskUrl.value = "";
+      reverseImageUrl.value = "";
+      reversePromptResult.value = "";
       hasRepaintMask.value = false;
       canUndoMask.value = false;
       canRedoMask.value = false;
@@ -1218,6 +1247,7 @@ onBeforeUnmount(() => {
                     <RepaintCanvas
                       ref="repaintCanvasRef"
                       :image-url="sourceDisplayUrl"
+                      :mask-url="resolveImageUrl(repaintMaskUrl)"
                       :brush-size="brushSize"
                       :tool="repaintTool"
                       @mask-change="handleMaskChange"

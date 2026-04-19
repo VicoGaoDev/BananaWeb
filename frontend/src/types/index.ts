@@ -103,6 +103,8 @@ export interface UserHistoryCard {
   reference_image_thumbs: string[];
   source_image: string;
   source_image_thumb: string;
+  mask_image: string;
+  mask_image_thumb: string;
   num_images: number;
   size: string;
   resolution: string;
@@ -134,6 +136,7 @@ export interface CreditLog {
   username: string;
   amount: number;
   type: "allocate" | "consume";
+  mode: TaskMode | "manual";
   description: string;
   operator_name: string;
   task_id?: number;

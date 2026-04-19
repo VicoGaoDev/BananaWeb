@@ -155,6 +155,36 @@ def allocate_credits(db: Session, user_id: int, amount: int, description: str, o
     return user
 
 
+def reset_user_credits(db: Session, user_id: int, description: str, operator_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    if user.credits <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前积分已为 0，无需清零")
+
+    deducted_amount = int(user.credits or 0)
+    user.credits = 0
+    log = CreditLog(
+        user_id=user_id,
+        amount=-deducted_amount,
+        type="allocate",
+        description=description or f"管理员积分清零（原余额 {deducted_amount}）",
+        operator_id=operator_id,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def _resolve_credit_log_mode(log: CreditLog, task_modes: dict[int, str]) -> str:
+    if log.task_id and task_modes.get(log.task_id):
+        return task_modes[log.task_id]
+    if log.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION:
+        return PROMPT_REVERSE_MODE
+    return "manual"
+
+
 def get_credit_logs(
     db: Session,
     user_id: int | None = None,
@@ -162,6 +192,8 @@ def get_credit_logs(
     page_size: int = 20,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
+    direction: str | None = None,
+    mode: str | None = None,
 ) -> dict:
     query = db.query(CreditLog)
     if user_id is not None:
@@ -170,19 +202,44 @@ def get_credit_logs(
         query = query.filter(CreditLog.created_at >= start_date)
     if end_date is not None:
         query = query.filter(CreditLog.created_at <= end_date)
-    total = query.count()
-    logs = query.order_by(CreditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    logs = query.order_by(CreditLog.created_at.desc()).all()
+
+    task_ids = {log.task_id for log in logs if log.task_id}
+    task_modes = {
+        task.id: (task.mode or "generate")
+        for task in db.query(Task).filter(Task.id.in_(task_ids)).all()
+    } if task_ids else {}
+
+    filtered_logs: list[CreditLog] = []
+    for log in logs:
+        if direction == "increase" and log.amount <= 0:
+            continue
+        if direction == "decrease" and log.amount >= 0:
+            continue
+        resolved_mode = _resolve_credit_log_mode(log, task_modes)
+        if mode and resolved_mode != mode:
+            continue
+        filtered_logs.append(log)
+
+    total = len(filtered_logs)
+    paged_logs = filtered_logs[(page - 1) * page_size: page * page_size]
 
     items = []
-    for log in logs:
-        user = db.query(User).filter(User.id == log.user_id).first()
-        operator = db.query(User).filter(User.id == log.operator_id).first() if log.operator_id else None
+    user_cache: dict[int, User | None] = {}
+    operator_cache: dict[int, User | None] = {}
+    for log in paged_logs:
+        if log.user_id not in user_cache:
+            user_cache[log.user_id] = db.query(User).filter(User.id == log.user_id).first()
+        if log.operator_id and log.operator_id not in operator_cache:
+            operator_cache[log.operator_id] = db.query(User).filter(User.id == log.operator_id).first()
+        operator = operator_cache.get(log.operator_id) if log.operator_id else None
         items.append({
             "id": log.id,
             "user_id": log.user_id,
-            "username": user.username if user else "",
+            "username": user_cache[log.user_id].username if user_cache[log.user_id] else "",
             "amount": log.amount,
             "type": log.type,
+            "mode": _resolve_credit_log_mode(log, task_modes),
             "description": log.description,
             "operator_name": operator.username if operator else "",
             "task_id": log.task_id,

@@ -60,9 +60,21 @@ export function allocateCredits(userId: number, amount: number, description?: st
   return client.post(`/admin/users/${userId}/credits`, { amount, description: description || "" });
 }
 
-export function getCreditLogs(page = 1, pageSize = 20, userId?: number): Promise<{ total: number; items: CreditLog[] }> {
+export function resetUserCredits(userId: number, description?: string): Promise<AdminUser> {
+  return client.post(`/admin/users/${userId}/credits/reset`, { description: description || "" });
+}
+
+export function getCreditLogs(
+  page = 1,
+  pageSize = 20,
+  userId?: number,
+  direction?: "increase" | "decrease",
+  mode?: "generate" | "inpaint" | "promptReverse" | "manual",
+): Promise<{ total: number; items: CreditLog[] }> {
   const params: Record<string, unknown> = { page, page_size: pageSize };
   if (userId) params.user_id = userId;
+  if (direction) params.direction = direction;
+  if (mode) params.mode = mode;
   return client.get("/admin/credit-logs", { params });
 }
 

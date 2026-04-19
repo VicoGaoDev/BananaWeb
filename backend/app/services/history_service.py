@@ -118,6 +118,7 @@ def get_user_history(
         task = image.task
         image_payload = serialize_image(image, cos_config=cos_config)
         source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
+        mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
         reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
         visible_images = _serialize_history_images(task.images, cos_config=cos_config)
         items.append({
@@ -139,6 +140,8 @@ def get_user_history(
             "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
             "source_image": source_asset["image_url"],
             "source_image_thumb": source_asset["thumb_url"],
+            "mask_image": mask_asset["image_url"],
+            "mask_image_thumb": mask_asset["thumb_url"],
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
@@ -169,6 +172,8 @@ def get_user_history(
             "reference_image_thumbs": [],
             "source_image": source_asset["image_url"],
             "source_image_thumb": source_asset["thumb_url"],
+            "mask_image": "",
+            "mask_image_thumb": "",
             "num_images": 0,
             "size": "-",
             "resolution": "",

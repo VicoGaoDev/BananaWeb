@@ -5,12 +5,11 @@ import {
   WalletOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
-  FilterOutlined,
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { getCreditLogs } from "@/api/auth";
 import { listUsers } from "@/api/admin";
-import type { CreditLog, AdminUser } from "@/types";
+import type { CreditLog, AdminUser, TaskMode } from "@/types";
 import dayjs from "dayjs";
 
 const auth = useAuthStore();
@@ -24,13 +23,16 @@ const loading = ref(false);
 
 const filterUserId = ref<number | undefined>(undefined);
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+const filterDirection = ref<"increase" | "decrease" | undefined>(undefined);
+const filterMode = ref<TaskMode | "manual" | undefined>(undefined);
 
 const userList = ref<AdminUser[]>([]);
 
 const columns = computed(() => {
   const base = [
     { title: "时间", dataIndex: "created_at", width: 180 },
-    { title: "类型", dataIndex: "type", width: 100 },
+    { title: "变动方向", dataIndex: "type", width: 110 },
+    { title: "任务类型", dataIndex: "mode", width: 120 },
     { title: "积分变动", dataIndex: "amount", width: 120 },
     { title: "说明", dataIndex: "description", ellipsis: true },
     { title: "操作人", dataIndex: "operator_name", width: 120 },
@@ -54,6 +56,12 @@ async function loadLogs() {
     if (filterDateRange.value) {
       params.start_date = filterDateRange.value[0].startOf("day").toISOString();
       params.end_date = filterDateRange.value[1].endOf("day").toISOString();
+    }
+    if (filterDirection.value) {
+      params.direction = filterDirection.value;
+    }
+    if (filterMode.value) {
+      params.mode = filterMode.value;
     }
     const res = await getCreditLogs(params as any);
     items.value = res.items;
@@ -79,6 +87,12 @@ function handlePageChange(p: number) {
   loadLogs();
 }
 
+function handlePageSizeChange(_: number, size: number) {
+  page.value = 1;
+  pageSize.value = size;
+  loadLogs();
+}
+
 function handleFilter() {
   page.value = 1;
   loadLogs();
@@ -87,12 +101,25 @@ function handleFilter() {
 function handleReset() {
   filterUserId.value = undefined;
   filterDateRange.value = null;
+  filterDirection.value = undefined;
+  filterMode.value = undefined;
   page.value = 1;
   loadLogs();
 }
 
 function formatTime(t: string) {
   return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
+}
+
+function directionLabel(record: CreditLog) {
+  return record.amount > 0 ? "增加" : "消耗";
+}
+
+function modeLabel(mode: CreditLog["mode"]) {
+  if (mode === "generate") return "生图";
+  if (mode === "inpaint") return "局部重绘";
+  if (mode === "promptReverse") return "提示词反推";
+  return "手动调整";
 }
 
 onMounted(() => {
@@ -137,8 +164,29 @@ onMounted(() => {
         style="width: 260px"
       />
 
+      <a-select
+        v-model:value="filterDirection"
+        allow-clear
+        placeholder="全部变动"
+        style="width: 140px"
+      >
+        <a-select-option value="increase">积分增加</a-select-option>
+        <a-select-option value="decrease">积分消耗</a-select-option>
+      </a-select>
+
+      <a-select
+        v-model:value="filterMode"
+        allow-clear
+        placeholder="全部任务类型"
+        style="width: 160px"
+      >
+        <a-select-option value="generate">生图</a-select-option>
+        <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="promptReverse">提示词反推</a-select-option>
+        <a-select-option value="manual">手动调整</a-select-option>
+      </a-select>
+
       <a-button type="primary" class="credit-filter-btn credit-filter-btn-primary" @click="handleFilter">
-        <template #icon><FilterOutlined /></template>
         筛选
       </a-button>
       <a-button class="credit-filter-btn credit-filter-btn-secondary" @click="handleReset">重置</a-button>
@@ -157,9 +205,12 @@ onMounted(() => {
           {{ formatTime(record.created_at) }}
         </template>
         <template v-else-if="column.dataIndex === 'type'">
-          <a-tag class="credit-type-tag" :class="record.type === 'allocate' ? 'credit-type-tag-income' : 'credit-type-tag-expense'">
-            {{ record.type === "allocate" ? "充值" : "消耗" }}
+          <a-tag class="credit-type-tag" :class="record.amount > 0 ? 'credit-type-tag-income' : 'credit-type-tag-expense'">
+            {{ directionLabel(record) }}
           </a-tag>
+        </template>
+        <template v-else-if="column.dataIndex === 'mode'">
+          {{ modeLabel(record.mode) }}
         </template>
         <template v-else-if="column.dataIndex === 'amount'">
           <span :class="record.amount > 0 ? 'amount-plus' : 'amount-minus'">
@@ -181,6 +232,7 @@ onMounted(() => {
         :page-size="pageSize"
         show-size-changer
         @change="handlePageChange"
+        @showSizeChange="handlePageSizeChange"
       />
     </div>
   </div>

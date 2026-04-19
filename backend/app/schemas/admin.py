@@ -26,12 +26,17 @@ class AllocateCreditsRequest(BaseModel):
     description: str = ""
 
 
+class ResetCreditsRequest(BaseModel):
+    description: str = ""
+
+
 class CreditLogOut(BaseModel):
     id: int
     user_id: int
     username: str = ""
     amount: int
     type: str
+    mode: str = ""
     description: str = ""
     operator_name: str = ""
     task_id: int | None = None

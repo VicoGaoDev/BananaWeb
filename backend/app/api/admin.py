@@ -8,13 +8,13 @@ from app.api.deps import require_admin, require_superadmin
 from app.models.user import User
 from app.schemas.admin import (
     CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest,
-    UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, CreditLogOut,
+    UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, ResetCreditsRequest, CreditLogOut,
     AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut,
 )
 from app.schemas.history import HistoryResponse
 from app.services.admin_service import (
     create_user, list_users, update_user_status, update_user_role,
-    update_user_whitelist, reset_user_password, get_stats, allocate_credits, get_credit_logs,
+    update_user_whitelist, reset_user_password, get_stats, allocate_credits, reset_user_credits, get_credit_logs,
     get_analytics_summary, get_analytics_timeseries, get_analytics_breakdown,
 )
 from app.services.history_service import get_all_history
@@ -89,6 +89,16 @@ def admin_allocate_credits(
     return allocate_credits(db, user_id, body.amount, body.description, admin.id)
 
 
+@router.post("/users/{user_id}/credits/reset", response_model=UserOut)
+def admin_reset_credits(
+    user_id: int,
+    body: ResetCreditsRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return reset_user_credits(db, user_id, body.description, admin.id)
+
+
 @router.get("/credit-logs", response_model=dict)
 def admin_credit_logs(
     page: int = Query(1, ge=1),
@@ -96,11 +106,13 @@ def admin_credit_logs(
     user_id: Optional[int] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
+    direction: Optional[str] = Query(None, pattern="^(increase|decrease)$"),
+    mode: Optional[str] = Query(None, pattern="^(generate|inpaint|promptReverse|manual)$"),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return get_credit_logs(db, user_id=user_id, page=page, page_size=page_size,
-                           start_date=start_date, end_date=end_date)
+                           start_date=start_date, end_date=end_date, direction=direction, mode=mode)
 
 
 @router.get("/stats", response_model=StatsOut)
