@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.credit_log import CreditLog
+from app.models.prompt_history import PromptHistory
 from app.models.user import User
 from app.services.cos_service import load_image_as_data_url
 from app.services.external_api_config_service import (
@@ -13,6 +14,10 @@ from app.services.external_api_config_service import (
     require_scene_config,
     SCENE_PROMPT_REVERSE,
 )
+PROMPT_REVERSE_MODE = "promptReverse"
+PROMPT_REVERSE_MODEL = "提示词反推"
+PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION = "提示词反推"
+
 PROMPT_REVERSE_TEXT = (
     "详细分析这张图片，生成适合AI绘画的专业中文提示词，"
     "包含主体、风格、构图、光影、色彩、画质、细节，用中文逗号分隔输出"
@@ -102,7 +107,13 @@ def reverse_prompt_from_image(db: Session, user_id: int, image_url: str) -> str:
             user_id=user_id,
             amount=-credit_cost,
             type="consume",
-            description="提示词反推",
+            description=PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
         ))
+    db.add(PromptHistory(
+        user_id=user_id,
+        prompt=prompt,
+        mode=PROMPT_REVERSE_MODE,
+        source_image=image_url.strip(),
+    ))
     db.commit()
     return prompt

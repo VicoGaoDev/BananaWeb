@@ -28,6 +28,7 @@ import type {
   GenerationModelOption,
   HistoryFilter,
   HistoryItem,
+  TaskMode,
 } from "@/types";
 
 const analyticsLoading = ref(false);
@@ -51,7 +52,7 @@ const filters = reactive<{
   status: string | undefined;
   user_id: number | undefined;
   model: string | undefined;
-  mode: "generate" | "inpaint" | undefined;
+  mode: TaskMode | undefined;
   dateRange: [Dayjs, Dayjs] | null;
 }>({
   status: undefined,
@@ -79,6 +80,7 @@ const modelOptions = computed(() => {
     value: item.model_key,
   }));
   options.push({ label: "局部重绘", value: "inpaint" });
+  options.push({ label: "提示词反推", value: "提示词反推" });
   return options;
 });
 
@@ -107,21 +109,21 @@ const overviewStats = computed(() => {
       key: "total_tasks",
       label: "所有时间总任务数",
       value: stats.value.total_tasks,
-      desc: "累计发起的全部任务数量",
+      desc: "累计发起的全部任务数量（含提示词反推）",
       color: "#1890ff",
     },
     {
       key: "total_credit_cost",
       label: "所有时间总积分消耗",
       value: stats.value.total_credit_cost,
-      desc: "累计任务实际扣减的积分总量",
+      desc: "累计任务实际扣减的积分总量（含提示词反推）",
       color: "#722ed1",
     },
     {
       key: "active_users",
       label: "近 7 天活跃用户",
       value: stats.value.active_users,
-      desc: "按最近 7 天内发起任务计算",
+      desc: "按最近 7 天内发起任务或提示词反推计算",
       color: "#13c2c2",
     },
     {
@@ -257,7 +259,7 @@ async function loadHistory() {
     historyTotal.value = res.total;
     historyCreditTotal.value = res.total_credit_cost;
   } catch {
-    message.error("获取生成记录失败");
+    message.error("获取任务记录失败");
   } finally {
     historyLoading.value = false;
   }
@@ -300,7 +302,7 @@ function handleBucketClick(payload: { start?: string | null; end?: string | null
 
 function handleBreakdownFilter(payload: { type: "status" | "mode" | "model" | "user"; value: string }) {
   if (payload.type === "status") filters.status = payload.value;
-  if (payload.type === "mode") filters.mode = payload.value as "generate" | "inpaint";
+  if (payload.type === "mode") filters.mode = payload.value as TaskMode;
   if (payload.type === "model") filters.model = payload.value;
   if (payload.type === "user") {
     const matchedUser = users.value.find((item) => item.username === payload.value);
@@ -313,7 +315,9 @@ function fmtTime(value: string) {
 }
 
 function modeLabel(value: string) {
-  return value === "inpaint" ? "局部重绘" : "生图";
+  if (value === "inpaint") return "局部重绘";
+  if (value === "promptReverse") return "提示词反推";
+  return "生图";
 }
 
 function modelLabel(value: string) {
@@ -437,10 +441,10 @@ watch(filterSignature, async () => {
         <div class="table-card-head">
           <div>
             <div class="table-card-title-row">
-              <h3 class="section-title">全部生成记录</h3>
+              <h3 class="section-title">全部任务记录</h3>
               <span class="section-kicker">Details</span>
             </div>
-            <div class="table-card-desc">当前图表与筛选条件对应的任务明细列表。</div>
+            <div class="table-card-desc">当前图表与筛选条件对应的任务与提示词反推明细。</div>
           </div>
           <div class="history-summary">
             <span class="history-summary-chip">筛选结果 {{ historyTotal }} 条</span>
@@ -452,7 +456,7 @@ watch(filterSignature, async () => {
           :columns="columns"
           :data-source="history"
           :loading="historyLoading"
-          row-key="task_id"
+          :row-key="(record: HistoryItem) => record.display_id || record.task_id"
           :pagination="false"
           sticky
           :scroll="{ x: 1200, y: 560 }"
@@ -467,8 +471,14 @@ watch(filterSignature, async () => {
                 <span>{{ record.username || "-" }}</span>
               </div>
             </template>
+            <template v-else-if="column.dataIndex === 'task_id'">
+              {{ record.display_id || record.task_id }}
+            </template>
             <template v-else-if="column.dataIndex === 'mode'">
               {{ modeLabel(record.mode) }}
+            </template>
+            <template v-else-if="column.dataIndex === 'prompt'">
+              {{ record.prompt || "-" }}
             </template>
             <template v-else-if="column.dataIndex === 'model'">
               {{ modelLabel(record.model) }}

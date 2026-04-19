@@ -41,7 +41,9 @@ function statusLabel(value: string) {
 }
 
 function modeLabel(value: string) {
-  return value === "inpaint" ? "局部重绘" : "生图";
+  if (value === "inpaint") return "局部重绘";
+  if (value === "promptReverse") return "提示词反推";
+  return "生图";
 }
 
 const statusPieOption = computed(() => ({
@@ -67,7 +69,7 @@ const statusPieOption = computed(() => ({
 }));
 
 const modePieOption = computed(() => ({
-  color: ["#1890ff", "#722ed1"],
+  color: ["#1890ff", "#722ed1", "#13c2c2"],
   tooltip: {
     trigger: "item",
     backgroundColor: "rgba(76, 52, 26, 0.92)",
@@ -193,7 +195,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">任务类型占比</div>
-            <div class="breakdown-desc">区分生图与局部重绘的占用比例。</div>
+            <div class="breakdown-desc">区分生图、局部重绘和提示词反推的占用比例。</div>
           </div>
           <div class="breakdown-badge">饼图</div>
         </div>

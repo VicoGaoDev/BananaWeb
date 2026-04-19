@@ -1,5 +1,6 @@
 from calendar import monthrange
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
@@ -8,6 +9,11 @@ from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.task import Task
 from app.models.credit_log import CreditLog
+from app.services.prompt_reverse_service import (
+    PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+    PROMPT_REVERSE_MODE,
+    PROMPT_REVERSE_MODEL,
+)
 from app.utils.security import hash_password
 
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
@@ -20,6 +26,16 @@ def _non_whitelisted_user_filter():
 def _get_first_admin_id(db: Session) -> int | None:
     first = db.query(User).filter(User.role == "admin").order_by(User.created_at.asc()).first()
     return first.id if first else None
+
+
+@dataclass
+class AnalyticsRecord:
+    user_id: int
+    status: str
+    model: str
+    mode: str
+    credit_cost: int
+    created_at: datetime
 
 
 def create_user(db: Session, username: str, password: str, role: str = "user", operator: User | None = None) -> User:
@@ -178,34 +194,76 @@ def get_credit_logs(
 def get_stats(db: Session) -> dict:
     now = datetime.now(timezone.utc)
     total_users = db.query(func.count(User.id)).filter(User.role != "superadmin", _non_whitelisted_user_filter()).scalar()
-    total_tasks = (
+    total_generation_tasks = (
         db.query(func.count(Task.id))
         .join(User, User.id == Task.user_id)
         .filter(User.role != "superadmin", _non_whitelisted_user_filter())
         .scalar()
     )
-    total_credit_cost = (
-        db.query(func.coalesce(func.sum(Task.credit_cost), 0))
-        .join(User, User.id == Task.user_id)
-        .filter(User.role != "superadmin", _non_whitelisted_user_filter())
-        .scalar()
-    )
-    active_users = (
-        db.query(func.count(func.distinct(Task.user_id)))
-        .join(User, User.id == Task.user_id)
+    total_prompt_reverse_tasks = (
+        db.query(func.count(CreditLog.id))
+        .join(User, User.id == CreditLog.user_id)
         .filter(
-            Task.created_at >= now - timedelta(days=7),
+            CreditLog.type == "consume",
+            CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
             User.role != "superadmin",
             _non_whitelisted_user_filter(),
         )
         .scalar()
     )
+    total_generation_credit_cost = (
+        db.query(func.coalesce(func.sum(Task.credit_cost), 0))
+        .join(User, User.id == Task.user_id)
+        .filter(User.role != "superadmin", _non_whitelisted_user_filter())
+        .scalar()
+    )
+    total_prompt_reverse_credit_cost = (
+        db.query(func.coalesce(func.sum(-CreditLog.amount), 0))
+        .join(User, User.id == CreditLog.user_id)
+        .filter(
+            CreditLog.type == "consume",
+            CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+            User.role != "superadmin",
+            _non_whitelisted_user_filter(),
+        )
+        .scalar()
+    )
+    active_task_user_ids = {
+        user_id
+        for (user_id,) in (
+            db.query(Task.user_id)
+            .join(User, User.id == Task.user_id)
+            .filter(
+                Task.created_at >= now - timedelta(days=7),
+                User.role != "superadmin",
+                _non_whitelisted_user_filter(),
+            )
+            .distinct()
+            .all()
+        )
+    }
+    active_prompt_reverse_user_ids = {
+        user_id
+        for (user_id,) in (
+            db.query(CreditLog.user_id)
+            .join(User, User.id == CreditLog.user_id)
+            .filter(
+                CreditLog.type == "consume",
+                CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+                CreditLog.created_at >= now - timedelta(days=7),
+                User.role != "superadmin",
+                _non_whitelisted_user_filter(),
+            )
+            .distinct()
+            .all()
+        )
+    }
 
     return {
         "total_users": total_users or 0,
-        "total_tasks": total_tasks or 0,
-        "total_credit_cost": int(total_credit_cost or 0),
-        "active_users": active_users or 0,
+        "total_tasks": int(total_generation_tasks or 0) + int(total_prompt_reverse_tasks or 0),
+        "total_credit_cost": int(total_generation_credit_cost or 0) + int(total_prompt_reverse_credit_cost or 0),
+        "active_users": len(active_task_user_ids | active_prompt_reverse_user_ids),
     }
 
 
@@ -384,6 +442,36 @@ def _task_query(
     return query
 
 
+def _prompt_reverse_query(
+    db: Session,
+    *,
+    start_date: datetime,
+    end_date: datetime,
+    status_filter: str | None = None,
+    user_id: int | None = None,
+    model: str | None = None,
+    mode: str | None = None,
+):
+    if status_filter and status_filter != "success":
+        return None
+    if mode and mode != PROMPT_REVERSE_MODE:
+        return None
+    if model and model != PROMPT_REVERSE_MODEL:
+        return None
+
+    query = db.query(CreditLog).join(User, User.id == CreditLog.user_id).filter(
+        CreditLog.type == "consume",
+        CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+        CreditLog.created_at >= _to_db_datetime(start_date),
+        CreditLog.created_at <= _to_db_datetime(end_date),
+        User.role != "superadmin",
+        _non_whitelisted_user_filter(),
+    )
+    if user_id:
+        query = query.filter(CreditLog.user_id == user_id)
+    return query
+
+
 def _user_query(
     db: Session,
     *,
@@ -401,17 +489,68 @@ def _user_query(
     return query
 
 
-def _task_summary_metrics(tasks: list[Task], user_roles: dict[int, str]) -> dict[str, int]:
+def _build_analytics_records(
+    db: Session,
+    *,
+    start_date: datetime,
+    end_date: datetime,
+    status_filter: str | None = None,
+    user_id: int | None = None,
+    model: str | None = None,
+    mode: str | None = None,
+) -> list[AnalyticsRecord]:
+    task_records = [
+        AnalyticsRecord(
+            user_id=task.user_id,
+            status=task.status or "pending",
+            model=task.model or "未设置",
+            mode=task.mode or "generate",
+            credit_cost=int(task.credit_cost or 0),
+            created_at=task.created_at,
+        )
+        for task in _task_query(
+            db,
+            start_date=start_date,
+            end_date=end_date,
+            status_filter=status_filter,
+            user_id=user_id,
+            model=model,
+            mode=mode,
+        ).all()
+    ]
+
+    prompt_reverse_query = _prompt_reverse_query(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        status_filter=status_filter,
+        user_id=user_id,
+        model=model,
+        mode=mode,
+    )
+    prompt_reverse_records = []
+    if prompt_reverse_query is not None:
+        prompt_reverse_records = [
+            AnalyticsRecord(
+                user_id=log.user_id,
+                status="success",
+                model=PROMPT_REVERSE_MODEL,
+                mode=PROMPT_REVERSE_MODE,
+                credit_cost=max(0, int(-(log.amount or 0))),
+                created_at=log.created_at,
+            )
+            for log in prompt_reverse_query.all()
+        ]
+    return task_records + prompt_reverse_records
+
+
+def _task_summary_metrics(records: list[AnalyticsRecord]) -> dict[str, int]:
     return {
-        "tasks_created": len(tasks),
-        "success_tasks": sum(1 for task in tasks if task.status == "success"),
-        "failed_tasks": sum(1 for task in tasks if task.status == "failed"),
-        "credits_consumed": sum(int(task.credit_cost or 0) for task in tasks),
-        "active_users": len({
-            task.user_id
-            for task in tasks
-            if user_roles.get(task.user_id, "user") != "superadmin"
-        }),
+        "tasks_created": len(records),
+        "success_tasks": sum(1 for record in records if record.status == "success"),
+        "failed_tasks": sum(1 for record in records if record.status == "failed"),
+        "credits_consumed": sum(record.credit_cost for record in records),
+        "active_users": len({record.user_id for record in records}),
     }
 
 
@@ -419,9 +558,8 @@ def _build_timeseries_points(
     bucket_starts: list[datetime],
     *,
     granularity: str,
-    tasks: list[Task],
+    records: list[AnalyticsRecord],
     users: list[User],
-    user_roles: dict[int, str],
 ) -> list[dict]:
     bucket_map = {
         bucket: {
@@ -439,19 +577,18 @@ def _build_timeseries_points(
         for bucket in bucket_starts
     }
 
-    for task in tasks:
-        bucket = _bucket_start(_to_local_datetime(task.created_at), granularity)
+    for record in records:
+        bucket = _bucket_start(_to_local_datetime(record.created_at), granularity)
         if bucket not in bucket_map:
             continue
         item = bucket_map[bucket]
         item["tasks_created"] += 1
-        item["credits_consumed"] += int(task.credit_cost or 0)
-        if task.status == "success":
+        item["credits_consumed"] += record.credit_cost
+        if record.status == "success":
             item["success_tasks"] += 1
-        if task.status == "failed":
+        if record.status == "failed":
             item["failed_tasks"] += 1
-        if user_roles.get(task.user_id, "user") != "superadmin":
-            item["_active_user_ids"].add(task.user_id)
+        item["_active_user_ids"].add(record.user_id)
 
     for user in users:
         bucket = _bucket_start(_to_local_datetime(user.created_at), granularity)
@@ -480,7 +617,7 @@ def get_analytics_summary(
     current_start, current_end = _align_range(granularity, start_date, end_date)
     previous_start, previous_end = _previous_range(current_start, current_end, granularity)
 
-    current_tasks = _task_query(
+    current_records = _build_analytics_records(
         db,
         start_date=current_start,
         end_date=current_end,
@@ -488,8 +625,8 @@ def get_analytics_summary(
         user_id=user_id,
         model=model,
         mode=mode,
-    ).all()
-    previous_tasks = _task_query(
+    )
+    previous_records = _build_analytics_records(
         db,
         start_date=previous_start,
         end_date=previous_end,
@@ -497,17 +634,10 @@ def get_analytics_summary(
         user_id=user_id,
         model=model,
         mode=mode,
-    ).all()
+    )
 
-    relevant_user_ids = {task.user_id for task in current_tasks + previous_tasks}
-    users_by_id = {
-        user.id: user
-        for user in db.query(User).filter(User.id.in_(relevant_user_ids)).all()
-    } if relevant_user_ids else {}
-    user_roles = {user_id_key: user.role for user_id_key, user in users_by_id.items()}
-
-    current_metrics = _task_summary_metrics(current_tasks, user_roles)
-    previous_metrics = _task_summary_metrics(previous_tasks, user_roles)
+    current_metrics = _task_summary_metrics(current_records)
+    previous_metrics = _task_summary_metrics(previous_records)
     current_new_users = _user_query(db, start_date=current_start, end_date=current_end, user_id=user_id).count()
     previous_new_users = _user_query(db, start_date=previous_start, end_date=previous_end, user_id=user_id).count()
     total_users = _user_query(db).count()
@@ -542,7 +672,7 @@ def get_analytics_timeseries(
     current_bucket_starts = _iter_bucket_starts(current_start, current_end, granularity)
     previous_bucket_starts = _iter_bucket_starts(previous_start, previous_end, granularity)
 
-    current_tasks = _task_query(
+    current_records = _build_analytics_records(
         db,
         start_date=current_start,
         end_date=current_end,
@@ -550,8 +680,8 @@ def get_analytics_timeseries(
         user_id=user_id,
         model=model,
         mode=mode,
-    ).all()
-    previous_tasks = _task_query(
+    )
+    previous_records = _build_analytics_records(
         db,
         start_date=previous_start,
         end_date=previous_end,
@@ -559,18 +689,9 @@ def get_analytics_timeseries(
         user_id=user_id,
         model=model,
         mode=mode,
-    ).all()
+    )
     current_users = _user_query(db, start_date=current_start, end_date=current_end, user_id=user_id).all()
     previous_users = _user_query(db, start_date=previous_start, end_date=previous_end, user_id=user_id).all()
-
-    relevant_user_ids = {
-        task.user_id for task in current_tasks + previous_tasks
-    }
-    users_by_id = {
-        user.id: user
-        for user in db.query(User).filter(User.id.in_(relevant_user_ids)).all()
-    } if relevant_user_ids else {}
-    user_roles = {user_id_key: user.role for user_id_key, user in users_by_id.items()}
 
     return {
         "granularity": granularity,
@@ -579,16 +700,14 @@ def get_analytics_timeseries(
         "current": _build_timeseries_points(
             current_bucket_starts,
             granularity=granularity,
-            tasks=current_tasks,
+            records=current_records,
             users=current_users,
-            user_roles=user_roles,
         ),
         "previous": _build_timeseries_points(
             previous_bucket_starts,
             granularity=granularity,
-            tasks=previous_tasks,
+            records=previous_records,
             users=previous_users,
-            user_roles=user_roles,
         ),
     }
 
@@ -616,7 +735,7 @@ def get_analytics_breakdown(
     status_filter: str | None = None,
 ) -> dict:
     current_start, current_end = _align_range(granularity, start_date, end_date)
-    tasks = _task_query(
+    records = _build_analytics_records(
         db,
         start_date=current_start,
         end_date=current_end,
@@ -624,9 +743,9 @@ def get_analytics_breakdown(
         user_id=user_id,
         model=model,
         mode=mode,
-    ).all()
+    )
 
-    relevant_user_ids = {task.user_id for task in tasks}
+    relevant_user_ids = {record.user_id for record in records}
     users_by_id = {
         user.id: user
         for user in db.query(User).filter(User.id.in_(relevant_user_ids)).all()
@@ -637,11 +756,11 @@ def get_analytics_breakdown(
     model_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     user_task_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
 
-    for task in tasks:
-        task_cost = int(task.credit_cost or 0)
-        status_key = task.status or "unknown"
-        mode_key = task.mode or "generate"
-        model_key = task.model or "未设置"
+    for record in records:
+        task_cost = record.credit_cost
+        status_key = record.status or "unknown"
+        mode_key = record.mode or "generate"
+        model_key = record.model or "未设置"
 
         status_breakdown[status_key]["count"] += 1
         status_breakdown[status_key]["credit_cost"] += task_cost
@@ -652,7 +771,7 @@ def get_analytics_breakdown(
         model_breakdown[model_key]["count"] += 1
         model_breakdown[model_key]["credit_cost"] += task_cost
 
-        user = users_by_id.get(task.user_id)
+        user = users_by_id.get(record.user_id)
         if user and user.role != "superadmin":
             user_task_breakdown[user.username]["count"] += 1
             user_task_breakdown[user.username]["credit_cost"] += task_cost

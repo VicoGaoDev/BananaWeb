@@ -1,5 +1,5 @@
 import client from "./client";
-import type { LoginResponse, UserInfo, CreditLog, AnnouncementConfig } from "@/types";
+import type { LoginResponse, UserInfo, CreditLog, AnnouncementConfig, PromptHistoryItem } from "@/types";
 
 export function login(username: string, password: string): Promise<LoginResponse> {
   return client.post("/auth/login", { username, password });
@@ -28,7 +28,7 @@ export function uploadAvatar(file: File): Promise<UserInfo> {
   });
 }
 
-export function getPromptHistory(): Promise<{ id: number; prompt: string; created_at: string }[]> {
+export function getPromptHistory(): Promise<PromptHistoryItem[]> {
   return client.get("/auth/prompt-history");
 }
 

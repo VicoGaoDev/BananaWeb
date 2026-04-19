@@ -26,7 +26,7 @@ import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
-import type { GenerationModelOption, ImageResult, TaskResult, TaskSceneConfig } from "@/types";
+import type { GenerationModelOption, ImageResult, PromptHistoryItem, TaskResult, TaskSceneConfig } from "@/types";
 
 const auth = useAuthStore();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
@@ -113,7 +113,7 @@ const previewVisible = ref(false);
 const previewCurrent = ref("");
 
 const historyVisible = ref(false);
-const historyItems = ref<{ id: number; prompt: string; created_at: string }[]>([]);
+const historyItems = ref<PromptHistoryItem[]>([]);
 const historyLoading = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
@@ -831,7 +831,14 @@ async function removeHistoryItem(id: number) {
 
 function useHistoryPrompt(text: string) {
   prompt.value = text;
+  generateMode.value = "generate";
   historyVisible.value = false;
+}
+
+function historyModeLabel(mode: PromptHistoryItem["mode"]) {
+  if (mode === "inpaint") return "局部重绘";
+  if (mode === "promptReverse") return "提示词反推";
+  return "文生图/图编辑";
 }
 
 function applyDraft(raw: string | null, successText: string, storageKey: string) {
@@ -1406,7 +1413,15 @@ onBeforeUnmount(() => {
             class="history-item"
             @click="useHistoryPrompt(item.prompt)"
           >
-            <div class="history-text">{{ item.prompt }}</div>
+            <div v-if="item.source_image" class="history-thumb">
+              <img :src="resolveImageUrl(item.source_image)" alt="历史图片" />
+            </div>
+            <div class="history-content">
+              <div class="history-meta">
+                <span class="history-tag">{{ historyModeLabel(item.mode) }}</span>
+              </div>
+              <div class="history-text">{{ item.prompt }}</div>
+            </div>
             <a-button
               type="text"
               shape="circle"
@@ -2488,8 +2503,47 @@ onBeforeUnmount(() => {
   }
 }
 
-.history-text {
+.history-thumb {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #f0ddbb;
+  background: #fff8ec;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+}
+
+.history-content {
   flex: 1;
+  min-width: 0;
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.history-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff4df;
+  color: #b87408;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.history-text {
   font-size: 13px;
   color: #4c341a;
   line-height: 1.6;

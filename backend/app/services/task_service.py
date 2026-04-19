@@ -121,7 +121,7 @@ def create_tasks(
 
         tasks.append(task)
 
-    db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt))
+    db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt, mode=mode))
     db.commit()
     for task in tasks:
         db.refresh(task)

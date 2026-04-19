@@ -25,7 +25,7 @@ const props = defineProps({
 const cards = computed<CardItem[]>(() => {
   if (!props.summary) return [];
   return [
-    { key: "tasks_created", label: "生成任务数", color: "#1890ff", metric: props.summary.tasks_created },
+    { key: "tasks_created", label: "任务总数", color: "#1890ff", metric: props.summary.tasks_created },
     { key: "success_tasks", label: "成功任务数", color: "#52c41a", metric: props.summary.success_tasks },
     { key: "failed_tasks", label: "失败任务数", color: "#ff4d4f", metric: props.summary.failed_tasks },
     { key: "credits_consumed", label: "消耗积分", color: "#fa8c16", metric: props.summary.credits_consumed },

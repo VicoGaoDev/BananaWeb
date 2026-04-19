@@ -11,6 +11,14 @@ export interface LoginResponse {
   user: UserInfo;
 }
 
+export interface PromptHistoryItem {
+  id: number;
+  prompt: string;
+  mode: "generate" | "inpaint" | "promptReverse";
+  source_image: string;
+  created_at: string;
+}
+
 export interface ImageResult {
   id: number;
   image_url: string;
@@ -22,6 +30,8 @@ export interface ImageResult {
   image_size_bytes?: number;
   is_deleted?: boolean;
 }
+
+export type TaskMode = "generate" | "inpaint" | "promptReverse";
 
 export interface TaskResult {
   id: number;
@@ -39,10 +49,11 @@ export interface TaskResult {
 
 export interface HistoryItem {
   task_id: number;
+  display_id?: string;
   username?: string;
   avatar_url?: string;
   model: string;
-  mode: "generate" | "inpaint";
+  mode: TaskMode;
   prompt: string;
   reference_images: string[];
   num_images: number;
@@ -58,7 +69,7 @@ export interface HistoryItem {
 }
 
 export interface HistoryFilter {
-  mode?: "generate" | "inpaint";
+  mode?: TaskMode;
   model?: string;
   prompt?: string;
   status?: string;
@@ -74,6 +85,8 @@ export interface HistoryResponse {
 }
 
 export interface UserHistoryCard {
+  history_id?: number | null;
+  display_id?: string;
   task_id: number;
   image_id: number;
   image_url: string;
@@ -84,7 +97,7 @@ export interface UserHistoryCard {
   image_size_bytes?: number;
   is_soft_deleted?: boolean;
   model: string;
-  mode: "generate" | "inpaint";
+  mode: TaskMode;
   prompt: string;
   reference_images: string[];
   reference_image_thumbs: string[];
@@ -164,7 +177,7 @@ export interface AdminAnalyticsQuery {
   end_date?: string;
   user_id?: number;
   model?: string;
-  mode?: "generate" | "inpaint";
+  mode?: TaskMode;
   status?: string;
 }
 

@@ -81,7 +81,16 @@ def list_prompt_history(
         .limit(10)
         .all()
     )
-    return [{"id": r.id, "prompt": r.prompt, "created_at": r.created_at} for r in rows]
+    return [
+        {
+            "id": r.id,
+            "prompt": r.prompt,
+            "mode": r.mode or "generate",
+            "source_image": r.source_image or "",
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
 
 
 @router.delete("/prompt-history/{item_id}")

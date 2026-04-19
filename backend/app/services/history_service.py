@@ -8,7 +8,13 @@ from app.models.task import Task
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
 from app.models.credit_log import CreditLog
+from app.models.prompt_history import PromptHistory
 from app.models.user import User
+from app.services.prompt_reverse_service import (
+    PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+    PROMPT_REVERSE_MODE,
+    PROMPT_REVERSE_MODEL,
+)
 from app.services.image_delivery_service import (
     get_optional_cos_config,
     serialize_asset_urls,
@@ -59,37 +65,53 @@ def get_user_history(
     end_date: datetime | None = None,
 ):
     cos_config = get_optional_cos_config(db)
-    query = (
+    image_query = (
         db.query(Image)
         .join(Task, Image.task_id == Task.id)
         .options(selectinload(Image.task).selectinload(Task.images))
         .filter(Task.user_id == user_id)
         .filter(Image.is_deleted.is_(False))
     )
+    prompt_reverse_query = (
+        db.query(PromptHistory)
+        .filter(
+            PromptHistory.user_id == user_id,
+            PromptHistory.mode == PROMPT_REVERSE_MODE,
+        )
+    )
     if mode:
-        query = query.filter(Task.mode == mode)
+        image_query = image_query.filter(Task.mode == mode)
+        if mode != PROMPT_REVERSE_MODE:
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
     if model:
-        query = query.filter(Task.model == model)
+        image_query = image_query.filter(Task.model == model)
+        if model != PROMPT_REVERSE_MODEL:
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
     if prompt:
         keyword = prompt.strip()
         if keyword:
-            query = query.filter(Task.prompt.ilike(f"%{keyword}%"))
+            image_query = image_query.filter(Task.prompt.ilike(f"%{keyword}%"))
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.prompt.ilike(f"%{keyword}%"))
     if status:
         if status == "processing":
-            query = query.filter(Image.status == "pending", Task.status == "processing")
+            image_query = image_query.filter(Image.status == "pending", Task.status == "processing")
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
         elif status == "pending":
-            query = query.filter(Image.status == "pending", Task.status == "pending")
+            image_query = image_query.filter(Image.status == "pending", Task.status == "pending")
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
         elif status == "failed":
-            query = query.filter(or_(Image.status == "failed", and_(Image.status == "pending", Task.status == "failed")))
+            image_query = image_query.filter(or_(Image.status == "failed", and_(Image.status == "pending", Task.status == "failed")))
+            prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
         else:
-            query = query.filter(Image.status == status)
+            image_query = image_query.filter(Image.status == status)
     if start_date:
-        query = query.filter(Task.created_at >= start_date)
+        image_query = image_query.filter(Task.created_at >= start_date)
+        prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at >= start_date)
     if end_date:
-        query = query.filter(Task.created_at <= end_date)
-    query = query.order_by(Task.created_at.desc(), Image.id.desc())
-    total = query.count()
-    images = query.offset((page - 1) * page_size).limit(page_size).all()
+        image_query = image_query.filter(Task.created_at <= end_date)
+        prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at <= end_date)
+    images = image_query.order_by(Task.created_at.desc(), Image.id.desc()).all()
+    prompt_reverse_rows = prompt_reverse_query.order_by(PromptHistory.created_at.desc(), PromptHistory.id.desc()).all()
 
     items = []
     for image in images:
@@ -99,6 +121,8 @@ def get_user_history(
         reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
         visible_images = _serialize_history_images(task.images, cos_config=cos_config)
         items.append({
+            "history_id": None,
+            "display_id": str(task.id),
             "task_id": task.id,
             "image_id": image.id,
             "image_url": image_payload["image_url"],
@@ -124,7 +148,40 @@ def get_user_history(
             "images": visible_images,
         })
 
-    return {"total": total, "items": items}
+    for row in prompt_reverse_rows:
+        source_asset = serialize_asset_urls(row.source_image or "", cos_config=cos_config)
+        items.append({
+            "history_id": row.id,
+            "display_id": f"PR-{row.id}",
+            "task_id": -row.id,
+            "image_id": -row.id,
+            "image_url": "",
+            "preview_url": "",
+            "thumb_url": "",
+            "status": "success",
+            "image_format": "",
+            "image_size_bytes": 0,
+            "is_soft_deleted": False,
+            "model": PROMPT_REVERSE_MODEL,
+            "mode": PROMPT_REVERSE_MODE,
+            "prompt": row.prompt or "",
+            "reference_images": [],
+            "reference_image_thumbs": [],
+            "source_image": source_asset["image_url"],
+            "source_image_thumb": source_asset["thumb_url"],
+            "num_images": 0,
+            "size": "-",
+            "resolution": "",
+            "credit_cost": 0,
+            "created_at": row.created_at,
+            "error_message": "",
+            "images": [],
+        })
+
+    items.sort(key=lambda item: item["created_at"] or datetime.min, reverse=True)
+    total = len(items)
+    start_index = (page - 1) * page_size
+    return {"total": total, "items": items[start_index:start_index + page_size]}
 
 
 def delete_user_history_task(db: Session, user_id: int, task_id: int):
@@ -159,33 +216,50 @@ def get_all_history(
     end_date: Optional[datetime] = None,
 ):
     cos_config = get_optional_cos_config(db)
-    base_query = (
+    task_query = (
         db.query(Task)
         .join(User, User.id == Task.user_id)
         .filter(User.role != "superadmin", User.is_whitelisted.is_(False))
     )
+    reverse_query = (
+        db.query(CreditLog)
+        .join(User, User.id == CreditLog.user_id)
+        .filter(
+            CreditLog.type == "consume",
+            CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+            User.role != "superadmin",
+            User.is_whitelisted.is_(False),
+        )
+    )
 
     if status:
-        base_query = base_query.filter(Task.status == status)
+        task_query = task_query.filter(Task.status == status)
+        if status != "success":
+            reverse_query = reverse_query.filter(CreditLog.id.is_(None))
     if user_id:
-        base_query = base_query.filter(Task.user_id == user_id)
+        task_query = task_query.filter(Task.user_id == user_id)
+        reverse_query = reverse_query.filter(CreditLog.user_id == user_id)
     if model:
-        base_query = base_query.filter(Task.model == model)
+        task_query = task_query.filter(Task.model == model)
+        if model != PROMPT_REVERSE_MODEL:
+            reverse_query = reverse_query.filter(CreditLog.id.is_(None))
     if mode:
-        base_query = base_query.filter(Task.mode == mode)
+        task_query = task_query.filter(Task.mode == mode)
+        if mode != PROMPT_REVERSE_MODE:
+            reverse_query = reverse_query.filter(CreditLog.id.is_(None))
     if start_date:
-        base_query = base_query.filter(Task.created_at >= start_date)
+        task_query = task_query.filter(Task.created_at >= start_date)
+        reverse_query = reverse_query.filter(CreditLog.created_at >= start_date)
     if end_date:
-        base_query = base_query.filter(Task.created_at <= end_date)
+        task_query = task_query.filter(Task.created_at <= end_date)
+        reverse_query = reverse_query.filter(CreditLog.created_at <= end_date)
 
-    total = base_query.count()
-    total_credit_cost = base_query.with_entities(func.coalesce(func.sum(Task.credit_cost), 0)).scalar() or 0
-    tasks = (
-        base_query
-        .order_by(Task.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
+    tasks = task_query.order_by(Task.created_at.desc()).all()
+    reverse_logs = reverse_query.order_by(CreditLog.created_at.desc()).all()
+    total = len(tasks) + len(reverse_logs)
+    total_credit_cost = (
+        sum(int(task.credit_cost or 0) for task in tasks)
+        + sum(max(0, int(-(log.amount or 0))) for log in reverse_logs)
     )
 
     user_cache: dict[int, dict[str, str]] = {}
@@ -224,4 +298,37 @@ def get_all_history(
             ),
         })
 
-    return {"total": total, "total_credit_cost": total_credit_cost, "items": items}
+    for log in reverse_logs:
+        if log.user_id not in user_cache:
+            u = db.query(User).filter(User.id == log.user_id).first()
+            user_cache[log.user_id] = {
+                "username": u.username if u else "未知",
+                "avatar_url": (u.avatar_url or "") if u else "",
+            }
+
+        items.append({
+            "task_id": -log.id,
+            "display_id": f"PR-{log.id}",
+            "username": user_cache[log.user_id]["username"],
+            "avatar_url": user_cache[log.user_id]["avatar_url"],
+            "model": PROMPT_REVERSE_MODEL,
+            "mode": PROMPT_REVERSE_MODE,
+            "prompt": "",
+            "reference_images": [],
+            "num_images": 0,
+            "size": "-",
+            "resolution": "",
+            "credit_cost": max(0, int(-(log.amount or 0))),
+            "status": "success",
+            "error_message": "",
+            "is_soft_deleted": False,
+            "soft_deleted_count": 0,
+            "created_at": log.created_at,
+            "images": [],
+        })
+
+    items.sort(key=lambda item: item["created_at"] or datetime.min, reverse=True)
+    start_index = (page - 1) * page_size
+    paged_items = items[start_index:start_index + page_size]
+
+    return {"total": total, "total_credit_cost": total_credit_cost, "items": paged_items}

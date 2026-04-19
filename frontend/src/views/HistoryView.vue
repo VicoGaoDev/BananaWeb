@@ -15,6 +15,7 @@ import { useRouter } from "vue-router";
 import { getGenerationModels } from "@/api/config";
 import { fetchHistory } from "@/api/history";
 import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import { deletePromptHistory } from "@/api/auth";
 import type { GenerationModelOption, ImageResult, UserHistoryCard } from "@/types";
 
 const router = useRouter();
@@ -23,7 +24,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
-const typeFilter = ref<"generate" | "inpaint" | undefined>(undefined);
+const typeFilter = ref<"generate" | "inpaint" | "promptReverse" | undefined>(undefined);
 const modelFilter = ref<string | undefined>(undefined);
 const statusFilter = ref<"pending" | "processing" | "success" | "failed" | undefined>(undefined);
 const promptFilter = ref("");
@@ -45,6 +46,7 @@ const modelOptions = computed(() => {
     value: item.model_key,
   }));
   options.push({ label: "局部重绘", value: "inpaint" });
+  options.push({ label: "提示词反推", value: "提示词反推" });
   return options;
 });
 
@@ -136,7 +138,9 @@ function handlePageChange(p: number) {
 }
 
 function modeLabel(mode: UserHistoryCard["mode"]) {
-  return mode === "inpaint" ? "局部重绘" : "生图";
+  if (mode === "inpaint") return "局部重绘";
+  if (mode === "promptReverse") return "提示词反推";
+  return "生图";
 }
 
 function statusLabel(status: UserHistoryCard["status"]) {
@@ -203,6 +207,20 @@ function getHistoryImageSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_ur
   const displayUrl = getDisplayImageUrl(image);
   if (displayUrl) return displayUrl;
   return image.status === "failed" ? "/failed-result.svg" : "";
+}
+
+function getHistoryCardMedia(item: UserHistoryCard) {
+  if (item.mode === "promptReverse") {
+    return resolveImageUrl(item.source_image_thumb || item.source_image);
+  }
+  return getHistoryImageSrc(item);
+}
+
+function getHistoryCardPreview(item: UserHistoryCard) {
+  if (item.mode === "promptReverse") {
+    return resolveImageUrl(item.source_image);
+  }
+  return getHistoryPreviewSrc(item);
 }
 
 function getHistoryPreviewSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_url" | "preview_url">) {
@@ -306,11 +324,17 @@ async function downloadBlob(imageId: number, imageUrl: string) {
 
 async function handleDelete(item: UserHistoryCard) {
   Modal.confirm({
-    title: "确认删除这张历史结果？",
-    content: "仅删除当前结果图；如果这是该任务最后一张结果图，会同时清理空任务记录。",
+    title: item.mode === "promptReverse" ? "确认删除这条反推记录？" : "确认删除这张历史结果？",
+    content: item.mode === "promptReverse"
+      ? "删除后将移除这条提示词反推历史记录。"
+      : "仅删除当前结果图；如果这是该任务最后一张结果图，会同时清理空任务记录。",
     centered: true,
     async onOk() {
-      await deleteImage(item.image_id);
+      if (item.mode === "promptReverse" && item.history_id) {
+        await deletePromptHistory(item.history_id);
+      } else {
+        await deleteImage(item.image_id);
+      }
       message.success("删除成功");
       selectedImageIds.value = selectedImageIds.value.filter((id) => id !== item.image_id);
       if (items.value.length === 1 && page.value > 1) page.value -= 1;
@@ -354,7 +378,13 @@ async function handleBatchDownload() {
 
 async function deleteSelectedItems() {
   const ids = selectedImageIds.value.slice();
-  const results = await Promise.allSettled(ids.map((id) => deleteImage(id)));
+  const results = await Promise.allSettled(ids.map((id) => {
+    const item = items.value.find((entry) => entry.image_id === id);
+    if (item?.mode === "promptReverse" && item.history_id) {
+      return deletePromptHistory(item.history_id);
+    }
+    return deleteImage(id);
+  }));
   const successIds = ids.filter((_, index) => results[index].status === "fulfilled");
   const failedCount = ids.length - successIds.length;
 
@@ -380,7 +410,7 @@ function handleBatchDelete() {
   }
   Modal.confirm({
     title: `确认删除已选中的 ${selectedCount.value} 条历史结果？`,
-    content: "仅删除当前选中的结果图；若任务下已无结果图，系统会自动清理空任务记录。",
+    content: "已选项会按类型分别删除：结果图走图片删除，提示词反推走历史记录删除。",
     centered: true,
     async onOk() {
       await deleteSelectedItems();
@@ -389,7 +419,15 @@ function handleBatchDelete() {
 }
 
 function handleReedit(item: UserHistoryCard) {
-  if (item.mode === "inpaint") {
+  if (item.mode === "promptReverse") {
+    localStorage.setItem(
+      "generateDraftFromHistory",
+      JSON.stringify({
+        mode: "generate",
+        prompt: item.prompt,
+      })
+    );
+  } else if (item.mode === "inpaint") {
     localStorage.setItem(
       "generateDraftFromHistory",
       JSON.stringify({
@@ -440,6 +478,7 @@ function handleReedit(item: UserHistoryCard) {
       <a-select v-model:value="typeFilter" placeholder="全部类型" style="width: 160px" allow-clear>
         <a-select-option value="generate">生图</a-select-option>
         <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="promptReverse">提示词反推</a-select-option>
       </a-select>
       <a-select v-model:value="modelFilter" placeholder="全部模型" style="width: 170px" allow-clear>
         <a-select-option v-for="option in modelOptions" :key="option.value" :value="option.value">
@@ -531,12 +570,12 @@ function handleReedit(item: UserHistoryCard) {
 
           <div class="result-card-media">
             <img
-              v-if="getHistoryImageSrc(item)"
-              :src="getHistoryImageSrc(item)"
-              :alt="item.status === 'failed' ? '生成失败' : '历史结果图'"
+              v-if="getHistoryCardMedia(item)"
+              :src="getHistoryCardMedia(item)"
+              :alt="item.mode === 'promptReverse' ? '提示词反推原图' : item.status === 'failed' ? '生成失败' : '历史结果图'"
               :class="{ 'failed-result-image': item.status === 'failed' }"
               loading="lazy"
-              @click.stop="openPreview(getHistoryPreviewSrc(item))"
+              @click.stop="getHistoryCardPreview(item) && openPreview(getHistoryCardPreview(item))"
             />
             <div v-else class="result-card-placeholder">
               <ClockCircleOutlined />
@@ -544,9 +583,12 @@ function handleReedit(item: UserHistoryCard) {
           </div>
 
           <div class="result-card-body">
+            <div class="result-card-mode">{{ modeLabel(item.mode) }}</div>
             <div class="result-card-file-meta">
-              <span>格式：{{ item.image_format || "-" }}</span>
-              <span>大小：{{ formatImageSize(item.image_size_bytes) }}</span>
+              <span>ID：{{ item.display_id || item.image_id }}</span>
+              <span>模型：{{ getModelLabel(item.model) }}</span>
+              <span v-if="item.mode !== 'promptReverse'">格式：{{ item.image_format || "-" }}</span>
+              <span v-if="item.mode !== 'promptReverse'">大小：{{ formatImageSize(item.image_size_bytes) }}</span>
             </div>
 
             <div class="result-card-actions">
@@ -560,7 +602,7 @@ function handleReedit(item: UserHistoryCard) {
                   type="text"
                   size="small"
                   class="ghost-icon-btn"
-                  :disabled="!item.image_url"
+                  :disabled="!item.image_url || item.mode === 'promptReverse'"
                   @click.stop="download(item.image_id, item.image_url)"
                 >
                   <template #icon><DownloadOutlined /></template>
@@ -598,8 +640,13 @@ function handleReedit(item: UserHistoryCard) {
         <div class="detail-layout">
           <div class="detail-left">
             <div class="detail-section">
-              <div class="detail-label">该任务全部结果</div>
-              <div class="detail-result-grid">
+              <div class="detail-label">{{ detailItem.mode === 'promptReverse' ? '反推原图' : '该任务全部结果' }}</div>
+              <div v-if="detailItem.mode === 'promptReverse' && detailItem.source_image" class="detail-thumb-row">
+                <div class="detail-thumb detail-thumb-large" @click="openPreview(resolveImageUrl(detailItem.source_image))">
+                  <img :src="resolveImageUrl(detailItem.source_image_thumb || detailItem.source_image)" alt="提示词反推原图" loading="lazy" />
+                </div>
+              </div>
+              <div v-else class="detail-result-grid">
                 <div
                   v-for="img in detailItem.images"
                   :key="img.id"
@@ -960,6 +1007,12 @@ function handleReedit(item: UserHistoryCard) {
   padding-top: 12px;
 }
 
+.result-card-mode {
+  font-size: 13px;
+  font-weight: 700;
+  color: #7b5c2d;
+}
+
 .result-card-file-meta {
   display: flex;
   gap: 12px;
@@ -1101,6 +1154,12 @@ function handleReedit(item: UserHistoryCard) {
     object-fit: cover;
     display: block;
   }
+}
+
+.detail-thumb-large {
+  width: min(100%, 520px);
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .detail-result-grid {

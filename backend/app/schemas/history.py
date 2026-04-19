@@ -18,6 +18,7 @@ class HistoryImageOut(BaseModel):
 
 class HistoryItem(BaseModel):
     task_id: int
+    display_id: str = ""
     username: str = ""
     avatar_url: str = ""
     model: str = ""
@@ -29,6 +30,7 @@ class HistoryItem(BaseModel):
     resolution: str = ""
     credit_cost: int = 0
     status: str
+    error_message: str = ""
     is_soft_deleted: bool = False
     soft_deleted_count: int = 0
     created_at: datetime | None = None
@@ -42,6 +44,8 @@ class HistoryResponse(BaseModel):
 
 
 class UserHistoryCardItem(BaseModel):
+    history_id: int | None = None
+    display_id: str = ""
     task_id: int
     image_id: int
     image_url: str = ""

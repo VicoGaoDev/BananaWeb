@@ -24,6 +24,7 @@ def on_startup():
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
     _ensure_user_whitelist_column()
+    _ensure_prompt_history_columns()
     _ensure_image_required_columns()
     _ensure_task_credit_cost_column()
     _ensure_template_required_columns()
@@ -84,6 +85,14 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE images ADD COLUMN error_message VARCHAR(2000) DEFAULT ''"))
 
     api_key_tables = set(inspector.get_table_names())
+    if "prompt_history" in api_key_tables:
+        prompt_history_columns = {col["name"] for col in inspector.get_columns("prompt_history")}
+        with engine.begin() as conn:
+            if "mode" not in prompt_history_columns:
+                conn.execute(text("ALTER TABLE prompt_history ADD COLUMN mode VARCHAR(20) DEFAULT 'generate'"))
+            if "source_image" not in prompt_history_columns:
+                conn.execute(text("ALTER TABLE prompt_history ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
+
     if "api_keys" in api_key_tables:
         api_key_columns = {col["name"] for col in inspector.get_columns("api_keys")}
         with engine.begin() as conn:
@@ -215,6 +224,19 @@ def _ensure_image_required_columns():
             conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
         if "image_size_bytes" not in image_columns:
             conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
+
+
+def _ensure_prompt_history_columns():
+    inspector = inspect(engine)
+    if "prompt_history" not in inspector.get_table_names():
+        return
+
+    prompt_history_columns = {col["name"] for col in inspector.get_columns("prompt_history")}
+    with engine.begin() as conn:
+        if "mode" not in prompt_history_columns:
+            conn.execute(text("ALTER TABLE prompt_history ADD COLUMN mode VARCHAR(20) DEFAULT 'generate'"))
+        if "source_image" not in prompt_history_columns:
+            conn.execute(text("ALTER TABLE prompt_history ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
 
 
 def _ensure_task_credit_cost_column():

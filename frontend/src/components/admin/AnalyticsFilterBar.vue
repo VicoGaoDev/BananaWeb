@@ -2,13 +2,13 @@
 import { computed } from "vue";
 import type { PropType } from "vue";
 import type { Dayjs } from "dayjs";
-import type { AdminAnalyticsGranularity, AdminUser } from "@/types";
+import type { AdminAnalyticsGranularity, AdminUser, TaskMode } from "@/types";
 
 type FilterState = {
   status?: string;
   user_id?: number;
   model?: string;
-  mode?: "generate" | "inpaint";
+  mode?: TaskMode;
   dateRange: [Dayjs, Dayjs] | null;
 };
 
@@ -136,6 +136,7 @@ const presetOptions = computed(() => {
       >
         <a-select-option value="generate">生图</a-select-option>
         <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="promptReverse">提示词反推</a-select-option>
       </a-select>
 
       <a-select

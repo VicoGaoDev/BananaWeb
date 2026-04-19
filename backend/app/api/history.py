@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
 def list_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    mode: str | None = Query(None, pattern="^(generate|inpaint)$"),
+    mode: str | None = Query(None, pattern="^(generate|inpaint|promptReverse)$"),
     model: str | None = Query(None),
     prompt: str | None = Query(None),
     status: str | None = Query(None, pattern="^(pending|processing|success|failed)$"),
