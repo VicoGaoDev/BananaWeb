@@ -1,5 +1,5 @@
 import client from "./client";
-import type { CreativeTemplate, TemplateTag } from "@/types";
+import type { CreativeTemplate, TemplateListResponse, TemplateTag } from "@/types";
 
 export interface TemplatePayload {
   prompt: string;
@@ -17,8 +17,10 @@ export interface TemplateTagPayload {
   name: string;
 }
 
-export function listTemplates(tagId?: number): Promise<CreativeTemplate[]> {
+export function listTemplates(page: number = 1, pageSize: number = 20, tagId?: number): Promise<TemplateListResponse> {
   const params: Record<string, unknown> = {};
+  params.page = page;
+  params.page_size = pageSize;
   if (tagId) params.tag_id = tagId;
   return client.get("/templates", { params });
 }

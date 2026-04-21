@@ -13,6 +13,7 @@ from app.schemas.template import (
     TemplateCreate,
     TemplateDetailOut,
     TemplateListItemOut,
+    TemplateListResponse,
     TemplateTagPayload,
     TemplateTagOut,
     TemplateUpdate,
@@ -96,17 +97,23 @@ def _sync_template_tags(db: Session, template: Template, tag_names: list[str]):
         template.tag_relations.append(TemplateTagRelation(tag_id=tag.id))
 
 
-@router.get("", response_model=list[TemplateListItemOut])
+@router.get("", response_model=TemplateListResponse)
 def list_templates(
     tag_id: int | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     cos_config = get_optional_cos_config(db)
     query = db.query(Template).order_by(Template.sort_order.desc(), Template.created_at.desc())
     if tag_id is not None:
         query = query.join(TemplateTagRelation).filter(TemplateTagRelation.tag_id == tag_id)
-    templates = query.all()
-    return [_serialize_template_list_item(template, cos_config=cos_config) for template in templates]
+    total = query.count()
+    templates = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "total": total,
+        "items": [_serialize_template_list_item(template, cos_config=cos_config) for template in templates],
+    }
 
 
 @router.get("/tags", response_model=list[TemplateTagOut])

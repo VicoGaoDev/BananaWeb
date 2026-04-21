@@ -12,7 +12,6 @@ import {
   EditOutlined,
   EyeOutlined,
   LoadingOutlined,
-  PictureOutlined,
   RedoOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
@@ -1152,30 +1151,32 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <div v-if="reversePromptResult" class="reverse-result-card">
-                <div class="panel-head">
-                  <h3>反推结果</h3>
+              <transition name="generate-panel-slide" mode="out-in">
+                <div v-if="reversePromptResult" key="reverse-result" class="reverse-result-card">
+                  <div class="panel-head">
+                    <h3>反推结果</h3>
+                  </div>
+                  <a-textarea
+                    :value="reversePromptResult"
+                    :rows="8"
+                    readonly
+                    class="prompt-input reverse-result-input"
+                  />
+                  <div class="reverse-actions">
+                    <a-button class="reverse-action-btn reverse-action-btn-secondary" @click="copyReversePrompt">
+                      <template #icon><CopyOutlined /></template>
+                      复制提示词
+                    </a-button>
+                    <a-button class="reverse-action-btn reverse-action-btn-primary" type="primary" @click="applyReversePrompt">
+                      带入文生图/图编辑
+                    </a-button>
+                  </div>
                 </div>
-                <a-textarea
-                  :value="reversePromptResult"
-                  :rows="8"
-                  readonly
-                  class="prompt-input reverse-result-input"
-                />
-                <div class="reverse-actions">
-                  <a-button class="reverse-action-btn reverse-action-btn-secondary" @click="copyReversePrompt">
-                    <template #icon><CopyOutlined /></template>
-                    复制提示词
-                  </a-button>
-                  <a-button class="reverse-action-btn reverse-action-btn-primary" type="primary" @click="applyReversePrompt">
-                    带入文生图/图编辑
-                  </a-button>
-                </div>
-              </div>
 
-              <div v-else class="reverse-result-placeholder">
-                上传图片后，点击「开始反推」即可获得适合 AI 绘画的中文提示词。
-              </div>
+                <div v-else key="reverse-placeholder" class="reverse-result-placeholder">
+                  上传图片后，点击「开始反推」即可获得适合 AI 绘画的中文提示词。
+                </div>
+              </transition>
               </div>
 
               <div class="settings-footer">
@@ -1357,11 +1358,12 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="result-body">
-          <div v-if="resultItems.length" class="result-list">
+          <TransitionGroup v-if="resultItems.length" name="generate-result" tag="div" class="result-list">
             <div
-              v-for="item in resultItems"
+              v-for="(item, index) in resultItems"
               :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
               class="result-card"
+              :style="{ '--generate-result-delay': `${Math.min(index, 9) * 45}ms` }"
               :class="{ pending: item.image.status === 'pending' }"
             >
               <div
@@ -1413,10 +1415,16 @@ onBeforeUnmount(() => {
                 </template>
               </div>
             </div>
-          </div>
+          </TransitionGroup>
 
           <div v-else class="result-empty">
-            <PictureOutlined class="empty-icon" />
+            <div class="empty-illustration-shell">
+              <img
+                src="/generate-empty-state.svg"
+                alt="生成结果占位插画"
+                class="empty-illustration"
+              />
+            </div>
             <div class="empty-title">{{ resultEmptyTitle }}</div>
             <div class="empty-desc">{{ resultEmptyDesc }}</div>
           </div>
@@ -1436,11 +1444,12 @@ onBeforeUnmount(() => {
         <div v-if="historyItems.length === 0 && !historyLoading" class="history-empty">
           暂无历史提示词
         </div>
-        <div v-else class="history-list">
+        <TransitionGroup v-else name="history-item" tag="div" class="history-list">
           <div
-            v-for="item in historyItems"
+            v-for="(item, index) in historyItems"
             :key="item.id"
             class="history-item"
+            :style="{ '--history-item-delay': `${Math.min(index, 9) * 35}ms` }"
             @click="useHistoryPrompt(item.prompt)"
           >
             <div v-if="item.source_image" class="history-thumb">
@@ -1462,7 +1471,7 @@ onBeforeUnmount(() => {
               <template #icon><DeleteOutlined /></template>
             </a-button>
           </div>
-        </div>
+        </TransitionGroup>
       </a-spin>
     </a-modal>
 
@@ -1486,6 +1495,72 @@ onBeforeUnmount(() => {
   --config-title-gap: 8px;
   --config-title-color: #5e4524;
   --config-section-gap: 12px;
+  animation: generate-page-enter var(--motion-duration-reveal-soft) ease both;
+}
+
+@keyframes generate-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes generate-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes generate-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes generate-empty-float {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes generate-slide-left-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes generate-slide-right-in {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
 
 .generate-workbench {
@@ -1495,12 +1570,14 @@ onBeforeUnmount(() => {
   align-items: stretch;
   min-height: 100%;
   height: 100%;
+  animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
 }
 
 .left-col {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  animation: generate-slide-left-in var(--motion-duration-stage) var(--motion-ease-enter) 0.08s both;
 }
 
 .generate-tabs {
@@ -1519,11 +1596,12 @@ onBeforeUnmount(() => {
     font-size: 15px;
     font-weight: 700;
     color: #8f7558;
-    transition: color 0.2s ease;
+    transition: color var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-press) var(--motion-ease-soft);
   }
 
   :deep(.ant-tabs-tab:hover) {
     color: #b77a17;
+    transform: translateY(-1px);
   }
 
   :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
@@ -1595,6 +1673,7 @@ onBeforeUnmount(() => {
 .config-section {
   position: relative;
   padding: 0 0 12px;
+  transition: transform var(--motion-duration-base) var(--motion-ease-soft), opacity var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .compact-config-section {
@@ -1634,11 +1713,23 @@ onBeforeUnmount(() => {
   font-size: 17px;
   background: rgba(255, 250, 242, 0.92) !important;
   border: 1px solid rgba(241, 221, 183, 0.95) !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     color: #d38a12 !important;
     background: rgba(255, 238, 205, 0.92) !important;
     border-color: #efc784 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(236, 185, 88, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.94);
   }
 }
 
@@ -1768,12 +1859,27 @@ onBeforeUnmount(() => {
   background: linear-gradient(180deg, #fffdf9, #fff7ec);
   flex-shrink: 0;
   box-shadow: 0 8px 18px rgba(241, 190, 103, 0.12);
+  transition:
+    transform var(--motion-duration-swift) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-swift) var(--motion-ease-soft),
+    border-color var(--motion-duration-swift) var(--motion-ease-soft);
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform var(--motion-duration-hover) var(--motion-ease-enter);
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: #ebb967;
+    box-shadow: 0 14px 24px rgba(241, 190, 103, 0.16);
+  }
+
+  &:hover img {
+    transform: scale(1.04);
   }
 }
 
@@ -1827,15 +1933,22 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 10px 22px rgba(241, 190, 103, 0.12);
-  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
   flex-shrink: 0;
 
   &:hover {
     border-color: #f1bd57;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.84),
       0 14px 24px rgba(241, 190, 103, 0.16);
+  }
+
+  &:active {
+    transform: scale(0.96);
   }
 }
 
@@ -1861,10 +1974,11 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
     0 10px 22px rgba(244, 182, 84, 0.08);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-soft), box-shadow var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     border-color: #e7bb68;
+    transform: translateY(-1px);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.82),
       0 12px 22px rgba(244, 182, 84, 0.12);
@@ -1998,13 +2112,17 @@ onBeforeUnmount(() => {
   &:focus {
     background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
     box-shadow: 0 20px 34px rgba(255, 169, 37, 0.3) !important;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
   &:disabled {
     background: linear-gradient(180deg, #f0dcb1, #ead3a3) !important;
     color: rgba(111, 88, 58, 0.72) !important;
     box-shadow: none !important;
+  }
+
+  &:active {
+    transform: scale(0.97);
   }
 }
 
@@ -2020,11 +2138,16 @@ onBeforeUnmount(() => {
   justify-content: center;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-fast) var(--motion-ease-soft), box-shadow var(--motion-duration-base) var(--motion-ease-soft);
 
   &:hover {
     border-color: #f1bd57;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 28px rgba(236, 185, 88, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.99);
   }
 }
 
@@ -2053,6 +2176,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px solid #f0ddbb;
   background: #fff8ec;
+  transition: transform var(--motion-duration-base) var(--motion-ease-soft), box-shadow var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .reverse-preview-image {
@@ -2060,6 +2184,16 @@ onBeforeUnmount(() => {
   display: block;
   max-height: 420px;
   object-fit: contain;
+  transition: transform var(--motion-duration-hover) var(--motion-ease-enter);
+}
+
+.reverse-preview-shell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 30px rgba(236, 185, 88, 0.12);
+}
+
+.reverse-preview-shell:hover .reverse-preview-image {
+  transform: scale(1.01);
 }
 
 .reverse-result-card {
@@ -2094,7 +2228,11 @@ onBeforeUnmount(() => {
 
   &:hover,
   &:focus {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: scale(0.97);
   }
 }
 
@@ -2139,11 +2277,17 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   background: linear-gradient(180deg, #fff9ef, #fffdf8);
   border: 1px solid #f1dfbe;
+  transition: transform var(--motion-duration-base) var(--motion-ease-soft), box-shadow var(--motion-duration-base) var(--motion-ease-soft), border-color var(--motion-duration-base) var(--motion-ease-soft);
 
   &.ready {
     background: linear-gradient(180deg, #fff5df, #fffaf0);
     border-color: #f0c36a;
   }
+}
+
+.repaint-status-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 24px rgba(236, 185, 88, 0.12);
 }
 
 .repaint-status-title {
@@ -2189,12 +2333,19 @@ onBeforeUnmount(() => {
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(8px);
-  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     background: rgba(48, 48, 54, 0.94);
     border-color: rgba(255, 255, 255, 0.24);
-    transform: scale(1.03);
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  &:active {
+    transform: scale(0.94);
   }
 }
 
@@ -2222,12 +2373,17 @@ onBeforeUnmount(() => {
   justify-content: center;
   font-size: 18px;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, opacity 0.2s, border-color 0.2s, transform 0.2s;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    opacity var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.12);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
   }
 
   &.active {
@@ -2240,6 +2396,10 @@ onBeforeUnmount(() => {
   &:disabled {
     opacity: 0.35;
     cursor: not-allowed;
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.95);
   }
 }
 
@@ -2320,6 +2480,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  animation: generate-slide-right-in var(--motion-duration-stage-delayed) var(--motion-ease-enter) 0.14s both;
 }
 
 .result-tips {
@@ -2384,10 +2545,19 @@ onBeforeUnmount(() => {
 
 .result-card {
   border-radius: 20px;
+  transition: transform var(--motion-duration-hover) var(--motion-ease-enter);
 
   &.pending .result-frame {
     aspect-ratio: 1 / 1;
     min-height: auto;
+  }
+
+  &:hover {
+    transform: translateY(-4px);
+  }
+
+  &:active {
+    transform: scale(0.992);
   }
 }
 
@@ -2398,12 +2568,17 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
+    border-color var(--motion-duration-hover) var(--motion-ease-soft);
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 
   &.clickable {
@@ -2417,6 +2592,15 @@ onBeforeUnmount(() => {
   &.failed {
     background: #fff7f5;
   }
+}
+
+.result-card:hover .result-frame.clickable {
+  border-color: #efc784;
+  box-shadow: 0 18px 30px rgba(236, 185, 88, 0.16);
+}
+
+.result-card:hover .result-frame.clickable img {
+  transform: scale(1.03);
 }
 
 .failed-image {
@@ -2462,6 +2646,21 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.92) !important;
   color: #684825 !important;
   box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 22px rgba(0, 0, 0, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.93);
+  }
 
   &.danger {
     color: #d6574b !important;
@@ -2484,11 +2683,22 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  padding: 28px 24px 32px;
+  animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.2s both;
 }
 
-.empty-icon {
-  font-size: 48px;
-  color: #e8d7b7;
+.empty-illustration-shell {
+  width: min(100%, 220px);
+  margin-bottom: 8px;
+}
+
+.empty-illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  animation: generate-empty-float 8s ease-in-out infinite;
+  transform-origin: center center;
+  filter: drop-shadow(0 18px 34px rgba(217, 238, 243, 0.28));
 }
 
 .empty-title {
@@ -2508,6 +2718,7 @@ onBeforeUnmount(() => {
   padding: 32px 0;
   color: #a88962;
   font-size: 14px;
+  animation: generate-fade-up var(--motion-duration-reveal-fast) var(--motion-ease-enter) both;
 }
 
 .history-list {
@@ -2522,10 +2733,15 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background var(--motion-duration-micro) var(--motion-ease-soft),
+    transform var(--motion-duration-micro) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-soft);
 
   &:hover {
     background: #fff8ec;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 18px rgba(236, 185, 88, 0.1);
   }
 
   & + & {
@@ -2588,9 +2804,106 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   color: #c0a578 !important;
   margin-top: 2px;
+  transition: transform var(--motion-duration-press) var(--motion-ease-soft), color var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     color: #d6574b !important;
+    transform: scale(1.05);
+  }
+}
+
+.generate-result-enter-active,
+.generate-result-leave-active {
+  transition:
+    opacity var(--motion-duration-emphasis) var(--motion-ease-soft),
+    transform var(--motion-duration-emphasis-plus) var(--motion-ease-enter);
+  transition-delay: var(--generate-result-delay, 0ms);
+}
+
+.generate-result-enter-from,
+.generate-result-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0) scale(0.985);
+}
+
+.generate-result-move {
+  transition: transform var(--motion-duration-reveal-fast) var(--motion-ease-enter);
+}
+
+.history-item-enter-active,
+.history-item-leave-active {
+  transition:
+    opacity var(--motion-duration-base) var(--motion-ease-soft),
+    transform var(--motion-duration-emphasis) var(--motion-ease-enter);
+  transition-delay: var(--history-item-delay, 0ms);
+}
+
+.history-item-enter-from,
+.history-item-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+}
+
+.history-item-move {
+  transition: transform var(--motion-duration-hover-slow) var(--motion-ease-enter);
+}
+
+.generate-panel-slide-enter-active,
+.generate-panel-slide-leave-active {
+  transition:
+    opacity var(--motion-duration-slide) var(--motion-ease-soft),
+    transform var(--motion-duration-slide) var(--motion-ease-enter),
+    filter var(--motion-duration-slide) var(--motion-ease-soft);
+}
+
+.generate-panel-slide-enter-from,
+.generate-panel-slide-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -12px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generate-page,
+  .generate-workbench,
+  .left-col,
+  .result-panel,
+  .result-empty,
+  .history-empty {
+    animation: none !important;
+  }
+
+  .config-section,
+  .history-btn,
+  .generate-config-panel .upload-thumb,
+  .generate-config-panel .upload-thumb img,
+  .generate-config-panel .upload-add,
+  .generate-config-panel .flat-select,
+  .generate-btn,
+  .source-upload-empty,
+  .reverse-preview-shell,
+  .reverse-preview-image,
+  .reverse-action-btn,
+  .repaint-status-card,
+  .canvas-remove-btn,
+  .tool-btn,
+  .result-card,
+  .result-frame,
+  .result-frame img,
+  .empty-illustration,
+  .icon-chip,
+  .history-item,
+  .history-del,
+  .generate-result-enter-active,
+  .generate-result-leave-active,
+  .generate-result-move,
+  .history-item-enter-active,
+  .history-item-leave-active,
+  .history-item-move,
+  .generate-panel-slide-enter-active,
+  .generate-panel-slide-leave-active,
+  .generate-tabs :deep(.ant-tabs-tab) {
+    transition: none !important;
   }
 }
 

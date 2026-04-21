@@ -156,7 +156,7 @@ function handlePointClick(params: { dataIndex?: number }) {
 <template>
   <a-spin :spinning="loading">
     <div v-if="hasTrendData" class="trend-grid">
-      <div class="trend-card warm-card">
+      <div class="trend-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 220ms">
         <div class="trend-card-head">
           <div>
             <div class="trend-card-title">任务趋势对比</div>
@@ -166,7 +166,7 @@ function handlePointClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="trend-chart" :option="tasksOption" autoresize @click="handlePointClick" />
       </div>
-      <div class="trend-card warm-card">
+      <div class="trend-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 260ms">
         <div class="trend-card-head">
           <div>
             <div class="trend-card-title">积分与新增用户</div>
@@ -176,7 +176,7 @@ function handlePointClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="trend-chart" :option="creditOption" autoresize @click="handlePointClick" />
       </div>
-      <div class="trend-card warm-card trend-card-wide">
+      <div class="trend-card warm-card trend-card-wide motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
         <div class="trend-card-head">
           <div>
             <div class="trend-card-title">成功失败趋势对比</div>
@@ -187,7 +187,7 @@ function handlePointClick(params: { dataIndex?: number }) {
         <VChart class="trend-chart" :option="statusOption" autoresize @click="handlePointClick" />
       </div>
     </div>
-    <div v-else class="trend-empty warm-card">
+    <div v-else class="trend-empty warm-card motion-fade-up" style="--motion-delay: 220ms">
       <a-empty class="warm-empty" description="当前筛选条件下暂无趋势数据">
         <template #description>
           <div class="empty-title">当前筛选条件下暂无趋势数据</div>
@@ -220,7 +220,7 @@ function handlePointClick(params: { dataIndex?: number }) {
   min-height: 340px;
   padding: 18px 20px 14px;
   overflow: hidden;
-  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+  transition: transform var(--motion-duration-swift) var(--motion-ease-soft), box-shadow var(--motion-duration-swift) var(--motion-ease-soft), border-color var(--motion-duration-swift) var(--motion-ease-soft);
 
   &:hover {
     transform: translateY(-2px);

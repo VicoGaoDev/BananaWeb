@@ -37,6 +37,20 @@ const auth = useAuthStore();
 const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const mobileDrawerOpen = ref(false);
+const routeTransitionName = ref("route-page-forward");
+
+const routeOrder = new Map<string, number>([
+  ["/templates", 0],
+  ["/generate", 1],
+  ["/history", 2],
+  ["/credit-logs", 3],
+  ["/admin/templates", 4],
+  ["/admin/users", 5],
+  ["/admin/dashboard", 6],
+  ["/admin/api-key", 7],
+  ["/admin/cos-config", 8],
+  ["/admin/external-api-configs", 9],
+]);
 
 const primaryMenuItems = [
   { key: "templates", label: "创意模版", icon: PictureOutlined },
@@ -74,6 +88,16 @@ const adminSelectedKeys = computed(() => {
   if (!route.path.startsWith("/admin")) return [];
   return [route.path];
 });
+
+watch(
+  () => route.path,
+  (to, from) => {
+    const toRank = routeOrder.get(to) ?? 0;
+    const fromRank = routeOrder.get(from) ?? 0;
+    routeTransitionName.value = toRank < fromRank ? "route-page-back" : "route-page-forward";
+  },
+  { immediate: true }
+);
 
 function handleMenuClick({ key }: { key: string }) {
   mobileDrawerOpen.value = false;
@@ -433,7 +457,13 @@ async function handleAvatarChange(e: Event) {
 
     <a-layout-content class="app-content">
       <div class="content-inner">
-        <router-view />
+        <router-view v-slot="{ Component, route: currentRoute }">
+          <transition :name="routeTransitionName" mode="out-in">
+            <div :key="currentRoute.path" class="route-page-shell">
+              <component :is="Component" />
+            </div>
+          </transition>
+        </router-view>
       </div>
     </a-layout-content>
 
@@ -1150,6 +1180,63 @@ async function handleAvatarChange(e: Event) {
 .content-inner {
   max-width: 1400px;
   margin: 0 auto;
+  position: relative;
+}
+
+.route-page-shell {
+  min-width: 0;
+}
+
+.route-page-forward-enter-active,
+.route-page-forward-leave-active,
+.route-page-back-enter-active,
+.route-page-back-leave-active {
+  transition:
+    opacity var(--motion-duration-reveal-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-reveal) var(--motion-ease-enter),
+    filter var(--motion-duration-reveal-fast) var(--motion-ease-soft);
+}
+
+.route-page-forward-enter-from {
+  opacity: 0;
+  transform: translate3d(18px, 0, 0);
+  filter: blur(8px);
+}
+
+.route-page-forward-leave-to {
+  opacity: 0;
+  transform: translate3d(-14px, 0, 0);
+  filter: blur(6px);
+}
+
+.route-page-back-enter-from {
+  opacity: 0;
+  transform: translate3d(-18px, 0, 0);
+  filter: blur(8px);
+}
+
+.route-page-back-leave-to {
+  opacity: 0;
+  transform: translate3d(14px, 0, 0);
+  filter: blur(6px);
+}
+
+.route-page-forward-enter-to,
+.route-page-forward-leave-from,
+.route-page-back-enter-to,
+.route-page-back-leave-from {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-page-forward-enter-active,
+  .route-page-forward-leave-active,
+  .route-page-back-enter-active,
+  .route-page-back-leave-active {
+    transition: none !important;
+  }
 }
 
 :deep(.mobile-nav-drawer .ant-drawer-header) {

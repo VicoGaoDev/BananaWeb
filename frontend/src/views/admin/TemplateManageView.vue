@@ -325,8 +325,8 @@ function fmtTime(t: string) {
 </script>
 
 <template>
-  <div class="warm-page">
-    <div class="warm-page-header">
+  <div class="warm-page motion-page-enter">
+    <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
           <PictureOutlined />
@@ -348,7 +348,7 @@ function fmtTime(t: string) {
       </div>
     </div>
 
-    <div class="tag-filter-row">
+    <div class="tag-filter-row motion-fade-up" style="--motion-delay: 120ms">
       <a-tag class="manage-filter-tag" :class="{ active: activeTagId === null }" @click="activeTagId = null">
         全部模版
       </a-tag>
@@ -363,7 +363,7 @@ function fmtTime(t: string) {
       </a-tag>
     </div>
 
-    <div class="warm-card warm-table-card">
+    <div class="warm-card warm-table-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
       <a-table
         :columns="columns"
         :data-source="filteredTemplates"

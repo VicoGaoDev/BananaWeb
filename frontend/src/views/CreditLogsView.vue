@@ -192,38 +192,40 @@ onMounted(() => {
       <a-button class="credit-filter-btn credit-filter-btn-secondary" @click="handleReset">重置</a-button>
     </div>
 
-    <a-table
-      :columns="columns"
-      :data-source="items"
-      :loading="loading"
-      :pagination="false"
-      row-key="id"
-      :scroll="{ x: 700 }"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.dataIndex === 'created_at'">
-          {{ formatTime(record.created_at) }}
+    <div class="table-shell">
+      <a-table
+        :columns="columns"
+        :data-source="items"
+        :loading="loading"
+        :pagination="false"
+        row-key="id"
+        :scroll="{ x: 700 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.dataIndex === 'created_at'">
+            {{ formatTime(record.created_at) }}
+          </template>
+          <template v-else-if="column.dataIndex === 'type'">
+            <a-tag class="credit-type-tag" :class="record.amount > 0 ? 'credit-type-tag-income' : 'credit-type-tag-expense'">
+              {{ directionLabel(record) }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.dataIndex === 'mode'">
+            {{ modeLabel(record.mode) }}
+          </template>
+          <template v-else-if="column.dataIndex === 'amount'">
+            <span :class="record.amount > 0 ? 'amount-plus' : 'amount-minus'">
+              <ArrowUpOutlined v-if="record.amount > 0" />
+              <ArrowDownOutlined v-else />
+              {{ record.amount > 0 ? "+" : "" }}{{ record.amount }}
+            </span>
+          </template>
+          <template v-else-if="column.dataIndex === 'operator_name'">
+            {{ record.operator_name || "-" }}
+          </template>
         </template>
-        <template v-else-if="column.dataIndex === 'type'">
-          <a-tag class="credit-type-tag" :class="record.amount > 0 ? 'credit-type-tag-income' : 'credit-type-tag-expense'">
-            {{ directionLabel(record) }}
-          </a-tag>
-        </template>
-        <template v-else-if="column.dataIndex === 'mode'">
-          {{ modeLabel(record.mode) }}
-        </template>
-        <template v-else-if="column.dataIndex === 'amount'">
-          <span :class="record.amount > 0 ? 'amount-plus' : 'amount-minus'">
-            <ArrowUpOutlined v-if="record.amount > 0" />
-            <ArrowDownOutlined v-else />
-            {{ record.amount > 0 ? "+" : "" }}{{ record.amount }}
-          </span>
-        </template>
-        <template v-else-if="column.dataIndex === 'operator_name'">
-          {{ record.operator_name || "-" }}
-        </template>
-      </template>
-    </a-table>
+      </a-table>
+    </div>
 
     <div class="pagination-wrap" v-if="total > pageSize">
       <a-pagination
@@ -243,6 +245,27 @@ onMounted(() => {
   max-width: 960px;
   margin: 32px auto;
   padding: 0 24px;
+  animation: credit-page-enter var(--motion-duration-reveal) ease both;
+}
+
+@keyframes credit-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes credit-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
 
 .page-header {
@@ -250,6 +273,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   margin-bottom: 24px;
+  animation: credit-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
 }
 
 .page-header h2 {
@@ -271,6 +295,16 @@ onMounted(() => {
   padding: 6px 16px;
   font-size: 14px;
   color: #d48806;
+  transition:
+    transform var(--motion-duration-micro) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.balance-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 24px rgba(236, 185, 88, 0.14);
+  border-color: #f0c46d;
 }
 
 .balance-badge strong {
@@ -284,6 +318,7 @@ onMounted(() => {
   gap: 12px;
   margin-bottom: 20px;
   flex-wrap: wrap;
+  animation: credit-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.12s both;
 }
 
 .credit-filter-btn {
@@ -291,6 +326,16 @@ onMounted(() => {
   border-radius: 12px;
   font-weight: 600;
   box-shadow: none;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.credit-filter-btn:active {
+  transform: scale(0.96);
 }
 
 .credit-filter-btn-primary {
@@ -304,6 +349,8 @@ onMounted(() => {
   border-color: #c7770d !important;
   background: linear-gradient(135deg, #f5b24c 0%, #e49729 100%) !important;
   color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(223, 139, 29, 0.2) !important;
 }
 
 .credit-filter-btn-secondary {
@@ -317,12 +364,50 @@ onMounted(() => {
   border-color: #e1a64a !important;
   background: #fff0d3 !important;
   color: #c7770d !important;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(236, 185, 88, 0.12) !important;
+}
+
+.table-shell {
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid rgba(241, 210, 154, 0.72);
+  background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
+  box-shadow: 0 18px 40px rgba(236, 185, 88, 0.12);
+  animation: credit-fade-up var(--motion-duration-reveal-soft-plus) var(--motion-ease-enter) 0.2s both;
+}
+
+.table-shell :deep(.ant-table) {
+  background: transparent;
+}
+
+.table-shell :deep(.ant-table-container table > thead > tr > th) {
+  background: #fff5df !important;
+  color: #6e5838 !important;
+  font-weight: 700;
+  border-bottom: 1px solid #f0dfbe !important;
+}
+
+.table-shell :deep(.ant-table-tbody > tr > td) {
+  border-bottom: 1px solid #f6ead1 !important;
+  background: rgba(255, 255, 255, 0.5);
+  transition: background var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.table-shell :deep(.ant-table-tbody > tr:hover > td) {
+  background: #fff8eb !important;
 }
 
 .credit-type-tag {
   border-radius: 999px;
   border-width: 1px;
   font-weight: 600;
+  transition: transform var(--motion-duration-micro) var(--motion-ease-soft), box-shadow var(--motion-duration-micro) var(--motion-ease-soft);
+}
+
+.credit-type-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(236, 185, 88, 0.12);
 }
 
 .credit-type-tag-income {
@@ -351,6 +436,7 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+  animation: credit-fade-up var(--motion-duration-reveal-soft) var(--motion-ease-enter) 0.28s both;
 }
 
 .pagination-wrap :deep(.ant-pagination-item) {
@@ -385,5 +471,22 @@ onMounted(() => {
 .pagination-wrap :deep(.ant-pagination-options .ant-select-selector) {
   border-radius: 10px;
   border-color: #f2d8a7 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .credit-logs-page,
+  .page-header,
+  .filter-bar,
+  .table-shell,
+  .pagination-wrap {
+    animation: none !important;
+  }
+
+  .balance-badge,
+  .credit-filter-btn,
+  .table-shell :deep(.ant-table-tbody > tr > td),
+  .credit-type-tag {
+    transition: none !important;
+  }
 }
 </style>

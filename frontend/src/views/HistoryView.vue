@@ -25,6 +25,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const loading = ref(false);
+const loadingMore = ref(false);
 const typeFilter = ref<"generate" | "inpaint" | "promptReverse" | undefined>(undefined);
 const modelFilter = ref<string | undefined>(undefined);
 const statusFilter = ref<"pending" | "processing" | "success" | "failed" | undefined>(undefined);
@@ -35,9 +36,11 @@ const detailOpen = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
 const selectedImageIds = ref<number[]>([]);
 const batchMode = ref(false);
+const loadMoreAnchor = ref<HTMLElement | null>(null);
 const HISTORY_POLL_INTERVAL_MS = 10000;
 let historyPollTimer: ReturnType<typeof setInterval> | null = null;
 let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let loadMoreObserver: IntersectionObserver | null = null;
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
@@ -61,6 +64,7 @@ const activeFilterCount = computed(() => {
   if (dateRangeFilter.value) count += 1;
   return count;
 });
+const hasMoreHistory = computed(() => items.value.length < total.value);
 
 const currentPageIds = computed(() => items.value.map((item) => item.image_id));
 const selectedItems = computed(() => (
@@ -91,35 +95,85 @@ function syncHistoryPolling() {
   }
   if (historyPollTimer) return;
   historyPollTimer = window.setInterval(() => {
-    if (loading.value) return;
+    if (loading.value || loadingMore.value) return;
     loadHistory(true);
   }, HISTORY_POLL_INTERVAL_MS);
+}
+
+function getHistoryQuery() {
+  return {
+    mode: typeFilter.value,
+    model: modelFilter.value,
+    prompt: promptFilter.value,
+    status: statusFilter.value,
+    start_date: dateRangeFilter.value?.[0].startOf("day").toISOString(),
+    end_date: dateRangeFilter.value?.[1].endOf("day").toISOString(),
+  };
+}
+
+function syncSelection(list: UserHistoryCard[]) {
+  selectedImageIds.value = selectedImageIds.value.filter((id) => list.some((item) => item.image_id === id));
+}
+
+function syncDetail(list: UserHistoryCard[]) {
+  if (!detailItem.value) return;
+  const refreshedDetail = list.find((item) => item.image_id === detailItem.value?.image_id);
+  if (refreshedDetail) detailItem.value = refreshedDetail;
+}
+
+async function fetchHistoryPage(targetPage: number) {
+  return fetchHistory(targetPage, pageSize.value, getHistoryQuery());
 }
 
 async function loadHistory(silent = false) {
   loading.value = true;
   try {
-    const res = await fetchHistory(page.value, pageSize.value, {
-      mode: typeFilter.value,
-      model: modelFilter.value,
-      prompt: promptFilter.value,
-      status: statusFilter.value,
-      start_date: dateRangeFilter.value?.[0].startOf("day").toISOString(),
-      end_date: dateRangeFilter.value?.[1].endOf("day").toISOString(),
-    });
-    items.value = res.items;
-    total.value = res.total;
-    selectedImageIds.value = selectedImageIds.value.filter((id) => res.items.some((item) => item.image_id === id));
-    if (detailItem.value) {
-      const refreshedDetail = res.items.find((item) => item.image_id === detailItem.value?.image_id);
-      if (refreshedDetail) detailItem.value = refreshedDetail;
-    }
+    const targetPages = Math.max(1, page.value);
+    const results = await Promise.all(
+      Array.from({ length: targetPages }, (_, index) => fetchHistoryPage(index + 1))
+    );
+    const mergedItems = results.flatMap((result) => result.items);
+    items.value = mergedItems;
+    total.value = results[0]?.total || 0;
+    syncSelection(mergedItems);
+    syncDetail(mergedItems);
     syncHistoryPolling();
   } catch {
     if (!silent) message.error("获取历史记录失败");
   } finally {
     loading.value = false;
   }
+}
+
+async function loadNextPage() {
+  if (loading.value || loadingMore.value || !hasMoreHistory.value) return;
+  loadingMore.value = true;
+  try {
+    const nextPage = page.value + 1;
+    const res = await fetchHistoryPage(nextPage);
+    items.value = [...items.value, ...res.items];
+    total.value = res.total;
+    page.value = nextPage;
+    syncHistoryPolling();
+  } catch {
+    message.error("加载更多历史记录失败");
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
+function setupLoadMoreObserver(target: HTMLElement | null) {
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
+  if (!target) return;
+
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadNextPage();
+    },
+    { root: null, rootMargin: "0px 0px 260px 0px", threshold: 0.01 }
+  );
+  loadMoreObserver.observe(target);
 }
 
 async function loadModels() {
@@ -138,12 +192,13 @@ onBeforeUnmount(() => {
     clearTimeout(filterDebounceTimer);
     filterDebounceTimer = null;
   }
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
 });
 
-function handlePageChange(p: number) {
-  page.value = p;
-  loadHistory();
-}
+watch(loadMoreAnchor, (target) => {
+  setupLoadMoreObserver(target);
+});
 
 function modeLabel(mode: UserHistoryCard["mode"]) {
   if (mode === "inpaint") return "局部重绘";
@@ -477,7 +532,7 @@ function handleReedit(item: UserHistoryCard) {
 </script>
 
 <template>
-  <div class="warm-page">
+  <div class="warm-page history-page">
     <div class="history-topbar">
       <div class="warm-page-heading">
         <div class="warm-page-icon history-topbar-icon">
@@ -490,7 +545,7 @@ function handleReedit(item: UserHistoryCard) {
       </div>
       <div class="history-topbar-meta">
         <span>共 {{ total }} 条结果</span>
-        <span>当前第 {{ page }} 页</span>
+        <span>已展示 {{ items.length }} 条</span>
       </div>
     </div>
 
@@ -535,53 +590,61 @@ function handleReedit(item: UserHistoryCard) {
       </a-tooltip>
     </div>
 
-    <div v-if="batchMode && items.length" class="history-batch-bar warm-card">
-      <div class="history-batch-summary">
-        <span>已选 {{ selectedCount }} 项</span>
-        <span>当前页 {{ selectableCount }} 项</span>
+    <transition name="history-panel-slide">
+      <div v-if="batchMode && items.length" class="history-batch-bar warm-card">
+        <div class="history-batch-summary">
+          <span>已选 {{ selectedCount }} 项</span>
+          <span>当前页 {{ selectableCount }} 项</span>
+        </div>
+        <div class="history-batch-actions">
+          <a-button
+            size="small"
+            class="history-batch-btn history-batch-btn-secondary"
+            :disabled="!items.length || allVisibleSelected"
+            @click="selectAllVisible"
+          >
+            全选
+          </a-button>
+          <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!items.length" @click="invertVisibleSelection">
+            反选
+          </a-button>
+          <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!selectedCount" @click="clearSelection">
+            清空
+          </a-button>
+          <a-button
+            size="small"
+            class="history-batch-btn history-batch-btn-primary"
+            :disabled="!downloadableSelectedItems.length"
+            @click="handleBatchDownload"
+          >
+            批量下载
+          </a-button>
+          <a-button
+            danger
+            size="small"
+            class="history-batch-btn history-batch-btn-danger"
+            :disabled="!selectedCount"
+            @click="handleBatchDelete"
+          >
+            批量删除
+          </a-button>
+        </div>
       </div>
-      <div class="history-batch-actions">
-        <a-button
-          size="small"
-          class="history-batch-btn history-batch-btn-secondary"
-          :disabled="!items.length || allVisibleSelected"
-          @click="selectAllVisible"
-        >
-          全选
-        </a-button>
-        <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!items.length" @click="invertVisibleSelection">
-          反选
-        </a-button>
-        <a-button size="small" class="history-batch-btn history-batch-btn-secondary" :disabled="!selectedCount" @click="clearSelection">
-          清空
-        </a-button>
-        <a-button
-          size="small"
-          class="history-batch-btn history-batch-btn-primary"
-          :disabled="!downloadableSelectedItems.length"
-          @click="handleBatchDownload"
-        >
-          批量下载
-        </a-button>
-        <a-button
-          danger
-          size="small"
-          class="history-batch-btn history-batch-btn-danger"
-          :disabled="!selectedCount"
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </a-button>
-      </div>
-    </div>
+    </transition>
 
     <a-spin :spinning="loading">
       <div v-if="!items.length && !loading" class="empty-state warm-card">
         <a-empty :description="activeFilterCount ? '没有符合条件的历史记录' : '暂无生成记录'" />
       </div>
 
-      <div v-else class="history-grid">
-        <div v-for="item in items" :key="item.image_id" class="result-card warm-card" @click="openDetail(item)">
+      <TransitionGroup v-else name="history-card" tag="div" class="history-grid">
+        <div
+          v-for="(item, index) in items"
+          :key="item.image_id"
+          class="result-card warm-card"
+          :style="{ '--history-card-delay': `${Math.min(index, 9) * 45}ms` }"
+          @click="openDetail(item)"
+        >
           <div v-if="batchMode" class="result-card-select" @click.stop>
             <a-checkbox :checked="isSelected(item.image_id)" @change="handleSelectChange(item.image_id, $event)" />
           </div>
@@ -606,10 +669,8 @@ function handleReedit(item: UserHistoryCard) {
           </div>
 
           <div class="result-card-body">
-            <div class="result-card-mode">{{ modeLabel(item.mode) }}</div>
+            <div class="result-card-model">模型：{{ getModelLabel(item.model) }}</div>
             <div class="result-card-file-meta">
-              <span>ID：{{ item.display_id || item.image_id }}</span>
-              <span>模型：{{ getModelLabel(item.model) }}</span>
               <span v-if="item.mode !== 'promptReverse'">格式：{{ item.image_format || "-" }}</span>
               <span v-if="item.mode !== 'promptReverse'">大小：{{ formatImageSize(item.image_size_bytes) }}</span>
             </div>
@@ -639,18 +700,22 @@ function handleReedit(item: UserHistoryCard) {
             </div>
           </div>
         </div>
-      </div>
+      </TransitionGroup>
     </a-spin>
 
-    <div v-if="total > pageSize" class="warm-pagination">
-      <a-pagination
-        :current="page"
-        :total="total"
-        :page-size="pageSize"
-        show-less-items
-        @change="handlePageChange"
-      />
+    <div v-if="loadingMore" class="history-load-more-tip">
+      <a-spin size="small" />
+      <span>正在加载更多历史记录...</span>
     </div>
+    <div v-else-if="items.length && !hasMoreHistory" class="history-load-more-tip history-load-more-tip-finished">
+      已加载全部历史记录
+    </div>
+    <div
+      v-if="items.length && hasMoreHistory"
+      ref="loadMoreAnchor"
+      class="history-load-more-anchor"
+      aria-hidden="true"
+    />
 
     <a-modal
       v-model:open="detailOpen"
@@ -660,10 +725,10 @@ function handleReedit(item: UserHistoryCard) {
       centered
     >
       <template v-if="detailItem">
-        <div class="detail-layout">
+        <div :key="detailItem.image_id" class="detail-layout">
           <div class="detail-left">
             <div class="detail-section">
-              <div class="detail-label">{{ detailItem.mode === 'promptReverse' ? '反推原图' : '该任务全部结果' }}</div>
+              <div v-if="detailItem.mode === 'promptReverse'" class="detail-label">反推原图</div>
               <div v-if="detailItem.mode === 'promptReverse' && detailItem.source_image" class="detail-thumb-row">
                 <div class="detail-thumb detail-thumb-large" @click="openPreview(resolveImageUrl(detailItem.source_image))">
                   <img :src="resolveImageUrl(detailItem.source_image_thumb || detailItem.source_image)" alt="提示词反推原图" loading="lazy" />
@@ -700,14 +765,9 @@ function handleReedit(item: UserHistoryCard) {
 
           <div class="detail-right">
             <div class="detail-section">
-              <div class="detail-label-row">
-                <div class="detail-label">提示词</div>
-                <a-button type="text" class="detail-copy-btn" @click="copyPrompt(detailItem.prompt)">
-                  <template #icon><CopyOutlined /></template>
-                  复制提示词
-                </a-button>
+              <div class="detail-meta">
+                <span v-for="meta in detailMetaList(detailItem)" :key="meta">{{ meta }}</span>
               </div>
-              <div class="detail-prompt">{{ detailItem.prompt || "-" }}</div>
             </div>
 
             <div v-if="detailItem.mode === 'inpaint' && detailItem.source_image" class="detail-section">
@@ -737,9 +797,14 @@ function handleReedit(item: UserHistoryCard) {
             </div>
 
             <div class="detail-section">
-              <div class="detail-meta">
-                <span v-for="meta in detailMetaList(detailItem)" :key="meta">{{ meta }}</span>
+              <div class="detail-label-row">
+                <div class="detail-label">提示词</div>
+                <a-button type="text" class="detail-copy-btn" @click="copyPrompt(detailItem.prompt)">
+                  <template #icon><CopyOutlined /></template>
+                  复制提示词
+                </a-button>
               </div>
+              <div class="detail-prompt">{{ detailItem.prompt || "-" }}</div>
             </div>
           </div>
           <div class="detail-floating-actions">
@@ -773,12 +838,48 @@ function handleReedit(item: UserHistoryCard) {
 </template>
 
 <style scoped lang="scss">
+.history-page {
+  animation: history-page-enter var(--motion-duration-reveal) ease both;
+}
+
+@keyframes history-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes history-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes history-detail-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(22px, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .history-topbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 8px;
+  animation: history-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
 }
 
 .history-topbar-icon {
@@ -807,6 +908,7 @@ function handleReedit(item: UserHistoryCard) {
   flex-wrap: wrap;
   align-items: center;
   margin-bottom: 18px;
+  animation: history-fade-up var(--motion-duration-reveal-soft) var(--motion-ease-enter) 0.12s both;
 }
 
 .history-filter-tip {
@@ -819,6 +921,17 @@ function handleReedit(item: UserHistoryCard) {
   border-radius: 12px;
   font-weight: 600;
   box-shadow: none;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft),
+    opacity var(--motion-duration-base) var(--motion-ease-soft);
+
+  &:active {
+    transform: scale(0.96);
+  }
 }
 
 .history-filter-btn-primary {
@@ -854,24 +967,37 @@ function handleReedit(item: UserHistoryCard) {
   border-color: #efc784 !important;
   background: #fff7e8 !important;
   color: #b16d10 !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft);
 
   &:hover,
   &:focus {
     border-color: #e1a64a !important;
     color: #c7770d !important;
     background: #fff0d3 !important;
+    transform: translateY(-1px);
   }
 
   &.active {
     border-color: #df8b1d !important;
     background: linear-gradient(135deg, #f2a533 0%, #df8b1d 100%) !important;
     color: #fff8eb !important;
+    box-shadow: 0 10px 22px rgba(223, 139, 29, 0.2);
+  }
+
+  &:active {
+    transform: scale(0.94);
   }
 }
 
 .empty-state {
   padding: 80px 0;
   text-align: center;
+  animation: history-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.2s both;
 }
 
 .history-batch-bar {
@@ -881,6 +1007,7 @@ function handleReedit(item: UserHistoryCard) {
   gap: 12px;
   margin-bottom: 18px;
   padding: 12px 14px;
+  transform-origin: top center;
 }
 
 .history-batch-summary {
@@ -903,6 +1030,17 @@ function handleReedit(item: UserHistoryCard) {
   border-radius: 10px;
   font-weight: 600;
   box-shadow: none;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft),
+    opacity var(--motion-duration-base) var(--motion-ease-soft);
+
+  &:active {
+    transform: scale(0.96);
+  }
 }
 
 .history-batch-btn-secondary {
@@ -970,8 +1108,33 @@ function handleReedit(item: UserHistoryCard) {
 
 .result-card {
   position: relative;
-  padding: 14px;
+  padding: 0;
+  overflow: hidden;
   cursor: pointer;
+  will-change: transform;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
+    border-color var(--motion-duration-hover) var(--motion-ease-soft),
+    filter var(--motion-duration-hover) var(--motion-ease-soft);
+
+  &:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 24px 44px rgba(236, 185, 88, 0.18);
+    border-color: rgba(235, 181, 88, 0.9);
+  }
+
+  &:active {
+    transform: translateY(-2px) scale(0.992);
+  }
+
+  &:hover .result-card-media img {
+    transform: scale(1.04);
+  }
+
+  &:hover .result-card-model {
+    color: #a36c18;
+  }
 }
 
 .result-card-select {
@@ -990,10 +1153,10 @@ function handleReedit(item: UserHistoryCard) {
 .result-card-media {
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 18px;
+  border-radius: 28px 28px 0 0;
   overflow: hidden;
   background: #fff8ee;
-  border: 1px solid #f1ddb7;
+  border-bottom: 1px solid #f1ddb7;
   cursor: pointer;
 
   img {
@@ -1001,11 +1164,7 @@ function handleReedit(item: UserHistoryCard) {
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: transform 0.2s;
-  }
-
-  &:hover img {
-    transform: scale(1.03);
+    transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 }
 
@@ -1024,18 +1183,19 @@ function handleReedit(item: UserHistoryCard) {
 
 .failed-result-image {
   object-fit: contain !important;
-  padding: 14px;
   background: #fffdfb;
 }
 
 .result-card-body {
-  padding-top: 12px;
+  padding: 12px 14px 14px;
+  transition: transform var(--motion-duration-hover) var(--motion-ease-soft);
 }
 
-.result-card-mode {
+.result-card-model {
   font-size: 13px;
   font-weight: 700;
   color: #7b5c2d;
+  transition: color var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .result-card-file-meta {
@@ -1059,11 +1219,22 @@ function handleReedit(item: UserHistoryCard) {
   height: 32px;
   border-radius: 10px;
   color: #8f7558 !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover,
   &:focus {
     color: #c7800c !important;
     background: #fff4df !important;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(223, 139, 29, 0.14);
+  }
+
+  &:active {
+    transform: scale(0.92);
   }
 }
 
@@ -1088,6 +1259,7 @@ function handleReedit(item: UserHistoryCard) {
   gap: 20px;
   align-items: start;
   padding-bottom: 0;
+  animation: history-detail-slide-in var(--motion-duration-reveal-slower) var(--motion-ease-enter) both;
 }
 
 .detail-left,
@@ -1140,10 +1312,21 @@ function handleReedit(item: UserHistoryCard) {
   padding-inline: 10px;
   border-radius: 10px;
   color: #a9772e !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     background: #fff4df !important;
     color: #c7800c !important;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(223, 139, 29, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.96);
   }
 }
 
@@ -1156,6 +1339,9 @@ function handleReedit(item: UserHistoryCard) {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 210px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .detail-thumb-row {
@@ -1172,12 +1358,22 @@ function handleReedit(item: UserHistoryCard) {
   border: 1px solid #f1ddb7;
   background: #fff8ee;
   cursor: pointer;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft);
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: #e7bf7b;
+    box-shadow: 0 16px 26px rgba(236, 185, 88, 0.14);
   }
 }
 
@@ -1200,6 +1396,10 @@ function handleReedit(item: UserHistoryCard) {
   border: 1px solid #f1ddb7;
   background: #fff8ee;
   cursor: pointer;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft);
 
   img,
   .result-card-placeholder {
@@ -1211,10 +1411,21 @@ function handleReedit(item: UserHistoryCard) {
     object-fit: contain;
     display: block;
     background: #fffdfb;
+    transition: transform var(--motion-duration-hover) var(--motion-ease-soft);
   }
 
   &.pending {
     cursor: default;
+  }
+
+  &:not(.pending):hover {
+    transform: translateY(-3px);
+    border-color: #e7bf7b;
+    box-shadow: 0 18px 30px rgba(236, 185, 88, 0.14);
+  }
+
+  &:not(.pending):hover img {
+    transform: scale(1.015);
   }
 
   &.failed img {
@@ -1244,6 +1455,95 @@ function handleReedit(item: UserHistoryCard) {
     content: "｜";
     margin: 0 8px;
     color: #d3b487;
+  }
+}
+
+.warm-pagination {
+  animation: history-fade-up var(--motion-duration-reveal-soft) var(--motion-ease-enter) 0.26s both;
+}
+
+.history-load-more-tip {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  color: #9b825f;
+  font-size: 13px;
+}
+
+.history-load-more-tip-finished {
+  color: #b39a74;
+}
+
+.history-load-more-anchor {
+  width: 100%;
+  height: 1px;
+  margin-top: 1px;
+}
+
+.history-card-enter-active,
+.history-card-leave-active {
+  transition:
+    opacity var(--motion-duration-emphasis) var(--motion-ease-soft),
+    transform var(--motion-duration-emphasis-plus) var(--motion-ease-enter);
+  transition-delay: var(--history-card-delay, 0ms);
+}
+
+.history-card-enter-from,
+.history-card-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0) scale(0.985);
+}
+
+.history-card-move {
+  transition: transform var(--motion-duration-reveal-fast) var(--motion-ease-enter);
+}
+
+.history-panel-slide-enter-active,
+.history-panel-slide-leave-active {
+  transition:
+    opacity var(--motion-duration-slide) var(--motion-ease-soft),
+    transform var(--motion-duration-slide) var(--motion-ease-enter),
+    filter var(--motion-duration-slide) var(--motion-ease-soft);
+}
+
+.history-panel-slide-enter-from,
+.history-panel-slide-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -14px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-page,
+  .history-topbar,
+  .history-filter-bar,
+  .empty-state,
+  .warm-pagination,
+  .detail-layout {
+    animation: none !important;
+  }
+
+  .history-card-enter-active,
+  .history-card-leave-active,
+  .history-card-move,
+  .history-panel-slide-enter-active,
+  .history-panel-slide-leave-active,
+  .result-card,
+  .result-card-media img,
+  .result-card-body,
+  .result-card-model,
+  .history-filter-btn,
+  .batch-mode-btn,
+  .history-batch-btn,
+  .ghost-icon-btn,
+  .detail-copy-btn,
+  .detail-thumb,
+  .detail-result-card,
+  .detail-result-card img {
+    transition: none !important;
   }
 }
 

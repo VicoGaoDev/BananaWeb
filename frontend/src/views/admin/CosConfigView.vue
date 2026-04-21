@@ -121,8 +121,8 @@ function copyText(value: string) {
 </script>
 
 <template>
-  <div class="cos-page warm-page">
-    <div class="warm-page-header">
+  <div class="cos-page warm-page motion-page-enter">
+    <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
           <CloudUploadOutlined />
@@ -135,7 +135,7 @@ function copyText(value: string) {
     </div>
 
     <a-spin :spinning="loading">
-      <div class="cos-card warm-card">
+      <div class="cos-card warm-card motion-fade-up motion-card-lift" style="--motion-delay: 140ms">
         <div class="field-stack">
           <div>
             <div class="field-label">Bucket</div>

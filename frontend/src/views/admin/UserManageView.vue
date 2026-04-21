@@ -234,8 +234,8 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 </script>
 
 <template>
-  <div class="warm-page">
-    <div class="warm-page-header">
+  <div class="warm-page motion-page-enter">
+    <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
           <TeamOutlined />
@@ -256,7 +256,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       </div>
     </div>
 
-    <div class="warm-card filter-bar">
+    <div class="warm-card filter-bar motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
       <a-input
         v-model:value="filters.username"
         allow-clear
@@ -290,7 +290,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       </div>
     </div>
 
-    <div class="warm-card warm-table-card">
+    <div class="warm-card warm-table-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
       <a-table
         :columns="columns"
         :data-source="filteredUsers"

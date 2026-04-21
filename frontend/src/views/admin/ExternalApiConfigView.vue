@@ -369,9 +369,9 @@ function copySecret(value: string, label: string) {
 </script>
 
 <template>
-  <div class="page warm-page">
+  <div class="page warm-page motion-page-enter">
     <a-space direction="vertical" :size="16" style="width: 100%">
-      <a-card title="接口密钥" class="warm-card api-card" :loading="loading">
+      <a-card title="接口密钥" class="warm-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 40ms" :loading="loading">
         <a-alert
           class="warm-alert"
           type="info"
@@ -432,7 +432,7 @@ function copySecret(value: string, label: string) {
         </a-button>
       </a-card>
 
-      <a-card title="接口配置" class="warm-card warm-table-card api-card">
+      <a-card title="接口配置" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
         <template #extra>
           <a-space>
             <a-select v-model:value="configGroupFilter" class="warm-select" style="width: 180px">
@@ -477,7 +477,7 @@ function copySecret(value: string, label: string) {
         </a-table>
       </a-card>
 
-      <a-card title="场景绑定" class="warm-card warm-table-card api-card">
+      <a-card title="场景绑定" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
         <template #extra>
           <a-select v-model:value="bindingGroupFilter" class="warm-select" style="width: 180px">
             <a-select-option value="all">全部分组</a-select-option>
@@ -576,7 +576,7 @@ function copySecret(value: string, label: string) {
         </a-table>
       </a-card>
 
-      <a-card title="占位符用法" class="warm-card api-card">
+      <a-card title="占位符用法" class="warm-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 280ms">
         <a-collapse class="warm-collapse">
           <a-collapse-panel key="common" header="通用占位符">
             <div class="doc-block">

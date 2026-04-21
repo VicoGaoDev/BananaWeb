@@ -48,6 +48,11 @@ class TemplateListItemOut(BaseModel):
     created_at: datetime | None = None
 
 
+class TemplateListResponse(BaseModel):
+    total: int
+    items: list[TemplateListItemOut]
+
+
 class TemplateDetailOut(BaseModel):
     id: int
     prompt: str

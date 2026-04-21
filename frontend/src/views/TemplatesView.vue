@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { PictureOutlined, TagsOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
@@ -10,16 +10,23 @@ import type { CreativeTemplate, TemplateTag } from "@/types";
 const router = useRouter();
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
 
+const page = ref(1);
+const pageSize = ref(20);
 const loading = ref(false);
+const loadingMore = ref(false);
+const total = ref(0);
 const templates = ref<CreativeTemplate[]>([]);
 const tags = ref<TemplateTag[]>([]);
 const activeTagId = ref<number | null>(null);
+const loadMoreAnchor = ref<HTMLElement | null>(null);
+let loadMoreObserver: IntersectionObserver | null = null;
 
 const detailOpen = ref(false);
 const detailLoading = ref(false);
 const detail = ref<CreativeTemplate | null>(null);
 
 const activeTagName = computed(() => tags.value.find((tag) => tag.id === activeTagId.value)?.name || "全部");
+const hasMoreTemplates = computed(() => templates.value.length < total.value);
 
 async function loadTags() {
   try {
@@ -32,12 +39,45 @@ async function loadTags() {
 async function loadTemplates() {
   loading.value = true;
   try {
-    templates.value = await listTemplates(activeTagId.value || undefined);
+    const res = await listTemplates(1, pageSize.value, activeTagId.value || undefined);
+    templates.value = res.items;
+    total.value = res.total;
+    page.value = 1;
   } catch {
     message.error("获取创意模版失败");
   } finally {
     loading.value = false;
   }
+}
+
+async function loadNextTemplatePage() {
+  if (loading.value || loadingMore.value || !hasMoreTemplates.value) return;
+  loadingMore.value = true;
+  try {
+    const nextPage = page.value + 1;
+    const res = await listTemplates(nextPage, pageSize.value, activeTagId.value || undefined);
+    templates.value = [...templates.value, ...res.items];
+    total.value = res.total;
+    page.value = nextPage;
+  } catch {
+    message.error("加载更多创意模版失败");
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
+function setupLoadMoreObserver(target: HTMLElement | null) {
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
+  if (!target) return;
+
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadNextTemplatePage();
+    },
+    { root: null, rootMargin: "0px 0px 260px 0px", threshold: 0.01 }
+  );
+  loadMoreObserver.observe(target);
 }
 
 async function openDetail(id: number) {
@@ -78,6 +118,15 @@ function selectTag(tagId: number | null) {
 onMounted(() => {
   loadTags();
   loadTemplates();
+});
+
+onBeforeUnmount(() => {
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
+});
+
+watch(loadMoreAnchor, (target) => {
+  setupLoadMoreObserver(target);
 });
 </script>
 
@@ -123,11 +172,12 @@ onMounted(() => {
         <a-empty description="暂无创意模版" />
       </div>
 
-      <div v-else class="masonry">
+      <TransitionGroup v-else name="template-card" tag="div" class="masonry">
         <div
-          v-for="item in templates"
+          v-for="(item, index) in templates"
           :key="item.id"
           class="template-card"
+          :style="{ '--template-card-delay': `${Math.min(index, 9) * 45}ms` }"
           @click="openDetail(item.id)"
         >
           <div class="template-cover">
@@ -138,8 +188,22 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </div>
+      </TransitionGroup>
     </a-spin>
+
+    <div v-if="loadingMore" class="templates-load-more-tip">
+      <a-spin size="small" />
+      <span>正在加载更多模版...</span>
+    </div>
+    <div v-else-if="templates.length && !hasMoreTemplates" class="templates-load-more-tip templates-load-more-tip-finished">
+      已加载全部创意模版
+    </div>
+    <div
+      v-if="templates.length && hasMoreTemplates"
+      ref="loadMoreAnchor"
+      class="templates-load-more-anchor"
+      aria-hidden="true"
+    />
 
     <a-modal
       v-model:open="detailOpen"
@@ -149,7 +213,7 @@ onMounted(() => {
       centered
     >
       <a-spin :spinning="detailLoading">
-        <div v-if="detail" class="detail-layout">
+        <div v-if="detail" :key="detail.id" class="detail-layout">
           <div class="detail-preview">
             <img v-if="detail.result_image" :src="resolveImageUrl(detail.result_image)" alt="模版结果图" />
             <div v-else class="detail-preview-empty">暂无结果图</div>
@@ -212,6 +276,38 @@ onMounted(() => {
 <style scoped lang="scss">
 .templates-page {
   min-height: calc(100vh - 120px);
+  animation: templates-page-enter var(--motion-duration-reveal) ease both;
+}
+
+@keyframes templates-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes templates-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes templates-detail-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
 }
 
 .templates-topbar {
@@ -220,6 +316,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 8px;
+  animation: templates-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
 }
 
 .templates-topbar-icon {
@@ -239,6 +336,7 @@ onMounted(() => {
   gap: 10px;
   flex-wrap: wrap;
   padding: 4px 0 8px;
+  animation: templates-fade-up var(--motion-duration-reveal-soft) var(--motion-ease-enter) 0.12s both;
 }
 
 .filter-tag {
@@ -246,11 +344,27 @@ onMounted(() => {
   border-radius: 999px;
   padding: 6px 12px;
   font-weight: 600;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft);
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 22px rgba(236, 185, 88, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
 
   &.active {
     color: #8a5400;
     background: linear-gradient(180deg, #fff0cc, #ffe2a9);
     border-color: #f0c46d;
+    box-shadow: 0 12px 22px rgba(236, 185, 88, 0.14);
   }
 }
 
@@ -267,12 +381,19 @@ onMounted(() => {
   border: 1px solid #f0dfbe;
   background: #fff8ec;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
+    border-color var(--motion-duration-hover) var(--motion-ease-soft);
 
   &:hover {
-    transform: translateY(-3px);
+    transform: translateY(-6px);
     border-color: #f0c46d;
-    box-shadow: 0 18px 36px rgba(236, 185, 88, 0.22);
+    box-shadow: 0 22px 40px rgba(236, 185, 88, 0.2);
+  }
+
+  &:active {
+    transform: translateY(-2px) scale(0.992);
   }
 }
 
@@ -287,6 +408,7 @@ onMounted(() => {
     height: 100%;
     display: block;
     object-fit: cover;
+    transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 }
 
@@ -308,11 +430,15 @@ onMounted(() => {
   justify-content: center;
   background: linear-gradient(180deg, rgba(34, 25, 14, 0.08), rgba(34, 25, 14, 0.56));
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity var(--motion-duration-base) var(--motion-ease-soft);
 
   .template-card:hover & {
     opacity: 1;
   }
+}
+
+.template-card:hover .template-cover img {
+  transform: scale(1.045);
 }
 
 .template-overlay-text {
@@ -322,12 +448,18 @@ onMounted(() => {
   color: #5d4526;
   font-size: 14px;
   font-weight: 700;
+  transition: transform var(--motion-duration-swift) var(--motion-ease-soft);
+}
+
+.template-card:hover .template-overlay-text {
+  transform: translateY(-2px);
 }
 
 .detail-layout {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 24px;
+  animation: templates-detail-slide-in var(--motion-duration-reveal-slower) var(--motion-ease-enter) both;
 }
 
 .detail-preview {
@@ -345,7 +477,12 @@ onMounted(() => {
     max-width: 100%;
     display: block;
     object-fit: contain;
+    transition: transform var(--motion-duration-hover) var(--motion-ease-soft);
   }
+}
+
+.detail-preview:hover img {
+  transform: scale(1.015);
 }
 
 .detail-content {
@@ -388,6 +525,16 @@ onMounted(() => {
     border-radius: 12px;
     object-fit: cover;
     border: 1px solid #f0dfbe;
+    transition:
+      transform var(--motion-duration-swift) var(--motion-ease-soft),
+      box-shadow var(--motion-duration-swift) var(--motion-ease-soft),
+      border-color var(--motion-duration-swift) var(--motion-ease-soft);
+
+    &:hover {
+      transform: translateY(-2px);
+      border-color: #e5bb73;
+      box-shadow: 0 14px 22px rgba(236, 185, 88, 0.14);
+    }
   }
 }
 
@@ -426,6 +573,85 @@ onMounted(() => {
 
 .empty-state {
   padding: 80px 0;
+  animation: templates-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.2s both;
+}
+
+.templates-load-more-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  margin: 18px 0 4px;
+  color: #8d7457;
+  font-size: 13px;
+}
+
+.templates-load-more-tip-finished {
+  color: #a88e68;
+}
+
+.templates-load-more-anchor {
+  width: 100%;
+  height: 2px;
+}
+
+:deep(.warm-primary-btn) {
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+:deep(.warm-primary-btn:hover),
+:deep(.warm-primary-btn:focus) {
+  transform: translateY(-1px);
+}
+
+:deep(.warm-primary-btn:active) {
+  transform: scale(0.96);
+}
+
+.template-card-enter-active,
+.template-card-leave-active {
+  transition:
+    opacity var(--motion-duration-emphasis) var(--motion-ease-soft),
+    transform var(--motion-duration-emphasis-plus) var(--motion-ease-enter);
+  transition-delay: var(--template-card-delay, 0ms);
+}
+
+.template-card-enter-from,
+.template-card-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0) scale(0.985);
+}
+
+.template-card-move {
+  transition: transform var(--motion-duration-reveal-fast) var(--motion-ease-enter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .templates-page,
+  .templates-topbar,
+  .tag-filter,
+  .empty-state,
+  .detail-layout {
+    animation: none !important;
+  }
+
+  .template-card,
+  .template-card-enter-active,
+  .template-card-leave-active,
+  .template-card-move,
+  .template-cover img,
+  .template-overlay,
+  .template-overlay-text,
+  .filter-tag,
+  .detail-preview img,
+  .detail-refs img,
+  :deep(.warm-primary-btn) {
+    transition: none !important;
+  }
 }
 
 @media (max-width: 1200px) {

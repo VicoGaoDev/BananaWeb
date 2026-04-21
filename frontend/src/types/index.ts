@@ -165,6 +165,11 @@ export interface CreativeTemplate {
   created_at: string;
 }
 
+export interface TemplateListResponse {
+  total: number;
+  items: CreativeTemplate[];
+}
+
 export interface AdminStats {
   total_users: number;
   total_tasks: number;

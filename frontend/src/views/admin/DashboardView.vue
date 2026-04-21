@@ -358,8 +358,8 @@ watch(filterSignature, async () => {
 </script>
 
 <template>
-  <div class="warm-page">
-    <div class="warm-page-header">
+  <div class="warm-page motion-page-enter">
+    <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
           <BarChartOutlined />
@@ -394,7 +394,12 @@ watch(filterSignature, async () => {
       </div>
       <a-spin :spinning="statsLoading">
         <div class="overview-grid">
-          <div v-for="item in overviewStats" :key="item.key" class="overview-card warm-card">
+          <div
+            v-for="(item, index) in overviewStats"
+            :key="item.key"
+            class="overview-card warm-card motion-card-lift motion-fade-up"
+            :style="{ '--motion-delay': `${160 + Math.min(index, 5) * 40}ms` }"
+          >
             <div class="overview-card-head">
               <span class="overview-card-label">{{ item.label }}</span>
               <span class="overview-card-dot" :style="{ background: item.color }" />
@@ -437,7 +442,7 @@ watch(filterSignature, async () => {
     </section>
 
     <section class="dashboard-section">
-      <div class="warm-card warm-table-card">
+      <div class="warm-card warm-table-card motion-card-lift motion-fade-up" style="--motion-delay: 320ms">
         <div class="table-card-head">
           <div>
             <div class="table-card-title-row">

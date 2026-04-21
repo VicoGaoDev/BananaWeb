@@ -66,7 +66,7 @@ const presetOptions = computed(() => {
 </script>
 
 <template>
-  <div class="analytics-filter warm-card">
+  <div class="analytics-filter warm-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
     <div class="analytics-filter-row">
       <div class="analytics-filter-panel-compact">
         <a-radio-group
@@ -214,7 +214,7 @@ const presetOptions = computed(() => {
   font-weight: 700;
   font-size: 14px;
   box-shadow: none;
-  transition: all 0.2s ease;
+  transition: all var(--motion-duration-fast) var(--motion-ease-soft);
 }
 
 :deep(.analytics-segmented-group .ant-radio-button-wrapper:not(:first-child)::before) {

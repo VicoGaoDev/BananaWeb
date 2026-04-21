@@ -9,6 +9,25 @@
   --text-secondary: #8c8c8c;
   --text-muted: #bfbfbf;
   --border: #f0f0f0;
+  --motion-ease-enter: cubic-bezier(0.24, 0.72, 0.32, 1);
+  --motion-ease-soft: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --motion-duration-press: 0.16s;
+  --motion-duration-micro: 0.18s;
+  --motion-duration-fast: 0.2s;
+  --motion-duration-swift: 0.22s;
+  --motion-duration-base: 0.24s;
+  --motion-duration-hover: 0.28s;
+  --motion-duration-hover-slow: 0.3s;
+  --motion-duration-emphasis: 0.32s;
+  --motion-duration-emphasis-plus: 0.42s;
+  --motion-duration-reveal-fast: 0.36s;
+  --motion-duration-reveal: 0.5s;
+  --motion-duration-reveal-soft: 0.52s;
+  --motion-duration-reveal-soft-plus: 0.54s;
+  --motion-duration-reveal-slower: 0.82s;
+  --motion-duration-slide: 0.76s;
+  --motion-duration-stage: 1.2s;
+  --motion-duration-stage-delayed: 1.3s;
 }
 
 * {
@@ -55,12 +74,20 @@ html, body, #app {
   border: 1px solid rgba(241, 210, 154, 0.72);
   background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
   box-shadow: 0 24px 48px rgba(236, 185, 88, 0.18);
+  animation: motion-modal-enter var(--motion-duration-reveal-fast) var(--motion-ease-enter);
+  transition:
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-modal .ant-modal-header {
   background: #fff8ec;
   border-bottom: 1px solid #f0dfbe;
   padding: 22px 24px 18px;
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-modal .ant-modal-title {
@@ -70,11 +97,15 @@ html, body, #app {
 
 .ant-modal .ant-modal-body {
   padding: 20px 24px 24px;
+  transition: background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-modal .ant-modal-footer {
   border-top: 1px solid #f6ead1;
   padding: 16px 24px 22px;
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-modal .ant-btn {
@@ -120,12 +151,20 @@ html, body, #app {
 .ant-drawer .ant-drawer-content {
   border-radius: 24px 24px 0 0;
   background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
+  animation: motion-drawer-enter var(--motion-duration-reveal-fast) var(--motion-ease-enter);
+  transition:
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-drawer .ant-drawer-header {
   background: #fff8ec;
   border-bottom: 1px solid #f0dfbe;
   padding: 20px 24px;
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-drawer .ant-drawer-title {
@@ -135,6 +174,7 @@ html, body, #app {
 
 .ant-drawer .ant-drawer-body {
   background: transparent;
+  transition: background var(--motion-duration-base) var(--motion-ease-soft);
 }
 
 .ant-message .ant-message-notice-content {
@@ -155,6 +195,12 @@ html, body, #app {
   border-color: #efdcb9 !important;
   background: #fffdf8 !important;
   box-shadow: none !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft) !important;
 }
 
 .ant-input:hover,
@@ -164,6 +210,7 @@ html, body, #app {
 .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
 .ant-input-textarea textarea:hover {
   border-color: #f0bc63 !important;
+  transform: translateY(-1px);
 }
 
 .ant-input:focus,
@@ -175,6 +222,7 @@ html, body, #app {
 .ant-input-textarea textarea:focus {
   border-color: #f0bc63 !important;
   box-shadow: 0 0 0 3px rgba(255, 188, 99, 0.12) !important;
+  transform: translateY(-1px);
 }
 
 .ant-form-item-label > label {
@@ -301,6 +349,255 @@ html, body, #app {
   box-shadow: 0 18px 40px rgba(236, 185, 88, 0.12);
 }
 
+@keyframes motion-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes motion-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes motion-slide-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes motion-slide-right {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes motion-modal-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes motion-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.motion-page-enter {
+  animation: motion-page-enter var(--motion-duration-reveal) ease both;
+}
+
+.motion-fade-up {
+  animation: motion-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) var(--motion-delay, 0ms) both;
+}
+
+.motion-slide-left {
+  animation: motion-slide-left var(--motion-duration-stage) var(--motion-ease-enter) var(--motion-delay, 0ms) both;
+}
+
+.motion-slide-right {
+  animation: motion-slide-right var(--motion-duration-stage-delayed) var(--motion-ease-enter) var(--motion-delay, 0ms) both;
+}
+
+.motion-card-lift {
+  will-change: transform;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
+    border-color var(--motion-duration-hover) var(--motion-ease-soft),
+    filter var(--motion-duration-hover) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.motion-card-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 44px rgba(236, 185, 88, 0.16);
+  border-color: rgba(241, 210, 154, 0.92);
+}
+
+.warm-primary-btn.ant-btn-primary,
+.warm-secondary-btn.ant-btn,
+.warm-danger-btn.ant-btn,
+.filter-reset-btn.ant-btn,
+.analytics-action-btn.ant-btn,
+.config-secondary-btn.ant-btn,
+.template-secondary-btn.ant-btn,
+.api-primary-btn.ant-btn,
+.api-secondary-btn.ant-btn,
+.api-danger-btn.ant-btn,
+.user-action-btn.ant-btn,
+.template-action-btn.ant-btn,
+.whitelist-action-btn.ant-btn,
+.cos-icon-btn.ant-btn {
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft),
+    opacity var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.warm-primary-btn.ant-btn-primary:hover,
+.warm-secondary-btn.ant-btn:hover,
+.warm-danger-btn.ant-btn:hover,
+.filter-reset-btn.ant-btn:hover,
+.analytics-action-btn.ant-btn:hover,
+.config-secondary-btn.ant-btn:hover,
+.template-secondary-btn.ant-btn:hover,
+.api-primary-btn.ant-btn:hover,
+.api-secondary-btn.ant-btn:hover,
+.api-danger-btn.ant-btn:hover,
+.user-action-btn.ant-btn:hover,
+.template-action-btn.ant-btn:hover,
+.whitelist-action-btn.ant-btn:hover,
+.cos-icon-btn.ant-btn:hover {
+  transform: translateY(-1px);
+}
+
+.warm-primary-btn.ant-btn-primary:active,
+.warm-secondary-btn.ant-btn:active,
+.warm-danger-btn.ant-btn:active,
+.filter-reset-btn.ant-btn:active,
+.analytics-action-btn.ant-btn:active,
+.config-secondary-btn.ant-btn:active,
+.template-secondary-btn.ant-btn:active,
+.api-primary-btn.ant-btn:active,
+.api-secondary-btn.ant-btn:active,
+.api-danger-btn.ant-btn:active,
+.user-action-btn.ant-btn:active,
+.template-action-btn.ant-btn:active,
+.whitelist-action-btn.ant-btn:active,
+.cos-icon-btn.ant-btn:active {
+  transform: scale(0.96);
+}
+
+.warm-tag,
+.manage-filter-tag,
+.api-tag,
+.page-period-chip,
+.section-filter-chip,
+.history-summary-chip,
+.kpi-chip,
+.breakdown-badge,
+.trend-card-badge,
+.credit-type-tag {
+  transition:
+    transform var(--motion-duration-micro) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    color var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.warm-tag:hover,
+.manage-filter-tag:hover,
+.api-tag:hover,
+.page-period-chip:hover,
+.section-filter-chip:hover,
+.history-summary-chip:hover,
+.kpi-chip:hover,
+.breakdown-badge:hover,
+.trend-card-badge:hover,
+.credit-type-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(236, 185, 88, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-page-enter,
+  .motion-fade-up,
+  .motion-slide-left,
+  .motion-slide-right {
+    animation: none !important;
+  }
+
+  .motion-card-lift {
+    transition: none !important;
+  }
+
+  .ant-modal .ant-modal-content,
+  .ant-drawer .ant-drawer-content {
+    animation: none !important;
+  }
+
+  .ant-modal .ant-modal-content,
+  .ant-modal .ant-modal-header,
+  .ant-modal .ant-modal-body,
+  .ant-modal .ant-modal-footer,
+  .ant-drawer .ant-drawer-content,
+  .ant-drawer .ant-drawer-header,
+  .ant-drawer .ant-drawer-body,
+  .ant-input,
+  .ant-input-affix-wrapper,
+  .ant-input-number,
+  .ant-input-number-affix-wrapper,
+  .ant-picker,
+  .ant-select:not(.ant-select-customize-input) .ant-select-selector,
+  .ant-input-textarea textarea {
+    transition: none !important;
+  }
+
+  .warm-primary-btn.ant-btn-primary,
+  .warm-secondary-btn.ant-btn,
+  .warm-danger-btn.ant-btn,
+  .filter-reset-btn.ant-btn,
+  .analytics-action-btn.ant-btn,
+  .config-secondary-btn.ant-btn,
+  .template-secondary-btn.ant-btn,
+  .api-primary-btn.ant-btn,
+  .api-secondary-btn.ant-btn,
+  .api-danger-btn.ant-btn,
+  .user-action-btn.ant-btn,
+  .template-action-btn.ant-btn,
+  .whitelist-action-btn.ant-btn,
+  .cos-icon-btn.ant-btn,
+  .warm-tag,
+  .manage-filter-tag,
+  .api-tag,
+  .page-period-chip,
+  .section-filter-chip,
+  .history-summary-chip,
+  .kpi-chip,
+  .breakdown-badge,
+  .trend-card-badge,
+  .credit-type-tag,
+  .warm-table-card .ant-table-tbody > tr,
+  .warm-table-card .ant-table-tbody > tr > td {
+    transition: none !important;
+  }
+}
+
 .warm-table-card {
   overflow: hidden;
 }
@@ -365,10 +662,22 @@ html, body, #app {
 .warm-table-card .ant-table-tbody > tr > td {
   border-bottom: 1px solid #f6ead1 !important;
   background: rgba(255, 255, 255, 0.5);
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.warm-table-card .ant-table-tbody > tr {
+  transition: transform var(--motion-duration-micro) var(--motion-ease-soft);
 }
 
 .warm-table-card .ant-table-tbody > tr:hover > td {
   background: #fff8eb !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.warm-table-card .ant-table-tbody > tr:hover {
+  transform: translateY(-1px);
 }
 
 .warm-tag {

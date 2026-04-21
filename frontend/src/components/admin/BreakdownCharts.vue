@@ -181,7 +181,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
 <template>
   <a-spin :spinning="loading">
     <div v-if="hasBreakdownData" class="breakdown-grid">
-      <div class="breakdown-card warm-card">
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 220ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">任务状态占比</div>
@@ -191,7 +191,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="breakdown-chart" :option="statusPieOption" autoresize @click="handleStatusClick" />
       </div>
-      <div class="breakdown-card warm-card">
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 260ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">任务类型占比</div>
@@ -201,7 +201,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="breakdown-chart" :option="modePieOption" autoresize @click="handleModeClick" />
       </div>
-      <div class="breakdown-card warm-card">
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">模型使用 Top</div>
@@ -211,7 +211,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="breakdown-chart" :option="modelBarOption" autoresize @click="handleModelClick" />
       </div>
-      <div class="breakdown-card warm-card">
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 340ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">用户生成次数 Top</div>
@@ -221,7 +221,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="breakdown-chart" :option="userTaskOption" autoresize @click="handleUserTaskClick" />
       </div>
-      <div class="breakdown-card warm-card breakdown-card-wide">
+      <div class="breakdown-card warm-card breakdown-card-wide motion-card-lift motion-fade-up" style="--motion-delay: 380ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">用户消耗积分 Top</div>
@@ -232,7 +232,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         <VChart class="breakdown-chart" :option="userCreditOption" autoresize @click="handleUserCreditClick" />
       </div>
     </div>
-    <div v-else class="breakdown-empty warm-card">
+    <div v-else class="breakdown-empty warm-card motion-fade-up" style="--motion-delay: 220ms">
       <a-empty class="warm-empty" description="当前筛选条件下暂无分布数据">
         <template #description>
           <div class="empty-title">当前筛选条件下暂无分布数据</div>

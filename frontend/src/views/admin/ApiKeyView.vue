@@ -97,8 +97,8 @@ async function handleQrUpload(event: Event) {
 </script>
 
 <template>
-  <div class="apikey-page warm-page">
-    <div class="warm-page-header">
+  <div class="apikey-page warm-page motion-page-enter">
+    <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
           <KeyOutlined />
@@ -111,7 +111,7 @@ async function handleQrUpload(event: Event) {
     </div>
 
     <a-spin :spinning="loading">
-      <div class="key-card warm-card">
+      <div class="key-card warm-card motion-fade-up motion-card-lift" style="--motion-delay: 140ms">
         <div class="key-footer">
           <a-button type="primary" class="warm-primary-btn" :loading="saving" @click="handleSave">
             <template #icon><SaveOutlined /></template>

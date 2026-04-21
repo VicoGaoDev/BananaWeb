@@ -46,9 +46,10 @@ function formatDelta(metric?: AdminAnalyticsMetric) {
   <a-spin :spinning="loading">
     <div class="kpi-grid">
       <div
-        v-for="card in cards"
+        v-for="(card, index) in cards"
         :key="card.key"
-        class="kpi-card warm-card"
+        class="kpi-card warm-card motion-card-lift motion-fade-up"
+        :style="{ '--motion-delay': `${180 + Math.min(index, 5) * 45}ms` }"
       >
         <div class="kpi-head">
           <div class="kpi-label-wrap">
@@ -91,7 +92,7 @@ function formatDelta(metric?: AdminAnalyticsMetric) {
   gap: 10px;
   position: relative;
   overflow: hidden;
-  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+  transition: transform var(--motion-duration-swift) var(--motion-ease-soft), box-shadow var(--motion-duration-swift) var(--motion-ease-soft), border-color var(--motion-duration-swift) var(--motion-ease-soft);
 
   &::after {
     content: "";
