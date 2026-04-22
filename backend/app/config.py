@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     DB_NAME: str | None = None
     DB_CHARSET: str = "utf8mb4"
     DB_AUTO_CREATE_TABLES: bool = True
-    DB_RUN_SCHEMA_COMPAT: bool = False
+    DB_RUN_SCHEMA_COMPAT: bool = True
     DB_RUN_SEED: bool = False
     UPLOAD_DIR: str = str(BASE_DIR / "uploads")
 

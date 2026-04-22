@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
 
 from app.database import Base
 
@@ -8,6 +8,12 @@ class ExternalApiSceneBinding(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     scene_key = Column(String(50), nullable=False, unique=True)
+    scene_type = Column(String(30), nullable=False, default="generate", server_default="generate")
+    scene_label = Column(String(100), nullable=False, default="", server_default="")
+    scene_description = Column(String(255), nullable=False, default="", server_default="")
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    hide_resolution = Column(Boolean, nullable=False, default=False, server_default="0")
+    status = Column(String(20), nullable=False, default="enabled", server_default="enabled")
     api_config_id = Column(Integer, ForeignKey("external_api_configs.id"), nullable=True)
     display_name = Column(String(100), nullable=False, default="", server_default="")
     subtitle = Column(String(255), nullable=False, default="", server_default="")

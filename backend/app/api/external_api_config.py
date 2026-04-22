@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_superadmin
@@ -7,7 +7,10 @@ from app.models.user import User
 from app.schemas.external_api_config import (
     ExternalApiConfigCreate,
     ExternalApiConfigOut,
+    ExternalApiSceneBindingCreate,
+    ExternalApiSceneBindingMetaUpdate,
     ExternalApiSceneBindingOut,
+    ExternalApiSceneBindingStatusUpdate,
     ExternalApiSceneBindingUpdate,
     ExternalApiConfigStatusUpdate,
     ExternalApiConfigTestResult,
@@ -17,13 +20,17 @@ from app.schemas.external_api_config import (
 )
 from app.services.external_api_config_service import (
     create_config,
+    delete_scene_binding,
+    create_scene_binding,
     list_scene_bindings,
     list_public_task_scene_configs,
     list_generation_models,
     list_configs,
+    set_scene_binding_status,
     set_scene_binding,
     set_config_status,
     test_external_api_config,
+    update_scene_binding_meta,
     update_config,
 )
 
@@ -96,6 +103,15 @@ def get_external_api_scene_bindings(
     return list_scene_bindings(db)
 
 
+@scene_router.post("", response_model=ExternalApiSceneBindingOut)
+def create_external_api_scene_binding(
+    body: ExternalApiSceneBindingCreate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return create_scene_binding(db, body)
+
+
 @scene_router.put("/{scene_key}", response_model=ExternalApiSceneBindingOut)
 def update_external_api_scene_binding(
     scene_key: str,
@@ -104,3 +120,33 @@ def update_external_api_scene_binding(
     db: Session = Depends(get_db),
 ):
     return set_scene_binding(db, scene_key, body)
+
+
+@scene_router.patch("/{scene_key}/meta", response_model=ExternalApiSceneBindingOut)
+def patch_external_api_scene_binding_meta(
+    scene_key: str,
+    body: ExternalApiSceneBindingMetaUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return update_scene_binding_meta(db, scene_key, body)
+
+
+@scene_router.patch("/{scene_key}/status", response_model=ExternalApiSceneBindingOut)
+def patch_external_api_scene_binding_status(
+    scene_key: str,
+    body: ExternalApiSceneBindingStatusUpdate,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return set_scene_binding_status(db, scene_key, body)
+
+
+@scene_router.delete("/{scene_key}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_external_api_scene_binding(
+    scene_key: str,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    delete_scene_binding(db, scene_key)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

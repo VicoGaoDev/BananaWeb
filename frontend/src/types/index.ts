@@ -277,6 +277,7 @@ export interface AnnouncementConfig {
 }
 
 export type ExternalApiConfigStatus = "enabled" | "disabled";
+export type ExternalApiSceneType = "generate" | "prompt_reverse" | "inpaint";
 
 export interface ExternalApiConfig {
   id: number;
@@ -286,6 +287,8 @@ export interface ExternalApiConfig {
   request_url: string;
   headers_json: string;
   payload_json: string;
+  response_json: string;
+  result_base64_field: string;
   status: ExternalApiConfigStatus;
   created_at: string;
   updated_at?: string;
@@ -298,22 +301,47 @@ export interface ExternalApiConfigPayload {
   request_url: string;
   headers_json: string;
   payload_json: string;
+  response_json: string;
+  result_base64_field: string;
   status: ExternalApiConfigStatus;
 }
 
 export interface ExternalApiSceneBinding {
-  scene_key: "banana" | "banana2" | "banana_pro" | "banana_pro_plus" | "prompt_reverse" | "inpaint";
+  scene_key: string;
+  scene_type: ExternalApiSceneType;
   scene_label: string;
   scene_description: string;
   display_name: string;
   subtitle: string;
   sort_order: number;
   hide_resolution: boolean;
+  status: ExternalApiConfigStatus;
+  is_builtin: boolean;
   api_config_id?: number | null;
   api_config_name: string;
   api_group_name: string;
   api_status?: ExternalApiConfigStatus | null;
   credit_cost: number;
+}
+
+export interface ExternalApiSceneBindingCreatePayload {
+  scene_key: string;
+  scene_type: "generate";
+  scene_label: string;
+  scene_description: string;
+  sort_order: number;
+  hide_resolution: boolean;
+  api_config_id: number | null;
+  display_name: string;
+  subtitle: string;
+  credit_cost: number;
+}
+
+export interface ExternalApiSceneBindingMetaPayload {
+  scene_label: string;
+  scene_description: string;
+  sort_order: number;
+  hide_resolution: boolean;
 }
 
 export interface ExternalApiConfigTestResult {
@@ -335,7 +363,8 @@ export interface GenerationModelOption {
 }
 
 export interface TaskSceneConfig {
-  scene_key: "banana" | "banana2" | "banana_pro" | "banana_pro_plus" | "prompt_reverse" | "inpaint";
+  scene_key: string;
+  scene_type: ExternalApiSceneType;
   scene_label: string;
   scene_description: string;
   display_name: string;

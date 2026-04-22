@@ -3,6 +3,7 @@ import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import {
   CopyOutlined,
+  DeleteOutlined,
   EditOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
@@ -11,6 +12,8 @@ import {
 } from "@ant-design/icons-vue";
 import {
   createExternalApiConfig,
+  createExternalApiSceneBinding,
+  deleteExternalApiSceneBinding,
   getExternalApiSecrets,
   listExternalApiConfigs,
   listExternalApiSceneBindings,
@@ -19,12 +22,16 @@ import {
   updateExternalApiConfig,
   updateExternalApiConfigStatus,
   updateExternalApiSceneBinding,
+  updateExternalApiSceneBindingMeta,
+  updateExternalApiSceneBindingStatus,
 } from "@/api/admin";
 import type {
   ExternalApiConfig,
   ExternalApiConfigPayload,
   ExternalApiConfigTestResult,
   ExternalApiSceneBinding,
+  ExternalApiSceneBindingCreatePayload,
+  ExternalApiSceneBindingMetaPayload,
 } from "@/types";
 
 const configs = ref<ExternalApiConfig[]>([]);
@@ -34,8 +41,13 @@ const secretSaving = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const bindingSavingKey = ref("");
+const bindingCreating = ref(false);
+const sceneMetaSaving = ref(false);
 const modalOpen = ref(false);
+const sceneModalOpen = ref(false);
+const sceneMetaModalOpen = ref(false);
 const editingId = ref<number | null>(null);
+const sceneEditingKey = ref("");
 const isCopyMode = ref(false);
 const configGroupFilter = ref("all");
 const bindingGroupFilter = ref("all");
@@ -59,6 +71,7 @@ const bindingColumns = [
   { title: "当前绑定接口", key: "current", width: 220 },
   { title: "选择接口", key: "bind", width: 360 },
   { title: "消耗积分", key: "credit", width: 180 },
+  { title: "操作", key: "action", width: 220 },
 ];
 
 const form = reactive<ExternalApiConfigPayload>({
@@ -68,7 +81,27 @@ const form = reactive<ExternalApiConfigPayload>({
   request_url: "",
   headers_json: '{\n  "Content-Type": "application/json"\n}',
   payload_json: "{\n\n}",
+  response_json: "{\n\n}",
+  result_base64_field: "candidates.0.content.parts.0.inlineData.data",
   status: "enabled",
+});
+const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
+  scene_key: "",
+  scene_type: "generate",
+  scene_label: "",
+  scene_description: "",
+  sort_order: 100,
+  hide_resolution: false,
+  api_config_id: null,
+  display_name: "",
+  subtitle: "",
+  credit_cost: 4,
+});
+const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
+  scene_label: "",
+  scene_description: "",
+  sort_order: 0,
+  hide_resolution: false,
 });
 
 const modalTitle = computed(() => {
@@ -107,6 +140,8 @@ function resetForm() {
   form.request_url = "";
   form.headers_json = '{\n  "Content-Type": "application/json"\n}';
   form.payload_json = "{\n\n}";
+  form.response_json = "{\n\n}";
+  form.result_base64_field = "candidates.0.content.parts.0.inlineData.data";
   form.status = "enabled";
 }
 
@@ -119,6 +154,8 @@ function fillForm(item: ExternalApiConfig) {
   form.request_url = item.request_url;
   form.headers_json = item.headers_json;
   form.payload_json = item.payload_json;
+  form.response_json = item.response_json || "{\n\n}";
+  form.result_base64_field = item.result_base64_field || "";
   form.status = item.status;
 }
 
@@ -143,6 +180,27 @@ function getBindingOptions() {
       label: `${item.name}${item.group_name ? ` (${item.group_name})` : ""}`,
       value: item.id,
     }));
+}
+
+function resetSceneForm() {
+  sceneForm.scene_key = "";
+  sceneForm.scene_type = "generate";
+  sceneForm.scene_label = "";
+  sceneForm.scene_description = "";
+  sceneForm.sort_order = Math.max(100, ...sceneBindings.value.map((item) => Number(item.sort_order || 0) + 10), 100);
+  sceneForm.hide_resolution = false;
+  sceneForm.api_config_id = null;
+  sceneForm.display_name = "";
+  sceneForm.subtitle = "";
+  sceneForm.credit_cost = 4;
+}
+
+function fillSceneMetaForm(record: ExternalApiSceneBinding) {
+  sceneEditingKey.value = record.scene_key;
+  sceneMetaForm.scene_label = record.scene_label || "";
+  sceneMetaForm.scene_description = record.scene_description || "";
+  sceneMetaForm.sort_order = Number(record.sort_order || 0);
+  sceneMetaForm.hide_resolution = !!record.hide_resolution;
 }
 
 async function load() {
@@ -171,6 +229,16 @@ function openCreate() {
   modalOpen.value = true;
 }
 
+function openCreateScene() {
+  resetSceneForm();
+  sceneModalOpen.value = true;
+}
+
+function openEditSceneMeta(record: ExternalApiSceneBinding) {
+  fillSceneMetaForm(record);
+  sceneMetaModalOpen.value = true;
+}
+
 function openEdit(item: ExternalApiConfig) {
   fillForm(item);
   modalOpen.value = true;
@@ -185,6 +253,8 @@ function openCopy(item: ExternalApiConfig) {
   form.request_url = item.request_url;
   form.headers_json = item.headers_json;
   form.payload_json = item.payload_json;
+  form.response_json = item.response_json || "{\n\n}";
+  form.result_base64_field = item.result_base64_field || "";
   form.status = item.status;
   modalOpen.value = true;
 }
@@ -208,6 +278,13 @@ function validateJsonFields() {
     return false;
   }
 
+  try {
+    JSON.parse(form.response_json);
+  } catch {
+    message.warning("响应 JSON 不是合法的 JSON");
+    return false;
+  }
+
   return true;
 }
 
@@ -219,6 +296,8 @@ function buildPayload(): ExternalApiConfigPayload {
     request_url: form.request_url.trim(),
     headers_json: form.headers_json,
     payload_json: form.payload_json,
+    response_json: form.response_json,
+    result_base64_field: form.result_base64_field.trim(),
     status: form.status,
   };
 }
@@ -342,6 +421,102 @@ function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial
     display_name: overrides.display_name ?? record.display_name ?? "",
     subtitle: overrides.subtitle ?? record.subtitle ?? "",
   };
+}
+
+async function handleCreateScene() {
+  if (!sceneForm.scene_key.trim()) {
+    message.warning("请输入场景标识");
+    return;
+  }
+  if (!sceneForm.scene_label.trim()) {
+    message.warning("请输入场景名称");
+    return;
+  }
+
+  bindingCreating.value = true;
+  try {
+    await createExternalApiSceneBinding({
+      scene_key: sceneForm.scene_key.trim().toLowerCase(),
+      scene_type: "generate",
+      scene_label: sceneForm.scene_label.trim(),
+      scene_description: sceneForm.scene_description.trim(),
+      sort_order: Number(sceneForm.sort_order || 0),
+      hide_resolution: !!sceneForm.hide_resolution,
+      api_config_id: sceneForm.api_config_id ?? null,
+      display_name: sceneForm.display_name.trim(),
+      subtitle: sceneForm.subtitle.trim(),
+      credit_cost: Number(sceneForm.credit_cost || 0),
+    });
+    message.success("场景创建成功");
+    sceneModalOpen.value = false;
+    resetSceneForm();
+    await load();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "创建场景失败");
+  } finally {
+    bindingCreating.value = false;
+  }
+}
+
+async function handleSaveSceneMeta() {
+  if (!sceneEditingKey.value) return;
+  if (!sceneMetaForm.scene_label.trim()) {
+    message.warning("请输入场景名称");
+    return;
+  }
+
+  sceneMetaSaving.value = true;
+  try {
+    await updateExternalApiSceneBindingMeta(sceneEditingKey.value, {
+      scene_label: sceneMetaForm.scene_label.trim(),
+      scene_description: sceneMetaForm.scene_description.trim(),
+      sort_order: Number(sceneMetaForm.sort_order || 0),
+      hide_resolution: !!sceneMetaForm.hide_resolution,
+    });
+    message.success("场景基础信息已更新");
+    sceneMetaModalOpen.value = false;
+    sceneEditingKey.value = "";
+    await load();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "更新场景失败");
+  } finally {
+    sceneMetaSaving.value = false;
+  }
+}
+
+function handleToggleSceneStatus(record: ExternalApiSceneBinding) {
+  const nextStatus = record.status === "enabled" ? "disabled" : "enabled";
+  Modal.confirm({
+    title: nextStatus === "enabled" ? "启用该自定义场景？" : "停用该自定义场景？",
+    centered: true,
+    onOk: async () => {
+      try {
+        await updateExternalApiSceneBindingStatus(record.scene_key, nextStatus);
+        message.success(nextStatus === "enabled" ? "场景已启用" : "场景已停用");
+        await load();
+      } catch (err: any) {
+        message.error(err.response?.data?.detail || "更新场景状态失败");
+      }
+    },
+  });
+}
+
+function handleDeleteScene(record: ExternalApiSceneBinding) {
+  Modal.confirm({
+    title: "删除该自定义场景？",
+    content: "删除后将不再出现在模型选择中，且无法恢复。",
+    centered: true,
+    okButtonProps: { danger: true },
+    onOk: async () => {
+      try {
+        await deleteExternalApiSceneBinding(record.scene_key);
+        message.success("场景已删除");
+        await load();
+      } catch (err: any) {
+        message.error(err.response?.data?.detail || "删除场景失败");
+      }
+    },
+  });
 }
 
 async function handleSaveSecrets() {
@@ -479,19 +654,24 @@ function copySecret(value: string, label: string) {
 
       <a-card title="场景绑定" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
         <template #extra>
-          <a-select v-model:value="bindingGroupFilter" class="warm-select" style="width: 180px">
-            <a-select-option value="all">全部分组</a-select-option>
-            <a-select-option v-for="group in groupOptions" :key="group" :value="group">
-              {{ group }}
-            </a-select-option>
-          </a-select>
+          <a-space>
+            <a-select v-model:value="bindingGroupFilter" class="warm-select" style="width: 180px">
+              <a-select-option value="all">全部分组</a-select-option>
+              <a-select-option v-for="group in groupOptions" :key="group" :value="group">
+                {{ group }}
+              </a-select-option>
+            </a-select>
+            <a-button type="primary" class="api-primary-btn" :icon="h(PlusOutlined)" @click="openCreateScene">
+              新增场景
+            </a-button>
+          </a-space>
         </template>
 
         <a-alert
           class="warm-alert"
           type="info"
           show-icon
-          message="调用场景固定内置，接口分组只用于页面筛选，不影响实际调用逻辑。"
+          message="可新增文生图/图编辑场景；新增后会直接出现在生成页模型选择中。接口分组仅用于此处筛选。"
           style="margin-bottom: 16px"
         />
 
@@ -507,6 +687,13 @@ function copySecret(value: string, label: string) {
             <template v-if="column.key === 'scene'">
               <div class="scene-title">{{ record.scene_label }}</div>
               <div class="scene-desc">{{ record.scene_description }}</div>
+              <a-space size="small" style="margin-top: 6px">
+                <a-tag class="api-tag api-tag-group">{{ record.scene_type === "generate" ? "文生图/图编辑" : record.scene_type }}</a-tag>
+                <a-tag v-if="record.is_builtin" class="api-tag api-tag-muted">内置</a-tag>
+                <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
+                  {{ record.status === "enabled" ? "启用" : "停用" }}
+                </a-tag>
+              </a-space>
             </template>
             <template v-else-if="column.key === 'copy'">
               <div class="binding-copy-cell">
@@ -572,6 +759,16 @@ function copySecret(value: string, label: string) {
               />
               <span class="credit-unit">积分</span>
             </template>
+            <template v-else-if="column.key === 'action'">
+              <a-space v-if="!record.is_builtin && record.scene_type === 'generate'">
+                <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEditSceneMeta(record)">编辑</a-button>
+                <a-button size="small" class="api-secondary-btn" @click="handleToggleSceneStatus(record)">
+                  {{ record.status === "enabled" ? "停用" : "启用" }}
+                </a-button>
+                <a-button size="small" class="api-danger-btn" :icon="h(DeleteOutlined)" @click="handleDeleteScene(record)">删除</a-button>
+              </a-space>
+              <span v-else class="scene-desc">内置场景</span>
+            </template>
           </template>
         </a-table>
       </a-card>
@@ -608,10 +805,129 @@ function copySecret(value: string, label: string) {
     </a-space>
 
     <a-modal
+      v-model:open="sceneModalOpen"
+      title="新增场景"
+      :mask-closable="false"
+      :width="720"
+      @ok="handleCreateScene"
+    >
+      <a-form layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="场景标识" required>
+              <a-input v-model:value="sceneForm.scene_key" class="warm-input" placeholder="例如：banana_ultra" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="排序值">
+              <a-input-number v-model:value="sceneForm.sort_order" class="warm-input-number" :min="0" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="场景名称" required>
+              <a-input v-model:value="sceneForm.scene_label" class="warm-input" placeholder="例如：Banana Ultra" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="消耗积分">
+              <a-input-number v-model:value="sceneForm.credit_cost" class="warm-input-number" :min="0" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="场景描述">
+          <a-input v-model:value="sceneForm.scene_description" class="warm-input" placeholder="例如：高质量增强版" />
+        </a-form-item>
+
+        <a-form-item label="默认绑定接口">
+          <a-select
+            v-model:value="sceneForm.api_config_id"
+            class="warm-select"
+            allow-clear
+            placeholder="可选，创建后也可在列表中再绑定"
+          >
+            <a-select-option
+              v-for="option in getBindingOptions()"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="显示名称">
+              <a-input v-model:value="sceneForm.display_name" class="warm-input" placeholder="为空则使用场景名称" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="副标题">
+              <a-input v-model:value="sceneForm.subtitle" class="warm-input" placeholder="为空则使用场景描述" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="隐藏分辨率">
+          <a-switch v-model:checked="sceneForm.hide_resolution" />
+        </a-form-item>
+      </a-form>
+
+      <template #footer>
+        <a-space>
+          <a-button class="api-secondary-btn" @click="sceneModalOpen = false">取消</a-button>
+          <a-button type="primary" class="api-primary-btn" :loading="bindingCreating" @click="handleCreateScene">创建</a-button>
+        </a-space>
+      </template>
+    </a-modal>
+
+    <a-modal
+      v-model:open="sceneMetaModalOpen"
+      title="编辑场景基础信息"
+      :mask-closable="false"
+      :width="720"
+      @ok="handleSaveSceneMeta"
+    >
+      <a-form layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="场景名称" required>
+              <a-input v-model:value="sceneMetaForm.scene_label" class="warm-input" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="排序值">
+              <a-input-number v-model:value="sceneMetaForm.sort_order" class="warm-input-number" :min="0" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item label="场景描述">
+          <a-input v-model:value="sceneMetaForm.scene_description" class="warm-input" />
+        </a-form-item>
+
+        <a-form-item label="隐藏分辨率">
+          <a-switch v-model:checked="sceneMetaForm.hide_resolution" />
+        </a-form-item>
+      </a-form>
+
+      <template #footer>
+        <a-space>
+          <a-button class="api-secondary-btn" @click="sceneMetaModalOpen = false">取消</a-button>
+          <a-button type="primary" class="api-primary-btn" :loading="sceneMetaSaving" @click="handleSaveSceneMeta">保存</a-button>
+        </a-space>
+      </template>
+    </a-modal>
+
+    <a-modal
       v-model:open="modalOpen"
       :title="modalTitle"
       :mask-closable="false"
-      :width="860"
+      :width="920"
       @ok="handleSave"
     >
       <a-form layout="vertical">
@@ -642,6 +958,21 @@ function copySecret(value: string, label: string) {
 
         <a-form-item label="请求 JSON" required>
           <a-textarea v-model:value="form.payload_json" class="warm-textarea" :rows="12" />
+        </a-form-item>
+
+        <a-form-item label="响应 JSON" required>
+          <a-textarea v-model:value="form.response_json" class="warm-textarea" :rows="10" />
+        </a-form-item>
+
+        <a-form-item label="结果 Base64 字段路径">
+          <a-input
+            v-model:value="form.result_base64_field"
+            class="warm-input"
+            placeholder="例如：candidates.0.content.parts.0.inlineData.data"
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            生图完成后会按此路径读取响应中的 base64，并保存为结果图；支持点号路径与数字索引。
+          </div>
         </a-form-item>
 
         <a-form-item label="状态">

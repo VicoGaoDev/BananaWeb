@@ -132,15 +132,53 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN sort_order INTEGER DEFAULT 0"))
             if "hide_resolution" not in external_api_columns:
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
+            if "response_json" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN response_json TEXT"))
+            if "result_base64_field" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN result_base64_field VARCHAR(255) DEFAULT ''"))
             if "supports_inpaint" not in external_api_columns:
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_inpaint BOOLEAN DEFAULT 0"))
             if "is_active_inpaint" not in external_api_columns:
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_inpaint BOOLEAN DEFAULT 0"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_configs
+                    SET response_json = :response_json
+                    WHERE response_json IS NULL OR response_json = ''
+                    """
+                ),
+                {
+                    "response_json": '{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"<base64>"}}]}}]}',
+                },
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_configs
+                    SET result_base64_field = :result_base64_field
+                    WHERE result_base64_field IS NULL OR result_base64_field = ''
+                    """
+                ),
+                {"result_base64_field": "candidates.0.content.parts.0.inlineData.data"},
+            )
 
     if "external_api_scene_bindings" in api_key_tables:
         scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
         credit_cost_added = False
         with engine.begin() as conn:
+            if "scene_type" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_type VARCHAR(30) DEFAULT 'generate'"))
+            if "scene_label" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_label VARCHAR(100) DEFAULT ''"))
+            if "scene_description" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_description VARCHAR(255) DEFAULT ''"))
+            if "sort_order" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN sort_order INTEGER DEFAULT 0"))
+            if "hide_resolution" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
+            if "status" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN status VARCHAR(20) DEFAULT 'enabled'"))
             if "api_config_id" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN api_config_id INTEGER"))
             if "display_name" not in scene_binding_columns:
@@ -150,6 +188,15 @@ def _ensure_schema_compat():
             if "credit_cost" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
                 credit_cost_added = True
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET status = 'enabled'
+                    WHERE status IS NULL OR status = ''
+                    """
+                )
+            )
 
     from app.services.external_api_config_service import get_default_credit_cost
 

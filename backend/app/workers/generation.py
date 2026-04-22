@@ -8,6 +8,7 @@ generation or persistence fails.
 import base64
 import json
 import logging
+import re
 import time
 import uuid
 
@@ -56,6 +57,75 @@ def _append_inline_image(parts: list[dict], image_url: str) -> bool:
     mime_type, b64_data = ref
     parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
     return True
+
+
+def _split_field_path(field_path: str) -> list[str]:
+    normalized = re.sub(r"\[(\d+)\]", r".\1", (field_path or "").strip()).strip(".")
+    return [segment for segment in normalized.split(".") if segment]
+
+
+def _read_value_by_path(payload: object, field_path: str) -> tuple[object | None, object | None]:
+    current = payload
+    parent: object | None = None
+    for segment in _split_field_path(field_path):
+        parent = current
+        if isinstance(current, dict):
+            if segment not in current:
+                return None, parent
+            current = current[segment]
+            continue
+        if isinstance(current, list):
+            if not segment.isdigit():
+                return None, parent
+            index = int(segment)
+            if index < 0 or index >= len(current):
+                return None, parent
+            current = current[index]
+            continue
+        return None, parent
+    return current, parent
+
+
+def _extract_configured_image_data(
+    payload: dict,
+    field_path: str,
+) -> tuple[tuple[bytes, str] | None, str]:
+    image_b64, parent = _read_value_by_path(payload, field_path)
+    if not isinstance(image_b64, str) or not image_b64.strip():
+        return None, f"生图接口返回内容缺少配置路径 {field_path} 对应的 base64 数据"
+
+    mime = "image/png"
+    if isinstance(parent, dict):
+        mime = str(parent.get("mimeType") or parent.get("mime_type") or mime)
+
+    try:
+        return (base64.b64decode(image_b64), mime), ""
+    except Exception as exc:
+        return None, _clip_error_message(f"生图接口返回的 base64 数据解析失败: {exc}")
+
+
+def _extract_legacy_image_data(payload: dict) -> tuple[tuple[bytes, str] | None, str]:
+    candidates = payload.get("candidates", [])
+    if not candidates:
+        logger.warning("Generation API returned no candidates: %s", str(payload)[:300])
+        return None, _clip_error_message(
+            f"生图接口返回内容缺少 candidates: {str(payload)[:300]}"
+        )
+
+    for part in candidates[0].get("content", {}).get("parts", []):
+        inline = part.get("inlineData")
+        if inline:
+            b64_str = inline["data"]
+            mime = inline.get("mimeType", "image/png")
+            img_bytes = base64.b64decode(b64_str)
+            logger.info(
+                "Generation API success, mime=%s, image size: %d bytes",
+                mime, len(img_bytes),
+            )
+            return (img_bytes, mime), ""
+
+    logger.warning("Generation API response has no inlineData in parts")
+    return None, "生图接口返回内容缺少图片数据 inlineData"
 
 
 def _call_gemini_api(
@@ -148,27 +218,20 @@ def _call_gemini_api(
 
             data = resp.json()
 
-        candidates = data.get("candidates", [])
-        if not candidates:
-            logger.warning("Generation API returned no candidates: %s", str(data)[:300])
-            return None, _clip_error_message(
-                f"生图接口返回内容缺少 candidates: {str(data)[:300]}"
-            )
-
-        for part in candidates[0].get("content", {}).get("parts", []):
-            inline = part.get("inlineData")
-            if inline:
-                b64_str = inline["data"]
-                mime = inline.get("mimeType", "image/png")
-                img_bytes = base64.b64decode(b64_str)
+        configured_field_path = (config.result_base64_field or "").strip()
+        if configured_field_path:
+            result, error_message = _extract_configured_image_data(data, configured_field_path)
+            if result:
+                img_bytes, mime = result
                 logger.info(
-                    "Generation API success, mime=%s, image size: %d bytes",
-                    mime, len(img_bytes),
+                    "Generation API success, configured field=%s, mime=%s, image size: %d bytes",
+                    configured_field_path, mime, len(img_bytes),
                 )
-                return (img_bytes, mime), ""
+                return result, ""
+            logger.warning("Generation API configured field extraction failed: %s", error_message)
+            return None, error_message
 
-        logger.warning("Generation API response has no inlineData in parts")
-        return None, "生图接口返回内容缺少图片数据 inlineData"
+        return _extract_legacy_image_data(data)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         logger.error("Generation API config error: %s", detail)

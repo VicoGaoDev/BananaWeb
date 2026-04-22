@@ -6,7 +6,8 @@ from pydantic import BaseModel, field_validator
 
 
 StatusType = Literal["enabled", "disabled"]
-SceneKeyType = Literal["banana", "banana2", "banana_pro", "banana_pro_plus", "prompt_reverse", "inpaint"]
+SceneTypeType = Literal["generate", "prompt_reverse", "inpaint"]
+SceneKeyType = str
 
 
 def _validate_json_text(value: str, field_name: str, *, expect_object: bool) -> str:
@@ -28,6 +29,8 @@ class ExternalApiConfigBase(BaseModel):
     request_url: str
     headers_json: str
     payload_json: str
+    response_json: str = "{}"
+    result_base64_field: str = ""
     status: StatusType = "enabled"
 
     @field_validator("name")
@@ -66,6 +69,16 @@ class ExternalApiConfigBase(BaseModel):
     def validate_payload_json(cls, value: str) -> str:
         return _validate_json_text(value, "请求 JSON", expect_object=False)
 
+    @field_validator("response_json")
+    @classmethod
+    def validate_response_json(cls, value: str) -> str:
+        return _validate_json_text(value, "响应 JSON", expect_object=False)
+
+    @field_validator("result_base64_field")
+    @classmethod
+    def validate_result_base64_field(cls, value: str) -> str:
+        return (value or "").strip()
+
     @field_validator("status")
     @classmethod
     def validate_status(cls, value: str) -> str:
@@ -100,6 +113,8 @@ class ExternalApiConfigOut(BaseModel):
     request_url: str
     headers_json: str
     payload_json: str
+    response_json: str
+    result_base64_field: str
     status: StatusType
     created_at: datetime
     updated_at: datetime | None = None
@@ -124,6 +139,57 @@ class GenerationModelOptionOut(BaseModel):
     credit_cost: int
 
 
+class ExternalApiSceneBindingCreate(BaseModel):
+    scene_key: str
+    scene_label: str
+    scene_description: str = ""
+    sort_order: int = 0
+    hide_resolution: bool = False
+    api_config_id: int | None = None
+    display_name: str = ""
+    subtitle: str = ""
+    credit_cost: int
+    scene_type: SceneTypeType = "generate"
+    status: StatusType = "enabled"
+
+    @field_validator("scene_key")
+    @classmethod
+    def validate_scene_key(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not cleaned:
+            raise ValueError("场景标识不能为空")
+        if not all(ch.islower() or ch.isdigit() or ch == "_" for ch in cleaned):
+            raise ValueError("场景标识仅支持小写字母、数字和下划线")
+        return cleaned
+
+    @field_validator("scene_label", "scene_description", "display_name", "subtitle")
+    @classmethod
+    def validate_scene_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("sort_order")
+    @classmethod
+    def validate_sort_order(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("排序值不能小于 0")
+        return value
+
+    @field_validator("credit_cost")
+    @classmethod
+    def validate_credit_cost(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("积分消耗不能小于 0")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_binding_status(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"enabled", "disabled"}:
+            raise ValueError("状态只能是 enabled 或 disabled")
+        return cleaned
+
+
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
     display_name: str = ""
@@ -143,14 +209,51 @@ class ExternalApiSceneBindingUpdate(BaseModel):
         return value
 
 
+class ExternalApiSceneBindingMetaUpdate(BaseModel):
+    scene_label: str
+    scene_description: str = ""
+    sort_order: int = 0
+    hide_resolution: bool = False
+
+    @field_validator("scene_label", "scene_description")
+    @classmethod
+    def validate_scene_meta_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if cls.__name__ and cleaned == "" and value is not None:
+            return cleaned
+        return cleaned
+
+    @field_validator("sort_order")
+    @classmethod
+    def validate_meta_sort_order(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("排序值不能小于 0")
+        return value
+
+
+class ExternalApiSceneBindingStatusUpdate(BaseModel):
+    status: StatusType
+
+    @field_validator("status")
+    @classmethod
+    def validate_scene_status(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"enabled", "disabled"}:
+            raise ValueError("状态只能是 enabled 或 disabled")
+        return cleaned
+
+
 class ExternalApiSceneBindingOut(BaseModel):
     scene_key: SceneKeyType
+    scene_type: SceneTypeType
     scene_label: str
     scene_description: str
     display_name: str
     subtitle: str
     sort_order: int
     hide_resolution: bool
+    status: StatusType
+    is_builtin: bool
     api_config_id: int | None = None
     api_config_name: str = ""
     api_group_name: str = ""
@@ -160,6 +263,7 @@ class ExternalApiSceneBindingOut(BaseModel):
 
 class TaskSceneConfigOut(BaseModel):
     scene_key: SceneKeyType
+    scene_type: SceneTypeType
     scene_label: str
     scene_description: str
     display_name: str

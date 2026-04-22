@@ -13,6 +13,8 @@ import type {
   ExternalApiConfigPayload,
   ExternalApiSecretConfig,
   ExternalApiSceneBinding,
+  ExternalApiSceneBindingCreatePayload,
+  ExternalApiSceneBindingMetaPayload,
   ExternalApiConfigStatus,
   ExternalApiConfigTestResult,
   HistoryFilter,
@@ -172,6 +174,32 @@ export function updateExternalApiConfigStatus(configId: number, status: External
 
 export function listExternalApiSceneBindings(): Promise<ExternalApiSceneBinding[]> {
   return client.get("/admin/external-api-scene-bindings");
+}
+
+export function createExternalApiSceneBinding(
+  payload: ExternalApiSceneBindingCreatePayload,
+): Promise<ExternalApiSceneBinding> {
+  return client.post("/admin/external-api-scene-bindings", payload);
+}
+
+export function updateExternalApiSceneBindingMeta(
+  sceneKey: ExternalApiSceneBinding["scene_key"],
+  payload: ExternalApiSceneBindingMetaPayload,
+): Promise<ExternalApiSceneBinding> {
+  return client.patch(`/admin/external-api-scene-bindings/${sceneKey}/meta`, payload);
+}
+
+export function updateExternalApiSceneBindingStatus(
+  sceneKey: ExternalApiSceneBinding["scene_key"],
+  status: ExternalApiConfigStatus,
+): Promise<ExternalApiSceneBinding> {
+  return client.patch(`/admin/external-api-scene-bindings/${sceneKey}/status`, { status });
+}
+
+export function deleteExternalApiSceneBinding(
+  sceneKey: ExternalApiSceneBinding["scene_key"],
+): Promise<void> {
+  return client.delete(`/admin/external-api-scene-bindings/${sceneKey}`);
 }
 
 export function updateExternalApiSceneBinding(

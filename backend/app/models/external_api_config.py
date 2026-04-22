@@ -18,6 +18,8 @@ class ExternalApiConfig(Base):
     request_url = Column(String(500), nullable=False, default="")
     headers_json = Column(Text, nullable=False, default="{}")
     payload_json = Column(Text, nullable=False, default="{}")
+    response_json = Column(Text, nullable=False, default="{}")
+    result_base64_field = Column(String(255), nullable=False, default="")
     supports_generation = Column(Boolean, nullable=False, default=False)
     supports_inpaint = Column(Boolean, nullable=False, default=False)
     supports_prompt_reverse = Column(Boolean, nullable=False, default=False)
