@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
+    "@cloudbase/js-sdk": "^2.27.5",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.7.9",
     "cos-js-sdk-v5": "^1.10.1",

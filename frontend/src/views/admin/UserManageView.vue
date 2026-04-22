@@ -44,7 +44,8 @@ const whitelistLoadingId = ref<number | null>(null);
 
 const columns = [
   { title: "ID", dataIndex: "id", width: 70 },
-  { title: "用户", dataIndex: "username", width: 200 },
+  { title: "用户", dataIndex: "username", width: 240 },
+  { title: "邮箱", dataIndex: "email", width: 240 },
   { title: "角色", dataIndex: "role", width: 100 },
   { title: "白名单", dataIndex: "is_whitelisted", width: 100 },
   { title: "积分", dataIndex: "credits", width: 100 },
@@ -56,7 +57,9 @@ const columns = [
 const filteredUsers = computed(() => {
   const keyword = filters.username.trim().toLowerCase();
   const list = users.value.filter((user) => {
-    const matchUsername = !keyword || user.username.toLowerCase().includes(keyword);
+    const matchUsername = !keyword
+      || user.username.toLowerCase().includes(keyword)
+      || (user.email || "").toLowerCase().includes(keyword);
     const matchStatus = !filters.status || user.status === filters.status;
     return matchUsername && matchStatus;
   });
@@ -73,7 +76,9 @@ const filteredUsers = computed(() => {
 const filteredWhitelistUsers = computed(() => {
   const keyword = whitelistKeyword.value.trim().toLowerCase();
   return [...users.value]
-    .filter((user) => !keyword || user.username.toLowerCase().includes(keyword))
+    .filter((user) => !keyword
+      || user.username.toLowerCase().includes(keyword)
+      || (user.email || "").toLowerCase().includes(keyword))
     .sort((a, b) => {
       if (a.is_whitelisted !== b.is_whitelisted) return a.is_whitelisted ? -1 : 1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -260,7 +265,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
       <a-input
         v-model:value="filters.username"
         allow-clear
-        placeholder="按用户名筛选"
+        placeholder="按用户名或邮箱筛选"
         class="filter-input warm-input"
       >
         <template #prefix><SearchOutlined /></template>
@@ -306,8 +311,14 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               <a-avatar :size="34" :src="record.avatar_url || undefined" class="table-avatar">
                 {{ record.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
-              <span class="user-cell-name">{{ record.username }}</span>
+              <div class="user-cell-meta">
+                <span class="user-cell-name">{{ record.username }}</span>
+                <span v-if="record.email" class="user-cell-sub">{{ record.email }}</span>
+              </div>
             </div>
+          </template>
+          <template v-else-if="column.dataIndex === 'email'">
+            <span class="user-email-text">{{ record.email || "-" }}</span>
           </template>
           <template v-else-if="column.dataIndex === 'role'">
             <a-tag class="warm-tag" :class="record.role === 'admin' ? 'warm-tag-role-admin' : 'warm-tag-role-user'">
@@ -489,7 +500,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
                   <a-tag v-if="user.is_whitelisted" class="warm-tag warm-tag-whitelist">白名单</a-tag>
                 </div>
                 <div class="whitelist-user-sub">
-                  {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
+                  {{ user.email || "未设置邮箱" }} · {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
                 </div>
               </div>
             </div>
@@ -566,6 +577,12 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
   gap: 10px;
 }
 
+.user-cell-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .table-avatar {
   background: linear-gradient(180deg, #ffd06d, #ffb02b);
   color: #5a3c14;
@@ -575,6 +592,13 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
 .user-cell-name {
   color: #4c341a;
   font-weight: 700;
+}
+
+.user-cell-sub,
+.user-email-text {
+  color: #8c7458;
+  font-size: 12px;
+  word-break: break-all;
 }
 
 .table-actions {

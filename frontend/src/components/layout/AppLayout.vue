@@ -12,6 +12,7 @@ import {
   getContactConfig,
   getAnnouncementConfig,
 } from "@/api/auth";
+import { registerCloudbaseAccount, sendRegisterEmailCode } from "@/lib/cloudbase";
 import type { AnnouncementConfig } from "@/types";
 import {
   PictureOutlined,
@@ -28,6 +29,7 @@ import {
   UserAddOutlined,
   ThunderboltOutlined,
   MenuOutlined,
+  MailOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -132,10 +134,15 @@ function handleUserMenu({ key }: { key: string }) {
 const loginModalVisible = ref(false);
 provide("loginModalVisible", loginModalVisible);
 const authTab = ref<"login" | "register">("login");
-const loginForm = reactive({ username: "", password: "" });
+const loginForm = reactive({ account: "", password: "" });
 const loginLoading = ref(false);
-const registerForm = reactive({ username: "", password: "", confirmPassword: "" });
+const registerForm = reactive({ email: "", verificationCode: "", username: "", password: "", confirmPassword: "" });
 const registerLoading = ref(false);
+const registerCodeLoading = ref(false);
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 function openAuthModal(tab: "login" | "register") {
   mobileDrawerOpen.value = false;
@@ -144,21 +151,23 @@ function openAuthModal(tab: "login" | "register") {
 }
 
 function resetAuthForms() {
-  loginForm.username = "";
+  loginForm.account = "";
   loginForm.password = "";
+  registerForm.email = "";
+  registerForm.verificationCode = "";
   registerForm.username = "";
   registerForm.password = "";
   registerForm.confirmPassword = "";
 }
 
 async function handleLoginSubmit() {
-  if (!loginForm.username || !loginForm.password) {
-    message.warning("请输入用户名和密码");
+  if (!loginForm.account || !loginForm.password) {
+    message.warning("请输入邮箱/用户名和密码");
     return;
   }
   loginLoading.value = true;
   try {
-    const res = await apiLogin(loginForm.username, loginForm.password);
+    const res = await apiLogin(loginForm.account, loginForm.password);
     auth.setAuth(res.token, res.user);
     message.success("登录成功");
     loginModalVisible.value = false;
@@ -172,13 +181,41 @@ async function handleLoginSubmit() {
   }
 }
 
+async function handleSendRegisterCode() {
+  if (!registerForm.email) {
+    message.warning("请输入邮箱");
+    return;
+  }
+  if (!isValidEmail(registerForm.email)) {
+    message.warning("邮箱格式不正确");
+    return;
+  }
+  registerCodeLoading.value = true;
+  try {
+    await sendRegisterEmailCode(registerForm.email.trim());
+    message.success("验证码已发送，请检查邮箱");
+  } catch (err: any) {
+    message.error(err.message || "验证码发送失败");
+  } finally {
+    registerCodeLoading.value = false;
+  }
+}
+
 async function handleRegisterSubmit() {
-  if (!registerForm.username || !registerForm.password) {
-    message.warning("请输入用户名和密码");
+  if (!registerForm.email || !registerForm.verificationCode || !registerForm.username || !registerForm.password) {
+    message.warning("请完整填写注册信息");
+    return;
+  }
+  if (!isValidEmail(registerForm.email)) {
+    message.warning("邮箱格式不正确");
     return;
   }
   if (registerForm.password.length < 6) {
     message.warning("密码至少6位");
+    return;
+  }
+  if (!/^\d{6}$/.test(registerForm.verificationCode.trim())) {
+    message.warning("请输入正确的 6 位验证码");
     return;
   }
   if (registerForm.password !== registerForm.confirmPassword) {
@@ -187,7 +224,16 @@ async function handleRegisterSubmit() {
   }
   registerLoading.value = true;
   try {
-    const res = await apiRegister(registerForm.username, registerForm.password);
+    await registerCloudbaseAccount(
+      registerForm.email.trim(),
+      registerForm.verificationCode.trim(),
+      registerForm.password
+    );
+    const res = await apiRegister(
+      registerForm.username.trim(),
+      registerForm.email.trim(),
+      registerForm.password
+    );
     auth.setAuth(res.token, res.user);
     message.success("注册成功");
     loginModalVisible.value = false;
@@ -195,7 +241,7 @@ async function handleRegisterSubmit() {
     await nextTick();
     await checkAnnouncement();
   } catch (err: any) {
-    message.error(err.response?.data?.detail || "注册失败");
+    message.error(err.response?.data?.detail || err.message || "注册失败");
   } finally {
     registerLoading.value = false;
   }
@@ -671,11 +717,11 @@ async function handleAvatarChange(e: Event) {
       <a-tabs v-model:activeKey="authTab" centered class="auth-tabs">
         <a-tab-pane key="login" tab="登录">
           <a-form layout="vertical" :model="loginForm" @finish="handleLoginSubmit" style="margin-top: 8px">
-            <a-form-item label="用户名">
+            <a-form-item label="邮箱（推荐）/ 用户名">
               <a-input
-                v-model:value="loginForm.username"
+                v-model:value="loginForm.account"
                 size="large"
-                placeholder="请输入用户名"
+                placeholder="优先使用邮箱登录"
                 :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
               />
             </a-form-item>
@@ -702,6 +748,9 @@ async function handleAvatarChange(e: Event) {
               </a-button>
             </a-form-item>
             <div class="auth-switch-hint">
+              用户名重复时，请改用邮箱登录
+            </div>
+            <div class="auth-switch-hint" style="margin-top: 6px">
               还没有账号？<a @click="authTab = 'register'">立即注册</a>
             </div>
           </a-form>
@@ -709,11 +758,39 @@ async function handleAvatarChange(e: Event) {
 
         <a-tab-pane key="register" tab="注册">
           <a-form layout="vertical" :model="registerForm" @finish="handleRegisterSubmit" style="margin-top: 8px">
+            <a-form-item label="邮箱">
+              <a-input
+                v-model:value="registerForm.email"
+                size="large"
+                placeholder="请输入常用邮箱"
+                :prefix="h(MailOutlined, { style: { color: '#be9b62' } })"
+                :maxlength="255"
+              />
+            </a-form-item>
+            <a-form-item label="验证码">
+              <div class="auth-code-row">
+                <a-input
+                  v-model:value="registerForm.verificationCode"
+                  size="large"
+                  placeholder="请输入 6 位验证码"
+                  :maxlength="6"
+                  @press-enter="handleRegisterSubmit"
+                />
+                <a-button
+                  size="large"
+                  class="auth-code-btn"
+                  :loading="registerCodeLoading"
+                  @click="handleSendRegisterCode"
+                >
+                  {{ registerCodeLoading ? "发送中..." : "发送验证码" }}
+                </a-button>
+              </div>
+            </a-form-item>
             <a-form-item label="用户名">
               <a-input
                 v-model:value="registerForm.username"
                 size="large"
-                placeholder="2-20 个字符"
+                placeholder="2-20 个字符，可重复"
                 :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
                 :maxlength="20"
               />
@@ -767,30 +844,30 @@ async function handleAvatarChange(e: Event) {
 }
 
 .app-header {
-  background: transparent !important;
-  box-shadow: none;
-  padding: 14px 20px 0 !important;
-  height: 88px;
+  background: rgba(255, 252, 246, 0.88) !important;
+  box-shadow: 0 16px 32px rgba(236, 185, 88, 0.12);
+  padding: 0 24px !important;
+  height: 74px;
   line-height: normal;
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
+  border-bottom: 1px solid rgba(241, 210, 154, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .header-inner {
   max-width: 1400px;
   margin: 0 auto;
+  width: 100%;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 28px;
-  height: 74px;
-  background: rgba(255, 252, 246, 0.88);
-  border: 1px solid rgba(241, 210, 154, 0.7);
-  border-radius: 26px;
-  box-shadow: 0 16px 32px rgba(236, 185, 88, 0.12);
-  backdrop-filter: blur(12px);
+  padding: 0;
+  height: 100%;
+  background: transparent;
 }
 
 .header-brand {
@@ -999,12 +1076,20 @@ async function handleAvatarChange(e: Event) {
   background: transparent !important;
 
   :deep(.ant-menu-item) {
+    display: flex;
+    align-items: center;
     height: 48px;
     line-height: 48px;
     margin: 4px 0 !important;
     border-radius: 16px;
     font-weight: 700;
     color: #6f5837;
+  }
+
+  :deep(.ant-menu-title-content) {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
   }
 
   :deep(.ant-menu-item-selected) {
@@ -1423,14 +1508,26 @@ async function handleAvatarChange(e: Event) {
   }
 }
 
+.auth-code-row {
+  display: flex;
+  gap: 10px;
+
+  > :first-child {
+    flex: 1;
+  }
+}
+
+.auth-code-btn {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 960px) {
   .app-header {
-    padding-inline: 12px !important;
+    padding-inline: 16px !important;
     height: auto;
   }
 
   .header-inner {
-    padding: 0 16px;
     gap: 12px;
     height: 74px;
     min-height: 74px;

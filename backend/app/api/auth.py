@@ -21,20 +21,20 @@ AVATAR_MAX_SIZE = 1 * 1024 * 1024  # 1 MB
 
 def _user_brief(user: User) -> UserBrief:
     return UserBrief(
-        id=user.id, username=user.username, role=user.role,
+        id=user.id, username=user.username, email=user.email, role=user.role,
         avatar_url=user.avatar_url or "", credits=user.credits,
     )
 
 
 @router.post("/register", response_model=LoginResponse)
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
-    token, user = register_user(db, body.username, body.password)
+    token, user = register_user(db, body.username, body.email, body.password)
     return LoginResponse(token=token, user=_user_brief(user))
 
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
-    token, user = authenticate_user(db, body.username, body.password)
+    token, user = authenticate_user(db, body.account, body.password)
     return LoginResponse(token=token, user=_user_brief(user))
 
 

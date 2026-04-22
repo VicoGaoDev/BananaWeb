@@ -1,6 +1,7 @@
 export interface UserInfo {
   id: number;
   username: string;
+  email?: string | null;
   role: "user" | "admin" | "superadmin";
   avatar_url?: string;
   credits: number;
@@ -122,6 +123,7 @@ export interface UserHistoryResponse {
 export interface AdminUser {
   id: number;
   username: string;
+  email?: string | null;
   avatar_url?: string;
   role: string;
   status: string;

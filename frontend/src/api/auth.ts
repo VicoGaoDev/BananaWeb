@@ -1,12 +1,16 @@
 import client from "./client";
 import type { LoginResponse, UserInfo, CreditLog, AnnouncementConfig, PromptHistoryItem } from "@/types";
 
-export function login(username: string, password: string): Promise<LoginResponse> {
-  return client.post("/auth/login", { username, password });
+export function login(account: string, password: string): Promise<LoginResponse> {
+  return client.post("/auth/login", {
+    account,
+    username: account,
+    password,
+  });
 }
 
-export function register(username: string, password: string): Promise<LoginResponse> {
-  return client.post("/auth/register", { username, password });
+export function register(username: string, email: string, password: string): Promise<LoginResponse> {
+  return client.post("/auth/register", { username, email, password });
 }
 
 export function changePassword(oldPassword: string, newPassword: string): Promise<any> {

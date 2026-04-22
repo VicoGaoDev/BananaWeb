@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class LoginRequest(BaseModel):
-    username: str
+    account: str
     password: str
 
 
@@ -14,6 +14,7 @@ class LoginResponse(BaseModel):
 class UserBrief(BaseModel):
     id: int
     username: str
+    email: str | None = None
     role: str
     avatar_url: str = ""
     credits: int = 0
@@ -23,6 +24,7 @@ class UserBrief(BaseModel):
 
 class RegisterRequest(BaseModel):
     username: str
+    email: str
     password: str
 
 

@@ -24,6 +24,7 @@ def on_startup():
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
     _ensure_user_whitelist_column()
+    _ensure_user_identity_schema()
     _ensure_prompt_history_columns()
     _ensure_image_required_columns()
     _ensure_task_credit_cost_column()
@@ -252,6 +253,52 @@ def _ensure_user_whitelist_column():
 
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN is_whitelisted BOOLEAN DEFAULT 0"))
+
+
+def _ensure_user_identity_schema():
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    user_columns = {col["name"] for col in inspector.get_columns("users")}
+    with engine.begin() as conn:
+        if "email" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL"))
+        if "email_verified" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"))
+
+    inspector = inspect(engine)
+    unique_username_indexes: set[str] = set()
+    has_plain_username_index = False
+    has_email_unique_index = False
+
+    for index in inspector.get_indexes("users"):
+        columns = index.get("column_names") or []
+        if columns == ["username"]:
+            if index.get("unique") and index.get("name"):
+                unique_username_indexes.add(index["name"])
+            else:
+                has_plain_username_index = True
+        if columns == ["email"] and index.get("unique"):
+            has_email_unique_index = True
+
+    for constraint in inspector.get_unique_constraints("users"):
+        columns = constraint.get("column_names") or []
+        if columns == ["username"] and constraint.get("name"):
+            unique_username_indexes.add(constraint["name"])
+        if columns == ["email"]:
+            has_email_unique_index = True
+
+    with engine.begin() as conn:
+        for index_name in sorted(unique_username_indexes):
+            safe_index_name = index_name.replace("`", "")
+            conn.execute(text(f"ALTER TABLE users DROP INDEX `{safe_index_name}`"))
+
+        if not has_email_unique_index:
+            conn.execute(text("CREATE UNIQUE INDEX uq_users_email ON users (email)"))
+
+        if not has_plain_username_index:
+            conn.execute(text("CREATE INDEX ix_users_username ON users (username)"))
 
 
 def _ensure_image_required_columns():

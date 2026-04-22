@@ -11,6 +11,7 @@ class CreateUserRequest(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    email: str | None = None
     avatar_url: str = ""
     role: str
     status: str
