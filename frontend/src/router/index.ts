@@ -7,8 +7,12 @@ const router = createRouter({
     {
       path: "/",
       component: () => import("@/components/layout/AppLayout.vue"),
-      redirect: "/templates",
       children: [
+        {
+          path: "",
+          name: "Home",
+          component: () => import("@/views/HomeView.vue"),
+        },
         {
           path: "templates",
           name: "Templates",

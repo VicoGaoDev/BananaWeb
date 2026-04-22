@@ -15,7 +15,6 @@ import {
 import type { AnnouncementConfig } from "@/types";
 import {
   PictureOutlined,
-  HistoryOutlined,
   SettingOutlined,
   TeamOutlined,
   BarChartOutlined,
@@ -40,22 +39,23 @@ const mobileDrawerOpen = ref(false);
 const routeTransitionName = ref("route-page-forward");
 
 const routeOrder = new Map<string, number>([
-  ["/templates", 0],
-  ["/generate", 1],
-  ["/history", 2],
-  ["/credit-logs", 3],
-  ["/admin/templates", 4],
-  ["/admin/users", 5],
-  ["/admin/dashboard", 6],
-  ["/admin/api-key", 7],
-  ["/admin/cos-config", 8],
-  ["/admin/external-api-configs", 9],
+  ["/", 0],
+  ["/templates", 1],
+  ["/generate", 2],
+  ["/history", 3],
+  ["/credit-logs", 4],
+  ["/admin/templates", 5],
+  ["/admin/users", 6],
+  ["/admin/dashboard", 7],
+  ["/admin/api-key", 8],
+  ["/admin/cos-config", 9],
+  ["/admin/external-api-configs", 10],
 ]);
 
 const primaryMenuItems = [
-  { key: "templates", label: "创意模版", icon: PictureOutlined },
-  { key: "generate", label: "自定义绘图", icon: ThunderboltOutlined },
-  { key: "history", label: "历史记录", icon: HistoryOutlined },
+  { key: "templates", label: "创意模版", iconSrc: "/nav-templates.svg" },
+  { key: "generate", label: "自定义绘图", iconSrc: "/nav-generate.svg" },
+  { key: "history", label: "历史记录", iconSrc: "/nav-history.svg" },
 ];
 
 const adminMenuItems = computed(() =>
@@ -79,6 +79,7 @@ const userMenuItems = [
 const selectedKeys = computed(() => {
   const p = route.path;
   if (p.startsWith("/admin")) return ["admin"];
+  if (p === "/") return [];
   if (p === "/templates") return ["templates"];
   if (p === "/history") return ["history"];
   return ["generate"];
@@ -93,7 +94,7 @@ watch(
   () => route.path,
   (to, from) => {
     const toRank = routeOrder.get(to) ?? 0;
-    const fromRank = routeOrder.get(from) ?? 0;
+    const fromRank = routeOrder.get(from ?? "") ?? 0;
     routeTransitionName.value = toRank < fromRank ? "route-page-back" : "route-page-forward";
   },
   { immediate: true }
@@ -124,7 +125,7 @@ function handleUserMenu({ key }: { key: string }) {
   else if (key === "credits") router.push("/credit-logs");
   else if (key === "logout") {
     auth.logout();
-    router.push("/templates");
+    router.push("/");
   }
 }
 
@@ -358,7 +359,7 @@ async function handleAvatarChange(e: Event) {
   <a-layout class="app-layout">
     <a-layout-header class="app-header">
       <div class="header-inner">
-        <div class="header-brand" @click="router.push('/templates')">
+        <div class="header-brand" @click="router.push('/')">
           <div class="brand-mark">🍌</div>
           <div class="brand-copy">
             <span class="brand-name">Banana Web</span>
@@ -383,7 +384,7 @@ async function handleAvatarChange(e: Event) {
           @click="handleMenuClick"
         >
           <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-            <component :is="item.icon" />
+            <img :src="item.iconSrc" :alt="item.label" class="nav-menu-icon" />
             <span>{{ item.label }}</span>
           </a-menu-item>
         </a-menu>
@@ -508,7 +509,7 @@ async function handleAvatarChange(e: Event) {
             @click="handleMenuClick"
           >
             <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-              <component :is="item.icon" />
+              <img :src="item.iconSrc" :alt="item.label" class="nav-menu-icon" />
               <span>{{ item.label }}</span>
             </a-menu-item>
           </a-menu>
@@ -779,8 +780,10 @@ async function handleAvatarChange(e: Event) {
 .header-inner {
   max-width: 1400px;
   margin: 0 auto;
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 28px;
   height: 74px;
   background: rgba(255, 252, 246, 0.88);
@@ -833,7 +836,10 @@ async function handleAvatarChange(e: Event) {
 }
 
 .header-menu {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
   border-bottom: none !important;
   background: transparent;
   line-height: 54px;
@@ -870,11 +876,17 @@ async function handleAvatarChange(e: Event) {
   }
 }
 
+.nav-menu-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -1256,38 +1268,43 @@ async function handleAvatarChange(e: Event) {
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu) {
-  padding: 10px;
-  border-radius: 20px;
-  border: 1px solid #f1ddb7;
-  background: linear-gradient(180deg, #fffdf8, #fff6ea);
-  box-shadow: 0 18px 34px rgba(236, 185, 88, 0.18);
+  padding: 12px;
+  border-radius: 24px;
+  border: 1px solid #f1dfbf;
+  background: linear-gradient(180deg, #fffdfa, #fff8ef);
+  box-shadow: 0 16px 28px rgba(164, 122, 47, 0.1);
   min-width: 176px;
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item) {
-  border-radius: 14px;
-  min-height: 42px;
-  color: #6f5837;
-  font-weight: 600;
+  border-radius: 18px;
+  min-height: 50px;
+  padding: 10px 14px;
+  color: #54463a;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    background: #fff3d6;
-    color: #c98511;
+    background: rgba(245, 240, 232, 0.9);
+    color: #80591f;
   }
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item-selected) {
-  background: linear-gradient(180deg, #fff0cc, #ffe2a9) !important;
-  color: #a86500 !important;
-  box-shadow: inset 0 0 0 1px rgba(238, 183, 84, 0.45);
+  background: linear-gradient(180deg, #f6f2eb, #f1ece4) !important;
+  color: #956625 !important;
+  box-shadow: inset 0 0 0 1px rgba(233, 223, 206, 0.9);
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item .anticon) {
   font-size: 15px;
-  color: #8d6d3d;
+  color: #463f39;
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item-danger) {
@@ -1295,13 +1312,13 @@ async function handleAvatarChange(e: Event) {
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item-danger:hover) {
-  background: #fff1ee !important;
+  background: linear-gradient(180deg, #fff4f1, #ffede8) !important;
   color: #b84b3b !important;
 }
 
 :deep(.warm-dropdown .ant-dropdown-menu-item-divider) {
-  margin: 6px 0;
-  background: #f1e1c8;
+  margin: 8px 2px;
+  background: #efe4d2;
 }
 
 :deep(.ant-modal .ant-input-affix-wrapper),

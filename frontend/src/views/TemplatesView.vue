@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { PictureOutlined, TagsOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
+import { PictureOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
+import { getGenerationModels } from "@/api/config";
 import { getTemplateDetail, listTemplates, listTemplateTags } from "@/api/templates";
 import { resolveImageUrl } from "@/api/images";
-import type { CreativeTemplate, TemplateTag } from "@/types";
+import type { CreativeTemplate, GenerationModelOption, TemplateTag } from "@/types";
+import TemplateDetailDialog from "@/components/templates/TemplateDetailDialog.vue";
 
 const router = useRouter();
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
@@ -16,6 +18,7 @@ const loading = ref(false);
 const loadingMore = ref(false);
 const total = ref(0);
 const templates = ref<CreativeTemplate[]>([]);
+const generationModels = ref<GenerationModelOption[]>([]);
 const tags = ref<TemplateTag[]>([]);
 const activeTagId = ref<number | null>(null);
 const loadMoreAnchor = ref<HTMLElement | null>(null);
@@ -25,7 +28,6 @@ const detailOpen = ref(false);
 const detailLoading = ref(false);
 const detail = ref<CreativeTemplate | null>(null);
 
-const activeTagName = computed(() => tags.value.find((tag) => tag.id === activeTagId.value)?.name || "全部");
 const hasMoreTemplates = computed(() => templates.value.length < total.value);
 
 async function loadTags() {
@@ -47,6 +49,14 @@ async function loadTemplates() {
     message.error("获取创意模版失败");
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadModels() {
+  try {
+    generationModels.value = await getGenerationModels();
+  } catch {
+    generationModels.value = [];
   }
 }
 
@@ -116,6 +126,7 @@ function selectTag(tagId: number | null) {
 }
 
 onMounted(() => {
+  loadModels();
   loadTags();
   loadTemplates();
 });
@@ -205,71 +216,13 @@ watch(loadMoreAnchor, (target) => {
       aria-hidden="true"
     />
 
-    <a-modal
+    <TemplateDetailDialog
       v-model:open="detailOpen"
-      :title="detail ? `模版详情 · ${activeTagName}` : '模版详情'"
-      :footer="null"
-      :width="920"
-      centered
-    >
-      <a-spin :spinning="detailLoading">
-        <div v-if="detail" :key="detail.id" class="detail-layout">
-          <div class="detail-preview">
-            <img v-if="detail.result_image" :src="resolveImageUrl(detail.result_image)" alt="模版结果图" />
-            <div v-else class="detail-preview-empty">暂无结果图</div>
-          </div>
-
-          <div class="detail-content">
-            <div class="detail-tags">
-              <a-tag v-for="tag in detail.tags" :key="tag.id" class="warm-tag">
-                <template #icon><TagsOutlined /></template>
-                {{ tag.name }}
-              </a-tag>
-            </div>
-
-            <div class="detail-block">
-              <div class="detail-label">提示词</div>
-              <div class="detail-prompt">{{ detail.prompt }}</div>
-            </div>
-
-            <div v-if="detail.reference_images.length" class="detail-block">
-              <div class="detail-label">参考图</div>
-              <div class="detail-refs">
-                <img
-                  v-for="(url, idx) in detail.reference_images"
-                  :key="url + idx"
-                  :src="resolveImageUrl(detail.reference_image_thumbs?.[idx] || url)"
-                  alt="参考图"
-                  loading="lazy"
-                />
-              </div>
-            </div>
-
-            <div class="detail-meta">
-              <div v-if="detail.model" class="detail-meta-item">
-                <span class="meta-label">模型</span>
-                <strong>{{ detail.model }}</strong>
-              </div>
-              <div class="detail-meta-item">
-                <span class="meta-label">宽高比</span>
-                <strong>{{ detail.size }}</strong>
-              </div>
-              <div v-if="detail.resolution" class="detail-meta-item">
-                <span class="meta-label">分辨率</span>
-                <strong>{{ detail.resolution }}</strong>
-              </div>
-            </div>
-
-            <div class="detail-actions">
-              <a-button type="primary" class="warm-primary-btn" @click="useTemplate">
-                <template #icon><ThunderboltOutlined /></template>
-                使用此模版
-              </a-button>
-            </div>
-          </div>
-        </div>
-      </a-spin>
-    </a-modal>
+      :loading="detailLoading"
+      :detail="detail"
+      :generation-models="generationModels"
+      @use-template="useTemplate"
+    />
   </div>
 </template>
 
@@ -397,6 +350,42 @@ watch(loadMoreAnchor, (target) => {
   }
 }
 
+.template-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  background: linear-gradient(180deg, rgba(255, 252, 245, 0.96), #fff8ec);
+  border-top: 1px solid rgba(240, 223, 190, 0.92);
+}
+
+.template-card-model {
+  color: #8a6d45;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.template-card-prompt {
+  color: #5b4324;
+  font-size: 13px;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: calc(1.65em * 2);
+}
+
+.template-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #9a7f59;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .template-cover {
   position: relative;
   overflow: hidden;
@@ -413,7 +402,7 @@ watch(loadMoreAnchor, (target) => {
 }
 
 .template-cover-empty,
-.detail-preview-empty {
+.detail-result-empty {
   width: 100%;
   height: 100%;
   display: flex;
@@ -455,120 +444,203 @@ watch(loadMoreAnchor, (target) => {
   transform: translateY(-2px);
 }
 
+.detail-section + .detail-section {
+  margin-top: 18px;
+}
+
 .detail-layout {
+  position: relative;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 20px;
+  align-items: start;
   animation: templates-detail-slide-in var(--motion-duration-reveal-slower) var(--motion-ease-enter) both;
 }
 
-.detail-preview {
-  height: 560px;
-  border-radius: 20px;
-  overflow: hidden;
-  background: #fff8ec;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  img {
-    width: auto;
-    height: 100%;
-    max-width: 100%;
-    display: block;
-    object-fit: contain;
-    transition: transform var(--motion-duration-hover) var(--motion-ease-soft);
-  }
+.detail-left,
+.detail-right {
+  min-width: 0;
 }
 
-.detail-preview:hover img {
-  transform: scale(1.015);
-}
-
-.detail-content {
+.detail-right {
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
 
-.detail-tags {
+.detail-floating-actions {
+  position: absolute;
+  right: 0;
+  bottom: 0;
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  padding: 0 2px 2px 0;
+}
+
+.detail-primary-action {
+  height: 40px;
+  padding-inline: 16px;
+  border-radius: 14px;
+  box-shadow: 0 14px 28px rgba(236, 185, 88, 0.18);
 }
 
 .detail-label {
-  color: #8d7457;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
   font-weight: 700;
-  margin-bottom: 8px;
+  color: #8a6d45;
+}
+
+.detail-section > .detail-label {
+  margin-bottom: 10px;
+}
+
+.detail-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.detail-copy-btn {
+  height: 30px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  color: #a9772e !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
+    background: #fff4df !important;
+    color: #c7800c !important;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(223, 139, 29, 0.12);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
 }
 
 .detail-prompt {
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: #fff8ec;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff8ee;
+  border: 1px solid #f2e3c6;
   color: #4c341a;
-  line-height: 1.8;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 210px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
-.detail-refs {
+.detail-thumb-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.detail-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #f1ddb7;
+  background: #fff8ee;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft);
 
   img {
-    width: 82px;
-    height: 82px;
-    border-radius: 12px;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
-    border: 1px solid #f0dfbe;
-    transition:
-      transform var(--motion-duration-swift) var(--motion-ease-soft),
-      box-shadow var(--motion-duration-swift) var(--motion-ease-soft),
-      border-color var(--motion-duration-swift) var(--motion-ease-soft);
+    display: block;
+  }
 
-    &:hover {
-      transform: translateY(-2px);
-      border-color: #e5bb73;
-      box-shadow: 0 14px 22px rgba(236, 185, 88, 0.14);
-    }
+  &:hover {
+    transform: translateY(-2px);
+    border-color: #e7bf7b;
+    box-shadow: 0 16px 26px rgba(236, 185, 88, 0.14);
+  }
+}
+
+.detail-result-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.detail-result-card {
+  height: clamp(220px, 36vh, 340px);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #f1ddb7;
+  background: #fff8ee;
+  cursor: zoom-in;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
+    border-color var(--motion-duration-base) var(--motion-ease-soft);
+
+  img,
+  .detail-result-empty {
+    width: 100%;
+    height: 100%;
+  }
+
+  img {
+    object-fit: contain;
+    display: block;
+    background: #fffdfb;
+    transition: transform var(--motion-duration-hover) var(--motion-ease-soft);
+  }
+
+  &:not(.empty):hover {
+    transform: translateY(-3px);
+    border-color: #e7bf7b;
+    box-shadow: 0 18px 30px rgba(236, 185, 88, 0.14);
+  }
+
+  &:not(.empty):hover img {
+    transform: scale(1.015);
+  }
+
+  &.single {
+    height: clamp(440px, 72vh, 680px);
+  }
+
+  &.empty {
+    cursor: default;
   }
 }
 
 .detail-meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.detail-meta-item {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: #fff8ec;
-  border: 1px solid #f0dfbe;
-
-  strong {
-    display: block;
-    margin-top: 4px;
-    color: #4c341a;
-    font-size: 15px;
-  }
-}
-
-.meta-label {
-  color: #8d7457;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.detail-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: auto;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fffaf2;
+  border: 1px solid #f2e3c6;
+  color: #8f7558;
+  font-size: 13px;
+  line-height: 1.8;
+
+  span:not(:last-child)::after {
+    content: "｜";
+    margin: 0 8px;
+    color: #d3b487;
+  }
 }
 
 .empty-state {
@@ -644,6 +716,7 @@ watch(loadMoreAnchor, (target) => {
   .template-card-leave-active,
   .template-card-move,
   .template-cover img,
+  .template-card-body,
   .template-overlay,
   .template-overlay-text,
   .filter-tag,
@@ -669,8 +742,15 @@ watch(loadMoreAnchor, (target) => {
     grid-template-columns: 1fr;
   }
 
-  .detail-preview {
-    height: 420px;
+  .detail-floating-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: 14px;
+    padding: 0;
+  }
+
+  .detail-result-card.single {
+    height: clamp(360px, 60vh, 520px);
   }
 }
 
@@ -679,12 +759,8 @@ watch(loadMoreAnchor, (target) => {
     grid-template-columns: 1fr;
   }
 
-  .detail-meta {
-    grid-template-columns: 1fr;
-  }
-
-  .detail-preview {
-    height: 320px;
+  .detail-result-card.single {
+    height: clamp(280px, 56vh, 420px);
   }
 }
 
