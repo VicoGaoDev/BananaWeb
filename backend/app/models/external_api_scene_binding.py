@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 
 from app.database import Base
 
@@ -18,4 +18,6 @@ class ExternalApiSceneBinding(Base):
     display_name = Column(String(100), nullable=False, default="", server_default="")
     subtitle = Column(String(255), nullable=False, default="", server_default="")
     credit_cost = Column(Integer, nullable=False, default=0, server_default="0")
+    aspect_ratio_options_json = Column(Text, nullable=False, default="[]", server_default="[]")
+    image_size_options_json = Column(Text, nullable=False, default="[]", server_default="[]")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

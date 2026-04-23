@@ -42,7 +42,7 @@ export interface TaskResult {
   size: string;
   resolution: string;
   credit_cost: number;
-  status: "pending" | "processing" | "success" | "failed";
+  status: "pending" | "queued" | "processing" | "success" | "failed";
   error_message?: string;
   created_at: string;
   images: ImageResult[];
@@ -93,7 +93,7 @@ export interface UserHistoryCard {
   image_url: string;
   preview_url?: string;
   thumb_url?: string;
-  status: "pending" | "processing" | "success" | "failed";
+  status: "pending" | "queued" | "processing" | "success" | "failed";
   image_format?: string;
   image_size_bytes?: number;
   is_soft_deleted?: boolean;
@@ -279,7 +279,12 @@ export interface AnnouncementConfig {
 }
 
 export type ExternalApiConfigStatus = "enabled" | "disabled";
-export type ExternalApiSceneType = "generate" | "prompt_reverse" | "inpaint";
+export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "inpaint";
+
+export interface SceneOptionItem {
+  label: string;
+  value: string;
+}
 
 export interface ExternalApiConfig {
   id: number;
@@ -324,11 +329,13 @@ export interface ExternalApiSceneBinding {
   api_group_name: string;
   api_status?: ExternalApiConfigStatus | null;
   credit_cost: number;
+  aspect_ratio_options_json: string;
+  image_size_options_json: string;
 }
 
 export interface ExternalApiSceneBindingCreatePayload {
   scene_key: string;
-  scene_type: "generate";
+  scene_type: Extract<ExternalApiSceneType, "generate" | "image_edit">;
   scene_label: string;
   scene_description: string;
   sort_order: number;
@@ -337,6 +344,8 @@ export interface ExternalApiSceneBindingCreatePayload {
   display_name: string;
   subtitle: string;
   credit_cost: number;
+  aspect_ratio_options_json: string;
+  image_size_options_json: string;
 }
 
 export interface ExternalApiSceneBindingMetaPayload {
@@ -344,6 +353,8 @@ export interface ExternalApiSceneBindingMetaPayload {
   scene_description: string;
   sort_order: number;
   hide_resolution: boolean;
+  aspect_ratio_options_json: string;
+  image_size_options_json: string;
 }
 
 export interface ExternalApiConfigTestResult {
@@ -362,6 +373,8 @@ export interface GenerationModelOption {
   sort_order: number;
   hide_resolution: boolean;
   credit_cost: number;
+  aspect_ratio_options: SceneOptionItem[];
+  image_size_options: SceneOptionItem[];
 }
 
 export interface TaskSceneConfig {
@@ -374,6 +387,8 @@ export interface TaskSceneConfig {
   sort_order: number;
   hide_resolution: boolean;
   credit_cost: number;
+  aspect_ratio_options: SceneOptionItem[];
+  image_size_options: SceneOptionItem[];
 }
 
 export type UploadPurpose = "ref" | "source" | "mask" | "reverse" | "misc" | "template";

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, h, inject, onBeforeUnmount, onMounted, type Ref } from "vue";
+import { ref, computed, h, inject, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
 import { message } from "ant-design-vue";
 import {
+  FontSizeOutlined,
   CloseOutlined,
   CloudUploadOutlined,
   ClockCircleOutlined,
@@ -11,36 +12,44 @@ import {
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
+  PictureOutlined,
+  SearchOutlined,
+  HighlightOutlined,
   LoadingOutlined,
+  ExclamationCircleFilled,
   RedoOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
   UndoOutlined,
 } from "@ant-design/icons-vue";
-import { getGenerationModels, getTaskScenes } from "@/api/config";
-import { createTask, getTask } from "@/api/tasks";
+import { getTaskScenes } from "@/api/config";
+import { createTask, getTasks } from "@/api/tasks";
 import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
 import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
-import type { GenerationModelOption, ImageResult, PromptHistoryItem, TaskResult, TaskSceneConfig } from "@/types";
+import type { GenerationModelOption, ImageResult, PromptHistoryItem, SceneOptionItem, TaskResult, TaskSceneConfig } from "@/types";
 
 const auth = useAuthStore();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 
-type GenerateMode = "generate" | "inpaint" | "promptReverse";
+type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
 const DEFAULT_SCENE_COSTS: Record<string, number> = {
   banana: 4,
   banana2: 4,
   banana_pro: 4,
   banana_pro_plus: 4,
+  banana_edit: 4,
+  banana2_edit: 4,
+  banana_pro_edit: 4,
+  banana_pro_plus_edit: 4,
   prompt_reverse: 1,
   inpaint: 4,
 };
 
-const generateMode = ref<GenerateMode>("generate");
+const generateMode = ref<GenerateMode>("textGenerate");
 const prompt = ref("");
 const repaintPrompt = ref("");
 const selectedModel = ref("");
@@ -69,7 +78,8 @@ interface GeneratedTaskItem {
 }
 
 const generatedTasks = ref<GeneratedTaskItem[]>([]);
-const taskPollTimers = new Map<number, ReturnType<typeof setInterval>>();
+const taskPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const taskPollingInFlight = ref(false);
 
 type UploadItemStatus = "uploading" | "success" | "failed";
 
@@ -117,16 +127,13 @@ const historyItems = ref<PromptHistoryItem[]>([]);
 const historyLoading = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
-const generationModels = ref<GenerationModelOption[]>([]);
 const taskScenes = ref<TaskSceneConfig[]>([]);
-
-const resolutionOptions = [
+const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
   { label: "1K", value: "1K" },
   { label: "2K", value: "2K" },
   { label: "4K", value: "4K" },
 ];
-
-const sizeOptions = [
+const DEFAULT_ASPECT_RATIO_OPTIONS: SceneOptionItem[] = [
   { label: "■  1:1", value: "1:1" },
   { label: "▮  2:3", value: "2:3" },
   { label: "▬  3:2", value: "3:2" },
@@ -135,6 +142,21 @@ const sizeOptions = [
   { label: "▮  9:16", value: "9:16" },
   { label: "▬  16:9", value: "16:9" },
 ];
+
+function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption {
+  return {
+    model_key: scene.scene_key,
+    model_label: scene.scene_label,
+    model_description: scene.scene_description,
+    display_name: scene.display_name,
+    subtitle: scene.subtitle,
+    sort_order: scene.sort_order,
+    hide_resolution: scene.hide_resolution,
+    credit_cost: scene.credit_cost,
+    aspect_ratio_options: scene.aspect_ratio_options,
+    image_size_options: scene.image_size_options,
+  };
+}
 
 const resultEmptyTitle = computed(() => (
   generateMode.value === "promptReverse" ? "提示词反推结果会在左侧展示" : "生图结果将在这里展示"
@@ -153,16 +175,45 @@ const uploading = computed(() => referenceItems.value.some((item) => item.status
 const hasPendingReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
 const hasFailedReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "failed"));
 const sourceDisplayUrl = computed(() => resolveImageUrl(sourcePreviewUrl.value || sourceImageUrl.value));
+const isTextGenerateMode = computed(() => generateMode.value === "textGenerate");
+const isImageEditMode = computed(() => generateMode.value === "imageEdit");
+const textGenerateModels = computed(() => (
+  taskScenes.value
+    .filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint")
+    .map(toGenerationModelOption)
+));
+const imageEditModels = computed(() => {
+  const models = taskScenes.value
+    .filter((item) => item.scene_type === "image_edit")
+    .map(toGenerationModelOption);
+  return models.length ? models : textGenerateModels.value;
+});
+const generationModels = computed(() => (isImageEditMode.value ? imageEditModels.value : textGenerateModels.value));
 const hasBlockedUploads = computed(() => {
   if (generateMode.value === "inpaint") {
     return !!sourcePreviewUrl.value && !sourceImageUrl.value;
   }
-  return hasPendingReferenceUploads.value || hasFailedReferenceUploads.value;
+  if (isImageEditMode.value) {
+    return hasPendingReferenceUploads.value || hasFailedReferenceUploads.value;
+  }
+  return false;
 });
 const selectedModelOption = computed(
   () => generationModels.value.find((item) => item.model_key === selectedModel.value) || null
 );
-const hideResolution = computed(() => generateMode.value === "generate" && !!selectedModelOption.value?.hide_resolution);
+const sizeOptions = computed(() => (
+  selectedModelOption.value?.aspect_ratio_options?.length
+    ? selectedModelOption.value.aspect_ratio_options
+    : DEFAULT_ASPECT_RATIO_OPTIONS
+));
+const resolutionOptions = computed(() => (
+  selectedModelOption.value?.image_size_options?.length
+    ? selectedModelOption.value.image_size_options
+    : DEFAULT_IMAGE_SIZE_OPTIONS
+));
+const hideResolution = computed(() => (
+  (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_resolution
+));
 const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
 const selectedModelCreditCost = computed(() => (
   selectedModelOption.value?.credit_cost
@@ -229,17 +280,18 @@ function updateGeneratedTaskByTaskId(taskId: number, updater: (task: GeneratedTa
   ));
 }
 
-function stopTaskPolling(taskId: number) {
-  const timer = taskPollTimers.get(taskId);
-  if (timer) {
-    clearInterval(timer);
-    taskPollTimers.delete(taskId);
-  }
-}
+const activePollingTaskIds = computed(() => (
+  generatedTasks.value
+    .filter((task) => task.taskId && task.status !== "success" && task.status !== "failed")
+    .map((task) => task.taskId as number)
+));
 
 function stopAllTaskPolling() {
-  taskPollTimers.forEach((timer) => clearInterval(timer));
-  taskPollTimers.clear();
+  if (taskPollTimer.value) {
+    clearInterval(taskPollTimer.value);
+    taskPollTimer.value = null;
+  }
+  taskPollingInFlight.value = false;
 }
 
 function syncTaskFromResult(taskId: number, data: TaskResult) {
@@ -263,23 +315,39 @@ function syncTaskFromResult(taskId: number, data: TaskResult) {
   }
 }
 
-async function refreshTask(taskId: number) {
-  const data = await getTask(taskId);
-  syncTaskFromResult(taskId, data);
-  if (data.status === "success" || data.status === "failed") stopTaskPolling(taskId);
-  return data;
+function syncTasksFromResults(items: TaskResult[]) {
+  items.forEach((item) => syncTaskFromResult(item.id, item));
 }
 
-function startTaskPolling(taskId: number) {
-  stopTaskPolling(taskId);
-  const timer = setInterval(async () => {
-    try {
-      await refreshTask(taskId);
-    } catch {
-      stopTaskPolling(taskId);
+async function refreshTasks(taskIds = activePollingTaskIds.value) {
+  if (!taskIds.length) {
+    stopAllTaskPolling();
+    return [];
+  }
+  const items = await getTasks(taskIds);
+  syncTasksFromResults(items);
+  if (!activePollingTaskIds.value.length) {
+    stopAllTaskPolling();
+  }
+  return items;
+}
+
+function startTaskPolling() {
+  if (taskPollTimer.value) return;
+  taskPollTimer.value = setInterval(async () => {
+    if (taskPollingInFlight.value || !activePollingTaskIds.value.length) {
+      if (!activePollingTaskIds.value.length) stopAllTaskPolling();
+      return;
     }
-  }, 2000);
-  taskPollTimers.set(taskId, timer);
+    taskPollingInFlight.value = true;
+    try {
+      await refreshTasks();
+    } catch {
+      stopAllTaskPolling();
+    } finally {
+      taskPollingInFlight.value = false;
+    }
+  }, 5000);
 }
 
 function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
@@ -306,16 +374,16 @@ async function submitGeneratedTask(
     const res = await createTask(payload);
     const taskIds = res.task_ids?.length ? res.task_ids : (res.task_id ? [res.task_id] : []);
     if (taskIds.length === localTasks.length) {
-      await Promise.all(localTasks.map(async (localTask, index) => {
+      localTasks.forEach((localTask, index) => {
         const taskId = taskIds[index];
         updateGeneratedTask(localTask.localId, (task) => ({ ...task, taskId, status: "pending" }));
-        try {
-          const taskData = await refreshTask(taskId);
-          if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(taskId);
-        } catch {
-          startTaskPolling(taskId);
-        }
-      }));
+      });
+      try {
+        const items = await refreshTasks(taskIds);
+        if (items.some((item) => item.status !== "success" && item.status !== "failed")) startTaskPolling();
+      } catch {
+        startTaskPolling();
+      }
     } else if (taskIds.length === 1) {
       const legacyTaskId = taskIds[0];
       const [primaryTask, ...extraTasks] = localTasks;
@@ -336,10 +404,10 @@ async function submitGeneratedTask(
         ));
 
       try {
-        const taskData = await refreshTask(legacyTaskId);
-        if (taskData.status !== "success" && taskData.status !== "failed") startTaskPolling(legacyTaskId);
+        const items = await refreshTasks([legacyTaskId]);
+        if (items.some((item) => item.status !== "success" && item.status !== "failed")) startTaskPolling();
       } catch {
-        startTaskPolling(legacyTaskId);
+        startTaskPolling();
       }
     } else {
       throw new Error("服务端返回的任务数量异常");
@@ -572,10 +640,10 @@ const generateButtonText = computed(() => {
   if (generateMode.value === "inpaint" && sourcePreviewUrl.value && !sourceImageUrl.value) {
     return "原图未上传完成";
   }
-  if (generateMode.value === "generate" && hasPendingReferenceUploads.value) {
+  if (isImageEditMode.value && hasPendingReferenceUploads.value) {
     return "参考图上传中...";
   }
-  if (generateMode.value === "generate" && hasFailedReferenceUploads.value) {
+  if (isImageEditMode.value && hasFailedReferenceUploads.value) {
     return "参考图上传失败，请处理后再生成";
   }
   return isSuperAdmin.value ? "开始生成" : `开始生成 · ${creditCost.value} 积分`;
@@ -622,8 +690,8 @@ function copyReversePrompt() {
 function applyReversePrompt() {
   if (!reversePromptResult.value.trim()) return;
   prompt.value = reversePromptResult.value;
-  generateMode.value = "generate";
-  message.success("已带入到文生图/图编辑");
+  generateMode.value = "textGenerate";
+  message.success("已带入到文生图");
 }
 
 async function handleGenerate() {
@@ -632,11 +700,11 @@ async function handleGenerate() {
     message.warning("请输入提示词");
     return;
   }
-  if (generateMode.value === "generate" && hasPendingReferenceUploads.value) {
+  if (isImageEditMode.value && hasPendingReferenceUploads.value) {
     message.warning("参考图仍在上传中，请稍候再发起任务");
     return;
   }
-  if (generateMode.value === "generate" && hasFailedReferenceUploads.value) {
+  if (isImageEditMode.value && hasFailedReferenceUploads.value) {
     message.warning("存在上传失败的参考图，请删除或重新上传后再试");
     return;
   }
@@ -687,11 +755,15 @@ async function handleGenerate() {
       num_images: numImages.value,
       size: size.value,
       resolution: hideResolution.value ? "" : resolution.value,
-      reference_images: referenceUrls.value.length ? referenceUrls.value : undefined,
+      reference_images: isImageEditMode.value && referenceUrls.value.length ? referenceUrls.value : undefined,
     };
   }
 
-  const submitMode: SubmitMode = generateMode.value === "inpaint" ? "inpaint" : "generate";
+  const submitMode: SubmitMode = generateMode.value === "imageEdit"
+    ? "imageEdit"
+    : generateMode.value === "textGenerate"
+      ? "textGenerate"
+      : "inpaint";
   try {
     await submitGeneratedTask(payload, {
       mode: submitMode,
@@ -726,6 +798,7 @@ function handleReeditTask(task: GeneratedTaskItem) {
     canUndoMask.value = false;
     canRedoMask.value = false;
   } else {
+    generateMode.value = task.referenceImages.length ? "imageEdit" : "textGenerate";
     prompt.value = task.prompt;
     repaintPrompt.value = "";
     if (task.model) selectedModel.value = task.model;
@@ -835,7 +908,7 @@ async function removeHistoryItem(id: number) {
 
 function useHistoryPrompt(text: string) {
   prompt.value = text;
-  generateMode.value = "generate";
+  generateMode.value = "textGenerate";
   historyVisible.value = false;
 }
 
@@ -859,11 +932,13 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       source_image?: string;
       mask_image?: string;
     };
-    const draftMode = draft.mode === "inpaint"
+    const draftMode: GenerateMode = draft.mode === "inpaint"
       ? "inpaint"
       : draft.mode === "promptReverse"
         ? "promptReverse"
-        : "generate";
+        : Array.isArray(draft.reference_images) && draft.reference_images.length
+          ? "imageEdit"
+          : "textGenerate";
     generateMode.value = draftMode;
     size.value = draft.size || "9:16";
     resolution.value = draft.resolution || "2K";
@@ -920,18 +995,6 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
   }
 }
 
-async function loadGenerationModelOptions() {
-  try {
-    generationModels.value = await getGenerationModels();
-    if (!generationModels.value.length) return;
-    if (!generationModels.value.some((item) => item.model_key === selectedModel.value)) {
-      selectedModel.value = generationModels.value[0].model_key;
-    }
-  } catch {
-    // ignore model loading failures, backend will still validate on submit
-  }
-}
-
 async function loadTaskSceneConfigs() {
   try {
     taskScenes.value = await getTaskScenes();
@@ -941,7 +1004,7 @@ async function loadTaskSceneConfigs() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadGenerationModelOptions(), loadTaskSceneConfigs()]);
+  await loadTaskSceneConfigs();
   applyDraft(
     localStorage.getItem(HISTORY_DRAFT_KEY),
     "已回填历史任务参数，可继续编辑后重新生成",
@@ -959,6 +1022,30 @@ onBeforeUnmount(() => {
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
   revokeObjectUrl(sourcePreviewUrl.value);
 });
+
+watch(generationModels, (models) => {
+  if (!models.length) {
+    selectedModel.value = "";
+    return;
+  }
+  if (!models.some((item) => item.model_key === selectedModel.value)) {
+    selectedModel.value = models[0].model_key;
+  }
+}, { immediate: true });
+
+watch(sizeOptions, (options) => {
+  if (!options.length) return;
+  if (!options.some((item) => item.value === size.value)) {
+    size.value = options[0].value;
+  }
+}, { immediate: true });
+
+watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
+  if (shouldHide || !options.length) return;
+  if (!options.some((item) => item.value === resolution.value)) {
+    resolution.value = options[0].value;
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -966,7 +1053,112 @@ onBeforeUnmount(() => {
     <div class="generate-workbench">
       <div class="left-col">
         <a-tabs v-model:activeKey="generateMode" class="generate-tabs">
-          <a-tab-pane key="generate" tab="文生图/图编辑">
+          <a-tab-pane key="textGenerate">
+            <template #tab>
+              <span class="generate-tab-label">
+                <FontSizeOutlined />
+                <span>文生图</span>
+              </span>
+            </template>
+            <section class="work-panel settings-panel generate-config-panel">
+              <div class="settings-scroll">
+              <div class="settings-row model-row config-section">
+                <div class="setting-item setting-item-full">
+                  <label>模型</label>
+                  <a-select
+                    v-model:value="selectedModel"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                  >
+                    <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
+                      <div class="model-option">
+                        <div class="model-option-label">{{ model.model_label }}</div>
+                        <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
+                      </div>
+                    </a-select-option>
+                  </a-select>
+                </div>
+              </div>
+
+              <div class="prompt-block config-section">
+                <div class="prompt-label-row">
+                  <label>提示词</label>
+                  <a-button type="text" class="history-btn" @click="openHistory">
+                    <template #icon><ClockCircleOutlined /></template>
+                  </a-button>
+                </div>
+                <a-textarea
+                  v-model:value="prompt"
+                  :rows="5"
+                  placeholder="描述您想要生成的图片..."
+                  class="prompt-input"
+                  :maxlength="2000"
+                  show-count
+                />
+              </div>
+
+              <div class="settings-row settings-row-inline config-section compact-config-section">
+                <div class="setting-item setting-item-inline">
+                  <label>宽高比</label>
+                  <a-select
+                    v-model:value="size"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="sizeOptions"
+                  />
+                </div>
+                <div v-if="!hideResolution" class="setting-item setting-item-inline">
+                  <label>分辨率</label>
+                  <a-select
+                    v-model:value="resolution"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="resolutionOptions"
+                  />
+                </div>
+              </div>
+
+              <div class="generate-actions-block config-section action-config-section">
+                <div class="field-block">
+                  <label>图片数量：{{ numImages }}</label>
+                  <a-slider
+                    v-model:value="numImages"
+                    :min="1"
+                    :max="4"
+                    :marks="{ 1: '1', 2: '2', 3: '3', 4: '4' }"
+                    class="num-slider"
+                  />
+                </div>
+              </div>
+
+              </div>
+
+              <div class="settings-footer">
+                <a-button
+                  type="primary"
+                  block
+                  size="large"
+                  :disabled="!activePrompt.trim() || hasBlockedUploads"
+                  class="generate-btn"
+                  @click="handleGenerate"
+                >
+                  <template #icon><ThunderboltOutlined /></template>
+                  {{ generateButtonText }}
+                </a-button>
+              </div>
+            </section>
+          </a-tab-pane>
+
+          <a-tab-pane key="imageEdit">
+            <template #tab>
+              <span class="generate-tab-label">
+                <PictureOutlined />
+                <span>图编辑</span>
+              </span>
+            </template>
             <section class="work-panel settings-panel generate-config-panel">
               <div class="settings-scroll">
               <div class="settings-row model-row config-section">
@@ -1110,7 +1302,13 @@ onBeforeUnmount(() => {
             </section>
           </a-tab-pane>
 
-          <a-tab-pane key="promptReverse" tab="提示词反推">
+          <a-tab-pane key="promptReverse">
+            <template #tab>
+              <span class="generate-tab-label">
+                <SearchOutlined />
+                <span>提示词反推</span>
+              </span>
+            </template>
             <section class="work-panel settings-panel prompt-reverse-panel">
               <div class="settings-scroll">
               <div class="field-block">
@@ -1168,7 +1366,7 @@ onBeforeUnmount(() => {
                       复制提示词
                     </a-button>
                     <a-button class="reverse-action-btn reverse-action-btn-primary" type="primary" @click="applyReversePrompt">
-                      带入文生图/图编辑
+                      带入文生图
                     </a-button>
                   </div>
                 </div>
@@ -1195,7 +1393,13 @@ onBeforeUnmount(() => {
             </section>
           </a-tab-pane>
 
-          <a-tab-pane key="inpaint" tab="局部重绘">
+          <a-tab-pane key="inpaint">
+            <template #tab>
+              <span class="generate-tab-label">
+                <HighlightOutlined />
+                <span>局部重绘</span>
+              </span>
+            </template>
             <section class="work-panel settings-panel inpaint-panel">
               <div class="settings-scroll">
               <div class="field-block">
@@ -1344,17 +1548,23 @@ onBeforeUnmount(() => {
       </div>
 
       <section class="work-panel result-panel">
-        <div class="panel-head">
-          <h3>生成任务</h3>
-        </div>
-
-        <div class="result-tips">
-          <div class="result-tip-line">
-            生图任务结果可在
-            <router-link to="/history" class="result-tip-link">历史记录</router-link>
-            中查看；
+        <div class="result-head">
+          <div class="result-head-main">
+            <div class="panel-head result-panel-head">
+              <h3>生成任务</h3>
+            </div>
+            <div class="result-tips">
+              <div class="result-tip-line">
+                生图任务结果可在
+                <router-link to="/history" class="result-tip-link">历史记录</router-link>
+                中查看
+              </div>
+            </div>
           </div>
-          <div class="result-tip-line">服务器只保留原图15天，请尽快下载原图；</div>
+          <div class="result-retain-badge">
+            <ExclamationCircleFilled class="result-retain-icon" />
+            <span>服务器只保留原图15天</span>
+          </div>
         </div>
 
         <div class="result-body">
@@ -1418,15 +1628,19 @@ onBeforeUnmount(() => {
           </TransitionGroup>
 
           <div v-else class="result-empty">
-            <div class="empty-illustration-shell">
-              <img
-                src="/generate-empty-state.svg"
-                alt="生成结果占位插画"
-                class="empty-illustration"
-              />
-            </div>
-            <div class="empty-title">{{ resultEmptyTitle }}</div>
-            <div class="empty-desc">{{ resultEmptyDesc }}</div>
+            <transition name="generate-panel-slide" mode="out-in">
+              <div :key="generateMode" class="result-empty-copy">
+                <div class="empty-illustration-shell">
+                  <img
+                    src="/generate-empty-state.svg"
+                    alt="生成结果占位插画"
+                    class="empty-illustration"
+                  />
+                </div>
+                <div class="empty-title">{{ resultEmptyTitle }}</div>
+                <div class="empty-desc">{{ resultEmptyDesc }}</div>
+              </div>
+            </transition>
           </div>
         </div>
       </section>
@@ -1629,6 +1843,21 @@ onBeforeUnmount(() => {
     flex-direction: column;
     min-height: 0;
     height: 100%;
+  }
+
+  :deep(.ant-tabs-tabpane-active) {
+    animation: generate-panel-in var(--motion-duration-slide) var(--motion-ease-enter) both;
+  }
+}
+
+.generate-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+
+  .anticon {
+    font-size: 16px;
   }
 }
 
@@ -2480,20 +2709,57 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  padding: 18px 20px 20px;
   animation: generate-slide-right-in var(--motion-duration-stage-delayed) var(--motion-ease-enter) 0.14s both;
+}
+
+.result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.result-head-main {
+  min-width: 0;
+}
+
+.result-panel-head {
+  margin-bottom: 2px;
 }
 
 .result-tips {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .result-tip-line {
   color: #8f7558;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.65;
+}
+
+.result-retain-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(255, 247, 232, 0.92));
+  border: 1px solid rgba(239, 223, 190, 0.92);
+  color: #8f7558;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 20px rgba(236, 185, 88, 0.08);
+}
+
+.result-retain-icon {
+  color: #e25555;
+  font-size: 13px;
 }
 
 .result-tip-link {
@@ -2518,8 +2784,10 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin-top: 16px;
+  margin-top: 18px;
   padding-right: 4px;
+  display: flex;
+  flex-direction: column;
   scrollbar-width: thin;
   scrollbar-color: rgba(210, 188, 150, 0.45) transparent;
 
@@ -2670,21 +2938,23 @@ onBeforeUnmount(() => {
 /* --- Empty state --- */
 .result-empty {
   flex: 1;
-  min-height: 320px;
-  border-radius: 20px;
-  border: 1px dashed #ead9b9;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 248, 232, 0.38),
-    rgba(255, 253, 248, 0.82)
-  );
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 28px 24px 32px;
+  padding: 8px 24px 32px;
   animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.2s both;
+}
+
+.result-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
 }
 
 .empty-illustration-shell {
@@ -2702,14 +2972,17 @@ onBeforeUnmount(() => {
 }
 
 .empty-title {
+  margin-top: 8px;
   font-size: 17px;
   font-weight: 700;
   color: #8f7558;
 }
 
 .empty-desc {
+  margin-top: 6px;
   font-size: 13px;
   color: #b8a080;
+  line-height: 1.8;
 }
 
 /* --- History dialog --- */
@@ -3000,6 +3273,11 @@ onBeforeUnmount(() => {
 
   .result-list {
     grid-template-columns: 1fr;
+  }
+
+  .result-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

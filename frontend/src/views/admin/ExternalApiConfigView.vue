@@ -34,6 +34,22 @@ import type {
   ExternalApiSceneBindingMetaPayload,
 } from "@/types";
 
+const DEFAULT_ASPECT_RATIO_OPTIONS_JSON = JSON.stringify([
+  { label: "■  1:1", value: "1:1" },
+  { label: "▮  2:3", value: "2:3" },
+  { label: "▬  3:2", value: "3:2" },
+  { label: "▮  3:4", value: "3:4" },
+  { label: "▬  4:3", value: "4:3" },
+  { label: "▮  9:16", value: "9:16" },
+  { label: "▬  16:9", value: "16:9" },
+], null, 2);
+
+const DEFAULT_IMAGE_SIZE_OPTIONS_JSON = JSON.stringify([
+  { label: "1K", value: "1K" },
+  { label: "2K", value: "2K" },
+  { label: "4K", value: "4K" },
+], null, 2);
+
 const configs = ref<ExternalApiConfig[]>([]);
 const sceneBindings = ref<ExternalApiSceneBinding[]>([]);
 const loading = ref(false);
@@ -96,12 +112,16 @@ const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
   display_name: "",
   subtitle: "",
   credit_cost: 4,
+  aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
+  image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
 });
 const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   scene_label: "",
   scene_description: "",
   sort_order: 0,
   hide_resolution: false,
+  aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
+  image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
 });
 
 const modalTitle = computed(() => {
@@ -130,6 +150,14 @@ const maskedTongyiKey = computed(() => {
   if (value.length <= 8) return "••••••••";
   return value.slice(0, 4) + "••••••••" + value.slice(-4);
 });
+
+function sceneTypeLabel(sceneType: ExternalApiSceneBinding["scene_type"]) {
+  if (sceneType === "generate") return "文生图";
+  if (sceneType === "image_edit") return "图编辑";
+  if (sceneType === "inpaint") return "局部重绘";
+  if (sceneType === "prompt_reverse") return "提示词反推";
+  return sceneType;
+}
 
 function resetForm() {
   editingId.value = null;
@@ -193,6 +221,8 @@ function resetSceneForm() {
   sceneForm.display_name = "";
   sceneForm.subtitle = "";
   sceneForm.credit_cost = 4;
+  sceneForm.aspect_ratio_options_json = DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
+  sceneForm.image_size_options_json = DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
 }
 
 function fillSceneMetaForm(record: ExternalApiSceneBinding) {
@@ -201,6 +231,34 @@ function fillSceneMetaForm(record: ExternalApiSceneBinding) {
   sceneMetaForm.scene_description = record.scene_description || "";
   sceneMetaForm.sort_order = Number(record.sort_order || 0);
   sceneMetaForm.hide_resolution = !!record.hide_resolution;
+  sceneMetaForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
+  sceneMetaForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
+}
+
+function validateSceneOptionsJson(raw: string, label: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) {
+      message.warning(`${label}必须是 JSON 数组`);
+      return false;
+    }
+    for (const [index, item] of parsed.entries()) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        message.warning(`${label}第 ${index + 1} 项必须是对象`);
+        return false;
+      }
+      const optionLabel = String((item as Record<string, unknown>).label ?? "").trim();
+      const optionValue = String((item as Record<string, unknown>).value ?? "").trim();
+      if (!optionLabel || !optionValue) {
+        message.warning(`${label}第 ${index + 1} 项必须包含非空 label 和 value`);
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    message.warning(`${label}不是合法的 JSON`);
+    return false;
+  }
 }
 
 async function load() {
@@ -432,12 +490,14 @@ async function handleCreateScene() {
     message.warning("请输入场景名称");
     return;
   }
+  if (!validateSceneOptionsJson(sceneForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
+  if (!validateSceneOptionsJson(sceneForm.image_size_options_json, "生图质量选项 JSON")) return;
 
   bindingCreating.value = true;
   try {
     await createExternalApiSceneBinding({
       scene_key: sceneForm.scene_key.trim().toLowerCase(),
-      scene_type: "generate",
+      scene_type: sceneForm.scene_type,
       scene_label: sceneForm.scene_label.trim(),
       scene_description: sceneForm.scene_description.trim(),
       sort_order: Number(sceneForm.sort_order || 0),
@@ -446,6 +506,8 @@ async function handleCreateScene() {
       display_name: sceneForm.display_name.trim(),
       subtitle: sceneForm.subtitle.trim(),
       credit_cost: Number(sceneForm.credit_cost || 0),
+      aspect_ratio_options_json: sceneForm.aspect_ratio_options_json,
+      image_size_options_json: sceneForm.image_size_options_json,
     });
     message.success("场景创建成功");
     sceneModalOpen.value = false;
@@ -464,6 +526,8 @@ async function handleSaveSceneMeta() {
     message.warning("请输入场景名称");
     return;
   }
+  if (!validateSceneOptionsJson(sceneMetaForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
+  if (!validateSceneOptionsJson(sceneMetaForm.image_size_options_json, "生图质量选项 JSON")) return;
 
   sceneMetaSaving.value = true;
   try {
@@ -472,6 +536,8 @@ async function handleSaveSceneMeta() {
       scene_description: sceneMetaForm.scene_description.trim(),
       sort_order: Number(sceneMetaForm.sort_order || 0),
       hide_resolution: !!sceneMetaForm.hide_resolution,
+      aspect_ratio_options_json: sceneMetaForm.aspect_ratio_options_json,
+      image_size_options_json: sceneMetaForm.image_size_options_json,
     });
     message.success("场景基础信息已更新");
     sceneMetaModalOpen.value = false;
@@ -671,7 +737,7 @@ function copySecret(value: string, label: string) {
           class="warm-alert"
           type="info"
           show-icon
-          message="可新增文生图/图编辑场景；新增后会直接出现在生成页模型选择中。接口分组仅用于此处筛选。"
+          message="可分别新增文生图或图编辑场景；新增后会出现在生成页对应 tab 的模型选择中。接口分组仅用于此处筛选。"
           style="margin-bottom: 16px"
         />
 
@@ -688,7 +754,7 @@ function copySecret(value: string, label: string) {
               <div class="scene-title">{{ record.scene_label }}</div>
               <div class="scene-desc">{{ record.scene_description }}</div>
               <a-space size="small" style="margin-top: 6px">
-                <a-tag class="api-tag api-tag-group">{{ record.scene_type === "generate" ? "文生图/图编辑" : record.scene_type }}</a-tag>
+                <a-tag class="api-tag api-tag-group">{{ sceneTypeLabel(record.scene_type) }}</a-tag>
                 <a-tag v-if="record.is_builtin" class="api-tag api-tag-muted">内置</a-tag>
                 <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
                   {{ record.status === "enabled" ? "启用" : "停用" }}
@@ -760,7 +826,7 @@ function copySecret(value: string, label: string) {
               <span class="credit-unit">积分</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space v-if="!record.is_builtin && record.scene_type === 'generate'">
+              <a-space v-if="!record.is_builtin && ['generate', 'image_edit'].includes(record.scene_type)">
                 <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEditSceneMeta(record)">编辑</a-button>
                 <a-button size="small" class="api-secondary-btn" @click="handleToggleSceneStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
@@ -788,9 +854,16 @@ function copySecret(value: string, label: string) {
           </a-collapse-panel>
           <a-collapse-panel key="image" header="图片生成相关">
             <div class="doc-block">
-              <div>用于文生图/图编辑接口：</div>
+              <div>用于文生图或图编辑接口：</div>
               <pre v-pre>{{ contents_parts }}</pre>
               <pre v-pre>{{ generation_config }}</pre>
+              <div class="scene-desc">
+                宽高比与生图质量选项请在场景表单中用 JSON 数组维护，系统会把对应 value 传入
+                <code v-pre>{{ aspect_ratio }}</code>
+                /
+                <code v-pre>{{ image_size }}</code>
+                。
+              </div>
             </div>
           </a-collapse-panel>
           <a-collapse-panel key="reverse" header="提示词反推相关">
@@ -838,6 +911,13 @@ function copySecret(value: string, label: string) {
           </a-col>
         </a-row>
 
+        <a-form-item label="场景类型" required>
+          <a-radio-group v-model:value="sceneForm.scene_type" class="warm-radio-group" button-style="solid">
+            <a-radio-button value="generate">文生图</a-radio-button>
+            <a-radio-button value="image_edit">图编辑</a-radio-button>
+          </a-radio-group>
+        </a-form-item>
+
         <a-form-item label="场景描述">
           <a-input v-model:value="sceneForm.scene_description" class="warm-input" placeholder="例如：高质量增强版" />
         </a-form-item>
@@ -874,6 +954,30 @@ function copySecret(value: string, label: string) {
 
         <a-form-item label="隐藏分辨率">
           <a-switch v-model:checked="sceneForm.hide_resolution" />
+        </a-form-item>
+
+        <a-form-item label="宽高比选项 JSON">
+          <a-textarea
+            v-model:value="sceneForm.aspect_ratio_options_json"
+            class="warm-textarea"
+            :rows="8"
+            placeholder='[{"label":"1:1","value":"1:1"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ aspect_ratio }}</code> 占位符。
+          </div>
+        </a-form-item>
+
+        <a-form-item label="生图质量选项 JSON">
+          <a-textarea
+            v-model:value="sceneForm.image_size_options_json"
+            class="warm-textarea"
+            :rows="6"
+            placeholder='[{"label":"2K","value":"2K"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ image_size }}</code> 占位符。
+          </div>
         </a-form-item>
       </a-form>
 
@@ -912,6 +1016,30 @@ function copySecret(value: string, label: string) {
 
         <a-form-item label="隐藏分辨率">
           <a-switch v-model:checked="sceneMetaForm.hide_resolution" />
+        </a-form-item>
+
+        <a-form-item label="宽高比选项 JSON">
+          <a-textarea
+            v-model:value="sceneMetaForm.aspect_ratio_options_json"
+            class="warm-textarea"
+            :rows="8"
+            placeholder='[{"label":"1:1","value":"1:1"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ aspect_ratio }}</code> 占位符。
+          </div>
+        </a-form-item>
+
+        <a-form-item label="生图质量选项 JSON">
+          <a-textarea
+            v-model:value="sceneMetaForm.image_size_options_json"
+            class="warm-textarea"
+            :rows="6"
+            placeholder='[{"label":"2K","value":"2K"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ image_size }}</code> 占位符。
+          </div>
         </a-form-item>
       </a-form>
 

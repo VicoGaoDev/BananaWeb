@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.services.image_service import request_regenerate, get_image, delete_image_for_user
+from app.services.image_service import (
+    request_regenerate,
+    restore_regenerate_request,
+    get_image,
+    delete_image_for_user,
+)
 from app.config import settings
 
 router = APIRouter(prefix="/api/images", tags=["图片"])
@@ -30,14 +35,19 @@ def regenerate(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    image = request_regenerate(db, image_id, user.id)
+    try:
+        from app.workers.generation import dispatch_regenerate_task, get_generation_dispatch_mode
+        dispatch_mode = get_generation_dispatch_mode()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    image = request_regenerate(db, image_id, user.id, queued=dispatch_mode == "celery")
 
     try:
-        from app.workers.generation import regenerate_single_image_task
-        regenerate_single_image_task.delay(image.id)
-    except Exception:
-        from app.workers.generation import regenerate_single_sync
-        regenerate_single_sync(image.id)
+        dispatch_regenerate_task(image.id)
+    except Exception as exc:
+        restore_regenerate_request(db, image.id, error_message=str(exc))
+        raise HTTPException(status_code=503, detail="任务队列暂不可用，请稍后重试") from exc
 
     return {"message": "已提交重新生成", "image_id": image.id}
 

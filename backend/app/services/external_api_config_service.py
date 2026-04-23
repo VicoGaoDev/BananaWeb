@@ -28,9 +28,14 @@ SCENE_BANANA = "banana"
 SCENE_BANANA2 = "banana2"
 SCENE_BANANA_PRO = "banana_pro"
 SCENE_BANANA_PRO_PLUS = "banana_pro_plus"
+SCENE_BANANA_EDIT = "banana_edit"
+SCENE_BANANA2_EDIT = "banana2_edit"
+SCENE_BANANA_PRO_EDIT = "banana_pro_edit"
+SCENE_BANANA_PRO_PLUS_EDIT = "banana_pro_plus_edit"
 SCENE_PROMPT_REVERSE = "prompt_reverse"
 SCENE_INPAINT = "inpaint"
 SCENE_TYPE_GENERATE = "generate"
+SCENE_TYPE_IMAGE_EDIT = "image_edit"
 SCENE_TYPE_PROMPT_REVERSE = "prompt_reverse"
 SCENE_TYPE_INPAINT = "inpaint"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
@@ -40,6 +45,10 @@ DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_BANANA2, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 20, "hide_resolution": False},
     {"scene_key": SCENE_BANANA_PRO, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 30, "hide_resolution": False},
     {"scene_key": SCENE_BANANA_PRO_PLUS, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 40, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 110, "hide_resolution": True},
+    {"scene_key": SCENE_BANANA2_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 120, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA_PRO_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 130, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_resolution": False},
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_resolution": False},
     {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_resolution": False},
 ]
@@ -48,15 +57,85 @@ SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA2: 4,
     SCENE_BANANA_PRO: 4,
     SCENE_BANANA_PRO_PLUS: 4,
+    SCENE_BANANA_EDIT: 4,
+    SCENE_BANANA2_EDIT: 4,
+    SCENE_BANANA_PRO_EDIT: 4,
+    SCENE_BANANA_PRO_PLUS_EDIT: 4,
     SCENE_PROMPT_REVERSE: 1,
     SCENE_INPAINT: 4,
 }
+IMAGE_EDIT_SCENE_SOURCE_MAP = {
+    SCENE_BANANA_EDIT: SCENE_BANANA,
+    SCENE_BANANA2_EDIT: SCENE_BANANA2,
+    SCENE_BANANA_PRO_EDIT: SCENE_BANANA_PRO,
+    SCENE_BANANA_PRO_PLUS_EDIT: SCENE_BANANA_PRO_PLUS,
+}
 DEFAULT_SCENE_MAP = {item["scene_key"]: item for item in DEFAULT_SCENE_DEFINITIONS}
 NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_INPAINT}
+DEFAULT_ASPECT_RATIO_OPTIONS = [
+    {"label": "■  1:1", "value": "1:1"},
+    {"label": "▮  2:3", "value": "2:3"},
+    {"label": "▬  3:2", "value": "3:2"},
+    {"label": "▮  3:4", "value": "3:4"},
+    {"label": "▬  4:3", "value": "4:3"},
+    {"label": "▮  9:16", "value": "9:16"},
+    {"label": "▬  16:9", "value": "16:9"},
+]
+DEFAULT_IMAGE_SIZE_OPTIONS = [
+    {"label": "1K", "value": "1K"},
+    {"label": "2K", "value": "2K"},
+    {"label": "4K", "value": "4K"},
+]
 
 
 def is_builtin_scene(scene_key: str) -> bool:
     return scene_key in NON_EDITABLE_SCENE_KEYS
+
+
+def _get_default_scene_options(scene_type: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    if scene_type in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT}:
+        return DEFAULT_ASPECT_RATIO_OPTIONS, DEFAULT_IMAGE_SIZE_OPTIONS
+    return [], []
+
+
+def _normalize_scene_options(raw: str | None, fallback: list[dict[str, str]]) -> list[dict[str, str]]:
+    candidate = (raw or "").strip()
+    if not candidate:
+        return [item.copy() for item in fallback]
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return [item.copy() for item in fallback]
+
+    if not isinstance(parsed, list):
+        return [item.copy() for item in fallback]
+
+    normalized: list[dict[str, str]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "") or "").strip()
+        value = str(item.get("value", "") or "").strip()
+        if not label or not value:
+            continue
+        normalized.append({"label": label, "value": value})
+    return normalized or [item.copy() for item in fallback]
+
+
+def _dump_scene_options(items: list[dict[str, str]]) -> str:
+    return json.dumps(items, ensure_ascii=False, indent=2)
+
+
+def _get_scene_option_json(
+    scene_type: str,
+    aspect_ratio_options_json: str | None,
+    image_size_options_json: str | None,
+) -> tuple[str, str]:
+    default_aspect_ratio_options, default_image_size_options = _get_default_scene_options(scene_type)
+    return (
+        _dump_scene_options(_normalize_scene_options(aspect_ratio_options_json, default_aspect_ratio_options)),
+        _dump_scene_options(_normalize_scene_options(image_size_options_json, default_image_size_options)),
+    )
 
 
 def _load_json(raw: str, field_name: str) -> Any:
@@ -200,6 +279,11 @@ def _serialize_scene_binding(
     config: ExternalApiConfig | None,
 ) -> ExternalApiSceneBindingOut:
     scene_label, scene_description = _resolve_scene_copy(binding)
+    aspect_ratio_options_json, image_size_options_json = _get_scene_option_json(
+        binding.scene_type,
+        binding.aspect_ratio_options_json,
+        binding.image_size_options_json,
+    )
     return ExternalApiSceneBindingOut(
         scene_key=binding.scene_key,
         scene_type=binding.scene_type,
@@ -216,6 +300,8 @@ def _serialize_scene_binding(
         api_group_name=config.group_name if config else "",
         api_status=config.status if config else None,
         credit_cost=binding.credit_cost,
+        aspect_ratio_options_json=aspect_ratio_options_json,
+        image_size_options_json=image_size_options_json,
     )
 
 
@@ -328,6 +414,8 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             sort_order=item.sort_order,
             hide_resolution=item.hide_resolution,
             credit_cost=item.credit_cost,
+            aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
+            image_size_options=json.loads(item.image_size_options_json or "[]"),
         )
         for item in list_scene_bindings(db)
     ]
@@ -340,8 +428,8 @@ def create_scene_binding(
     _ensure_scene_bindings(db)
     if db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == body.scene_key).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="场景标识已存在")
-    if body.scene_type != SCENE_TYPE_GENERATE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="目前仅支持新增文生图/图编辑场景")
+    if body.scene_type not in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="目前仅支持新增文生图或图编辑场景")
     if not body.scene_label.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="场景名称不能为空")
 
@@ -362,6 +450,8 @@ def create_scene_binding(
         display_name=body.display_name,
         subtitle=body.subtitle,
         credit_cost=body.credit_cost,
+        aspect_ratio_options_json=body.aspect_ratio_options_json,
+        image_size_options_json=body.image_size_options_json,
     )
     db.add(binding)
     db.commit()
@@ -415,6 +505,8 @@ def update_scene_binding_meta(
     binding.scene_description = body.scene_description
     binding.sort_order = body.sort_order
     binding.hide_resolution = body.hide_resolution
+    binding.aspect_ratio_options_json = body.aspect_ratio_options_json
+    binding.image_size_options_json = body.image_size_options_json
     db.commit()
     config = get_config_or_404(db, binding.api_config_id) if binding.api_config_id else None
     return _serialize_scene_binding(binding, config)
@@ -574,6 +666,19 @@ def _pick_inpaint_config(db: Session) -> ExternalApiConfig | None:
     return preferred or (candidates[0] if candidates else None)
 
 
+def _pick_default_config_for_definition(db: Session, definition: dict[str, Any]) -> ExternalApiConfig | None:
+    if definition["scene_type"] == SCENE_TYPE_GENERATE:
+        return _pick_generation_config_for_scene(db, definition["scene_key"])
+    if definition["scene_type"] == SCENE_TYPE_IMAGE_EDIT:
+        source_scene_key = IMAGE_EDIT_SCENE_SOURCE_MAP.get(definition["scene_key"], SCENE_BANANA_PRO)
+        return _pick_generation_config_for_scene(db, source_scene_key)
+    if definition["scene_type"] == SCENE_TYPE_PROMPT_REVERSE:
+        return _pick_prompt_reverse_config(db)
+    if definition["scene_type"] == SCENE_TYPE_INPAINT:
+        return _pick_inpaint_config(db)
+    return None
+
+
 def _ensure_scene_bindings(db: Session) -> None:
     bindings = db.query(ExternalApiSceneBinding).all()
     existing_map = {row.scene_key: row for row in bindings}
@@ -582,11 +687,22 @@ def _ensure_scene_bindings(db: Session) -> None:
         for binding in bindings:
             default_definition = DEFAULT_SCENE_MAP.get(binding.scene_key)
             default_cost = get_default_credit_cost(binding.scene_key, binding.scene_type)
+            aspect_ratio_options_json, image_size_options_json = _get_scene_option_json(
+                binding.scene_type or SCENE_TYPE_GENERATE,
+                binding.aspect_ratio_options_json,
+                binding.image_size_options_json,
+            )
             if binding.credit_cost is None:
                 binding.credit_cost = default_cost
                 updated = True
             if (binding.status or "").strip().lower() not in {"enabled", "disabled"}:
                 binding.status = "enabled"
+                updated = True
+            if (binding.aspect_ratio_options_json or "") != aspect_ratio_options_json:
+                binding.aspect_ratio_options_json = aspect_ratio_options_json
+                updated = True
+            if (binding.image_size_options_json or "") != image_size_options_json:
+                binding.image_size_options_json = image_size_options_json
                 updated = True
             if default_definition:
                 if not (binding.scene_type or "").strip():
@@ -634,13 +750,7 @@ def _ensure_scene_bindings(db: Session) -> None:
         for definition in DEFAULT_SCENE_DEFINITIONS:
             if definition["scene_key"] in existing_map:
                 continue
-            config = None
-            if definition["scene_type"] == SCENE_TYPE_GENERATE:
-                config = _pick_generation_config_for_scene(db, definition["scene_key"])
-            elif definition["scene_type"] == SCENE_TYPE_PROMPT_REVERSE:
-                config = _pick_prompt_reverse_config(db)
-            elif definition["scene_type"] == SCENE_TYPE_INPAINT:
-                config = _pick_inpaint_config(db)
+            config = _pick_default_config_for_definition(db, definition)
             db.add(ExternalApiSceneBinding(
                 scene_key=definition["scene_key"],
                 scene_type=definition["scene_type"],
@@ -650,6 +760,8 @@ def _ensure_scene_bindings(db: Session) -> None:
                 hide_resolution=definition["hide_resolution"],
                 api_config_id=config.id if config else None,
                 credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+                aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None)[0],
+                image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None)[1],
             ))
             updated = True
         if updated:
@@ -657,13 +769,7 @@ def _ensure_scene_bindings(db: Session) -> None:
         return
 
     for definition in DEFAULT_SCENE_DEFINITIONS:
-        config = None
-        if definition["scene_type"] == SCENE_TYPE_GENERATE:
-            config = _pick_generation_config_for_scene(db, definition["scene_key"])
-        elif definition["scene_type"] == SCENE_TYPE_PROMPT_REVERSE:
-            config = _pick_prompt_reverse_config(db)
-        elif definition["scene_type"] == SCENE_TYPE_INPAINT:
-            config = _pick_inpaint_config(db)
+        config = _pick_default_config_for_definition(db, definition)
         db.add(ExternalApiSceneBinding(
             scene_key=definition["scene_key"],
             scene_type=definition["scene_type"],
@@ -673,6 +779,8 @@ def _ensure_scene_bindings(db: Session) -> None:
             hide_resolution=definition["hide_resolution"],
             api_config_id=config.id if config else None,
             credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+            aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None)[0],
+            image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None)[1],
         ))
     db.commit()
 

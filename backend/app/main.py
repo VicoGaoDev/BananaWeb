@@ -189,6 +189,10 @@ def _ensure_schema_compat():
             if "credit_cost" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
                 credit_cost_added = True
+            if "aspect_ratio_options_json" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN aspect_ratio_options_json TEXT"))
+            if "image_size_options_json" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
             conn.execute(
                 text(
                     """
@@ -198,12 +202,41 @@ def _ensure_schema_compat():
                     """
                 )
             )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET aspect_ratio_options_json = '[]'
+                    WHERE aspect_ratio_options_json IS NULL
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET image_size_options_json = '[]'
+                    WHERE image_size_options_json IS NULL
+                    """
+                )
+            )
 
     from app.services.external_api_config_service import get_default_credit_cost
 
     if "external_api_scene_bindings" in api_key_tables:
         with engine.begin() as conn:
-            for scene_key in ["banana", "banana2", "banana_pro", "banana_pro_plus", "prompt_reverse", "inpaint"]:
+            for scene_key in [
+                "banana",
+                "banana2",
+                "banana_pro",
+                "banana_pro_plus",
+                "banana_edit",
+                "banana2_edit",
+                "banana_pro_edit",
+                "banana_pro_plus_edit",
+                "prompt_reverse",
+                "inpaint",
+            ]:
                 conn.execute(
                     text(
                         """

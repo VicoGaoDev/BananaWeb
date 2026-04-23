@@ -33,7 +33,7 @@ def _parse_refs(raw: str | None) -> list[str]:
 
 
 def _resolve_history_card_status(task_status: str | None, image_status: str | None) -> str:
-    if image_status == "pending" and task_status in {"pending", "processing", "failed"}:
+    if image_status == "pending" and task_status in {"pending", "queued", "processing", "failed"}:
         return task_status
     return image_status or task_status or "pending"
 
@@ -97,7 +97,7 @@ def get_user_history(
             image_query = image_query.filter(Image.status == "pending", Task.status == "processing")
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
         elif status == "pending":
-            image_query = image_query.filter(Image.status == "pending", Task.status == "pending")
+            image_query = image_query.filter(Image.status == "pending", Task.status.in_(["pending", "queued"]))
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.id.is_(None))
         elif status == "failed":
             image_query = image_query.filter(or_(Image.status == "failed", and_(Image.status == "pending", Task.status == "failed")))

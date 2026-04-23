@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 
 
 StatusType = Literal["enabled", "disabled"]
-SceneTypeType = Literal["generate", "prompt_reverse", "inpaint"]
+SceneTypeType = Literal["generate", "image_edit", "prompt_reverse", "inpaint"]
 SceneKeyType = str
 
 
@@ -20,6 +20,29 @@ def _validate_json_text(value: str, field_name: str, *, expect_object: bool) -> 
     if expect_object and not isinstance(parsed, dict):
         raise ValueError(f"{field_name} 必须是 JSON 对象")
     return json.dumps(parsed, ensure_ascii=False, indent=2)
+
+
+def _validate_scene_options_json(value: str, field_name: str) -> str:
+    raw = (value or "").strip() or "[]"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 必须是合法 JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_name} 必须是 JSON 数组")
+
+    normalized: list[dict[str, str]] = []
+    for index, item in enumerate(parsed, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"{field_name} 第 {index} 项必须是对象")
+        label = str(item.get("label", "") or "").strip()
+        option_value = str(item.get("value", "") or "").strip()
+        if not label or not option_value:
+            raise ValueError(f"{field_name} 第 {index} 项必须包含非空 label 和 value")
+        normalized.append({"label": label, "value": option_value})
+
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
 class ExternalApiConfigBase(BaseModel):
@@ -139,6 +162,11 @@ class GenerationModelOptionOut(BaseModel):
     credit_cost: int
 
 
+class SceneOptionItem(BaseModel):
+    label: str
+    value: str
+
+
 class ExternalApiSceneBindingCreate(BaseModel):
     scene_key: str
     scene_label: str
@@ -151,6 +179,8 @@ class ExternalApiSceneBindingCreate(BaseModel):
     credit_cost: int
     scene_type: SceneTypeType = "generate"
     status: StatusType = "enabled"
+    aspect_ratio_options_json: str = "[]"
+    image_size_options_json: str = "[]"
 
     @field_validator("scene_key")
     @classmethod
@@ -189,6 +219,16 @@ class ExternalApiSceneBindingCreate(BaseModel):
             raise ValueError("状态只能是 enabled 或 disabled")
         return cleaned
 
+    @field_validator("aspect_ratio_options_json")
+    @classmethod
+    def validate_aspect_ratio_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "宽高比选项 JSON")
+
+    @field_validator("image_size_options_json")
+    @classmethod
+    def validate_image_size_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "生图质量选项 JSON")
+
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
@@ -214,6 +254,8 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     scene_description: str = ""
     sort_order: int = 0
     hide_resolution: bool = False
+    aspect_ratio_options_json: str = "[]"
+    image_size_options_json: str = "[]"
 
     @field_validator("scene_label", "scene_description")
     @classmethod
@@ -229,6 +271,16 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
         if value < 0:
             raise ValueError("排序值不能小于 0")
         return value
+
+    @field_validator("aspect_ratio_options_json")
+    @classmethod
+    def validate_aspect_ratio_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "宽高比选项 JSON")
+
+    @field_validator("image_size_options_json")
+    @classmethod
+    def validate_image_size_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "生图质量选项 JSON")
 
 
 class ExternalApiSceneBindingStatusUpdate(BaseModel):
@@ -259,6 +311,8 @@ class ExternalApiSceneBindingOut(BaseModel):
     api_group_name: str = ""
     api_status: StatusType | None = None
     credit_cost: int
+    aspect_ratio_options_json: str
+    image_size_options_json: str
 
 
 class TaskSceneConfigOut(BaseModel):
@@ -271,6 +325,8 @@ class TaskSceneConfigOut(BaseModel):
     sort_order: int
     hide_resolution: bool
     credit_cost: int
+    aspect_ratio_options: list[SceneOptionItem]
+    image_size_options: list[SceneOptionItem]
 
 
 class ExternalApiConfigTestResult(BaseModel):

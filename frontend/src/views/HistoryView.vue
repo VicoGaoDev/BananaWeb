@@ -78,7 +78,7 @@ const allVisibleSelected = computed(() => (
 ));
 
 function hasRunningTasks(list: UserHistoryCard[]) {
-  return list.some((item) => item.status === "pending" || item.status === "processing");
+  return list.some((item) => item.status === "pending" || item.status === "queued" || item.status === "processing");
 }
 
 function stopHistoryPolling() {
@@ -209,6 +209,7 @@ function modeLabel(mode: UserHistoryCard["mode"]) {
 function statusLabel(status: UserHistoryCard["status"]) {
   const mapping: Record<string, string> = {
     pending: "等待中",
+    queued: "排队中",
     processing: "处理中",
     success: "成功",
     failed: "失败",
@@ -659,7 +660,7 @@ function handleReedit(item: UserHistoryCard) {
               @click.stop="getHistoryCardPreview(item) && openPreview(getHistoryCardPreview(item))"
             />
             <div v-else class="result-card-placeholder">
-              <template v-if="item.status === 'pending' || item.status === 'processing'">
+              <template v-if="item.status === 'pending' || item.status === 'queued' || item.status === 'processing'">
                 <a-spin
                   :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
                 />

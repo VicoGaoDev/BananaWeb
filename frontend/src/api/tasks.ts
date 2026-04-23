@@ -23,3 +23,11 @@ export function createTask(data: {
 export function getTask(taskId: number): Promise<TaskResult> {
   return client.get(`/tasks/${taskId}`);
 }
+
+export function getTasks(taskIds: number[]): Promise<TaskResult[]> {
+  const params = new URLSearchParams();
+  taskIds.forEach((taskId) => {
+    params.append("task_ids", String(taskId));
+  });
+  return client.get(`/tasks?${params.toString()}`);
+}
