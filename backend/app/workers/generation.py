@@ -384,17 +384,19 @@ def _resolve_task_status(images: list[Image]) -> str:
     return "failed"
 
 
-def _process_task(task_id: int):
-    task_lock = acquire_redis_lock(
-        f"banana:task:process:{task_id}",
-        timeout_seconds=TASK_PROCESSING_LOCK_TIMEOUT_SECONDS,
-    )
-    if task_lock.status == "contended":
-        logger.info("Skip duplicate task delivery: task_id=%s", task_id)
-        return
-    if task_lock.status == "unavailable":
-        logger.error("Task lock unavailable: task_id=%s", task_id)
-        raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
+def _process_task(task_id: int, *, use_distributed_lock: bool = True):
+    task_lock = None
+    if use_distributed_lock:
+        task_lock = acquire_redis_lock(
+            f"banana:task:process:{task_id}",
+            timeout_seconds=TASK_PROCESSING_LOCK_TIMEOUT_SECONDS,
+        )
+        if task_lock.status == "contended":
+            logger.info("Skip duplicate task delivery: task_id=%s", task_id)
+            return
+        if task_lock.status == "unavailable":
+            logger.error("Task lock unavailable: task_id=%s", task_id)
+            raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -463,20 +465,23 @@ def _process_task(task_id: int):
         db.commit()
     finally:
         db.close()
-        release_redis_lock(task_lock)
+        if task_lock is not None:
+            release_redis_lock(task_lock)
 
 
-def _process_single_image(image_id: int):
-    image_lock = acquire_redis_lock(
-        f"banana:image:process:{image_id}",
-        timeout_seconds=SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS,
-    )
-    if image_lock.status == "contended":
-        logger.info("Skip duplicate image delivery: image_id=%s", image_id)
-        return
-    if image_lock.status == "unavailable":
-        logger.error("Image lock unavailable: image_id=%s", image_id)
-        raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
+def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
+    image_lock = None
+    if use_distributed_lock:
+        image_lock = acquire_redis_lock(
+            f"banana:image:process:{image_id}",
+            timeout_seconds=SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS,
+        )
+        if image_lock.status == "contended":
+            logger.info("Skip duplicate image delivery: image_id=%s", image_id)
+            return
+        if image_lock.status == "unavailable":
+            logger.error("Image lock unavailable: image_id=%s", image_id)
+            raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
     db = SessionLocal()
     try:
         image = db.query(Image).filter(Image.id == image_id).first()
@@ -555,7 +560,8 @@ def _process_single_image(image_id: int):
         db.commit()
     finally:
         db.close()
-        release_redis_lock(image_lock)
+        if image_lock is not None:
+            release_redis_lock(image_lock)
 
 
 # --- Celery tasks ---
@@ -615,12 +621,22 @@ else:
 
 def generate_images_sync(task_id: int):
     import threading
-    threading.Thread(target=_process_task, args=(task_id,), daemon=True).start()
+    threading.Thread(
+        target=_process_task,
+        args=(task_id,),
+        kwargs={"use_distributed_lock": False},
+        daemon=True,
+    ).start()
 
 
 def regenerate_single_sync(image_id: int):
     import threading
-    threading.Thread(target=_process_single_image, args=(image_id,), daemon=True).start()
+    threading.Thread(
+        target=_process_single_image,
+        args=(image_id,),
+        kwargs={"use_distributed_lock": False},
+        daemon=True,
+    ).start()
 
 
 def _sync_fallback_allowed() -> bool:
