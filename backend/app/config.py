@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
-    WEB_CONCURRENCY: int = 2
-    ALLOW_SYNC_GENERATION_FALLBACK: bool = False
+    WEB_CONCURRENCY: int = 4
+    ALLOW_SYNC_GENERATION_FALLBACK: bool = True
 
     DATABASE_URL: str | None = None
     DB_HOST: str = "sh-cynosdbmysql-grp-kmfw4ojg.sql.tencentcdb.com"
