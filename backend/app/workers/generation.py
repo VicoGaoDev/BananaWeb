@@ -21,6 +21,7 @@ from app.database import SessionLocal
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
 from app.models.task import Task
+from app.services.distributed_lock_service import acquire_redis_lock, release_redis_lock
 from app.services.cos_service import build_object_key, load_image_bytes, upload_bytes_to_cos
 from app.services.external_api_config_service import (
     build_secret_variables,
@@ -31,6 +32,11 @@ from app.services.external_api_config_service import (
 
 logger = logging.getLogger(__name__)
 MAX_ERROR_MESSAGE_LENGTH = 1800
+MAX_RESPONSE_PREVIEW_LENGTH = 1200
+QUEUE_UNAVAILABLE_ERROR = "任务队列暂不可用，请稍后重试"
+TASK_LOCK_UNAVAILABLE_ERROR = "任务锁服务不可用，请稍后重试"
+TASK_PROCESSING_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
+SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 
 
 def _clip_error_message(message: str) -> str:
@@ -40,6 +46,17 @@ def _clip_error_message(message: str) -> str:
     if len(cleaned) <= MAX_ERROR_MESSAGE_LENGTH:
         return cleaned
     return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
+
+
+def _clip_response_preview(payload: object) -> str:
+    try:
+        preview = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        preview = str(payload)
+    preview = (preview or "").strip() or "(空响应)"
+    if len(preview) <= MAX_RESPONSE_PREVIEW_LENGTH:
+        return preview
+    return preview[:MAX_RESPONSE_PREVIEW_LENGTH] + "..."
 
 def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     """Read a local or remote image and return (mime_type, base64_data)."""
@@ -92,7 +109,15 @@ def _extract_configured_image_data(
 ) -> tuple[tuple[bytes, str] | None, str]:
     image_b64, parent = _read_value_by_path(payload, field_path)
     if not isinstance(image_b64, str) or not image_b64.strip():
-        return None, f"生图接口返回内容缺少配置路径 {field_path} 对应的 base64 数据"
+        preview = _clip_response_preview(payload)
+        logger.warning(
+            "Generation API configured field missing: path=%s, response_preview=%s",
+            field_path,
+            preview,
+        )
+        return None, _clip_error_message(
+            f"生图接口返回内容缺少配置路径 {field_path} 对应的 base64 数据；响应摘要：{preview}"
+        )
 
     mime = "image/png"
     if isinstance(parent, dict):
@@ -360,21 +385,39 @@ def _resolve_task_status(images: list[Image]) -> str:
 
 
 def _process_task(task_id: int):
+    task_lock = acquire_redis_lock(
+        f"banana:task:process:{task_id}",
+        timeout_seconds=TASK_PROCESSING_LOCK_TIMEOUT_SECONDS,
+    )
+    if task_lock.status == "contended":
+        logger.info("Skip duplicate task delivery: task_id=%s", task_id)
+        return
+    if task_lock.status == "unavailable":
+        logger.error("Task lock unavailable: task_id=%s", task_id)
+        raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
         if not task:
+            return
+        if task.status not in {"pending", "queued", "processing"}:
             return
         task.status = "processing"
         task.error_message = ""
         db.commit()
 
         images = db.query(Image).filter(Image.task_id == task_id).all()
+        pending_images = [image for image in images if image.status == "pending"]
+        if not pending_images:
+            task.status = _resolve_task_status(images)
+            task.error_message = "" if task.status == "success" else (task.error_message or "生图失败")
+            db.commit()
+            return
         ref_urls = _parse_reference_images(task)
         task_mode = (task.mode or "generate").lower()
-        all_success = True
+        all_success = all(image.status == "success" for image in images if image.status != "pending")
 
-        for image in images:
+        for image in pending_images:
             result, error_message = _call_gemini_api(
                 prompt=task.prompt,
                 aspect_ratio=task.size,
@@ -420,13 +463,26 @@ def _process_task(task_id: int):
         db.commit()
     finally:
         db.close()
+        release_redis_lock(task_lock)
 
 
 def _process_single_image(image_id: int):
+    image_lock = acquire_redis_lock(
+        f"banana:image:process:{image_id}",
+        timeout_seconds=SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS,
+    )
+    if image_lock.status == "contended":
+        logger.info("Skip duplicate image delivery: image_id=%s", image_id)
+        return
+    if image_lock.status == "unavailable":
+        logger.error("Image lock unavailable: image_id=%s", image_id)
+        raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
     db = SessionLocal()
     try:
         image = db.query(Image).filter(Image.id == image_id).first()
         if not image:
+            return
+        if image.status != "pending":
             return
 
         task = db.query(Task).filter(Task.id == image.task_id).first()
@@ -499,6 +555,7 @@ def _process_single_image(image_id: int):
         db.commit()
     finally:
         db.close()
+        release_redis_lock(image_lock)
 
 
 # --- Celery tasks ---
@@ -520,7 +577,10 @@ try:
     from app.workers.celery_app import celery_app
     CELERY_AVAILABLE = _redis_reachable()
     if not CELERY_AVAILABLE:
-        logger.info("Redis not reachable — falling back to sync thread mode")
+        if settings.allow_sync_generation_fallback:
+            logger.info("Redis not reachable — falling back to sync thread mode")
+        else:
+            logger.warning("Redis not reachable — sync fallback disabled")
 except Exception:
     CELERY_AVAILABLE = False
     celery_app = None
@@ -528,11 +588,21 @@ except Exception:
 if CELERY_AVAILABLE and celery_app:
     @celery_app.task(bind=True, max_retries=2)
     def generate_images_task(self, task_id: int):
-        _process_task(task_id)
+        try:
+            _process_task(task_id)
+        except RuntimeError as exc:
+            if str(exc) == TASK_LOCK_UNAVAILABLE_ERROR:
+                raise self.retry(exc=exc, countdown=2) from exc
+            raise
 
     @celery_app.task(bind=True, max_retries=2)
     def regenerate_single_image_task(self, image_id: int):
-        _process_single_image(image_id)
+        try:
+            _process_single_image(image_id)
+        except RuntimeError as exc:
+            if str(exc) == TASK_LOCK_UNAVAILABLE_ERROR:
+                raise self.retry(exc=exc, countdown=2) from exc
+            raise
 else:
     def generate_images_task():
         raise RuntimeError("Celery not available")
@@ -551,3 +621,33 @@ def generate_images_sync(task_id: int):
 def regenerate_single_sync(image_id: int):
     import threading
     threading.Thread(target=_process_single_image, args=(image_id,), daemon=True).start()
+
+
+def _sync_fallback_allowed() -> bool:
+    return settings.allow_sync_generation_fallback
+
+
+def get_generation_dispatch_mode() -> str:
+    if CELERY_AVAILABLE and celery_app:
+        return "celery"
+    if _sync_fallback_allowed():
+        return "sync"
+    raise RuntimeError(QUEUE_UNAVAILABLE_ERROR)
+
+
+def dispatch_generation_task(task_id: int) -> str:
+    mode = get_generation_dispatch_mode()
+    if mode == "celery":
+        generate_images_task.delay(task_id)
+        return "queued"
+    generate_images_sync(task_id)
+    return "sync"
+
+
+def dispatch_regenerate_task(image_id: int) -> str:
+    mode = get_generation_dispatch_mode()
+    if mode == "celery":
+        regenerate_single_image_task.delay(image_id)
+        return "queued"
+    regenerate_single_sync(image_id)
+    return "sync"

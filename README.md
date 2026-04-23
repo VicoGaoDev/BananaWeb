@@ -10,7 +10,7 @@
 | 后端 | Python FastAPI + SQLAlchemy + MySQL |
 | 异步任务 | Celery + Redis（可选，开发环境自动降级为线程） |
 | 图片存储 | 腾讯云 COS（前端临时凭证直传 + 后端结果图上传） |
-| 部署 | 前端 Vercel / 后端 VPS |
+| 部署 | CloudBase 静态网站托管 + CloudBase 云托管 |
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ Banana_Web/
 │   │   ├── views/         # 页面视图（GenerateView / HistoryView / admin）
 │   │   ├── components/    # 通用组件（AppLayout 含登录弹窗）
 │   │   └── router/        # 路由配置
-│   └── vercel.json        # Vercel 部署配置
+│   └── public/            # 静态资源
 ├── backend/               # FastAPI 后端
 │   ├── app/
 │   │   ├── api/           # 路由层
@@ -92,10 +92,12 @@ npm run dev
 
 ```bash
 cd backend
-celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+CELERY_WORKER_CONCURRENCY=4 celery -A app.workers.celery_app worker --loglevel=info
 ```
 
-> 不启动 Redis/Celery 时，系统自动降级为后台线程处理，开发环境完全可用。
+> 不启动 Redis/Celery 时，只有在 `DEBUG=true` 或显式设置 `ALLOW_SYNC_GENERATION_FALLBACK=true` 时才会降级为后台线程处理。
+>
+> 生产环境不要依赖线程降级模式。若希望支持约 50 个用户同时提交任务，建议至少启用独立 Web 进程和独立 Celery Worker，并按机器规格设置 `WEB_CONCURRENCY`、`CELERY_WORKER_CONCURRENCY`、`DB_POOL_SIZE`。
 
 ## 部署
 
@@ -125,49 +127,56 @@ celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
 - 后端 worker 会把生成结果图上传到 COS，并将最终 URL 写入数据库
 - 历史遗留的本地 `/uploads/...` 路径仍兼容读取与下载
 
-### 前端 — Vercel
+### 前端 — CloudBase 静态网站托管
 
-1. 将代码推送到 GitHub
-2. 在 [Vercel](https://vercel.com) 导入项目
-3. 设置：
-   - **Root Directory**: `frontend`
-   - **Framework Preset**: Vite
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-4. 添加环境变量：
+1. 进入 `frontend` 目录并执行构建：
+   - `npm install`
+   - `npm run build`
+2. 在 CloudBase 控制台创建或选择当前环境的静态网站托管。
+3. 将 `frontend/dist` 目录上传到静态网站托管。
+4. 配置前端环境变量：
    - `VITE_API_BASE_URL` = 你的后端地址（如 `https://api.yourdomain.com`）
-5. 修改 `frontend/vercel.json` 中的 `rewrites` 规则，将 `your-backend-domain.com` 替换为实际后端地址
+5. 如果使用自定义域名，可在 CloudBase 静态网站托管中绑定域名，并确保前端请求指向云托管中的后端服务地址。
 
-### 后端 — VPS / Railway / Render
+### 后端 — CloudBase 云托管
 
 后端统一通过 `DATABASE_URL` 连接云端 MySQL：
 
-**方案 A：VPS 部署**
-```bash
-# 在服务器上
-git clone <repo>
-cd Banana_Web/backend
-pip install -r requirements.txt
-# 生产环境需修改 .env 中的 SECRET_KEY
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+1. 建议拆成 `Web Service` 和 `Worker Service` 两个云托管服务，避免生图任务阻塞 API 请求。
+2. `Web Service` 推荐：
+   - 实例规格：`1核2G` 或 `2核4G`
+   - 启动命令：`uvicorn app.main:app --host 0.0.0.0 --port 80 --workers ${WEB_CONCURRENCY:-2}`
+3. `Worker Service` 推荐：
+   - 实例规格：`2核4G`
+   - 实例副本数：`4`
+   - 环境变量：`CELERY_WORKER_CONCURRENCY=6`
+   - 启动命令：`celery -A app.workers.celery_app worker --loglevel=info`
+4. `Web Service` 与 `Worker Service` 需共享同一套 `DATABASE_URL`/`DB_*`、`REDIS_URL`、COS 环境变量。
+5. 如已全面切换到腾讯云 COS，`/app/uploads` 主要只用于兼容旧数据与失败占位图，核心业务图片将写入 COS。
+6. 如果是生产环境，建议关闭同步降级模式，避免 Redis 或 Celery 不可用时退回单机线程执行。
 
-配合 Nginx 反向代理 + HTTPS。
+### 50 用户并发建议
 
-**方案 B：Railway**
-1. 在 Railway 创建项目，选择 GitHub 仓库
-2. Root Directory 设为 `backend`
-3. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. 如需兼容旧的本地上传文件，可添加持久化 Volume 挂载到 `/app/uploads`
+如果生成接口平均耗时在 20 到 40 秒左右，可先按下面的起步参数压测：
 
-如果已全面切换到腾讯云 COS，`/app/uploads` 主要只用于兼容旧数据与失败占位图，核心业务图片将写入 COS。
+- `WEB_CONCURRENCY=2`
+- `CELERY_WORKER_CONCURRENCY=6`
+- `DB_POOL_SIZE=10`
+- `DB_MAX_OVERFLOW=20`
+- `CELERY_PREFETCH_MULTIPLIER=1`
+- `MAX_ACTIVE_TASKS_PER_USER=5`
+- `MAX_ACTIVE_TASKS_GLOBAL=500`
+- `CloudBase Worker 规格：2核4G`
+- `CloudBase Worker 副本数：4`
 
-### MySQL 配置
+按上面的 CloudBase 配置估算，`4` 个 worker 副本 x `CELERY_WORKER_CONCURRENCY=6`，总任务并发约为 `24`。当前代码里一张图对应一个任务；因此 50 个用户如果每人提交 1 张图，这套配置通常能明显缩短排队时间。最终仍应以你的实际机器 CPU、内存、Redis 和第三方生图接口耗时压测为准。
 
-项目运行时优先读取 `DATABASE_URL`；如果未提供，会自动用 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME` 拼接 MySQL 连接串。建议按环境分开配置：
+### 数据库配置（CloudBase 环境）
+
+当前项目后端仍通过 `DATABASE_URL` 连接 MySQL；如果未提供，会自动用 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME` 拼接连接串。当前生产环境数据库部署在 CloudBase 环境中，README 中的数据库配置均以 CloudBase 环境下可访问的 MySQL 为准。建议按环境分开配置：
 
 - 本地开发：在 `backend/.env` 中填写 `DB_*`
-- 正式环境：通过部署平台环境变量或 CI 注入 `DATABASE_URL` 或 `DB_*`，不要把生产库连接串提交进仓库
+- 正式环境：通过 CloudBase 云托管环境变量或 CI 注入 `DATABASE_URL` 或 `DB_*`，不要把生产库连接串提交进仓库
 
 1. 本地开发在 `backend/.env` 中配置 MySQL：
 
@@ -183,7 +192,7 @@ DB_RUN_SCHEMA_COMPAT=false
 DB_RUN_SEED=false
 ```
 
-2. 正式环境可继续直接注入完整 `DATABASE_URL`，例如内网 MySQL：
+2. CloudBase 云托管正式环境可继续直接注入完整 `DATABASE_URL`，例如 CloudBase 环境内可访问的 MySQL：
 
 ```env
 DATABASE_URL=mysql+pymysql://user:password@172.17.0.17:3306/database?charset=utf8mb4

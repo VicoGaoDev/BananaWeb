@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    WEB_CONCURRENCY: int = 2
+    ALLOW_SYNC_GENERATION_FALLBACK: bool = False
 
     DATABASE_URL: str | None = None
     DB_HOST: str = "sh-cynosdbmysql-grp-kmfw4ojg.sql.tencentcdb.com"
@@ -22,12 +24,20 @@ class Settings(BaseSettings):
     DB_AUTO_CREATE_TABLES: bool = True
     DB_RUN_SCHEMA_COMPAT: bool = True
     DB_RUN_SEED: bool = False
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
     UPLOAD_DIR: str = str(BASE_DIR / "uploads")
 
     REDIS_URL: str = "redis://localhost:6379/0"
+    CELERY_WORKER_CONCURRENCY: int = 2
+    CELERY_PREFETCH_MULTIPLIER: int = 1
+    MAX_ACTIVE_TASKS_PER_USER: int = 5
+    MAX_ACTIVE_TASKS_GLOBAL: int = 500
 
     AI_API_URL: str = "https://nanoapi.poloai.top/v1beta/models/gemini-2.5-flash-image-preview:generateContent"
-    AI_TIMEOUT: int = 120
+    AI_TIMEOUT: int = 300
     COS_STS_DURATION_SECONDS: int = 1800
     IMAGE_FETCH_TIMEOUT: int = 30
     COS_IMAGE_THUMBNAIL_RULE: str = ""
@@ -75,6 +85,10 @@ class Settings(BaseSettings):
     @property
     def should_run_seed(self) -> bool:
         return self.DB_RUN_SEED
+
+    @property
+    def allow_sync_generation_fallback(self) -> bool:
+        return self.DEBUG or self.ALLOW_SYNC_GENERATION_FALLBACK
 
 
 settings = Settings()

@@ -1,12 +1,20 @@
 import json
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
+from app.config import settings
 from app.models.task import Task
 from app.models.image import Image
 from app.models.user import User
 from app.models.credit_log import CreditLog
 from app.models.prompt_history import PromptHistory
+from app.services.distributed_lock_service import acquire_redis_lock, release_redis_lock
 from app.services.external_api_config_service import SCENE_INPAINT, get_scene_credit_cost
+
+ACTIVE_TASK_STATUSES = ("pending", "queued", "processing")
+ENQUEUE_FAILURE_DESCRIPTION = "任务入队失败，返还积分"
+TASK_SUBMISSION_LOCK_PREFIX = "banana:tasks:submission:user"
+TASK_SUBMISSION_LOCK_TIMEOUT_SECONDS = 30
+TASK_SUBMISSION_LOCK_BLOCKING_TIMEOUT_SECONDS = 5
 
 
 def _is_credit_exempt_user(user: User | None) -> bool:
@@ -36,6 +44,10 @@ def _validate_task_create_payload(
     return mode, num_images
 
 
+def _task_submission_lock_name(user_id: int) -> str:
+    return f"{TASK_SUBMISSION_LOCK_PREFIX}:{int(user_id)}"
+
+
 def create_tasks(
     db: Session,
     user_id: int,
@@ -57,75 +69,204 @@ def create_tasks(
         mask_image=mask_image,
     )
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    submission_lock = acquire_redis_lock(
+        _task_submission_lock_name(user_id),
+        timeout_seconds=TASK_SUBMISSION_LOCK_TIMEOUT_SECONDS,
+        blocking_timeout_seconds=TASK_SUBMISSION_LOCK_BLOCKING_TIMEOUT_SECONDS,
+    )
+    if submission_lock.status == "contended":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户不存在",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="当前提交任务较多，请稍后重试",
         )
-    scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
-    unit_cost = get_scene_credit_cost(db, scene_key)
-    task_count = 1 if mode == "inpaint" else num_images
-    total_cost = task_count * unit_cost
-    per_task_credit_cost = 0 if _is_credit_exempt_user(user) else unit_cost
-    actual_total_cost = 0 if _is_credit_exempt_user(user) else total_cost
-    if actual_total_cost and user.credits < total_cost:
+    if submission_lock.status == "unavailable" and not settings.allow_sync_generation_fallback:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"积分不足，需要 {total_cost} 积分，当前余额 {user.credits if user else 0}",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="任务提交锁服务不可用，请稍后重试",
         )
-
-    ref_json = json.dumps(reference_images or [])
-
-    if actual_total_cost:
-        user.credits -= total_cost
 
     tasks: list[Task] = []
-    normalized_prompt = prompt.strip()
-    normalized_model = model.strip()
-    normalized_source_image = source_image.strip()
-    normalized_mask_image = mask_image.strip()
-    credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
-
-    for _ in range(task_count):
-        task = Task(
-            user_id=user_id,
-            model=normalized_model,
-            mode=mode,
-            prompt=normalized_prompt,
-            num_images=1,
-            size=size,
-            resolution=resolution,
-            reference_images=ref_json,
-            source_image=normalized_source_image,
-            mask_image=normalized_mask_image,
-            credit_cost=per_task_credit_cost,
-            status="pending",
-            error_message="",
+    try:
+        user = (
+            db.query(User)
+            .filter(User.id == user_id)
+            .with_for_update()
+            .first()
         )
-        db.add(task)
-        db.flush()
-
-        image = Image(task_id=task.id, image_url="", status="pending", error_message="")
-        db.add(image)
-
-        if per_task_credit_cost:
-            credit_log = CreditLog(
-                user_id=user_id,
-                amount=-per_task_credit_cost,
-                type="consume",
-                description=credit_log_description,
-                task_id=task.id,
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="用户不存在",
             )
-            db.add(credit_log)
+        scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
+        unit_cost = get_scene_credit_cost(db, scene_key)
+        task_count = 1 if mode == "inpaint" else num_images
+        ensure_task_submission_capacity(db, user_id=user_id, new_task_count=task_count)
+        total_cost = task_count * unit_cost
+        per_task_credit_cost = 0 if _is_credit_exempt_user(user) else unit_cost
+        actual_total_cost = 0 if _is_credit_exempt_user(user) else total_cost
+        if actual_total_cost and user.credits < total_cost:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"积分不足，需要 {total_cost} 积分，当前余额 {user.credits if user else 0}",
+            )
 
-        tasks.append(task)
+        ref_json = json.dumps(reference_images or [])
 
-    db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt, mode=mode))
-    db.commit()
+        if actual_total_cost:
+            user.credits -= total_cost
+
+        normalized_prompt = prompt.strip()
+        normalized_model = model.strip()
+        normalized_source_image = source_image.strip()
+        normalized_mask_image = mask_image.strip()
+        credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
+
+        for _ in range(task_count):
+            task = Task(
+                user_id=user_id,
+                model=normalized_model,
+                mode=mode,
+                prompt=normalized_prompt,
+                num_images=1,
+                size=size,
+                resolution=resolution,
+                reference_images=ref_json,
+                source_image=normalized_source_image,
+                mask_image=normalized_mask_image,
+                credit_cost=per_task_credit_cost,
+                status="pending",
+                error_message="",
+            )
+            db.add(task)
+            db.flush()
+
+            image = Image(task_id=task.id, image_url="", status="pending", error_message="")
+            db.add(image)
+
+            if per_task_credit_cost:
+                credit_log = CreditLog(
+                    user_id=user_id,
+                    amount=-per_task_credit_cost,
+                    type="consume",
+                    description=credit_log_description,
+                    task_id=task.id,
+                )
+                db.add(credit_log)
+
+            tasks.append(task)
+
+        db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt, mode=mode))
+        db.commit()
+        for task in tasks:
+            db.refresh(task)
+        return tasks
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        release_redis_lock(submission_lock)
+
+
+def ensure_task_submission_capacity(db: Session, user_id: int, new_task_count: int) -> None:
+    normalized_new_task_count = max(int(new_task_count or 0), 0)
+    if normalized_new_task_count <= 0:
+        return
+
+    per_user_limit = max(int(settings.MAX_ACTIVE_TASKS_PER_USER or 0), 0)
+    if per_user_limit:
+        current_user_active_count = (
+            db.query(Task)
+            .filter(
+                Task.user_id == user_id,
+                Task.status.in_(ACTIVE_TASK_STATUSES),
+            )
+            .count()
+        )
+        if current_user_active_count + normalized_new_task_count > per_user_limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"当前最多允许同时处理 {per_user_limit} 个任务，"
+                    "请等待部分任务完成后再试"
+                ),
+            )
+
+    global_limit = max(int(settings.MAX_ACTIVE_TASKS_GLOBAL or 0), 0)
+    if global_limit:
+        current_global_active_count = (
+            db.query(Task)
+            .filter(Task.status.in_(ACTIVE_TASK_STATUSES))
+            .count()
+        )
+        if current_global_active_count + normalized_new_task_count > global_limit:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="当前排队任务较多，请稍后再试",
+            )
+
+
+def mark_tasks_queued(db: Session, task_ids: list[int]) -> None:
+    if not task_ids:
+        return
+
+    tasks = (
+        db.query(Task)
+        .filter(Task.id.in_(task_ids), Task.status == "pending")
+        .all()
+    )
     for task in tasks:
-        db.refresh(task)
-    return tasks
+        task.status = "queued"
+        task.error_message = ""
+    db.commit()
+
+
+def mark_tasks_enqueue_failed(
+    db: Session,
+    task_ids: list[int],
+    *,
+    error_message: str,
+) -> None:
+    if not task_ids:
+        return
+
+    tasks = (
+        db.query(Task)
+        .filter(Task.id.in_(task_ids), Task.status == "pending")
+        .all()
+    )
+    if not tasks:
+        return
+
+    normalized_error_message = (error_message or "任务入队失败").strip()
+    user = tasks[0].user
+    refund_total = 0
+
+    for task in tasks:
+        task.status = "failed"
+        task.error_message = normalized_error_message
+        refund_total += int(task.credit_cost or 0)
+        for image in task.images:
+            image.status = "failed"
+            image.error_message = normalized_error_message
+            image.image_url = ""
+            image.preview_url = ""
+            image.image_format = ""
+            image.image_size_bytes = 0
+
+        if task.credit_cost:
+            db.add(CreditLog(
+                user_id=task.user_id,
+                amount=int(task.credit_cost or 0),
+                type="allocate",
+                description=ENQUEUE_FAILURE_DESCRIPTION,
+                task_id=task.id,
+            ))
+
+    if user and refund_total:
+        user.credits += refund_total
+
+    db.commit()
 
 
 def get_task_detail(db: Session, task_id: int, user_id: int | None = None) -> Task:
@@ -136,3 +277,23 @@ def get_task_detail(db: Session, task_id: int, user_id: int | None = None) -> Ta
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
     return task
+
+
+def get_task_details(db: Session, task_ids: list[int], user_id: int | None = None) -> list[Task]:
+    if not task_ids:
+        return []
+
+    normalized_ids = []
+    seen_ids: set[int] = set()
+    for task_id in task_ids:
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        normalized_ids.append(task_id)
+
+    query = db.query(Task).filter(Task.id.in_(normalized_ids))
+    if user_id is not None:
+        query = query.filter(Task.user_id == user_id)
+
+    task_map = {task.id: task for task in query.all()}
+    return [task_map[task_id] for task_id in normalized_ids if task_id in task_map]
