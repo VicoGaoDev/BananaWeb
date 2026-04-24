@@ -28,6 +28,7 @@ class HistoryItem(BaseModel):
     num_images: int = 1
     size: str
     resolution: str = ""
+    custom_size: str = ""
     credit_cost: int = 0
     status: str
     error_message: str = ""
@@ -67,6 +68,7 @@ class UserHistoryCardItem(BaseModel):
     num_images: int = 1
     size: str
     resolution: str = ""
+    custom_size: str = ""
     credit_cost: int = 0
     created_at: datetime | None = None
     error_message: str = ""

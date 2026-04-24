@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, h, inject, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
+import { ref, computed, h, inject, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
 import { message } from "ant-design-vue";
 import {
   FontSizeOutlined,
@@ -23,6 +23,7 @@ import {
   UndoOutlined,
 } from "@ant-design/icons-vue";
 import { getTaskScenes } from "@/api/config";
+import { fetchHistory } from "@/api/history";
 import { createTask, getTasks } from "@/api/tasks";
 import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
@@ -30,12 +31,13 @@ import { uploadReferenceImage } from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
-import type { GenerationModelOption, ImageResult, PromptHistoryItem, SceneOptionItem, TaskResult, TaskSceneConfig } from "@/types";
+import type { GenerationModelOption, ImageResult, PromptHistoryItem, SceneOptionItem, TaskResult, TaskSceneConfig, UserHistoryCard } from "@/types";
 
 const auth = useAuthStore();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 
 type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
+const MAX_RECENT_GENERATED_TASKS = 10;
 const DEFAULT_SCENE_COSTS: Record<string, number> = {
   banana: 4,
   banana2: 4,
@@ -56,6 +58,7 @@ const selectedModel = ref("");
 const numImages = ref(1);
 const resolution = ref("2K");
 const size = ref("9:16");
+const customSize = ref("");
 
 type GeneratedTaskStatus = TaskResult["status"] | "submitting";
 type SubmitMode = Exclude<GenerateMode, "promptReverse">;
@@ -69,6 +72,7 @@ interface GeneratedTaskItem {
   numImages: number;
   size: string;
   resolution: string;
+  customSize: string;
   referenceImages: string[];
   sourceImage?: string;
   maskImage?: string;
@@ -133,6 +137,12 @@ const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
   { label: "2K", value: "2K" },
   { label: "4K", value: "4K" },
 ];
+const DEFAULT_CUSTOM_SIZE_OPTIONS: SceneOptionItem[] = [
+  { label: "1024 x 1024", value: "1024x1024" },
+  { label: "1152 x 896", value: "1152x896" },
+  { label: "896 x 1152", value: "896x1152" },
+  { label: "1280 x 720", value: "1280x720" },
+];
 const DEFAULT_ASPECT_RATIO_OPTIONS: SceneOptionItem[] = [
   { label: "■  1:1", value: "1:1" },
   { label: "▮  2:3", value: "2:3" },
@@ -151,10 +161,13 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     display_name: scene.display_name,
     subtitle: scene.subtitle,
     sort_order: scene.sort_order,
+    hide_aspect_ratio: scene.hide_aspect_ratio,
     hide_resolution: scene.hide_resolution,
+    hide_custom_size: scene.hide_custom_size,
     credit_cost: scene.credit_cost,
     aspect_ratio_options: scene.aspect_ratio_options,
     image_size_options: scene.image_size_options,
+    custom_size_options: scene.custom_size_options,
   };
 }
 
@@ -164,7 +177,7 @@ const resultEmptyTitle = computed(() => (
 const resultEmptyDesc = computed(() => (
   generateMode.value === "promptReverse"
     ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
-    : "在左侧设置提示词和参数后可连续发起任务，右侧会统一展示你本次提交的所有生图结果"
+    : "在左侧设置提示词和参数后发起任务，右侧会展示最近 10 次生图任务结果"
 ));
 const referenceUrls = computed(() => (
   referenceItems.value
@@ -211,8 +224,19 @@ const resolutionOptions = computed(() => (
     ? selectedModelOption.value.image_size_options
     : DEFAULT_IMAGE_SIZE_OPTIONS
 ));
+const customSizeOptions = computed(() => (
+  selectedModelOption.value?.custom_size_options?.length
+    ? selectedModelOption.value.custom_size_options
+    : DEFAULT_CUSTOM_SIZE_OPTIONS
+));
+const hideAspectRatio = computed(() => (
+  (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_aspect_ratio
+));
 const hideResolution = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_resolution
+));
+const hideCustomSize = computed(() => (
+  (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_custom_size
 ));
 const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
 const selectedModelCreditCost = computed(() => (
@@ -230,6 +254,7 @@ type GenerateTaskPayload = {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size?: string;
   mode?: "generate" | "inpaint";
   reference_images?: string[];
   source_image?: string;
@@ -256,6 +281,10 @@ function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskI
     status: "submitting",
     images: createPendingImages(1),
   };
+}
+
+function limitGeneratedTasks(tasks: GeneratedTaskItem[]) {
+  return tasks.slice(0, MAX_RECENT_GENERATED_TASKS);
 }
 
 const resultItems = computed(() => (
@@ -305,6 +334,7 @@ function syncTaskFromResult(taskId: number, data: TaskResult) {
     model: data.model || task.model,
     size: data.size || task.size,
     resolution: data.resolution || task.resolution,
+    customSize: data.custom_size || task.customSize,
     numImages: data.num_images || task.numImages,
     images: data.images.length ? data.images : task.images,
   }));
@@ -330,6 +360,65 @@ async function refreshTasks(taskIds = activePollingTaskIds.value) {
     stopAllTaskPolling();
   }
   return items;
+}
+
+function convertHistoryCardToGeneratedTask(item: UserHistoryCard): GeneratedTaskItem {
+  const fallbackImageCount = Math.max(1, Number(item.num_images || item.images.length || 1));
+  const taskMode: SubmitMode = item.mode === "inpaint"
+    ? "inpaint"
+    : Array.isArray(item.reference_images) && item.reference_images.length
+      ? "imageEdit"
+      : "textGenerate";
+  return {
+    localId: `history-${item.task_id}`,
+    taskId: item.task_id,
+    mode: taskMode,
+    prompt: item.prompt || "",
+    model: item.model || undefined,
+    numImages: fallbackImageCount,
+    size: item.size || "9:16",
+    resolution: item.resolution || "2K",
+    customSize: item.custom_size || "",
+    referenceImages: Array.isArray(item.reference_images) ? item.reference_images : [],
+    sourceImage: item.source_image || undefined,
+    maskImage: item.mask_image || undefined,
+    createdAt: item.created_at,
+    status: item.status as GeneratedTaskStatus,
+    images: item.images.length ? item.images : createPendingImages(fallbackImageCount),
+  };
+}
+
+async function loadRecentGeneratedTasks() {
+  if (!auth.isLoggedIn) {
+    generatedTasks.value = [];
+    stopAllTaskPolling();
+    return;
+  }
+
+  try {
+    const res = await fetchHistory(1, MAX_RECENT_GENERATED_TASKS);
+    const seenTaskIds = new Set<number>();
+    const recentTasks = res.items
+      .filter((item) => item.mode !== "promptReverse" && !seenTaskIds.has(item.task_id) && seenTaskIds.add(item.task_id))
+      .slice(0, MAX_RECENT_GENERATED_TASKS)
+      .map(convertHistoryCardToGeneratedTask);
+
+    generatedTasks.value = limitGeneratedTasks(recentTasks);
+
+    if (!activePollingTaskIds.value.length) {
+      stopAllTaskPolling();
+      return;
+    }
+
+    try {
+      const items = await refreshTasks(activePollingTaskIds.value);
+      if (items.some((item) => item.status !== "success" && item.status !== "failed")) startTaskPolling();
+    } catch {
+      startTaskPolling();
+    }
+  } catch {
+    stopAllTaskPolling();
+  }
 }
 
 function startTaskPolling() {
@@ -368,7 +457,7 @@ async function submitGeneratedTask(
   const taskCount = Math.max(1, payload.num_images);
   const localTasks = Array.from({ length: taskCount }, () => createLocalGeneratedTask(taskDraft));
   const localTaskIds = new Set(localTasks.map((task) => task.localId));
-  generatedTasks.value = [...localTasks, ...generatedTasks.value];
+  generatedTasks.value = limitGeneratedTasks([...localTasks, ...generatedTasks.value]);
 
   try {
     const res = await createTask(payload);
@@ -744,6 +833,7 @@ async function handleGenerate() {
       num_images: 1,
       size: size.value,
       resolution: resolution.value,
+      custom_size: customSize.value,
       source_image: sourceImageUrl.value,
       mask_image: maskUploadUrl,
     };
@@ -753,8 +843,9 @@ async function handleGenerate() {
       model: selectedModel.value,
       prompt: prompt.value,
       num_images: numImages.value,
-      size: size.value,
+      size: hideAspectRatio.value ? "" : size.value,
       resolution: hideResolution.value ? "" : resolution.value,
+      custom_size: hideCustomSize.value ? "" : customSize.value,
       reference_images: isImageEditMode.value && referenceUrls.value.length ? referenceUrls.value : undefined,
     };
   }
@@ -772,6 +863,7 @@ async function handleGenerate() {
       numImages: payload.num_images,
       size: payload.size,
       resolution: payload.resolution,
+      customSize: payload.custom_size || "",
       referenceImages: payload.reference_images ? [...payload.reference_images] : [],
       sourceImage: payload.source_image,
       maskImage: payload.mask_image,
@@ -785,6 +877,7 @@ function handleReeditTask(task: GeneratedTaskItem) {
   generateMode.value = task.mode;
   size.value = task.size || "9:16";
   resolution.value = task.resolution || "2K";
+  customSize.value = task.customSize || "";
 
   if (task.mode === "inpaint") {
     repaintPrompt.value = task.prompt;
@@ -824,6 +917,7 @@ async function handleRegenerate(task: GeneratedTaskItem) {
         num_images: 1,
         size: task.size,
         resolution: task.resolution,
+        custom_size: task.customSize,
         source_image: task.sourceImage,
         mask_image: task.maskImage,
       }
@@ -834,6 +928,7 @@ async function handleRegenerate(task: GeneratedTaskItem) {
         num_images: 1,
         size: task.size,
         resolution: task.resolution,
+        custom_size: task.customSize,
         reference_images: task.referenceImages.length ? task.referenceImages : undefined,
       };
 
@@ -854,6 +949,7 @@ async function handleRegenerate(task: GeneratedTaskItem) {
       numImages: 1,
       size: task.size,
       resolution: task.resolution,
+      customSize: task.customSize,
       referenceImages: [...task.referenceImages],
       sourceImage: task.sourceImage,
       maskImage: task.maskImage,
@@ -929,6 +1025,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       num_images?: number;
       size?: string;
       resolution?: string;
+      custom_size?: string;
       source_image?: string;
       mask_image?: string;
     };
@@ -942,6 +1039,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     generateMode.value = draftMode;
     size.value = draft.size || "9:16";
     resolution.value = draft.resolution || "2K";
+    customSize.value = draft.custom_size || "";
 
     if (draftMode === "inpaint") {
       repaintPrompt.value = draft.prompt || "";
@@ -1004,7 +1102,10 @@ async function loadTaskSceneConfigs() {
 }
 
 onMounted(async () => {
-  await loadTaskSceneConfigs();
+  await Promise.all([
+    loadTaskSceneConfigs(),
+    loadRecentGeneratedTasks(),
+  ]);
   applyDraft(
     localStorage.getItem(HISTORY_DRAFT_KEY),
     "已回填历史任务参数，可继续编辑后重新生成",
@@ -1015,6 +1116,10 @@ onMounted(async () => {
     "已套用创意模版参数，可继续编辑后生成",
     TEMPLATE_DRAFT_KEY
   );
+});
+
+onActivated(() => {
+  void loadRecentGeneratedTasks();
 });
 
 onBeforeUnmount(() => {
@@ -1034,7 +1139,7 @@ watch(generationModels, (models) => {
 }, { immediate: true });
 
 watch(sizeOptions, (options) => {
-  if (!options.length) return;
+  if (hideAspectRatio.value || !options.length) return;
   if (!options.some((item) => item.value === size.value)) {
     size.value = options[0].value;
   }
@@ -1046,6 +1151,22 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
     resolution.value = options[0].value;
   }
 }, { immediate: true });
+
+watch([customSizeOptions, hideCustomSize], ([options, shouldHide]) => {
+  if (shouldHide || !options.length) return;
+  if (!options.some((item) => item.value === customSize.value)) {
+    customSize.value = options[0].value;
+  }
+}, { immediate: true });
+
+watch(() => auth.isLoggedIn, (isLoggedIn) => {
+  if (isLoggedIn) {
+    void loadRecentGeneratedTasks();
+    return;
+  }
+  generatedTasks.value = [];
+  stopAllTaskPolling();
+});
 </script>
 
 <template>
@@ -1099,7 +1220,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
-                <div class="setting-item setting-item-inline">
+                <div v-if="!hideAspectRatio" class="setting-item setting-item-inline">
                   <label>宽高比</label>
                   <a-select
                     v-model:value="size"
@@ -1117,6 +1238,16 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
                     class="flat-select"
                     popup-class-name="generate-dropdown"
                     :options="resolutionOptions"
+                  />
+                </div>
+                <div v-if="!hideCustomSize" class="setting-item setting-item-inline">
+                  <label>自定义分辨率</label>
+                  <a-select
+                    v-model:value="customSize"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="customSizeOptions"
                   />
                 </div>
               </div>
@@ -1249,7 +1380,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
-                <div class="setting-item setting-item-inline">
+                <div v-if="!hideAspectRatio" class="setting-item setting-item-inline">
                   <label>宽高比</label>
                   <a-select
                     v-model:value="size"
@@ -1267,6 +1398,16 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
                     class="flat-select"
                     popup-class-name="generate-dropdown"
                     :options="resolutionOptions"
+                  />
+                </div>
+                <div v-if="!hideCustomSize" class="setting-item setting-item-inline">
+                  <label>自定义分辨率</label>
+                  <a-select
+                    v-model:value="customSize"
+                    :bordered="false"
+                    class="flat-select"
+                    popup-class-name="generate-dropdown"
+                    :options="customSizeOptions"
                   />
                 </div>
               </div>
@@ -1568,64 +1709,72 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
         </div>
 
         <div class="result-body">
-          <TransitionGroup v-if="resultItems.length" name="generate-result" tag="div" class="result-list">
-            <div
-              v-for="(item, index) in resultItems"
-              :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
-              class="result-card"
-              :style="{ '--generate-result-delay': `${Math.min(index, 9) * 45}ms` }"
-              :class="{ pending: item.image.status === 'pending' }"
-            >
+          <template v-if="resultItems.length">
+            <TransitionGroup name="generate-result" tag="div" class="result-list">
               <div
-                class="result-frame"
-                :class="{
-                  pending: item.image.status === 'pending',
-                  failed: item.image.status === 'failed',
-                  clickable: !!getResultDisplayUrl(item.image),
-                }"
-                @click="getResultPreviewUrl(item.image) && handlePreview(getResultPreviewUrl(item.image))"
+                v-for="(item, index) in resultItems"
+                :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
+                class="result-card"
+                :style="{ '--generate-result-delay': `${Math.min(index, 9) * 45}ms` }"
+                :class="{ pending: item.image.status === 'pending' }"
               >
-                <template v-if="item.image.status === 'success' && getResultDisplayUrl(item.image)">
-                  <img :src="getResultDisplayUrl(item.image)" alt="生成结果" loading="lazy" />
-                  <div class="result-actions">
-                    <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultPreviewUrl(item.image))">
-                      <template #icon><EyeOutlined /></template>
-                    </a-button>
-                    <a-button
-                      shape="circle"
-                      class="icon-chip"
-                      :disabled="!item.taskId"
-                      @click.stop="handleRegenerate(item.task)"
-                    >
-                      <template #icon><ReloadOutlined /></template>
-                    </a-button>
-                    <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(item.image.id, item.image.image_url, item.image.preview_url)">
-                      <template #icon><DownloadOutlined /></template>
-                    </a-button>
-                  </div>
-                </template>
+                <div
+                  class="result-frame"
+                  :class="{
+                    pending: item.image.status === 'pending',
+                    failed: item.image.status === 'failed',
+                    clickable: !!getResultDisplayUrl(item.image),
+                  }"
+                  @click="getResultPreviewUrl(item.image) && handlePreview(getResultPreviewUrl(item.image))"
+                >
+                  <template v-if="item.image.status === 'success' && getResultDisplayUrl(item.image)">
+                    <img :src="getResultDisplayUrl(item.image)" alt="生成结果" loading="lazy" />
+                    <div class="result-actions">
+                      <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getResultPreviewUrl(item.image))">
+                        <template #icon><EyeOutlined /></template>
+                      </a-button>
+                      <a-button
+                        shape="circle"
+                        class="icon-chip"
+                        :disabled="!item.taskId"
+                        @click.stop="handleRegenerate(item.task)"
+                      >
+                        <template #icon><ReloadOutlined /></template>
+                      </a-button>
+                      <a-button shape="circle" class="icon-chip" @click.stop="handleDownload(item.image.id, item.image.image_url, item.image.preview_url)">
+                        <template #icon><DownloadOutlined /></template>
+                      </a-button>
+                    </div>
+                  </template>
 
-                <template v-else-if="item.image.status === 'failed'">
-                  <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
-                  <div class="frame-state error">
-                    <span>生成失败，请重试</span>
-                  <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
-                    <template #icon><EditOutlined /></template>
-                  </a-button>
-                  </div>
-                </template>
+                  <template v-else-if="item.image.status === 'failed'">
+                    <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
+                    <div class="frame-state error">
+                      <span>生成失败，请重试</span>
+                    <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
+                      <template #icon><EditOutlined /></template>
+                    </a-button>
+                    </div>
+                  </template>
 
-                <template v-else>
-                  <div class="frame-state">
-                    <a-spin
-                      :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#7c8db5' } })"
-                    />
-                    <span>正在生成图片...</span>
-                  </div>
-                </template>
+                  <template v-else>
+                    <div class="frame-state">
+                      <a-spin
+                        :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#7c8db5' } })"
+                      />
+                      <span>正在生成图片...</span>
+                    </div>
+                  </template>
+                </div>
               </div>
+            </TransitionGroup>
+
+            <div class="result-list-footnote">
+              当前仅展示最近 10 次生图任务结果。若需查看更早记录、完整参数或全部结果，请前往
+              <router-link to="/history" class="result-tip-link">历史记录</router-link>
+              查看。
             </div>
-          </TransitionGroup>
+          </template>
 
           <div v-else class="result-empty">
             <transition name="generate-panel-slide" mode="out-in">
@@ -2774,10 +2923,10 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
 }
 
 .result-list {
-  display: grid;
-  gap: 16px;
+  display: block;
   margin-top: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-count: 3;
+  column-gap: 16px;
 }
 
 .result-body {
@@ -2811,8 +2960,22 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
   }
 }
 
+.result-list-footnote {
+  margin: 16px 4px 2px;
+  padding: 0 2px 4px;
+  color: #a38a65;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
 .result-card {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 16px;
   border-radius: 20px;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
   transition: transform var(--motion-duration-hover) var(--motion-ease-enter);
 
   &.pending .result-frame {
@@ -2831,11 +2994,12 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
 
 .result-frame {
   position: relative;
-  min-height: 180px;
+  min-height: 0;
   border-radius: 18px;
   overflow: hidden;
   border: 1px dashed #ead9b9;
   background: #fffaf0;
+  box-shadow: 0 12px 28px rgba(236, 185, 88, 0.08);
   transition:
     transform var(--motion-duration-hover) var(--motion-ease-enter),
     box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
@@ -2843,8 +3007,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
 
   img {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;
     display: block;
     transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
@@ -2859,6 +3022,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
 
   &.failed {
     background: #fff7f5;
+    min-height: 220px;
   }
 }
 
@@ -3226,7 +3390,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
   }
 
   .result-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-count: 2;
   }
 
   .result-body {
@@ -3272,7 +3436,7 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
   }
 
   .result-list {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 
   .result-head {

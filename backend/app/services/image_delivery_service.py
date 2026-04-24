@@ -126,6 +126,7 @@ def serialize_task(task: Task, *, cos_config: CosRuntimeConfig | None = None) ->
         "num_images": task.num_images,
         "size": task.size,
         "resolution": task.resolution or "",
+        "custom_size": task.custom_size or "",
         "credit_cost": int(task.credit_cost or 0),
         "status": task.status,
         "error_message": task.error_message or "",

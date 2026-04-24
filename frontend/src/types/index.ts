@@ -41,6 +41,7 @@ export interface TaskResult {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size?: string;
   credit_cost: number;
   status: "pending" | "queued" | "processing" | "success" | "failed";
   error_message?: string;
@@ -60,6 +61,7 @@ export interface HistoryItem {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size?: string;
   credit_cost: number;
   status: string;
   error_message?: string;
@@ -109,6 +111,7 @@ export interface UserHistoryCard {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size?: string;
   credit_cost: number;
   created_at: string;
   error_message?: string;
@@ -160,6 +163,7 @@ export interface CreativeTemplate {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size: string;
   result_image: string;
   result_image_thumb?: string;
   sort_order: number;
@@ -321,7 +325,9 @@ export interface ExternalApiSceneBinding {
   display_name: string;
   subtitle: string;
   sort_order: number;
+  hide_aspect_ratio: boolean;
   hide_resolution: boolean;
+  hide_custom_size: boolean;
   status: ExternalApiConfigStatus;
   is_builtin: boolean;
   api_config_id?: number | null;
@@ -331,6 +337,7 @@ export interface ExternalApiSceneBinding {
   credit_cost: number;
   aspect_ratio_options_json: string;
   image_size_options_json: string;
+  custom_size_options_json: string;
 }
 
 export interface ExternalApiSceneBindingCreatePayload {
@@ -339,22 +346,28 @@ export interface ExternalApiSceneBindingCreatePayload {
   scene_label: string;
   scene_description: string;
   sort_order: number;
+  hide_aspect_ratio: boolean;
   hide_resolution: boolean;
+  hide_custom_size: boolean;
   api_config_id: number | null;
   display_name: string;
   subtitle: string;
   credit_cost: number;
   aspect_ratio_options_json: string;
   image_size_options_json: string;
+  custom_size_options_json: string;
 }
 
 export interface ExternalApiSceneBindingMetaPayload {
   scene_label: string;
   scene_description: string;
   sort_order: number;
+  hide_aspect_ratio: boolean;
   hide_resolution: boolean;
+  hide_custom_size: boolean;
   aspect_ratio_options_json: string;
   image_size_options_json: string;
+  custom_size_options_json: string;
 }
 
 export interface ExternalApiConfigTestResult {
@@ -371,10 +384,13 @@ export interface GenerationModelOption {
   display_name: string;
   subtitle: string;
   sort_order: number;
+  hide_aspect_ratio: boolean;
   hide_resolution: boolean;
+  hide_custom_size: boolean;
   credit_cost: number;
   aspect_ratio_options: SceneOptionItem[];
   image_size_options: SceneOptionItem[];
+  custom_size_options: SceneOptionItem[];
 }
 
 export interface TaskSceneConfig {
@@ -385,10 +401,13 @@ export interface TaskSceneConfig {
   display_name: string;
   subtitle: string;
   sort_order: number;
+  hide_aspect_ratio: boolean;
   hide_resolution: boolean;
+  hide_custom_size: boolean;
   credit_cost: number;
   aspect_ratio_options: SceneOptionItem[];
   image_size_options: SceneOptionItem[];
+  custom_size_options: SceneOptionItem[];
 }
 
 export type UploadPurpose = "ref" | "source" | "mask" | "reverse" | "misc" | "template";

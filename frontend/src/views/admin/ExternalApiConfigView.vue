@@ -32,6 +32,7 @@ import type {
   ExternalApiSceneBinding,
   ExternalApiSceneBindingCreatePayload,
   ExternalApiSceneBindingMetaPayload,
+  ExternalApiSceneType,
 } from "@/types";
 
 const DEFAULT_ASPECT_RATIO_OPTIONS_JSON = JSON.stringify([
@@ -50,6 +51,13 @@ const DEFAULT_IMAGE_SIZE_OPTIONS_JSON = JSON.stringify([
   { label: "4K", value: "4K" },
 ], null, 2);
 
+const DEFAULT_CUSTOM_SIZE_OPTIONS_JSON = JSON.stringify([
+  { label: "1024 x 1024", value: "1024x1024" },
+  { label: "1152 x 896", value: "1152x896" },
+  { label: "896 x 1152", value: "896x1152" },
+  { label: "1280 x 720", value: "1280x720" },
+], null, 2);
+
 const configs = ref<ExternalApiConfig[]>([]);
 const sceneBindings = ref<ExternalApiSceneBinding[]>([]);
 const loading = ref(false);
@@ -65,6 +73,7 @@ const sceneMetaModalOpen = ref(false);
 const editingId = ref<number | null>(null);
 const sceneEditingKey = ref("");
 const isCopyMode = ref(false);
+const isSceneCopyMode = ref(false);
 const configGroupFilter = ref("all");
 const bindingGroupFilter = ref("all");
 const secretVisible = ref(false);
@@ -87,7 +96,7 @@ const bindingColumns = [
   { title: "当前绑定接口", key: "current", width: 220 },
   { title: "选择接口", key: "bind", width: 360 },
   { title: "消耗积分", key: "credit", width: 180 },
-  { title: "操作", key: "action", width: 220 },
+  { title: "操作", key: "action", width: 320 },
 ];
 
 const form = reactive<ExternalApiConfigPayload>({
@@ -107,21 +116,27 @@ const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
   scene_label: "",
   scene_description: "",
   sort_order: 100,
+  hide_aspect_ratio: false,
   hide_resolution: false,
+  hide_custom_size: true,
   api_config_id: null,
   display_name: "",
   subtitle: "",
   credit_cost: 4,
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
+  custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
 });
 const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   scene_label: "",
   scene_description: "",
   sort_order: 0,
+  hide_aspect_ratio: false,
   hide_resolution: false,
+  hide_custom_size: true,
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
+  custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
 });
 
 const modalTitle = computed(() => {
@@ -129,6 +144,7 @@ const modalTitle = computed(() => {
   if (isCopyMode.value) return "复制新增接口配置";
   return "新增接口配置";
 });
+const sceneModalTitle = computed(() => (isSceneCopyMode.value ? "复制新增场景" : "新增场景"));
 const groupOptions = computed(() => {
   const groups = Array.from(new Set(configs.value.map((item) => item.group_name || "未分组").filter(Boolean)));
   return groups.sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -211,18 +227,54 @@ function getBindingOptions() {
 }
 
 function resetSceneForm() {
+  isSceneCopyMode.value = false;
   sceneForm.scene_key = "";
   sceneForm.scene_type = "generate";
   sceneForm.scene_label = "";
   sceneForm.scene_description = "";
   sceneForm.sort_order = Math.max(100, ...sceneBindings.value.map((item) => Number(item.sort_order || 0) + 10), 100);
+  sceneForm.hide_aspect_ratio = false;
   sceneForm.hide_resolution = false;
+  sceneForm.hide_custom_size = true;
   sceneForm.api_config_id = null;
   sceneForm.display_name = "";
   sceneForm.subtitle = "";
   sceneForm.credit_cost = 4;
   sceneForm.aspect_ratio_options_json = DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneForm.image_size_options_json = DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
+  sceneForm.custom_size_options_json = DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
+}
+
+function buildCopiedSceneLabel(sourceLabel: string) {
+  const trimmed = sourceLabel.trim() || "未命名场景";
+  const existingLabels = new Set(sceneBindings.value.map((item) => item.scene_label.trim()));
+  const baseLabel = `${trimmed}（副本）`;
+  if (!existingLabels.has(baseLabel)) return baseLabel;
+
+  let index = 2;
+  while (existingLabels.has(`${trimmed}（副本${index}）`)) {
+    index += 1;
+  }
+  return `${trimmed}（副本${index}）`;
+}
+
+function buildCopiedSceneKey(sourceKey: string) {
+  const normalized = sourceKey.trim().toLowerCase() || "scene";
+  const existingKeys = new Set(sceneBindings.value.map((item) => item.scene_key.trim().toLowerCase()));
+  const baseKey = `${normalized}_copy`;
+  if (!existingKeys.has(baseKey)) return baseKey;
+
+  let index = 2;
+  while (existingKeys.has(`${normalized}_copy_${index}`)) {
+    index += 1;
+  }
+  return `${normalized}_copy_${index}`;
+}
+
+function isCopyableSceneType(
+  sceneType: ExternalApiSceneType
+): sceneType is Extract<ExternalApiSceneType, "generate" | "image_edit"> {
+  return sceneType === "generate" || sceneType === "image_edit";
 }
 
 function fillSceneMetaForm(record: ExternalApiSceneBinding) {
@@ -230,9 +282,12 @@ function fillSceneMetaForm(record: ExternalApiSceneBinding) {
   sceneMetaForm.scene_label = record.scene_label || "";
   sceneMetaForm.scene_description = record.scene_description || "";
   sceneMetaForm.sort_order = Number(record.sort_order || 0);
+  sceneMetaForm.hide_aspect_ratio = !!record.hide_aspect_ratio;
   sceneMetaForm.hide_resolution = !!record.hide_resolution;
+  sceneMetaForm.hide_custom_size = !!record.hide_custom_size;
   sceneMetaForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneMetaForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
+  sceneMetaForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
 }
 
 function validateSceneOptionsJson(raw: string, label: string) {
@@ -289,6 +344,28 @@ function openCreate() {
 
 function openCreateScene() {
   resetSceneForm();
+  sceneModalOpen.value = true;
+}
+
+function openCopyScene(record: ExternalApiSceneBinding) {
+  if (!isCopyableSceneType(record.scene_type)) return;
+  resetSceneForm();
+  isSceneCopyMode.value = true;
+  sceneForm.scene_key = buildCopiedSceneKey(record.scene_key);
+  sceneForm.scene_type = record.scene_type;
+  sceneForm.scene_label = buildCopiedSceneLabel(record.scene_label);
+  sceneForm.scene_description = record.scene_description || "";
+  sceneForm.sort_order = Number(record.sort_order || 0) + 10;
+  sceneForm.hide_aspect_ratio = !!record.hide_aspect_ratio;
+  sceneForm.hide_resolution = !!record.hide_resolution;
+  sceneForm.hide_custom_size = !!record.hide_custom_size;
+  sceneForm.api_config_id = record.api_config_id ?? null;
+  sceneForm.display_name = record.display_name || "";
+  sceneForm.subtitle = record.subtitle || "";
+  sceneForm.credit_cost = Number(record.credit_cost || 0);
+  sceneForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
+  sceneForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
+  sceneForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
   sceneModalOpen.value = true;
 }
 
@@ -492,6 +569,7 @@ async function handleCreateScene() {
   }
   if (!validateSceneOptionsJson(sceneForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneForm.image_size_options_json, "生图质量选项 JSON")) return;
+  if (!validateSceneOptionsJson(sceneForm.custom_size_options_json, "自定义分辨率选项 JSON")) return;
 
   bindingCreating.value = true;
   try {
@@ -501,13 +579,16 @@ async function handleCreateScene() {
       scene_label: sceneForm.scene_label.trim(),
       scene_description: sceneForm.scene_description.trim(),
       sort_order: Number(sceneForm.sort_order || 0),
+      hide_aspect_ratio: !!sceneForm.hide_aspect_ratio,
       hide_resolution: !!sceneForm.hide_resolution,
+      hide_custom_size: !!sceneForm.hide_custom_size,
       api_config_id: sceneForm.api_config_id ?? null,
       display_name: sceneForm.display_name.trim(),
       subtitle: sceneForm.subtitle.trim(),
       credit_cost: Number(sceneForm.credit_cost || 0),
       aspect_ratio_options_json: sceneForm.aspect_ratio_options_json,
       image_size_options_json: sceneForm.image_size_options_json,
+      custom_size_options_json: sceneForm.custom_size_options_json,
     });
     message.success("场景创建成功");
     sceneModalOpen.value = false;
@@ -528,6 +609,7 @@ async function handleSaveSceneMeta() {
   }
   if (!validateSceneOptionsJson(sceneMetaForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneMetaForm.image_size_options_json, "生图质量选项 JSON")) return;
+  if (!validateSceneOptionsJson(sceneMetaForm.custom_size_options_json, "自定义分辨率选项 JSON")) return;
 
   sceneMetaSaving.value = true;
   try {
@@ -535,9 +617,12 @@ async function handleSaveSceneMeta() {
       scene_label: sceneMetaForm.scene_label.trim(),
       scene_description: sceneMetaForm.scene_description.trim(),
       sort_order: Number(sceneMetaForm.sort_order || 0),
+      hide_aspect_ratio: !!sceneMetaForm.hide_aspect_ratio,
       hide_resolution: !!sceneMetaForm.hide_resolution,
+      hide_custom_size: !!sceneMetaForm.hide_custom_size,
       aspect_ratio_options_json: sceneMetaForm.aspect_ratio_options_json,
       image_size_options_json: sceneMetaForm.image_size_options_json,
+      custom_size_options_json: sceneMetaForm.custom_size_options_json,
     });
     message.success("场景基础信息已更新");
     sceneMetaModalOpen.value = false;
@@ -826,14 +911,31 @@ function copySecret(value: string, label: string) {
               <span class="credit-unit">积分</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space v-if="!record.is_builtin && ['generate', 'image_edit'].includes(record.scene_type)">
-                <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEditSceneMeta(record)">编辑</a-button>
-                <a-button size="small" class="api-secondary-btn" @click="handleToggleSceneStatus(record)">
+              <a-space v-if="['generate', 'image_edit'].includes(record.scene_type)" wrap>
+                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopyScene(record)">复制新增</a-button>
+                <a-button
+                  v-if="!record.is_builtin"
+                  size="small"
+                  class="api-secondary-btn"
+                  :icon="h(EditOutlined)"
+                  @click="openEditSceneMeta(record)"
+                >
+                  编辑
+                </a-button>
+                <a-button v-if="!record.is_builtin" size="small" class="api-secondary-btn" @click="handleToggleSceneStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
                 </a-button>
-                <a-button size="small" class="api-danger-btn" :icon="h(DeleteOutlined)" @click="handleDeleteScene(record)">删除</a-button>
+                <a-button
+                  v-if="!record.is_builtin"
+                  size="small"
+                  class="api-danger-btn"
+                  :icon="h(DeleteOutlined)"
+                  @click="handleDeleteScene(record)"
+                >
+                  删除
+                </a-button>
               </a-space>
-              <span v-else class="scene-desc">内置场景</span>
+              <span v-else class="scene-desc">该场景暂不支持复制</span>
             </template>
           </template>
         </a-table>
@@ -849,6 +951,7 @@ function copySecret(value: string, label: string) {
               <pre v-pre>{{ prompt }}</pre>
               <pre v-pre>{{ aspect_ratio }}</pre>
               <pre v-pre>{{ image_size }}</pre>
+              <pre v-pre>{{ custom_size }}</pre>
               <pre v-pre>{{ mode }}</pre>
             </div>
           </a-collapse-panel>
@@ -858,10 +961,12 @@ function copySecret(value: string, label: string) {
               <pre v-pre>{{ contents_parts }}</pre>
               <pre v-pre>{{ generation_config }}</pre>
               <div class="scene-desc">
-                宽高比与生图质量选项请在场景表单中用 JSON 数组维护，系统会把对应 value 传入
+                宽高比、生图质量、自定义分辨率选项请在场景表单中用 JSON 数组维护，系统会把对应 value 传入
                 <code v-pre>{{ aspect_ratio }}</code>
                 /
                 <code v-pre>{{ image_size }}</code>
+                /
+                <code v-pre>{{ custom_size }}</code>
                 。
               </div>
             </div>
@@ -879,7 +984,7 @@ function copySecret(value: string, label: string) {
 
     <a-modal
       v-model:open="sceneModalOpen"
-      title="新增场景"
+      :title="sceneModalTitle"
       :mask-closable="false"
       :width="720"
       @ok="handleCreateScene"
@@ -952,9 +1057,23 @@ function copySecret(value: string, label: string) {
           </a-col>
         </a-row>
 
-        <a-form-item label="隐藏分辨率">
-          <a-switch v-model:checked="sceneForm.hide_resolution" />
-        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="隐藏宽高比">
+              <a-switch v-model:checked="sceneForm.hide_aspect_ratio" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="隐藏分辨率">
+              <a-switch v-model:checked="sceneForm.hide_resolution" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="隐藏自定义分辨率">
+              <a-switch v-model:checked="sceneForm.hide_custom_size" />
+            </a-form-item>
+          </a-col>
+        </a-row>
 
         <a-form-item label="宽高比选项 JSON">
           <a-textarea
@@ -977,6 +1096,18 @@ function copySecret(value: string, label: string) {
           />
           <div class="scene-desc" style="margin-top: 6px">
             使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ image_size }}</code> 占位符。
+          </div>
+        </a-form-item>
+
+        <a-form-item label="自定义分辨率选项 JSON">
+          <a-textarea
+            v-model:value="sceneForm.custom_size_options_json"
+            class="warm-textarea"
+            :rows="6"
+            placeholder='[{"label":"1024 x 1024","value":"1024x1024"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ custom_size }}</code> 占位符。
           </div>
         </a-form-item>
       </a-form>
@@ -1014,9 +1145,23 @@ function copySecret(value: string, label: string) {
           <a-input v-model:value="sceneMetaForm.scene_description" class="warm-input" />
         </a-form-item>
 
-        <a-form-item label="隐藏分辨率">
-          <a-switch v-model:checked="sceneMetaForm.hide_resolution" />
-        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="8">
+            <a-form-item label="隐藏宽高比">
+              <a-switch v-model:checked="sceneMetaForm.hide_aspect_ratio" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="隐藏分辨率">
+              <a-switch v-model:checked="sceneMetaForm.hide_resolution" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="隐藏自定义分辨率">
+              <a-switch v-model:checked="sceneMetaForm.hide_custom_size" />
+            </a-form-item>
+          </a-col>
+        </a-row>
 
         <a-form-item label="宽高比选项 JSON">
           <a-textarea
@@ -1039,6 +1184,18 @@ function copySecret(value: string, label: string) {
           />
           <div class="scene-desc" style="margin-top: 6px">
             使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ image_size }}</code> 占位符。
+          </div>
+        </a-form-item>
+
+        <a-form-item label="自定义分辨率选项 JSON">
+          <a-textarea
+            v-model:value="sceneMetaForm.custom_size_options_json"
+            class="warm-textarea"
+            :rows="6"
+            placeholder='[{"label":"1024 x 1024","value":"1024x1024"}]'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `label/value` 数组；`value` 会映射到请求里的 <code v-pre>{{ custom_size }}</code> 占位符。
           </div>
         </a-form-item>
       </a-form>

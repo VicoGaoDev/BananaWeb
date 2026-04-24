@@ -9,6 +9,7 @@ class TaskCreate(BaseModel):
     num_images: int = Field(default=4, ge=1, le=8)
     size: str = "3:4"
     resolution: str = "4K"
+    custom_size: str = ""
     reference_images: list[str] | None = None
     source_image: str = ""
     mask_image: str = ""
@@ -40,6 +41,7 @@ class TaskOut(BaseModel):
     num_images: int = 4
     size: str
     resolution: str = ""
+    custom_size: str = ""
     credit_cost: int = 0
     status: str
     error_message: str = ""

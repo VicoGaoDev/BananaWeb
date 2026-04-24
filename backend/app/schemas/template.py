@@ -20,6 +20,7 @@ class TemplateBase(BaseModel):
     reference_images: list[str] = []
     size: str = "1:1"
     resolution: str = "2K"
+    custom_size: str = ""
     num_images: int = Field(default=1, ge=1, le=6)
     result_image: str = ""
     sort_order: int = 0
@@ -43,6 +44,7 @@ class TemplateListItemOut(BaseModel):
     sort_order: int = 0
     size: str
     resolution: str
+    custom_size: str = ""
     num_images: int
     tags: list[TemplateTagOut]
     created_at: datetime | None = None
@@ -62,6 +64,7 @@ class TemplateDetailOut(BaseModel):
     sort_order: int = 0
     size: str
     resolution: str
+    custom_size: str = ""
     num_images: int
     result_image: str
     result_image_thumb: str = ""

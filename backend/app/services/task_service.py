@@ -57,6 +57,7 @@ def create_tasks(
     num_images: int,
     size: str,
     resolution: str = "4K",
+    custom_size: str = "",
     reference_images: list[str] | None = None,
     source_image: str = "",
     mask_image: str = "",
@@ -118,6 +119,7 @@ def create_tasks(
 
         normalized_prompt = prompt.strip()
         normalized_model = model.strip()
+        normalized_custom_size = custom_size.strip()
         normalized_source_image = source_image.strip()
         normalized_mask_image = mask_image.strip()
         credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
@@ -131,6 +133,7 @@ def create_tasks(
                 num_images=1,
                 size=size,
                 resolution=resolution,
+                custom_size=normalized_custom_size,
                 reference_images=ref_json,
                 source_image=normalized_source_image,
                 mask_image=normalized_mask_image,

@@ -114,6 +114,7 @@ function useTemplate() {
       num_images: 1,
       size: detail.value.size,
       resolution: detail.value.resolution,
+      custom_size: detail.value.custom_size,
     })
   );
   detailOpen.value = false;

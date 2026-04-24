@@ -12,6 +12,7 @@ export function createTask(data: {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size?: string;
   mode?: "generate" | "inpaint";
   reference_images?: string[];
   source_image?: string;

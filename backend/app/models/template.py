@@ -12,6 +12,7 @@ class Template(Base):
     reference_images = Column(Text, default="")
     size = Column(String(20), default="1:1")
     resolution = Column(String(10), default="2K")
+    custom_size = Column(String(50), default="")
     num_images = Column(Integer, default=1)
     result_image = Column(String(255), default="")
     sort_order = Column(Integer, default=0)

@@ -28,6 +28,7 @@ def on_startup():
     _ensure_prompt_history_columns()
     _ensure_image_required_columns()
     _ensure_task_credit_cost_column()
+    _ensure_scene_binding_required_columns()
     _ensure_template_required_columns()
     if settings.should_run_schema_compat:
         _ensure_schema_compat()
@@ -53,6 +54,8 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN model VARCHAR(50) DEFAULT ''"))
         if "resolution" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN resolution VARCHAR(10) DEFAULT '4K'"))
+        if "custom_size" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN custom_size VARCHAR(50) DEFAULT ''"))
         if "prompt" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN prompt TEXT DEFAULT ''"))
         if "num_images" not in task_columns:
@@ -176,8 +179,12 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_description VARCHAR(255) DEFAULT ''"))
             if "sort_order" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN sort_order INTEGER DEFAULT 0"))
+            if "hide_aspect_ratio" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_aspect_ratio BOOLEAN DEFAULT 0"))
             if "hide_resolution" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
+            if "hide_custom_size" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_custom_size BOOLEAN DEFAULT 1"))
             if "status" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN status VARCHAR(20) DEFAULT 'enabled'"))
             if "api_config_id" not in scene_binding_columns:
@@ -193,6 +200,8 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN aspect_ratio_options_json TEXT"))
             if "image_size_options_json" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
+            if "custom_size_options_json" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
             conn.execute(
                 text(
                     """
@@ -217,6 +226,15 @@ def _ensure_schema_compat():
                     UPDATE external_api_scene_bindings
                     SET image_size_options_json = '[]'
                     WHERE image_size_options_json IS NULL
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET custom_size_options_json = '[]'
+                    WHERE custom_size_options_json IS NULL
                     """
                 )
             )
@@ -273,6 +291,8 @@ def _ensure_template_required_columns():
             conn.execute(text("ALTER TABLE templates ADD COLUMN model VARCHAR(50) DEFAULT 'banana_pro'"))
         if "sort_order" not in template_columns:
             conn.execute(text("ALTER TABLE templates ADD COLUMN sort_order INTEGER DEFAULT 0"))
+        if "custom_size" not in template_columns:
+            conn.execute(text("ALTER TABLE templates ADD COLUMN custom_size VARCHAR(50) DEFAULT ''"))
 
 
 def _ensure_user_whitelist_column():
@@ -372,11 +392,62 @@ def _ensure_task_credit_cost_column():
         return
 
     task_columns = {col["name"] for col in inspector.get_columns("tasks")}
-    if "credit_cost" in task_columns:
+    if "credit_cost" in task_columns and "custom_size" in task_columns:
         return
 
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN credit_cost INTEGER DEFAULT 0"))
+        if "credit_cost" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN credit_cost INTEGER DEFAULT 0"))
+        if "custom_size" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN custom_size VARCHAR(50) DEFAULT ''"))
+
+
+def _ensure_scene_binding_required_columns():
+    inspector = inspect(engine)
+    if "external_api_scene_bindings" not in inspector.get_table_names():
+        return
+
+    scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
+    with engine.begin() as conn:
+        if "hide_aspect_ratio" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_aspect_ratio BOOLEAN DEFAULT 0"))
+        if "hide_resolution" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
+        if "hide_custom_size" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_custom_size BOOLEAN DEFAULT 1"))
+        if "aspect_ratio_options_json" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN aspect_ratio_options_json TEXT"))
+        if "image_size_options_json" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
+        if "custom_size_options_json" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET aspect_ratio_options_json = '[]'
+                WHERE aspect_ratio_options_json IS NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET image_size_options_json = '[]'
+                WHERE image_size_options_json IS NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET custom_size_options_json = '[]'
+                WHERE custom_size_options_json IS NULL
+                """
+            )
+        )
 
 
 def _backfill_task_credit_costs():

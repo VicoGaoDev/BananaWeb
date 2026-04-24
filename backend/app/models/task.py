@@ -14,6 +14,7 @@ class Task(Base):
     num_images = Column(Integer, default=4)
     size = Column(String(20), default="3:4")
     resolution = Column(String(10), default="4K")
+    custom_size = Column(String(50), default="")
     reference_image = Column(String(500), default="")
     reference_images = Column(Text, default="")
     source_image = Column(String(500), default="")

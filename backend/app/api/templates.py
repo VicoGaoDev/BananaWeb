@@ -61,6 +61,7 @@ def _serialize_template_list_item(template: Template, *, cos_config=None) -> dic
         "sort_order": template.sort_order or 0,
         "size": template.size,
         "resolution": template.resolution or "",
+        "custom_size": template.custom_size or "",
         "num_images": 1,
         "tags": [
             {"id": rel.tag.id, "name": rel.tag.name}
@@ -216,6 +217,7 @@ def create_template(
         reference_images=json.dumps(body.reference_images or []),
         size=body.size,
         resolution=body.resolution,
+        custom_size=body.custom_size.strip(),
         num_images=1,
         result_image=body.result_image,
         sort_order=body.sort_order,
@@ -246,6 +248,7 @@ def update_template(
     template.reference_images = json.dumps(body.reference_images or [])
     template.size = body.size
     template.resolution = body.resolution
+    template.custom_size = body.custom_size.strip()
     template.num_images = 1
     template.result_image = body.result_image
     template.sort_order = body.sort_order

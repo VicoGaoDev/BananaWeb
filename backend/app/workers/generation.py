@@ -157,6 +157,7 @@ def _call_gemini_api(
     prompt: str,
     aspect_ratio: str,
     image_size: str,
+    custom_size: str,
     model_key: str = "",
     reference_images: list[str] | None = None,
     mode: str = "generate",
@@ -208,6 +209,7 @@ def _call_gemini_api(
                 "prompt": prompt,
                 "aspect_ratio": aspect_ratio,
                 "image_size": image_size,
+                "custom_size": custom_size,
                 "contents_parts": parts,
                 "generation_config": generation_config,
                 "mode": mode,
@@ -216,12 +218,13 @@ def _call_gemini_api(
 
         auth_value = rendered.headers.get("Authorization", "")
         logger.info(
-            "Calling generation API: config=%s, mode=%s, prompt=%s, ratio=%s, size=%s, ref_count=%d, auth_prefix=%s",
+            "Calling generation API: config=%s, mode=%s, prompt=%s, ratio=%s, size=%s, custom_size=%s, ref_count=%d, auth_prefix=%s",
             config.name,
             mode,
             prompt[:60],
             aspect_ratio,
             image_size,
+            custom_size,
             len(reference_images or []),
             (auth_value[:8] + "...") if auth_value else "none",
         )
@@ -384,6 +387,67 @@ def _resolve_task_status(images: list[Image]) -> str:
     return "failed"
 
 
+def _rollback_session_safely(db) -> None:
+    try:
+        db.rollback()
+    except Exception:
+        logger.exception("Failed to rollback database session")
+
+
+def _recover_task_after_exception(task_id: int, error_message: str) -> None:
+    recovery_db = SessionLocal()
+    try:
+        task = recovery_db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return
+
+        normalized_error = _clip_error_message(error_message or "生图任务执行异常")
+        images = recovery_db.query(Image).filter(Image.task_id == task_id).all()
+        for image in images:
+            if image.status == "pending":
+                _mark_generation_failure(image, normalized_error)
+
+        task.status = _resolve_task_status(images)
+        if task.status == "processing":
+            task.status = "failed"
+        task.error_message = "" if task.status == "success" else normalized_error
+        recovery_db.commit()
+    except Exception:
+        _rollback_session_safely(recovery_db)
+        logger.exception("Failed to recover task after exception: task_id=%s", task_id)
+    finally:
+        recovery_db.close()
+
+
+def _recover_single_image_after_exception(image_id: int, error_message: str) -> None:
+    recovery_db = SessionLocal()
+    try:
+        image = recovery_db.query(Image).filter(Image.id == image_id).first()
+        if not image:
+            return
+
+        normalized_error = _clip_error_message(error_message or "重新生成任务执行异常")
+        if image.status == "pending":
+            _mark_generation_failure(image, normalized_error)
+
+        task = recovery_db.query(Task).filter(Task.id == image.task_id).first()
+        if not task:
+            recovery_db.commit()
+            return
+
+        images = recovery_db.query(Image).filter(Image.task_id == task.id).all()
+        task.status = _resolve_task_status(images)
+        if task.status == "processing":
+            task.status = "failed"
+        task.error_message = "" if task.status == "success" else normalized_error
+        recovery_db.commit()
+    except Exception:
+        _rollback_session_safely(recovery_db)
+        logger.exception("Failed to recover image after exception: image_id=%s", image_id)
+    finally:
+        recovery_db.close()
+
+
 def _process_task(task_id: int, *, use_distributed_lock: bool = True):
     task_lock = None
     if use_distributed_lock:
@@ -424,6 +488,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                 prompt=task.prompt,
                 aspect_ratio=task.size,
                 image_size=task.resolution,
+                custom_size=task.custom_size or "",
                 model_key=task.model or "",
                 reference_images=ref_urls,
                 mode=task_mode,
@@ -463,6 +528,10 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         if task.status == "success":
             task.error_message = ""
         db.commit()
+    except Exception as exc:
+        _rollback_session_safely(db)
+        logger.exception("Task processing crashed: task_id=%s", task_id)
+        _recover_task_after_exception(task_id, str(exc))
     finally:
         db.close()
         if task_lock is not None:
@@ -507,6 +576,7 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
             prompt=task.prompt,
             aspect_ratio=task.size,
             image_size=task.resolution,
+            custom_size=task.custom_size or "",
             model_key=task.model or "",
             reference_images=ref_urls,
             mode=task_mode,
@@ -558,6 +628,10 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         task.status = _resolve_task_status(list(task.images))
         task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
         db.commit()
+    except Exception as exc:
+        _rollback_session_safely(db)
+        logger.exception("Image regeneration crashed: image_id=%s", image_id)
+        _recover_single_image_after_exception(image_id, str(exc))
     finally:
         db.close()
         if image_lock is not None:

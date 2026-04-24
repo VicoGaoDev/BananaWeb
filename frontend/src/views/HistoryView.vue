@@ -240,6 +240,7 @@ function detailMetaList(item: UserHistoryCard) {
     `模型：${getModelLabel(item.model)}`,
     `比例：${item.size || "-"}`,
     item.resolution ? `分辨率：${item.resolution}` : "",
+    item.custom_size ? `自定义分辨率：${item.custom_size}` : "",
     item.image_format ? `格式：${item.image_format}` : "",
     item.image_size_bytes ? `大小：${formatImageSize(item.image_size_bytes)}` : "",
     `时间：${formatTime(item.created_at)}`,
@@ -510,6 +511,7 @@ function handleReedit(item: UserHistoryCard) {
         prompt: item.prompt,
         size: item.size,
         resolution: item.resolution,
+        custom_size: item.custom_size,
         source_image: item.source_image,
         mask_image: item.mask_image,
       })
@@ -525,6 +527,7 @@ function handleReedit(item: UserHistoryCard) {
         num_images: item.num_images,
         size: item.size,
         resolution: item.resolution,
+        custom_size: item.custom_size,
       })
     );
   }

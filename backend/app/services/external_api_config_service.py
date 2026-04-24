@@ -41,16 +41,16 @@ SCENE_TYPE_INPAINT = "inpaint"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 DEFAULT_SCENE_DEFINITIONS = [
-    {"scene_key": SCENE_BANANA, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 10, "hide_resolution": True},
-    {"scene_key": SCENE_BANANA2, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 20, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 30, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO_PLUS, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 40, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 110, "hide_resolution": True},
-    {"scene_key": SCENE_BANANA2_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 120, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 130, "hide_resolution": False},
-    {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_resolution": False},
-    {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_resolution": False},
-    {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_resolution": False},
+    {"scene_key": SCENE_BANANA, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 10, "hide_aspect_ratio": False, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA2, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 20, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA_PRO, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 30, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA_PRO_PLUS, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 40, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 110, "hide_aspect_ratio": False, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA2_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 120, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA_PRO_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 130, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
 ]
 SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA: 4,
@@ -86,16 +86,22 @@ DEFAULT_IMAGE_SIZE_OPTIONS = [
     {"label": "2K", "value": "2K"},
     {"label": "4K", "value": "4K"},
 ]
+DEFAULT_CUSTOM_SIZE_OPTIONS = [
+    {"label": "1024 x 1024", "value": "1024x1024"},
+    {"label": "1152 x 896", "value": "1152x896"},
+    {"label": "896 x 1152", "value": "896x1152"},
+    {"label": "1280 x 720", "value": "1280x720"},
+]
 
 
 def is_builtin_scene(scene_key: str) -> bool:
     return scene_key in NON_EDITABLE_SCENE_KEYS
 
 
-def _get_default_scene_options(scene_type: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def _get_default_scene_options(scene_type: str) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     if scene_type in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT}:
-        return DEFAULT_ASPECT_RATIO_OPTIONS, DEFAULT_IMAGE_SIZE_OPTIONS
-    return [], []
+        return DEFAULT_ASPECT_RATIO_OPTIONS, DEFAULT_IMAGE_SIZE_OPTIONS, DEFAULT_CUSTOM_SIZE_OPTIONS
+    return [], [], []
 
 
 def _normalize_scene_options(raw: str | None, fallback: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -130,11 +136,13 @@ def _get_scene_option_json(
     scene_type: str,
     aspect_ratio_options_json: str | None,
     image_size_options_json: str | None,
-) -> tuple[str, str]:
-    default_aspect_ratio_options, default_image_size_options = _get_default_scene_options(scene_type)
+    custom_size_options_json: str | None,
+) -> tuple[str, str, str]:
+    default_aspect_ratio_options, default_image_size_options, default_custom_size_options = _get_default_scene_options(scene_type)
     return (
         _dump_scene_options(_normalize_scene_options(aspect_ratio_options_json, default_aspect_ratio_options)),
         _dump_scene_options(_normalize_scene_options(image_size_options_json, default_image_size_options)),
+        _dump_scene_options(_normalize_scene_options(custom_size_options_json, default_custom_size_options)),
     )
 
 
@@ -279,10 +287,11 @@ def _serialize_scene_binding(
     config: ExternalApiConfig | None,
 ) -> ExternalApiSceneBindingOut:
     scene_label, scene_description = _resolve_scene_copy(binding)
-    aspect_ratio_options_json, image_size_options_json = _get_scene_option_json(
+    aspect_ratio_options_json, image_size_options_json, custom_size_options_json = _get_scene_option_json(
         binding.scene_type,
         binding.aspect_ratio_options_json,
         binding.image_size_options_json,
+        binding.custom_size_options_json,
     )
     return ExternalApiSceneBindingOut(
         scene_key=binding.scene_key,
@@ -292,7 +301,9 @@ def _serialize_scene_binding(
         display_name=(binding.display_name or "").strip(),
         subtitle=(binding.subtitle or "").strip(),
         sort_order=binding.sort_order,
+        hide_aspect_ratio=bool(binding.hide_aspect_ratio),
         hide_resolution=binding.hide_resolution,
+        hide_custom_size=bool(binding.hide_custom_size),
         status=(binding.status or "enabled").strip().lower(),
         is_builtin=is_builtin_scene(binding.scene_key),
         api_config_id=config.id if config else None,
@@ -302,6 +313,7 @@ def _serialize_scene_binding(
         credit_cost=binding.credit_cost,
         aspect_ratio_options_json=aspect_ratio_options_json,
         image_size_options_json=image_size_options_json,
+        custom_size_options_json=custom_size_options_json,
     )
 
 
@@ -335,8 +347,13 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             display_name=(binding.display_name or "").strip(),
             subtitle=(binding.subtitle or "").strip(),
             sort_order=binding.sort_order,
+            hide_aspect_ratio=bool(binding.hide_aspect_ratio),
             hide_resolution=binding.hide_resolution,
+            hide_custom_size=bool(binding.hide_custom_size),
             credit_cost=binding.credit_cost,
+            aspect_ratio_options=json.loads(binding.aspect_ratio_options_json or "[]"),
+            image_size_options=json.loads(binding.image_size_options_json or "[]"),
+            custom_size_options=json.loads(binding.custom_size_options_json or "[]"),
         ))
     return items
 
@@ -412,12 +429,16 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             display_name=item.display_name,
             subtitle=item.subtitle,
             sort_order=item.sort_order,
+            hide_aspect_ratio=item.hide_aspect_ratio,
             hide_resolution=item.hide_resolution,
+            hide_custom_size=item.hide_custom_size,
             credit_cost=item.credit_cost,
             aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(item.image_size_options_json or "[]"),
+            custom_size_options=json.loads(item.custom_size_options_json or "[]"),
         )
         for item in list_scene_bindings(db)
+        if item.status == "enabled"
     ]
 
 
@@ -444,7 +465,9 @@ def create_scene_binding(
         scene_label=body.scene_label,
         scene_description=body.scene_description,
         sort_order=body.sort_order,
+        hide_aspect_ratio=body.hide_aspect_ratio,
         hide_resolution=body.hide_resolution,
+        hide_custom_size=body.hide_custom_size,
         status=body.status,
         api_config_id=body.api_config_id,
         display_name=body.display_name,
@@ -452,6 +475,7 @@ def create_scene_binding(
         credit_cost=body.credit_cost,
         aspect_ratio_options_json=body.aspect_ratio_options_json,
         image_size_options_json=body.image_size_options_json,
+        custom_size_options_json=body.custom_size_options_json,
     )
     db.add(binding)
     db.commit()
@@ -504,9 +528,12 @@ def update_scene_binding_meta(
     binding.scene_label = body.scene_label
     binding.scene_description = body.scene_description
     binding.sort_order = body.sort_order
+    binding.hide_aspect_ratio = body.hide_aspect_ratio
     binding.hide_resolution = body.hide_resolution
+    binding.hide_custom_size = body.hide_custom_size
     binding.aspect_ratio_options_json = body.aspect_ratio_options_json
     binding.image_size_options_json = body.image_size_options_json
+    binding.custom_size_options_json = body.custom_size_options_json
     db.commit()
     config = get_config_or_404(db, binding.api_config_id) if binding.api_config_id else None
     return _serialize_scene_binding(binding, config)
@@ -594,6 +621,7 @@ def _build_test_variables(db: Session) -> dict[str, Any]:
         "prompt": "连接测试",
         "aspect_ratio": "1:1",
         "image_size": "2K",
+        "custom_size": "1024x1024",
         "contents_parts": [{"text": "连接测试"}],
         "generation_config": {"responseModalities": ["TEXT"]},
         "mode": "generate",
@@ -687,10 +715,11 @@ def _ensure_scene_bindings(db: Session) -> None:
         for binding in bindings:
             default_definition = DEFAULT_SCENE_MAP.get(binding.scene_key)
             default_cost = get_default_credit_cost(binding.scene_key, binding.scene_type)
-            aspect_ratio_options_json, image_size_options_json = _get_scene_option_json(
+            aspect_ratio_options_json, image_size_options_json, custom_size_options_json = _get_scene_option_json(
                 binding.scene_type or SCENE_TYPE_GENERATE,
                 binding.aspect_ratio_options_json,
                 binding.image_size_options_json,
+                binding.custom_size_options_json,
             )
             if binding.credit_cost is None:
                 binding.credit_cost = default_cost
@@ -703,6 +732,9 @@ def _ensure_scene_bindings(db: Session) -> None:
                 updated = True
             if (binding.image_size_options_json or "") != image_size_options_json:
                 binding.image_size_options_json = image_size_options_json
+                updated = True
+            if (binding.custom_size_options_json or "") != custom_size_options_json:
+                binding.custom_size_options_json = custom_size_options_json
                 updated = True
             if default_definition:
                 if not (binding.scene_type or "").strip():
@@ -721,8 +753,14 @@ def _ensure_scene_bindings(db: Session) -> None:
                     if int(binding.sort_order or 0) != int(default_definition["sort_order"]):
                         binding.sort_order = default_definition["sort_order"]
                         updated = True
+                    if bool(binding.hide_aspect_ratio) != bool(default_definition["hide_aspect_ratio"]):
+                        binding.hide_aspect_ratio = default_definition["hide_aspect_ratio"]
+                        updated = True
                     if bool(binding.hide_resolution) != bool(default_definition["hide_resolution"]):
                         binding.hide_resolution = default_definition["hide_resolution"]
+                        updated = True
+                    if bool(binding.hide_custom_size) != bool(default_definition["hide_custom_size"]):
+                        binding.hide_custom_size = default_definition["hide_custom_size"]
                         updated = True
                 else:
                     if not (binding.scene_label or "").strip():
@@ -734,8 +772,14 @@ def _ensure_scene_bindings(db: Session) -> None:
                     if int(binding.sort_order or 0) <= 0:
                         binding.sort_order = default_definition["sort_order"]
                         updated = True
+                    if binding.hide_aspect_ratio is None:
+                        binding.hide_aspect_ratio = default_definition["hide_aspect_ratio"]
+                        updated = True
                     if binding.hide_resolution is None:
                         binding.hide_resolution = default_definition["hide_resolution"]
+                        updated = True
+                    if binding.hide_custom_size is None:
+                        binding.hide_custom_size = default_definition["hide_custom_size"]
                         updated = True
             else:
                 if not (binding.scene_type or "").strip():
@@ -744,8 +788,14 @@ def _ensure_scene_bindings(db: Session) -> None:
                 if not (binding.scene_label or "").strip():
                     binding.scene_label = binding.scene_key
                     updated = True
+                if binding.hide_aspect_ratio is None:
+                    binding.hide_aspect_ratio = False
+                    updated = True
                 if binding.hide_resolution is None:
                     binding.hide_resolution = False
+                    updated = True
+                if binding.hide_custom_size is None:
+                    binding.hide_custom_size = True
                     updated = True
         for definition in DEFAULT_SCENE_DEFINITIONS:
             if definition["scene_key"] in existing_map:
@@ -757,11 +807,14 @@ def _ensure_scene_bindings(db: Session) -> None:
                 scene_label=definition["scene_label"],
                 scene_description=definition["scene_description"],
                 sort_order=definition["sort_order"],
+                hide_aspect_ratio=definition["hide_aspect_ratio"],
                 hide_resolution=definition["hide_resolution"],
+                hide_custom_size=definition["hide_custom_size"],
                 api_config_id=config.id if config else None,
                 credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
-                aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None)[0],
-                image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None)[1],
+                aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
+                image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
+                custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
             ))
             updated = True
         if updated:
@@ -776,11 +829,14 @@ def _ensure_scene_bindings(db: Session) -> None:
             scene_label=definition["scene_label"],
             scene_description=definition["scene_description"],
             sort_order=definition["sort_order"],
+            hide_aspect_ratio=definition["hide_aspect_ratio"],
             hide_resolution=definition["hide_resolution"],
+            hide_custom_size=definition["hide_custom_size"],
             api_config_id=config.id if config else None,
             credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
-            aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None)[0],
-            image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None)[1],
+            aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
+            image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
+            custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
         ))
     db.commit()
 

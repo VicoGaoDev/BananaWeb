@@ -158,8 +158,13 @@ class GenerationModelOptionOut(BaseModel):
     display_name: str
     subtitle: str
     sort_order: int
+    hide_aspect_ratio: bool
     hide_resolution: bool
+    hide_custom_size: bool
     credit_cost: int
+    aspect_ratio_options: list["SceneOptionItem"] = []
+    image_size_options: list["SceneOptionItem"] = []
+    custom_size_options: list["SceneOptionItem"] = []
 
 
 class SceneOptionItem(BaseModel):
@@ -172,7 +177,9 @@ class ExternalApiSceneBindingCreate(BaseModel):
     scene_label: str
     scene_description: str = ""
     sort_order: int = 0
+    hide_aspect_ratio: bool = False
     hide_resolution: bool = False
+    hide_custom_size: bool = True
     api_config_id: int | None = None
     display_name: str = ""
     subtitle: str = ""
@@ -181,6 +188,7 @@ class ExternalApiSceneBindingCreate(BaseModel):
     status: StatusType = "enabled"
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
+    custom_size_options_json: str = "[]"
 
     @field_validator("scene_key")
     @classmethod
@@ -229,6 +237,11 @@ class ExternalApiSceneBindingCreate(BaseModel):
     def validate_image_size_options_json(cls, value: str) -> str:
         return _validate_scene_options_json(value, "生图质量选项 JSON")
 
+    @field_validator("custom_size_options_json")
+    @classmethod
+    def validate_custom_size_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "自定义分辨率选项 JSON")
+
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
@@ -253,9 +266,12 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     scene_label: str
     scene_description: str = ""
     sort_order: int = 0
+    hide_aspect_ratio: bool = False
     hide_resolution: bool = False
+    hide_custom_size: bool = True
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
+    custom_size_options_json: str = "[]"
 
     @field_validator("scene_label", "scene_description")
     @classmethod
@@ -282,6 +298,11 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     def validate_image_size_options_json(cls, value: str) -> str:
         return _validate_scene_options_json(value, "生图质量选项 JSON")
 
+    @field_validator("custom_size_options_json")
+    @classmethod
+    def validate_custom_size_options_json(cls, value: str) -> str:
+        return _validate_scene_options_json(value, "自定义分辨率选项 JSON")
+
 
 class ExternalApiSceneBindingStatusUpdate(BaseModel):
     status: StatusType
@@ -303,7 +324,9 @@ class ExternalApiSceneBindingOut(BaseModel):
     display_name: str
     subtitle: str
     sort_order: int
+    hide_aspect_ratio: bool
     hide_resolution: bool
+    hide_custom_size: bool
     status: StatusType
     is_builtin: bool
     api_config_id: int | None = None
@@ -313,6 +336,7 @@ class ExternalApiSceneBindingOut(BaseModel):
     credit_cost: int
     aspect_ratio_options_json: str
     image_size_options_json: str
+    custom_size_options_json: str
 
 
 class TaskSceneConfigOut(BaseModel):
@@ -323,10 +347,13 @@ class TaskSceneConfigOut(BaseModel):
     display_name: str
     subtitle: str
     sort_order: int
+    hide_aspect_ratio: bool
     hide_resolution: bool
+    hide_custom_size: bool
     credit_cost: int
     aspect_ratio_options: list[SceneOptionItem]
     image_size_options: list[SceneOptionItem]
+    custom_size_options: list[SceneOptionItem]
 
 
 class ExternalApiConfigTestResult(BaseModel):

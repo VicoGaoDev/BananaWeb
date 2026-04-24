@@ -50,6 +50,7 @@ const form = reactive<TemplatePayload>({
   num_images: 1,
   size: "9:16",
   resolution: "2K",
+  custom_size: "",
   result_image: "",
   sort_order: 0,
   tag_names: [],
@@ -81,9 +82,16 @@ const resolutionOptions = [
   { label: "4K", value: "4K" },
 ];
 
+const customSizeOptions = computed(() => (
+  selectedModelOption.value?.custom_size_options?.length
+    ? selectedModelOption.value.custom_size_options
+    : []
+));
+
 const tagOptions = computed(() => tags.value.map((tag) => ({ label: tag.name, value: tag.name })));
 const selectedModelOption = computed(() => modelOptions.value.find((item) => item.model_key === form.model) || null);
 const hideResolution = computed(() => !!selectedModelOption.value?.hide_resolution);
+const hideCustomSize = computed(() => !!selectedModelOption.value?.hide_custom_size);
 const filteredTemplates = computed(() => {
   if (activeTagId.value === null) return templates.value;
   return templates.value.filter((item) => item.tags.some((tag) => tag.id === activeTagId.value));
@@ -101,6 +109,7 @@ function resetForm() {
   form.num_images = 1;
   form.size = "9:16";
   form.resolution = "2K";
+  form.custom_size = "";
   form.result_image = "";
   form.sort_order = 0;
   form.tag_names = [];
@@ -175,6 +184,7 @@ async function openEdit(item: CreativeTemplate) {
     form.num_images = 1;
     form.size = detail.size;
     form.resolution = detail.resolution;
+    form.custom_size = detail.custom_size || "";
     form.result_image = detail.result_image;
     form.sort_order = detail.sort_order ?? 0;
     form.tag_names = detail.tags.map((tag) => tag.name);
@@ -202,6 +212,7 @@ async function handleSave() {
       num_images: 1,
       size: form.size,
       resolution: hideResolution.value ? "" : form.resolution,
+      custom_size: hideCustomSize.value ? "" : form.custom_size,
       result_image: form.result_image,
       sort_order: Number.isFinite(form.sort_order) ? form.sort_order : 0,
       tag_names: [...form.tag_names],
@@ -389,7 +400,9 @@ function fmtTime(t: string) {
           </template>
           <template v-else-if="column.key === 'meta'">
             <div class="meta-cell">
-              {{ record.model || "-" }} / {{ record.size }}<span v-if="record.resolution"> / {{ record.resolution }}</span>
+              {{ record.model || "-" }} / {{ record.size }}
+              <span v-if="record.resolution"> / {{ record.resolution }}</span>
+              <span v-if="record.custom_size"> / {{ record.custom_size }}</span>
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'created_at'">
@@ -446,6 +459,15 @@ function fmtTime(t: string) {
           </a-form-item>
           <a-form-item v-if="!hideResolution" label="分辨率">
             <a-select v-model:value="form.resolution" class="warm-select" :options="resolutionOptions" />
+          </a-form-item>
+          <a-form-item v-if="!hideCustomSize" label="自定义分辨率">
+            <a-select
+              v-model:value="form.custom_size"
+              class="warm-select"
+              :options="customSizeOptions"
+              allow-clear
+              placeholder="可选，带入 {{ custom_size }}"
+            />
           </a-form-item>
           <a-form-item label="所属标签">
             <a-select

@@ -60,6 +60,7 @@ const detailMetaList = computed(() => {
     props.detail.model ? `模型：${getModelLabel(props.detail.model)}` : "",
     `宽高比：${props.detail.size || "-"}`,
     props.detail.resolution ? `分辨率：${props.detail.resolution}` : "",
+    props.detail.custom_size ? `自定义分辨率：${props.detail.custom_size}` : "",
     props.detail.tags.length ? `标签：${props.detail.tags.map((tag) => tag.name).join(" / ")}` : "",
     `时间：${formatTime(props.detail.created_at)}`,
   ].filter(Boolean);

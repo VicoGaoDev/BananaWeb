@@ -54,6 +54,7 @@ def create(
         num_images=body.num_images,
         size=body.size,
         resolution=resolved_resolution,
+        custom_size=body.custom_size,
         reference_images=body.reference_images,
         source_image=body.source_image,
         mask_image=body.mask_image,

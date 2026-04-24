@@ -8,6 +8,7 @@ export interface TemplatePayload {
   num_images: number;
   size: string;
   resolution: string;
+  custom_size: string;
   result_image: string;
   sort_order: number;
   tag_names: string[];
