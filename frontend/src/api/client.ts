@@ -1,5 +1,6 @@
 import axios from "axios";
 import router from "@/router";
+import { clearStoredAuth, getStoredToken } from "@/lib/auth";
 
 const BASE = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -9,7 +10,7 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -20,8 +21,7 @@ client.interceptors.response.use(
   (res) => res.data,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      clearStoredAuth();
       router.push("/templates");
     }
     return Promise.reject(error);

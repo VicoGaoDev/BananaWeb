@@ -437,7 +437,7 @@ async function handleAvatarChange(e: Event) {
 
         <div class="header-actions">
           <template v-if="auth.isLoggedIn">
-            <a-dropdown v-if="isAdmin" :trigger="['click']" overlay-class-name="warm-dropdown">
+            <a-dropdown v-if="isAdmin" :trigger="['hover']" overlay-class-name="warm-dropdown">
               <a-button class="admin-btn" type="text">
                 <SettingOutlined />
                 管理后台
@@ -458,7 +458,7 @@ async function handleAvatarChange(e: Event) {
               <span>{{ auth.user?.credits ?? 0 }}</span>
             </div>
 
-            <a-dropdown :trigger="['click']" overlay-class-name="warm-dropdown">
+            <a-dropdown :trigger="['hover']" overlay-class-name="warm-dropdown">
               <div class="user-trigger">
                 <a-avatar :size="34" class="user-avatar" :src="avatarUrl || undefined">
                   {{ avatarFallback }}
@@ -790,7 +790,7 @@ async function handleAvatarChange(e: Event) {
               <a-input
                 v-model:value="registerForm.username"
                 size="large"
-                placeholder="2-20 个字符，可重复"
+                placeholder="2-20 个字符"
                 :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
                 :maxlength="20"
               />
@@ -1343,60 +1343,6 @@ async function handleAvatarChange(e: Event) {
   background: linear-gradient(180deg, #fffdf8, #fff6ea);
 }
 
-:deep(.warm-dropdown .ant-dropdown-menu) {
-  padding: 12px;
-  border-radius: 24px;
-  border: 1px solid #f1dfbf;
-  background: linear-gradient(180deg, #fffdfa, #fff8ef);
-  box-shadow: 0 16px 28px rgba(164, 122, 47, 0.1);
-  min-width: 176px;
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item) {
-  border-radius: 18px;
-  min-height: 50px;
-  padding: 10px 14px;
-  color: #54463a;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-soft),
-    color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
-
-  &:hover {
-    background: rgba(245, 240, 232, 0.9);
-    color: #80591f;
-  }
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item-selected) {
-  background: linear-gradient(180deg, #f6f2eb, #f1ece4) !important;
-  color: #956625 !important;
-  box-shadow: inset 0 0 0 1px rgba(233, 223, 206, 0.9);
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item .anticon) {
-  font-size: 15px;
-  color: #463f39;
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item-danger) {
-  color: #c85a49 !important;
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item-danger:hover) {
-  background: linear-gradient(180deg, #fff4f1, #ffede8) !important;
-  color: #b84b3b !important;
-}
-
-:deep(.warm-dropdown .ant-dropdown-menu-item-divider) {
-  margin: 8px 2px;
-  background: #efe4d2;
-}
-
 :deep(.ant-modal .ant-input-affix-wrapper),
 :deep(.ant-modal .ant-input-password),
 :deep(.ant-modal .ant-input) {
@@ -1562,5 +1508,66 @@ async function handleAvatarChange(e: Event) {
   :deep(.mobile-nav-drawer .ant-drawer-content-wrapper) {
     width: min(88vw, 320px) !important;
   }
+}
+</style>
+
+<style lang="scss">
+.warm-dropdown .ant-dropdown-menu {
+  min-width: 176px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid #f1dfbf;
+  background: linear-gradient(180deg, #fffdfa, #fff8ef);
+  box-shadow: 0 16px 28px rgba(164, 122, 47, 0.1);
+}
+
+.warm-dropdown .ant-dropdown-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  color: #54463a;
+  font-weight: 700;
+  gap: 8px;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.warm-dropdown .ant-dropdown-menu-item:hover {
+  background: linear-gradient(180deg, #fff2da, #ffe7b8);
+  color: #8a5607;
+  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+  transform: translateY(-1px);
+}
+
+.warm-dropdown .ant-dropdown-menu-item-selected {
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  color: #5a3c14 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 231, 0.45),
+    0 10px 22px rgba(255, 169, 37, 0.22);
+}
+
+.warm-dropdown .ant-dropdown-menu-item .anticon {
+  font-size: 16px;
+  color: currentColor;
+}
+
+.warm-dropdown .ant-dropdown-menu-item-danger {
+  color: #c85a49 !important;
+}
+
+.warm-dropdown .ant-dropdown-menu-item-danger:hover {
+  background: linear-gradient(180deg, #fff4f1, #ffede8) !important;
+  color: #b84b3b !important;
+}
+
+.warm-dropdown .ant-dropdown-menu-item-divider {
+  margin: 8px 2px;
+  background: #efe4d2;
 }
 </style>

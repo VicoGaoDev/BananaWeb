@@ -1223,7 +1223,11 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
 
             <div class="mode-switch-cluster">
               <div class="mode-switch-group mode-switch-group-secondary">
-                <a-dropdown trigger="click" placement="bottomRight">
+                <a-dropdown
+                  :trigger="['hover']"
+                  placement="bottomRight"
+                  overlay-class-name="generate-tool-dropdown"
+                >
                   <button
                     type="button"
                     class="mode-switch-btn tool tool-trigger"
@@ -2182,52 +2186,10 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   opacity: 0.58;
 }
 
-:deep(.generate-tool-menu) {
-  min-width: 180px;
-  padding: 6px;
-  border-radius: 18px;
-  border: 1px solid #f0ddbb;
-  background: #fffefb;
-  box-shadow: 0 18px 32px rgba(212, 155, 59, 0.14);
-}
-
-:deep(.generate-tool-menu .ant-menu-item) {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  margin: 0 !important;
-  border-radius: 12px;
-  color: #7d6342;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-soft),
-    color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
-    transform var(--motion-duration-fast) var(--motion-ease-soft);
-}
-
-:deep(.generate-tool-menu .ant-menu-item + .ant-menu-item) {
-  margin-top: 6px !important;
-}
-
-:deep(.generate-tool-menu .ant-menu-item:hover) {
-  color: #7f4b00 !important;
-  background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
-  box-shadow: 0 8px 16px rgba(255, 169, 37, 0.14);
-  transform: translateY(-1px);
-}
-
-:deep(.generate-tool-menu .ant-menu-item-selected) {
-  color: #3f2a08 !important;
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 10px 18px rgba(255, 169, 37, 0.2);
-}
-
 .generate-tool-menu-item-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 700;
 }
 
@@ -3747,5 +3709,56 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   .mode-switch-trigger-value {
     font-size: 12px;
   }
+}
+</style>
+
+<style lang="scss">
+.generate-tool-dropdown .generate-tool-menu {
+  min-width: 196px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid #f1dfbf;
+  background: linear-gradient(180deg, #fffdfa, #fff8ef);
+  box-shadow: 0 16px 28px rgba(164, 122, 47, 0.1);
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border-radius: 14px;
+  color: #54463a;
+  font-weight: 700;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item + .ant-menu-item {
+  margin-top: 8px !important;
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item:hover {
+  color: #8a5607 !important;
+  background: linear-gradient(180deg, #fff2da, #ffe7b8) !important;
+  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+  transform: translateY(-1px);
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+  color: #5a3c14 !important;
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 231, 0.45),
+    0 10px 22px rgba(255, 169, 37, 0.22);
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item .anticon {
+  font-size: 18px;
+  color: currentColor;
 }
 </style>
