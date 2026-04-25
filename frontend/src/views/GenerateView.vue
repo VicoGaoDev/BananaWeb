@@ -15,11 +15,13 @@ import {
   PictureOutlined,
   SearchOutlined,
   HighlightOutlined,
+  AppstoreOutlined,
   LoadingOutlined,
   ExclamationCircleFilled,
   RedoOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
+  DownOutlined,
   UndoOutlined,
 } from "@ant-design/icons-vue";
 import { getTaskScenes } from "@/api/config";
@@ -247,6 +249,17 @@ const selectedModelCreditCost = computed(() => (
 ));
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
+const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint");
+const activeExtendedToolLabel = computed(() => (
+  generateMode.value === "promptReverse"
+    ? "提示词反推"
+    : generateMode.value === "inpaint"
+      ? "局部重绘"
+      : "更多工具"
+));
+const activeExtendedToolMenuKeys = computed(() => (
+  isExtendedToolMode.value ? [generateMode.value] : []
+));
 
 type GenerateTaskPayload = {
   model?: string;
@@ -321,6 +334,12 @@ function stopAllTaskPolling() {
     taskPollTimer.value = null;
   }
   taskPollingInFlight.value = false;
+}
+
+function handleExtendedToolMenuClick({ key }: { key: string }) {
+  if (key === "promptReverse" || key === "inpaint") {
+    generateMode.value = key;
+  }
 }
 
 function syncTaskFromResult(taskId: number, data: TaskResult) {
@@ -1173,15 +1192,80 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   <div class="generate-page">
     <div class="generate-workbench">
       <div class="left-col">
-        <a-tabs v-model:activeKey="generateMode" class="generate-tabs">
-          <a-tab-pane key="textGenerate">
-            <template #tab>
-              <span class="generate-tab-label">
-                <FontSizeOutlined />
-                <span>文生图</span>
-              </span>
-            </template>
-            <section class="work-panel settings-panel generate-config-panel">
+        <div class="generate-mode-shell">
+          <div class="generate-mode-switch">
+            <div class="mode-switch-cluster">
+              <div class="mode-switch-group mode-switch-group-primary">
+                <button
+                  type="button"
+                  class="mode-switch-btn"
+                  :class="{ active: generateMode === 'textGenerate' }"
+                  @click="generateMode = 'textGenerate'"
+                >
+                  <span class="generate-tab-label">
+                    <FontSizeOutlined />
+                    <span>文生图</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="mode-switch-btn"
+                  :class="{ active: generateMode === 'imageEdit' }"
+                  @click="generateMode = 'imageEdit'"
+                >
+                  <span class="generate-tab-label">
+                    <PictureOutlined />
+                    <span>图编辑</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div class="mode-switch-cluster">
+              <div class="mode-switch-group mode-switch-group-secondary">
+                <a-dropdown trigger="click" placement="bottomRight">
+                  <button
+                    type="button"
+                    class="mode-switch-btn tool tool-trigger"
+                    :class="{ active: isExtendedToolMode }"
+                  >
+                    <span class="mode-switch-trigger-content">
+                      <AppstoreOutlined class="mode-switch-trigger-icon" />
+                      <span class="mode-switch-trigger-value">{{ activeExtendedToolLabel }}</span>
+                    </span>
+                    <DownOutlined class="mode-switch-trigger-arrow" />
+                  </button>
+                  <template #overlay>
+                    <a-menu
+                      class="generate-tool-menu"
+                      :selected-keys="activeExtendedToolMenuKeys"
+                      @click="handleExtendedToolMenuClick"
+                    >
+                      <a-menu-item key="promptReverse">
+                        <span class="generate-tool-menu-item-label">
+                          <SearchOutlined />
+                          <span>提示词反推</span>
+                        </span>
+                      </a-menu-item>
+                      <a-menu-item key="inpaint">
+                        <span class="generate-tool-menu-item-label">
+                          <HighlightOutlined />
+                          <span>局部重绘</span>
+                        </span>
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+              </div>
+            </div>
+          </div>
+
+          <transition name="generate-panel-slide" mode="out-in">
+            <section
+              v-if="generateMode === 'textGenerate'"
+              key="textGenerate"
+              class="work-panel settings-panel generate-config-panel"
+            >
               <div class="settings-scroll">
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
@@ -1281,16 +1365,12 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 </a-button>
               </div>
             </section>
-          </a-tab-pane>
 
-          <a-tab-pane key="imageEdit">
-            <template #tab>
-              <span class="generate-tab-label">
-                <PictureOutlined />
-                <span>图编辑</span>
-              </span>
-            </template>
-            <section class="work-panel settings-panel generate-config-panel">
+            <section
+              v-else-if="generateMode === 'imageEdit'"
+              key="imageEdit"
+              class="work-panel settings-panel generate-config-panel"
+            >
               <div class="settings-scroll">
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
@@ -1441,16 +1521,12 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 </a-button>
               </div>
             </section>
-          </a-tab-pane>
 
-          <a-tab-pane key="promptReverse">
-            <template #tab>
-              <span class="generate-tab-label">
-                <SearchOutlined />
-                <span>提示词反推</span>
-              </span>
-            </template>
-            <section class="work-panel settings-panel prompt-reverse-panel">
+            <section
+              v-else-if="generateMode === 'promptReverse'"
+              key="promptReverse"
+              class="work-panel settings-panel prompt-reverse-panel"
+            >
               <div class="settings-scroll">
               <div class="field-block">
                 <div class="panel-head">
@@ -1532,16 +1608,12 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 </a-button>
               </div>
             </section>
-          </a-tab-pane>
 
-          <a-tab-pane key="inpaint">
-            <template #tab>
-              <span class="generate-tab-label">
-                <HighlightOutlined />
-                <span>局部重绘</span>
-              </span>
-            </template>
-            <section class="work-panel settings-panel inpaint-panel">
+            <section
+              v-else
+              key="inpaint"
+              class="work-panel settings-panel inpaint-panel"
+            >
               <div class="settings-scroll">
               <div class="field-block">
                 <div class="panel-head">
@@ -1684,8 +1756,8 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 </a-button>
               </div>
             </section>
-          </a-tab-pane>
-        </a-tabs>
+          </transition>
+        </div>
       </div>
 
       <section class="work-panel result-panel">
@@ -1943,71 +2015,220 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   animation: generate-slide-left-in var(--motion-duration-stage) var(--motion-ease-enter) 0.08s both;
 }
 
-.generate-tabs {
+.generate-mode-shell {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
 
-  :deep(.ant-tabs-nav) {
-    margin-bottom: 12px;
-    flex-shrink: 0;
-  }
+.generate-mode-switch {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
 
-  :deep(.ant-tabs-tab) {
-    padding: 10px 2px 14px;
-    font-size: 15px;
-    font-weight: 700;
-    color: #8f7558;
-    transition: color var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-press) var(--motion-ease-soft);
-  }
+.mode-switch-cluster {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
 
-  :deep(.ant-tabs-tab:hover) {
+.mode-switch-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-switch-group-primary {
+  gap: 10px;
+}
+
+.mode-switch-group-secondary {
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.mode-switch-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #8f7558;
+  padding: 0;
+  border-radius: 16px;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
     color: #b77a17;
     transform: translateY(-1px);
   }
 
-  :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
-    color: #c98511 !important;
+  &:active {
+    transform: scale(0.97);
   }
+}
 
-  :deep(.ant-tabs-ink-bar) {
-    height: 3px;
-    border-radius: 99px;
-    background: linear-gradient(90deg, #ffc45b, #ffab25);
-  }
+.mode-switch-btn.active {
+  color: #9b6110;
+}
 
-  :deep(.ant-tabs-content-holder) {
-    overflow: hidden;
-    flex: 1;
-    min-height: 0;
-  }
+.mode-switch-group-primary .mode-switch-btn {
+  min-width: 116px;
+  border-radius: 15px;
+  border-color: rgba(239, 195, 113, 0.16);
+  background: rgba(255, 249, 239, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 
-  :deep(.ant-tabs-content) {
-    height: 100%;
+  &:hover,
+  &:focus {
+    color: #995b00;
+    border-color: rgba(239, 195, 113, 0.24);
+    background: linear-gradient(180deg, #ffd06d, #ffb63a);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 10px 18px rgba(255, 169, 37, 0.18);
   }
+}
 
-  :deep(.ant-tabs-tabpane) {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    height: 100%;
-  }
+.mode-switch-group-primary .mode-switch-btn.active,
+.mode-switch-group-primary .mode-switch-btn.active:hover,
+.mode-switch-group-primary .mode-switch-btn.active:focus {
+  color: #3f2a08;
+  border-color: transparent;
+  background: linear-gradient(180deg, #ffc45b, #ffab25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 18px rgba(255, 169, 37, 0.22);
+}
 
-  :deep(.ant-tabs-tabpane-active) {
-    animation: generate-panel-in var(--motion-duration-slide) var(--motion-ease-enter) both;
-  }
+.mode-switch-btn.tool {
+  min-width: 152px;
+  border-color: rgba(239, 195, 113, 0.18);
+  background: rgba(255, 251, 244, 0.42);
+  box-shadow: none;
+}
+
+.mode-switch-btn.tool.active {
+  border-color: rgba(239, 195, 113, 0.32);
+  background: linear-gradient(180deg, rgba(255, 247, 228, 0.94), rgba(255, 239, 205, 0.9));
+  box-shadow: 0 6px 14px rgba(236, 185, 88, 0.1);
 }
 
 .generate-tab-label {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   line-height: 1;
+  min-height: 42px;
+  padding: 0 14px;
+  white-space: nowrap;
 
   .anticon {
     font-size: 16px;
+    opacity: 0.88;
   }
+}
+
+.mode-switch-group-primary .generate-tab-label {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 15px;
+  font-weight: 800;
+}
+
+.tool-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 13px;
+}
+
+.mode-switch-trigger-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mode-switch-trigger-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.mode-switch-trigger-value {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.mode-switch-trigger-arrow {
+  color: inherit;
+  font-size: 11px;
+  opacity: 0.58;
+}
+
+:deep(.generate-tool-menu) {
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 18px;
+  border: 1px solid #f0ddbb;
+  background: #fffefb;
+  box-shadow: 0 18px 32px rgba(212, 155, 59, 0.14);
+}
+
+:deep(.generate-tool-menu .ant-menu-item) {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0 !important;
+  border-radius: 12px;
+  color: #7d6342;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+:deep(.generate-tool-menu .ant-menu-item + .ant-menu-item) {
+  margin-top: 6px !important;
+}
+
+:deep(.generate-tool-menu .ant-menu-item:hover) {
+  color: #7f4b00 !important;
+  background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
+  box-shadow: 0 8px 16px rgba(255, 169, 37, 0.14);
+  transform: translateY(-1px);
+}
+
+:deep(.generate-tool-menu .ant-menu-item-selected) {
+  color: #3f2a08 !important;
+  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 10px 18px rgba(255, 169, 37, 0.2);
+}
+
+.generate-tool-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
 }
 
 /* --- Prompt (standalone) --- */
@@ -3047,6 +3268,30 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   inset: auto 12px 12px auto;
   display: flex;
   gap: 8px;
+
+  .icon-chip {
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: none;
+    backdrop-filter: blur(6px);
+
+    &:hover,
+    &:focus {
+      background: rgba(255, 255, 255, 0.94) !important;
+      border-color: rgba(255, 255, 255, 0.94) !important;
+      color: #684825 !important;
+      box-shadow: 0 14px 22px rgba(0, 0, 0, 0.12);
+    }
+
+    &:disabled {
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      background: transparent !important;
+      color: rgba(255, 255, 255, 0.48) !important;
+      box-shadow: none;
+      opacity: 1;
+    }
+  }
 }
 
 .frame-state {
@@ -3339,7 +3584,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   .history-item-move,
   .generate-panel-slide-enter-active,
   .generate-panel-slide-leave-active,
-  .generate-tabs :deep(.ant-tabs-tab) {
+  .mode-switch-btn {
     transition: none !important;
   }
 }
@@ -3398,13 +3643,12 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
     padding-right: 0;
   }
 
-  .generate-tabs {
+  .generate-mode-shell {
     min-height: unset;
   }
 
   .settings-panel,
-  .generate-tabs :deep(.ant-tabs-content),
-  .generate-tabs :deep(.ant-tabs-tabpane) {
+  .generate-mode-shell {
     height: auto;
   }
 
@@ -3413,6 +3657,27 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
     padding: 0;
   }
 
+  .generate-mode-switch {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  .mode-switch-cluster:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .mode-switch-cluster:last-child {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
+  .mode-switch-group {
+    flex-wrap: nowrap;
+  }
 }
 
 @media (max-width: 640px) {
@@ -3442,6 +3707,45 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   .result-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .generate-mode-switch {
+    margin-bottom: 12px;
+    gap: 10px;
+  }
+
+  .mode-switch-group {
+    gap: 8px;
+  }
+
+  .mode-switch-group-primary {
+    gap: 8px;
+  }
+
+  .mode-switch-group-primary .mode-switch-btn {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .mode-switch-btn.tool {
+    flex: 0 0 auto;
+    min-width: auto;
+  }
+
+  .tool-trigger {
+    min-height: 38px;
+    padding: 0 10px;
+  }
+
+  .generate-tab-label {
+    gap: 6px;
+    min-height: 38px;
+    padding: 0 11px;
+    font-size: 14px;
+  }
+
+  .mode-switch-trigger-value {
+    font-size: 12px;
   }
 }
 </style>

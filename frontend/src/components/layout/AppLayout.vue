@@ -1327,15 +1327,6 @@ async function handleAvatarChange(e: Event) {
   filter: blur(0);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .route-page-forward-enter-active,
-  .route-page-forward-leave-active,
-  .route-page-back-enter-active,
-  .route-page-back-leave-active {
-    transition: none !important;
-  }
-}
-
 :deep(.mobile-nav-drawer .ant-drawer-header) {
   padding: 20px 20px 0;
   border-bottom: none;

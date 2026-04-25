@@ -535,13 +535,6 @@ html, body, #app {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .motion-page-enter,
-  .motion-fade-up,
-  .motion-slide-left,
-  .motion-slide-right {
-    animation: none !important;
-  }
-
   .motion-card-lift {
     transition: none !important;
   }

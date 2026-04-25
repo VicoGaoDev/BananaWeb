@@ -23,12 +23,23 @@ const tags = ref<TemplateTag[]>([]);
 const activeTagId = ref<number | null>(null);
 const loadMoreAnchor = ref<HTMLElement | null>(null);
 let loadMoreObserver: IntersectionObserver | null = null;
+const masonryColumnCount = ref(5);
 
 const detailOpen = ref(false);
 const detailLoading = ref(false);
 const detail = ref<CreativeTemplate | null>(null);
 
 const hasMoreTemplates = computed(() => templates.value.length < total.value);
+const masonryColumns = computed(() => {
+  const columnCount = Math.max(1, masonryColumnCount.value);
+  const columns = Array.from({ length: columnCount }, () => [] as Array<{ item: CreativeTemplate; index: number }>);
+
+  templates.value.forEach((item, index) => {
+    columns[index % columnCount].push({ item, index });
+  });
+
+  return columns;
+});
 
 async function loadTags() {
   try {
@@ -74,6 +85,12 @@ async function loadNextTemplatePage() {
   } finally {
     loadingMore.value = false;
   }
+}
+
+function syncMasonryColumnCount() {
+  if (typeof window === "undefined") return;
+  const width = window.innerWidth;
+  masonryColumnCount.value = width <= 420 ? 1 : width <= 640 ? 2 : width <= 900 ? 3 : 5;
 }
 
 function setupLoadMoreObserver(target: HTMLElement | null) {
@@ -130,11 +147,14 @@ onMounted(() => {
   loadModels();
   loadTags();
   loadTemplates();
+  syncMasonryColumnCount();
+  window.addEventListener("resize", syncMasonryColumnCount);
 });
 
 onBeforeUnmount(() => {
   loadMoreObserver?.disconnect();
   loadMoreObserver = null;
+  window.removeEventListener("resize", syncMasonryColumnCount);
 });
 
 watch(loadMoreAnchor, (target) => {
@@ -184,23 +204,40 @@ watch(loadMoreAnchor, (target) => {
         <a-empty description="暂无创意模版" />
       </div>
 
-      <TransitionGroup v-else name="template-card" tag="div" class="masonry">
-        <div
-          v-for="(item, index) in templates"
-          :key="item.id"
-          class="template-card"
-          :style="{ '--template-card-delay': `${Math.min(index, 9) * 45}ms` }"
-          @click="openDetail(item.id)"
+      <div
+        v-else
+        class="masonry"
+        :style="{ '--masonry-columns': String(masonryColumnCount) }"
+      >
+        <TransitionGroup
+          v-for="(column, columnIndex) in masonryColumns"
+          :key="`masonry-column-${columnIndex}-${masonryColumnCount}`"
+          name="template-card"
+          tag="div"
+          class="masonry-column"
         >
-          <div class="template-cover">
-            <img v-if="item.result_image" :src="resolveImageUrl(item.result_image_thumb || item.result_image)" alt="模版结果图" loading="lazy" />
-            <div v-else class="template-cover-empty">暂无结果图</div>
-            <div class="template-overlay">
-              <div class="template-overlay-text">查看详情</div>
+          <div
+            v-for="{ item, index } in column"
+            :key="item.id"
+            class="template-card"
+            :style="{ '--template-card-delay': `${Math.min(index, 9) * 45}ms` }"
+            @click="openDetail(item.id)"
+          >
+            <div class="template-cover">
+              <img
+                v-if="item.result_image"
+                :src="resolveImageUrl(item.result_image_thumb || item.result_image)"
+                alt="模版结果图"
+                loading="lazy"
+              />
+              <div v-else class="template-cover-empty">暂无结果图</div>
+              <div class="template-overlay">
+                <div class="template-overlay-text">查看详情</div>
+              </div>
             </div>
           </div>
-        </div>
-      </TransitionGroup>
+        </TransitionGroup>
+      </div>
     </a-spin>
 
     <div v-if="loadingMore" class="templates-load-more-tip">
@@ -229,6 +266,9 @@ watch(loadMoreAnchor, (target) => {
 
 <style scoped lang="scss">
 .templates-page {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: calc(100vh - 120px);
   animation: templates-page-enter var(--motion-duration-reveal) ease both;
 }
@@ -322,16 +362,34 @@ watch(loadMoreAnchor, (target) => {
   }
 }
 
+:deep(.ant-spin-nested-loading),
+:deep(.ant-spin-container) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
 .masonry {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 18px;
+  width: 100%;
+  box-sizing: border-box;
+  grid-template-columns: repeat(var(--masonry-columns), minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.masonry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .template-card {
   position: relative;
+  width: 100%;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid #f0dfbe;
   background: #fff8ec;
   cursor: pointer;
@@ -391,13 +449,11 @@ watch(loadMoreAnchor, (target) => {
   position: relative;
   overflow: hidden;
   background: #fff8ec;
-  aspect-ratio: 3 / 4;
 
   img {
     width: 100%;
-    height: 100%;
+    height: auto;
     display: block;
-    object-fit: cover;
     transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 }
@@ -405,11 +461,14 @@ watch(loadMoreAnchor, (target) => {
 .template-cover-empty,
 .detail-result-empty {
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #a88e68;
+}
+
+.template-cover-empty {
+  aspect-ratio: 3 / 4;
 }
 
 .template-overlay {
@@ -728,15 +787,9 @@ watch(loadMoreAnchor, (target) => {
   }
 }
 
-@media (max-width: 1200px) {
-  .masonry {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 900px) {
   .masonry {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .detail-layout {
@@ -753,11 +806,17 @@ watch(loadMoreAnchor, (target) => {
   .detail-result-card.single {
     height: clamp(360px, 60vh, 520px);
   }
+
+  .templates-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 @media (max-width: 640px) {
-  .masonry {
-    grid-template-columns: 1fr;
+  .masonry,
+  .masonry-column {
+    gap: 8px;
   }
 
   .detail-result-card.single {
@@ -765,10 +824,4 @@ watch(loadMoreAnchor, (target) => {
   }
 }
 
-@media (max-width: 900px) {
-  .templates-topbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
 </style>
