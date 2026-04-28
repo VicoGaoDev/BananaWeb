@@ -10,23 +10,35 @@ class TemplateRepository {
 
   final Dio _dio;
 
-  Future<TemplateHomeData> getHomeData() async {
+  Future<List<TemplateTag>> fetchTags() async {
     try {
-      final tagsResponse = await _dio.get<List<dynamic>>('/templates/tags');
-      final templatesResponse = await _dio.get<Map<String, dynamic>>(
-        '/templates',
-        queryParameters: {
-          'page': 1,
-          'page_size': 20,
-        },
-      );
+      final response = await _dio.get<List<dynamic>>('/templates/tags');
+      return (response.data ?? [])
+          .map((item) => TemplateTag.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (error) {
+      throw AppException.fromDioException(error);
+    }
+  }
 
-      return TemplateHomeData(
-        tags: (tagsResponse.data ?? [])
-            .map((item) => TemplateTag.fromJson(item as Map<String, dynamic>))
-            .toList(),
-        templates: TemplateListResponse.fromJson(templatesResponse.data ?? {}).items,
+  Future<TemplateListResponse> fetchTemplatesPage({
+    required int page,
+    int pageSize = 20,
+    int? tagId,
+  }) async {
+    try {
+      final queryParameters = <String, dynamic>{
+        'page': page,
+        'page_size': pageSize,
+      };
+      if (tagId != null) {
+        queryParameters['tag_id'] = tagId;
+      }
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/templates',
+        queryParameters: queryParameters,
       );
+      return TemplateListResponse.fromJson(response.data ?? {});
     } on DioException catch (error) {
       throw AppException.fromDioException(error);
     }
@@ -44,10 +56,6 @@ class TemplateRepository {
 
 final templateRepositoryProvider = Provider<TemplateRepository>((ref) {
   return TemplateRepository(ref.watch(dioProvider));
-});
-
-final templateHomeProvider = FutureProvider<TemplateHomeData>((ref) async {
-  return ref.watch(templateRepositoryProvider).getHomeData();
 });
 
 final templateDetailProvider =

@@ -11,6 +11,7 @@ import '../../features/home/presentation/home_shell_page.dart';
 import '../../features/image_preview/presentation/image_preview_page.dart';
 import '../../features/profile/presentation/profile_info_page.dart';
 import '../../features/templates/presentation/template_detail_page.dart';
+import 'app_page_transitions.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -18,61 +19,78 @@ class AppRouter {
     routes: [
       GoRoute(
         path: '/welcome',
-        builder: (context, state) => const WelcomePage(),
+        pageBuilder: (context, state) =>
+            AppPageTransitions.fadeThrough(state, const WelcomePage()),
       ),
       GoRoute(
         path: '/',
-        builder: (context, state) => const HomeShellPage(),
+        pageBuilder: (context, state) =>
+            AppPageTransitions.fadeThrough(state, const HomeShellPage()),
       ),
       GoRoute(
         path: '/login',
-        builder: (context, state) => const LoginPage(),
+        pageBuilder: (context, state) =>
+            AppPageTransitions.fadeThrough(state, const LoginPage()),
       ),
       GoRoute(
         path: '/history',
-        builder: (context, state) => const HistoryPage(),
+        pageBuilder: (context, state) =>
+            AppPageTransitions.fadeThrough(state, const HistoryPage()),
       ),
       GoRoute(
         path: '/history/detail',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final item = state.extra as UserHistoryCardItem?;
           if (item == null) {
-            return const HistoryPage();
+            return AppPageTransitions.fadeThrough(state, const HistoryPage());
           }
-          return HistoryDetailPage(item: item);
+          return AppPageTransitions.fadeThrough(
+            state,
+            HistoryDetailPage(item: item),
+          );
         },
       ),
       GoRoute(
         path: '/preview',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
-          return ImagePreviewPage(
-            imageUrl: extra?['url'] as String? ?? '',
-            title: extra?['title'] as String? ?? '图片预览',
+          return AppPageTransitions.fadeThrough(
+            state,
+            ImagePreviewPage(
+              imageUrl: extra?['url'] as String? ?? '',
+              title: extra?['title'] as String? ?? '图片预览',
+            ),
           );
         },
       ),
       GoRoute(
         path: '/generate/result',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final task = state.extra as TaskResult?;
           if (task == null) {
-            return const HomeShellPage();
+            return AppPageTransitions.fadeThrough(state, const HomeShellPage());
           }
-          return GenerateResultPage(task: task);
+          return AppPageTransitions.fadeThrough(
+            state,
+            GenerateResultPage(task: task),
+          );
         },
       ),
       GoRoute(
         path: '/templates/:templateId',
-        builder: (context, state) {
-          return TemplateDetailPage(
-            templateId: state.pathParameters['templateId'] ?? 'unknown',
+        pageBuilder: (context, state) {
+          return AppPageTransitions.fadeThrough(
+            state,
+            TemplateDetailPage(
+              templateId: state.pathParameters['templateId'] ?? 'unknown',
+            ),
           );
         },
       ),
       GoRoute(
         path: '/profile/info',
-        builder: (context, state) => const ProfileInfoPage(),
+        pageBuilder: (context, state) =>
+            AppPageTransitions.fadeThrough(state, const ProfileInfoPage()),
       ),
     ],
   );

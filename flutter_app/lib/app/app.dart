@@ -15,7 +15,17 @@ class BananaApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Banana App',
       debugShowCheckedModeBanner: !environment.isProduction,
-      theme: AppTheme.light(),
+      theme: AppTheme.light().copyWith(
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+      ),
       routerConfig: router,
     );
   }

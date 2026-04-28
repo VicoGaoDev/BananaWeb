@@ -26,4 +26,17 @@ class ImageUrlResolver {
     }
     return '$base/$imageUrl';
   }
+
+  /// Prefer CDN zoom thumbnail ([thumbUrl]), then [previewUrl], then original.
+  /// Use for all in-app image loading unless a full-size URL is explicitly required.
+  String resolveThumbnailLayers({
+    String thumbUrl = '',
+    String previewUrl = '',
+    String imageUrl = '',
+  }) {
+    final raw = thumbUrl.isNotEmpty
+        ? thumbUrl
+        : (previewUrl.isNotEmpty ? previewUrl : imageUrl);
+    return resolve(raw);
+  }
 }

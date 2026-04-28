@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/app_providers.dart';
+import '../../../shared/widgets/smooth_async_switcher.dart';
 import '../../generate/data/task_scene_models.dart';
 import '../../generate/data/task_scene_repository.dart';
 import '../../generate/presentation/generate_draft_controller.dart';
 import '../../home/presentation/home_shell_controller.dart';
+import '../data/template_models.dart';
 import '../data/template_repository.dart';
 
 String _modelDisplayName(String modelKey, List<TaskSceneConfig> scenes) {
@@ -19,6 +21,17 @@ String _modelDisplayName(String modelKey, List<TaskSceneConfig> scenes) {
     }
   }
   return modelKey;
+}
+
+TextStyle _promptDetailStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  final base = theme.textTheme.bodyLarge ?? theme.textTheme.bodyMedium ?? const TextStyle();
+  final size = (base.fontSize ?? 16.0) - 2.0;
+  return base.copyWith(
+    fontSize: size < 10 ? 10 : size,
+    color: theme.colorScheme.onSurface,
+    height: 1.45,
+  );
 }
 
 class TemplateDetailPage extends ConsumerWidget {
@@ -71,21 +84,23 @@ class TemplateDetailPage extends ConsumerWidget {
       );
     }
 
-    return ref.watch(templateDetailProvider(parsedId)).when(
-          loading: () => Scaffold(
+    final detailAsync = ref.watch(templateDetailProvider(parsedId));
+
+    return SmoothAsyncSwitcher<CreativeTemplate>(
+      asyncValue: detailAsync,
+      loading: () => Scaffold(
             appBar: appBar,
             body: const Center(child: CircularProgressIndicator()),
           ),
-          error: (error, _) => Scaffold(
+      error: (error, _) => Scaffold(
             appBar: appBar,
             body: Center(child: Text('模板加载失败：$error')),
           ),
-          data: (template) {
-            final coverUrl = imageResolver.resolve(
-              template.resultImage.isNotEmpty
-                  ? template.resultImage
-                  : template.resultImageThumb,
-            );
+      data: (template) {
+    final coverUrl = imageResolver.resolveThumbnailLayers(
+      thumbUrl: template.resultImageThumb,
+      imageUrl: template.resultImage,
+    );
             final modelLabel = scenesAsync.maybeWhen(
               data: (scenes) => _modelDisplayName(template.model, scenes),
               orElse: () => template.model,
@@ -153,12 +168,21 @@ class TemplateDetailPage extends ConsumerWidget {
                             .toList(),
                       ),
                     ),
-                  Text(
-                    template.prompt.isEmpty ? '未命名模板' : template.prompt,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          height: 1.45,
-                        ),
+                  Container(
+                    height: 112,
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Text(
+                        template.prompt.isEmpty ? '未命名模板' : template.prompt,
+                        style: _promptDetailStyle(context),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -258,8 +282,8 @@ class TemplateDetailPage extends ConsumerWidget {
                 ),
               ),
             );
-          },
-        );
+      },
+    );
   }
 }
 

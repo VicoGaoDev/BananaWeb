@@ -17,8 +17,10 @@ class HistoryDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final imageResolver = ref.watch(imageUrlResolverProvider);
-    final previewUrl = imageResolver.resolve(
-      item.previewUrl.isNotEmpty ? item.previewUrl : item.imageUrl,
+    final previewUrl = imageResolver.resolveThumbnailLayers(
+      thumbUrl: item.thumbUrl,
+      previewUrl: item.previewUrl,
+      imageUrl: item.imageUrl,
     );
 
     return Scaffold(
@@ -170,8 +172,10 @@ class HistoryDetailPage extends ConsumerWidget {
                 separatorBuilder: (context, index) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   final image = item.images[index];
-                  final url = imageResolver.resolve(
-                    image.previewUrl.isNotEmpty ? image.previewUrl : image.imageUrl,
+                  final url = imageResolver.resolveThumbnailLayers(
+                    thumbUrl: image.thumbUrl,
+                    previewUrl: image.previewUrl,
+                    imageUrl: image.imageUrl,
                   );
                   return InkWell(
                     borderRadius: BorderRadius.circular(14),

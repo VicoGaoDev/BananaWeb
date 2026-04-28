@@ -15,24 +15,29 @@ class ProfileInfoPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('个人信息'),
+        title: Text(
+          '个人信息',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+        ),
         centerTitle: true,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 20),
         children: [
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _ProfileInfoTile(
             label: '头像',
             trailing: CircleAvatar(
-              radius: 20,
+              radius: 18,
               backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundImage: user?.avatarUrl.isNotEmpty == true
                   ? CachedNetworkImageProvider(user!.avatarUrl)
                   : null,
               child: user?.avatarUrl.isNotEmpty == true
                   ? null
-                  : const Icon(Icons.person_outline, size: 18),
+                  : const Icon(Icons.person_outline, size: 16),
             ),
           ),
           _ProfileInfoTile(
@@ -64,20 +69,22 @@ class ProfileInfoPage extends ConsumerWidget {
                   }
                 : null,
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 28),
           Center(
             child: Text(
               '版本 1.0.0',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Center(
             child: Text(
               '用户协议 | 隐私政策',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
@@ -105,9 +112,9 @@ class _ProfileInfoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
@@ -118,19 +125,23 @@ class _ProfileInfoTile extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: Theme.of(context).textTheme.bodyLarge,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
             if (value != null && value!.isNotEmpty)
               Text(
                 value!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
               ),
             if (trailing != null) trailing!,
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, size: 20),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),

@@ -27,12 +27,24 @@ class HistoryRepository {
       throw AppException.fromDioException(error);
     }
   }
+
+  Future<void> deleteTask(int taskId) async {
+    try {
+      await _dio.delete<void>('/history/tasks/$taskId');
+    } on DioException catch (error) {
+      throw AppException.fromDioException(error);
+    }
+  }
+
+  Future<void> deletePromptHistoryItem(int historyId) async {
+    try {
+      await _dio.delete<void>('/auth/prompt-history/$historyId');
+    } on DioException catch (error) {
+      throw AppException.fromDioException(error);
+    }
+  }
 }
 
 final historyRepositoryProvider = Provider<HistoryRepository>((ref) {
   return HistoryRepository(ref.watch(dioProvider));
-});
-
-final userHistoryProvider = FutureProvider<UserHistoryResponse>((ref) async {
-  return ref.watch(historyRepositoryProvider).fetchHistory();
 });

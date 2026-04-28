@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../generate/presentation/generate_page.dart';
+import '../../history/presentation/history_tasks_panel.dart';
 import '../../profile/presentation/profile_page.dart';
 import 'home_page.dart';
 import 'home_shell_controller.dart';
@@ -19,51 +20,73 @@ class HomeShellPage extends ConsumerWidget {
     final currentIndex = ref.watch(homeTabIndexProvider);
 
     return Scaffold(
+      extendBody: true,
+      drawer: Drawer(
+        width: MediaQuery.sizeOf(context).width * 4 / 5,
+        child: const HistoryTasksDrawer(),
+      ),
       body: SafeArea(
         bottom: false,
-        child: IndexedStack(
-          index: currentIndex,
-          children: pages,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            for (var i = 0; i < pages.length; i++)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: currentIndex != i,
+                  child: AnimatedOpacity(
+                    opacity: currentIndex == i ? 1 : 0,
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeOutCubic,
+                    child: pages[i],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 16,
-                offset: const Offset(0, 7),
+      bottomNavigationBar: Material(
+        elevation: 0,
+        color: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        child: SafeArea(
+          top: false,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surface
+                  .withValues(alpha: 0.8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9.6),
+              child: Row(
+                children: [
+                  _NavItem(
+                    label: '模板',
+                    icon: Icons.grid_view_rounded,
+                    selected: currentIndex == 0,
+                    onTap: () =>
+                        ref.read(homeTabIndexProvider.notifier).state = 0,
+                  ),
+                  _NavItem(
+                    label: '创作',
+                    icon: Icons.brush_outlined,
+                    selected: currentIndex == 1,
+                    onTap: () =>
+                        ref.read(homeTabIndexProvider.notifier).state = 1,
+                  ),
+                  _NavItem(
+                    label: '我的',
+                    icon: Icons.person_outline_rounded,
+                    selected: currentIndex == 2,
+                    onTap: () =>
+                        ref.read(homeTabIndexProvider.notifier).state = 2,
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              _NavItem(
-                label: '模板',
-                icon: Icons.grid_view_rounded,
-                selected: currentIndex == 0,
-                onTap: () => ref.read(homeTabIndexProvider.notifier).state = 0,
-              ),
-              _NavItem(
-                label: '创作',
-                icon: Icons.brush_outlined,
-                selected: currentIndex == 1,
-                onTap: () => ref.read(homeTabIndexProvider.notifier).state = 1,
-              ),
-              _NavItem(
-                label: '我的',
-                icon: Icons.person_outline_rounded,
-                selected: currentIndex == 2,
-                onTap: () => ref.read(homeTabIndexProvider.notifier).state = 2,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -90,37 +113,37 @@ class _NavItem extends StatelessWidget {
 
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4.8),
           decoration: BoxDecoration(
             color: Colors.transparent,
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                width: 24,
-                height: 24,
+                width: 28.8,
+                height: 28.8,
                 decoration: BoxDecoration(
                   color: selected
                       ? theme.colorScheme.surfaceContainerHighest
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(9.6),
                 ),
                 child: Icon(
                   icon,
-                  size: 16,
+                  size: 19.2,
                   color: selected
                       ? theme.colorScheme.onSurface
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 2.4),
               Text(
                 label,
                 style: theme.textTheme.labelSmall?.copyWith(

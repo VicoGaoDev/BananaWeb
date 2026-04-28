@@ -19,10 +19,10 @@ class GenerateResultPage extends ConsumerWidget {
     final imageResolver = ref.watch(imageUrlResolverProvider);
     final primaryImage = task.images.isEmpty
         ? ''
-        : imageResolver.resolve(
-            task.images.first.previewUrl.isNotEmpty
-                ? task.images.first.previewUrl
-                : task.images.first.imageUrl,
+        : imageResolver.resolveThumbnailLayers(
+            thumbUrl: task.images.first.thumbUrl,
+            previewUrl: task.images.first.previewUrl,
+            imageUrl: task.images.first.imageUrl,
           );
 
     return Scaffold(
@@ -120,8 +120,10 @@ class GenerateResultPage extends ConsumerWidget {
                 separatorBuilder: (context, index) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   final image = task.images[index];
-                  final imageUrl = imageResolver.resolve(
-                    image.previewUrl.isNotEmpty ? image.previewUrl : image.imageUrl,
+                  final imageUrl = imageResolver.resolveThumbnailLayers(
+                    thumbUrl: image.thumbUrl,
+                    previewUrl: image.previewUrl,
+                    imageUrl: image.imageUrl,
                   );
                   return InkWell(
                     borderRadius: BorderRadius.circular(14),

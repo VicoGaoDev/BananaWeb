@@ -1,12 +1,12 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.history import UserHistoryResponse
-from app.services.history_service import get_user_history
+from app.services.history_service import delete_user_history_task, get_user_history
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
@@ -36,3 +36,14 @@ def list_history(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+@router.delete("/tasks/{task_id}")
+def delete_history_task(
+    task_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not delete_user_history_task(db, user.id, task_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"ok": True}

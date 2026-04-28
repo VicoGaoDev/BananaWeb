@@ -11,66 +11,117 @@ class ProfilePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
 
-    if (authState.isInitializing) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.02),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      child: authState.isInitializing
+          ? const KeyedSubtree(
+              key: ValueKey('profile_init'),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : KeyedSubtree(
+              key: const ValueKey('profile_list'),
+              child: _ProfileContent(authState: authState),
+            ),
+    );
+  }
+}
 
+class _ProfileContent extends ConsumerWidget {
+  const _ProfileContent({required this.authState});
+
+  final AuthState authState;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final user = authState.user;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
       children: [
         InkWell(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           onTap: () => context.push('/profile/info'),
           child: Row(
             children: [
               CircleAvatar(
-                radius: 26,
+                radius: 22,
                 backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Text(
                   (user?.username.isNotEmpty ?? false)
                       ? user!.username.characters.first.toUpperCase()
                       : 'U',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       user?.username ?? '未登录用户',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       'ID: ${user?.id ?? 0}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: Colors.black,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Icon(Icons.bolt_rounded, color: Colors.black, size: 22),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,13 +130,13 @@ class ProfilePage extends ConsumerWidget {
                       '剩余积分',
                       style: TextStyle(
                         color: Colors.white70,
-                        fontSize: 13,
+                        fontSize: 12,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       '${user?.credits ?? 0}',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                           ),
@@ -102,27 +153,28 @@ class ProfilePage extends ConsumerWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
-                  minimumSize: const Size(82, 40),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: const Size(72, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  textStyle: Theme.of(context).textTheme.labelLarge,
                 ),
                 child: const Text('充值'),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           ),
           child: Column(
             children: [
               _ProfileEntry(
                 icon: Icons.receipt_long_outlined,
-                label: '积分记录',
+                label: '历史任务',
                 onTap: authState.isAuthenticated ? () => context.push('/history') : null,
               ),
               _ProfileEntry(
@@ -153,14 +205,26 @@ class ProfilePage extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         if (!authState.isAuthenticated)
           FilledButton(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 18),
+              textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
             onPressed: () => context.push('/login'),
             child: const Text('登录 / 注册'),
           )
         else
           OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 18),
+              textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
             onPressed: () async {
               await ref.read(authControllerProvider.notifier).logout();
             },
@@ -187,10 +251,10 @@ class _ProfileEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Container(
           decoration: BoxDecoration(
             border: isLast
@@ -199,26 +263,30 @@ class _ProfileEntry extends StatelessWidget {
                     bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                   ),
           ),
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 12),
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 18),
+                child: Icon(icon, size: 16),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   label,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),
