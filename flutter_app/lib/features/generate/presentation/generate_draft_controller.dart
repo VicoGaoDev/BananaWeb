@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../../templates/data/template_models.dart';
+import '../data/task_scene_models.dart';
 
 class GenerateDraftState {
   const GenerateDraftState({
@@ -54,7 +55,7 @@ class GenerateDraftController extends StateNotifier<GenerateDraftState> {
     state = GenerateDraftState(
       prompt: template.prompt,
       model: template.model,
-      numImages: template.numImages,
+      numImages: template.numImages.clamp(1, 4),
       size: template.size,
       resolution: template.resolution,
       customSize: template.customSize,
@@ -72,7 +73,7 @@ class GenerateDraftController extends StateNotifier<GenerateDraftState> {
   }
 
   void updateNumImages(int value) {
-    state = state.copyWith(numImages: value);
+    state = state.copyWith(numImages: value.clamp(1, 4));
   }
 
   void updateSize(String value) {
@@ -96,6 +97,42 @@ class GenerateDraftController extends StateNotifier<GenerateDraftState> {
       model: state.model.isEmpty ? (model ?? state.model) : state.model,
       size: state.size.isEmpty ? (size ?? state.size) : state.size,
       resolution: state.resolution.isEmpty ? (resolution ?? state.resolution) : state.resolution,
+    );
+  }
+
+  /// 按场景的 hide_* 与选项列表同步草稿（与 Web GenerateView 一致）。
+  void applySceneDefaults(TaskSceneConfig scene) {
+    var model = state.model.isEmpty ? scene.sceneKey : state.model;
+
+    var size = state.size;
+    if (scene.hideAspectRatio || scene.aspectRatioOptions.isEmpty) {
+      size = '';
+    } else if (size.isEmpty ||
+        !scene.aspectRatioOptions.any((o) => o.value == size)) {
+      size = scene.aspectRatioOptions.first.value;
+    }
+
+    var resolution = state.resolution;
+    if (scene.hideResolution || scene.imageSizeOptions.isEmpty) {
+      resolution = '';
+    } else if (resolution.isEmpty ||
+        !scene.imageSizeOptions.any((o) => o.value == resolution)) {
+      resolution = scene.imageSizeOptions.first.value;
+    }
+
+    var customSize = state.customSize;
+    if (scene.hideCustomSize || scene.customSizeOptions.isEmpty) {
+      customSize = '';
+    } else if (customSize.isEmpty ||
+        !scene.customSizeOptions.any((o) => o.value == customSize)) {
+      customSize = scene.customSizeOptions.first.value;
+    }
+
+    state = state.copyWith(
+      model: model,
+      size: size,
+      resolution: resolution,
+      customSize: customSize,
     );
   }
 

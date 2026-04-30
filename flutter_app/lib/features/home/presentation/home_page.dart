@@ -69,9 +69,8 @@ class _HomePageState extends ConsumerState<HomePage> {
             onHistory: () {
               if (taskFlow.isPolling) {
                 ref.read(taskControllerProvider.notifier).pollOnce();
-              } else {
-                Scaffold.of(context).openDrawer();
               }
+              Scaffold.of(context).openDrawer();
             },
             creditsValue: authState.user?.credits ?? 0,
             authenticated: authState.isAuthenticated,

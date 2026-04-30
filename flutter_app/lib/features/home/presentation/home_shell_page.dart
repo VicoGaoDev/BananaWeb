@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/presentation/auth_controller.dart';
 import '../../generate/presentation/generate_page.dart';
+import '../../generate/presentation/task_controller.dart';
+import '../../history/presentation/history_list_controller.dart';
 import '../../history/presentation/history_tasks_panel.dart';
 import '../../profile/presentation/profile_page.dart';
 import 'home_page.dart';
@@ -12,6 +15,12 @@ class HomeShellPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<TaskFlowState>(taskControllerProvider, (previous, next) {
+      if (previous?.isPolling != true || next.isPolling) return;
+      if (!ref.read(authControllerProvider).isAuthenticated) return;
+      ref.read(historyListControllerProvider.notifier).refresh();
+    });
+
     const pages = [
       HomePage(),
       GeneratePage(),

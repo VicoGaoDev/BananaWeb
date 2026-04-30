@@ -9,6 +9,7 @@ import '../../../core/network/app_exception.dart';
 import '../../../core/network/image_url_resolver.dart';
 import '../../../shared/widgets/smooth_child_switcher.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../generate/presentation/generate_chat_turns_controller.dart';
 import '../../generate/presentation/task_controller.dart';
 import '../../home/presentation/home_shell_controller.dart';
 import '../data/history_models.dart';
@@ -178,7 +179,21 @@ class _HistoryTasksPanelState extends ConsumerState<HistoryTasksPanel> {
     await ref.read(historyListControllerProvider.notifier).refresh();
     await ref.read(authControllerProvider.notifier).refreshMe();
     if (ok) {
+      final ids = ref.read(taskControllerProvider).activeTaskIds;
+      ref.read(generateChatTurnsProvider.notifier).appendRunning(
+            item.prompt.trim(),
+            ids,
+            slotCount: n.clamp(1, 4),
+            aspectRatio: layoutAspectRatioFromSizeParams(
+              item.size,
+              item.customSize,
+            ),
+          );
       ref.read(homeTabIndexProvider.notifier).state = 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        Scaffold.maybeOf(context)?.closeDrawer();
+      });
     }
   }
 
@@ -499,7 +514,8 @@ class _HistoryTaskTile extends StatelessWidget {
     final cardColor = theme.colorScheme.surfaceContainerHighest;
     final thumbBg = theme.colorScheme.surface;
     final timeLabel = _formatHistoryTaskTime(item.createdAt);
-    final hasImage = item.thumbUrl.isNotEmpty ||
+    final isFailed = item.status.toLowerCase() == 'failed';
+    final hasImage = !isFailed &&
         item.previewUrl.isNotEmpty ||
         item.imageUrl.isNotEmpty;
     final imageUrl = hasImage
@@ -521,34 +537,45 @@ class _HistoryTaskTile extends StatelessWidget {
           children: [
             Expanded(
               child: InkWell(
-                onTap: onOpenDetail,
+                onTap: isFailed ? null : onOpenDetail,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
                       width: _historyTaskCardHeight,
-                      child: ColoredBox(
-                        color: thumbBg,
-                        child: hasImage && imageUrl.isNotEmpty
-                            ? Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Center(
-                                  child: Icon(
-                                    Icons.history,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    size: 24,
-                                  ),
-                                ),
-                              )
-                            : Center(
+                      child: isFailed
+                          ? ColoredBox(
+                              color: const Color(0xFFEF9A9A),
+                              child: const Center(
                                 child: Icon(
-                                  Icons.history,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  size: 24,
+                                  Icons.close_rounded,
+                                  color: Colors.white,
+                                  size: 28,
                                 ),
                               ),
-                      ),
+                            )
+                          : ColoredBox(
+                              color: thumbBg,
+                              child: hasImage && imageUrl.isNotEmpty
+                                  ? Image.network(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Center(
+                                        child: Icon(
+                                          Icons.history,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Icon(
+                                        Icons.history,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                        size: 24,
+                                      ),
+                                    ),
+                            ),
                     ),
                     Expanded(
                       child: Padding(

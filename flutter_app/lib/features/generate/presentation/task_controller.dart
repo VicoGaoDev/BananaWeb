@@ -14,7 +14,6 @@ class TaskFlowState {
     this.activeTaskIds = const [],
     this.tasks = const [],
     this.errorMessage,
-    this.infoMessage,
   });
 
   final bool isSubmitting;
@@ -22,7 +21,6 @@ class TaskFlowState {
   final List<int> activeTaskIds;
   final List<TaskResult> tasks;
   final String? errorMessage;
-  final String? infoMessage;
 
   TaskResult? get latestTask => tasks.isEmpty ? null : tasks.first;
 
@@ -32,9 +30,7 @@ class TaskFlowState {
     List<int>? activeTaskIds,
     List<TaskResult>? tasks,
     String? errorMessage,
-    String? infoMessage,
     bool clearError = false,
-    bool clearInfo = false,
   }) {
     return TaskFlowState(
       isSubmitting: isSubmitting ?? this.isSubmitting,
@@ -42,7 +38,6 @@ class TaskFlowState {
       activeTaskIds: activeTaskIds ?? this.activeTaskIds,
       tasks: tasks ?? this.tasks,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-      infoMessage: clearInfo ? null : (infoMessage ?? this.infoMessage),
     );
   }
 }
@@ -71,7 +66,6 @@ class TaskController extends StateNotifier<TaskFlowState> {
     state = state.copyWith(
       isSubmitting: true,
       clearError: true,
-      clearInfo: true,
     );
 
     try {
@@ -98,7 +92,6 @@ class TaskController extends StateNotifier<TaskFlowState> {
         isPolling: true,
         activeTaskIds: result.taskIds,
         tasks: const [],
-        infoMessage: '任务已提交，正在轮询结果...',
       );
 
       await pollOnce();
@@ -130,7 +123,6 @@ class TaskController extends StateNotifier<TaskFlowState> {
       state = state.copyWith(
         tasks: tasks,
         isPolling: !allTerminal,
-        infoMessage: allTerminal ? '任务已完成。' : '任务进行中...',
         clearError: true,
       );
 
@@ -143,7 +135,7 @@ class TaskController extends StateNotifier<TaskFlowState> {
   }
 
   void clearMessages() {
-    state = state.copyWith(clearError: true, clearInfo: true);
+    state = state.copyWith(clearError: true);
   }
 
   void _startPolling() {
