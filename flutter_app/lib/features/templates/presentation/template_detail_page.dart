@@ -1,37 +1,50 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/app_providers.dart';
+import '../../../core/theme/app_typography_extension.dart';
 import '../../../shared/widgets/smooth_async_switcher.dart';
-import '../../generate/data/task_scene_models.dart';
-import '../../generate/data/task_scene_repository.dart';
 import '../../generate/presentation/generate_draft_controller.dart';
 import '../../home/presentation/home_shell_controller.dart';
 import '../data/template_models.dart';
 import '../data/template_repository.dart';
 
-String _modelDisplayName(String modelKey, List<TaskSceneConfig> scenes) {
-  if (modelKey.isEmpty) return '';
-  for (final s in scenes) {
-    if (s.sceneKey == modelKey) {
-      if (s.displayName.isNotEmpty) return s.displayName;
-      if (s.sceneLabel.isNotEmpty) return s.sceneLabel;
-    }
+/// 提示词区域：高度为 1～3 行（按实际换行）；超过三行时用三行可视高度并可滚动。
+({double height, bool scrollable}) _measurePromptArea(
+  BuildContext context,
+  String text,
+  TextStyle style,
+  double maxWidth,
+) {
+  if (!(maxWidth > 0 && maxWidth.isFinite)) {
+    final scale = MediaQuery.textScalerOf(context).scale(1);
+    final oneLine =
+        ((style.fontSize ?? 14) * (style.height ?? 1.45) * scale).clamp(8.0, double.infinity);
+    return (height: oneLine, scrollable: false);
   }
-  return modelKey;
-}
 
-TextStyle _promptDetailStyle(BuildContext context) {
-  final theme = Theme.of(context);
-  final base = theme.textTheme.bodyLarge ?? theme.textTheme.bodyMedium ?? const TextStyle();
-  final size = (base.fontSize ?? 16.0) - 2.0;
-  return base.copyWith(
-    fontSize: size < 10 ? 10 : size,
-    color: theme.colorScheme.onSurface,
-    height: 1.45,
-  );
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout(maxWidth: maxWidth);
+
+  final metrics = painter.computeLineMetrics();
+  final lineCount = math.max(1, metrics.length);
+
+  if (lineCount <= 3) {
+    return (height: painter.height, scrollable: false);
+  }
+
+  var sum = 0.0;
+  for (var i = 0; i < math.min(3, metrics.length); i++) {
+    sum += metrics[i].height;
+  }
+  return (height: sum, scrollable: true);
 }
 
 class TemplateDetailPage extends ConsumerWidget {
@@ -46,40 +59,21 @@ class TemplateDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final parsedId = int.tryParse(templateId);
     final imageResolver = ref.watch(imageUrlResolverProvider);
-    final scenesAsync = ref.watch(taskSceneListProvider);
-
-    final appBar = AppBar(
-      title: const Text(''),
-      centerTitle: true,
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('分享功能暂未接入')),
-                );
-              },
-              icon: const Icon(Icons.ios_share_outlined, size: 18),
-            ),
-          ),
-        ),
-      ],
-    );
 
     if (parsedId == null) {
-      return Scaffold(
-        appBar: appBar,
-        body: Center(
-          child: Text('无效的模板 ID：$templateId'),
+      return _FullscreenShell(
+        onBack: () => context.pop(),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '无效的模板 ID：$templateId',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ),
       );
     }
@@ -88,240 +82,214 @@ class TemplateDetailPage extends ConsumerWidget {
 
     return SmoothAsyncSwitcher<CreativeTemplate>(
       asyncValue: detailAsync,
-      loading: () => Scaffold(
-            appBar: appBar,
-            body: const Center(child: CircularProgressIndicator()),
+      loading: () => _FullscreenShell(
+        onBack: () => context.pop(),
+        child: const Center(child: CircularProgressIndicator(color: Colors.white70)),
+      ),
+      error: (error, _) => _FullscreenShell(
+        onBack: () => context.pop(),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '模板加载失败：$error',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+              textAlign: TextAlign.center,
+            ),
           ),
-      error: (error, _) => Scaffold(
-            appBar: appBar,
-            body: Center(child: Text('模板加载失败：$error')),
-          ),
+        ),
+      ),
       data: (template) {
-    final coverUrl = imageResolver.resolveThumbnailLayers(
-      thumbUrl: template.resultImageThumb,
-      imageUrl: template.resultImage,
-    );
-            final modelLabel = scenesAsync.maybeWhen(
-              data: (scenes) => _modelDisplayName(template.model, scenes),
-              orElse: () => template.model,
-            );
-            final modelForCopy = modelLabel.isNotEmpty
-                ? modelLabel
-                : (template.model.isEmpty ? '图像生成' : template.model);
+        final fullUrl = imageResolver.resolveFullImageLayers(
+          imageUrl: template.resultImage,
+          thumbUrl: template.resultImageThumb,
+        );
+        final promptText = template.prompt.isEmpty ? '未命名模板' : template.prompt;
+        final baseStyle = AppTypographyTokens.of(context).compactParagraph.copyWith(
+          color: Colors.white.withValues(alpha: 0.96),
+          shadows: const [
+            Shadow(
+              blurRadius: 12,
+              offset: Offset(0, 2),
+              color: Color(0x99000000),
+            ),
+          ],
+        );
 
-            return Scaffold(
-              appBar: appBar,
-              body: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                children: [
-                  if (coverUrl.isNotEmpty)
-                    InkWell(
-                      onTap: () => context.push(
-                        '/preview',
-                        extra: {
-                          'url': coverUrl,
-                          'title': '模板 ${template.id}',
-                        },
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: AspectRatio(
-                          aspectRatio: 1.18,
-                          child: CachedNetworkImage(
-                            imageUrl: coverUrl,
-                            fit: BoxFit.cover,
-                            errorWidget: (context, url, error) =>
-                                const Center(child: Icon(Icons.image_outlined, size: 32)),
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: fullUrl.isEmpty
+                    ? const ColoredBox(
+                        color: Colors.black,
+                        child: Center(
+                          child: Icon(Icons.image_not_supported_outlined,
+                              color: Colors.white38, size: 40),
+                        ),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: fullUrl,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
+                        placeholder: (context, url) => const ColoredBox(
+                          color: Colors.black,
+                          child: Center(child: CircularProgressIndicator(color: Colors.white38)),
+                        ),
+                        errorWidget: (context, url, error) => const ColoredBox(
+                          color: Colors.black,
+                          child: Center(
+                            child:
+                                Icon(Icons.broken_image_outlined, color: Colors.white38, size: 40),
                           ),
                         ),
                       ),
-                    ),
-                  if (coverUrl.isNotEmpty) const SizedBox(height: 16),
-                  if (template.tags.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: template.tags
-                            .take(3)
-                            .map(
-                              (tag) => Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  tag.name,
-                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  Container(
-                    height: 112,
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Text(
-                        template.prompt.isEmpty ? '未命名模板' : template.prompt,
-                        style: _promptDetailStyle(context),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.local_fire_department_outlined, size: 16),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${(template.id * 137).toStringAsFixed(0)} 人使用',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 3,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        template.tags.isEmpty ? '默认分类' : template.tags.first.name,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    '适合生成具有同类美感取向的内容，尤其适合 $modelForCopy 风格。',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          height: 1.55,
-                        ),
-                  ),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        _SpecRow(
-                          label: '模型',
-                          value: modelLabel.isNotEmpty ? modelLabel : template.model,
-                        ),
-                        _SpecRow(label: '尺寸', value: template.size),
-                        _SpecRow(label: '分辨率', value: template.resolution),
-                        _SpecRow(
-                          label: '标签',
-                          value: template.tags.map((tag) => tag.name).join(' / '),
-                          isLast: true,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
-              bottomNavigationBar: Material(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        offset: const Offset(0, -2),
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: IconButton(
+                      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                      icon: Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            blurRadius: 8,
+                            color: Colors.black.withValues(alpha: 0.85),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          ref
-                              .read(generateDraftControllerProvider.notifier)
-                              .applyTemplate(template);
-                          ref.read(homeTabIndexProvider.notifier).state = 1;
-                          context.go('/');
-                        },
-                        icon: const Icon(Icons.auto_awesome),
-                        label: const Text('使用模板'),
-                      ),
+                      onPressed: () => context.pop(),
                     ),
                   ),
                 ),
               ),
-            );
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final w = constraints.maxWidth;
+                            final m = _measurePromptArea(context, promptText, baseStyle, w);
+
+                            return ClipRect(
+                              child: SizedBox(
+                                height: m.height,
+                                child: SingleChildScrollView(
+                                  physics: m.scrollable
+                                      ? const BouncingScrollPhysics()
+                                      : const NeverScrollableScrollPhysics(),
+                                  padding: EdgeInsets.zero,
+                                  child: Text(promptText, style: baseStyle),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Align(
+                          child: ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(minWidth: 200, maxWidth: 360),
+                            child: Material(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(999),
+                              clipBehavior: Clip.antiAlias,
+                              elevation: 4,
+                              shadowColor: Colors.black54,
+                              child: InkWell(
+                                onTap: () {
+                                  ref
+                                      .read(generateDraftControllerProvider.notifier)
+                                      .applyTemplate(template);
+                                  ref.read(homeTabIndexProvider.notifier).state = 1;
+                                  context.go('/');
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: 14, horizontal: 32),
+                                  child: Text(
+                                    '使用模版',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
       },
     );
   }
 }
 
-class _SpecRow extends StatelessWidget {
-  const _SpecRow({
-    required this.label,
-    required this.value,
-    this.isLast = false,
+class _FullscreenShell extends StatelessWidget {
+  const _FullscreenShell({
+    required this.onBack,
+    required this.child,
   });
 
-  final String label;
-  final String value;
-  final bool isLast;
+  final VoidCallback onBack;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : Border(
-                bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-      ),
-      child: Row(
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+          child,
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: IconButton(
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  icon: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 8,
+                        color: Colors.black.withValues(alpha: 0.85),
+                      ),
+                    ],
                   ),
+                  onPressed: onBack,
+                ),
+              ),
             ),
-          ),
-          Expanded(
-            child: Text(value.isEmpty ? '-' : value),
           ),
         ],
       ),
