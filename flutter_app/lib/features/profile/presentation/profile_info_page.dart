@@ -73,8 +73,7 @@ class ProfileInfoPage extends ConsumerWidget {
           Center(
             child: Text(
               '版本 1.0.0',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),
@@ -83,8 +82,7 @@ class ProfileInfoPage extends ConsumerWidget {
           Center(
             child: Text(
               '用户协议 | 隐私政策',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
             ),

@@ -281,7 +281,7 @@ class _HistoryTasksPanelState extends ConsumerState<HistoryTasksPanel> {
         children: [
           Text(
             '历史任务',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
           ),
@@ -317,7 +317,12 @@ class _HistoryTasksPanelState extends ConsumerState<HistoryTasksPanel> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(20),
         children: [
-          Text('加载失败：${listState.error}'),
+          Text(
+            '加载失败：${listState.error}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+          ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: () => ref.read(historyListControllerProvider.notifier).loadInitial(),
@@ -330,11 +335,8 @@ class _HistoryTasksPanelState extends ConsumerState<HistoryTasksPanel> {
     final items = listState.items;
     _syncHistoryPolling(items);
     final buckets = _groupHistoryItemsByDay(items);
-    final baseSize = Theme.of(context).textTheme.titleSmall?.fontSize ?? 14;
-    final promptStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          fontSize: (baseSize - 4).clamp(10.0, double.infinity),
-        );
+    final promptStyle =
+        Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600);
 
     return RefreshIndicator(
       onRefresh: () => ref.read(historyListControllerProvider.notifier).refresh(),
@@ -428,8 +430,6 @@ List<Widget> _historySectionWidgets({
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
-              fontSize: ((Theme.of(context).textTheme.titleSmall?.fontSize ?? 14) - 1)
-                  .clamp(10.0, double.infinity),
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
       ),
@@ -594,7 +594,7 @@ class _HistoryTaskTile extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               timeLabel,
-                              style: theme.textTheme.bodySmall?.copyWith(
+                              style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
@@ -665,13 +665,6 @@ class HistoryTasksDrawer extends ConsumerWidget {
                         '历史任务',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
-                              fontSize: ((Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.fontSize ??
-                                      16) -
-                                  2)
-                                  .clamp(12.0, double.infinity),
                             ),
                       ),
                     ),

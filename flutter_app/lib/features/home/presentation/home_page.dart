@@ -111,7 +111,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          Text('模板加载失败：${homeState.error}'),
+          Text(
+            '模板加载失败：${homeState.error}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+          ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: () =>
@@ -131,6 +136,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     final selectedLabel = filterLabels[_selectedTagIndex.clamp(0, filterLabels.length - 1)];
     final templates = homeState.templates;
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return ListView(
       controller: _scrollController,
@@ -156,15 +163,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
-                    color: selected ? Colors.black : const Color(0xFFF3F3F3),
+                    color: selected ? scheme.primary : scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     filterLabels[index],
-                    style: TextStyle(
-                      color: selected ? Colors.white : const Color(0xFF555555),
+                    style: textTheme.labelMedium?.copyWith(
+                      color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      fontSize: 12,
                     ),
                   ),
                 ),

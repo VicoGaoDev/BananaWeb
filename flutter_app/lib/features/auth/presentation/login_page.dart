@@ -51,7 +51,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     width: 72,
                     height: 72,
                     decoration: BoxDecoration(
-                      color: Colors.black,
+                      color: Theme.of(context).colorScheme.primary,
                       borderRadius: BorderRadius.circular(22),
                     ),
                     child: const Icon(Icons.verified_user_outlined, color: Colors.white),
@@ -102,7 +102,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 width: 84,
                 height: 84,
                 decoration: BoxDecoration(
-                  color: Colors.black,
+                  color: Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: const Icon(Icons.auto_awesome, color: Colors.white, size: 34),
@@ -168,9 +168,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     if (authState.errorMessage != null) ...[
                       Text(
                         authState.errorMessage!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                       ),
                       const SizedBox(height: 12),
                     ],

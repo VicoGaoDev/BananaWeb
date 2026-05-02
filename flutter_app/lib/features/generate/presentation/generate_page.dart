@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/app_providers.dart';
+import '../../../core/theme/app_typography_extension.dart';
 import '../../../shared/widgets/shell_tab_header.dart';
 import '../../../shared/widgets/smooth_async_switcher.dart';
 import '../../auth/presentation/auth_controller.dart';
@@ -15,12 +16,26 @@ import 'generate_draft_controller.dart';
 import 'reference_upload_controller.dart';
 import 'task_controller.dart';
 
-TextStyle _generateCompactStyle(BuildContext context, [TextStyle? base]) {
-  final theme = Theme.of(context);
-  final b = base ?? theme.textTheme.bodyLarge ?? const TextStyle();
-  final refSize = b.fontSize ?? theme.textTheme.bodyLarge?.fontSize ?? 16.0;
-  final size = (refSize - 2.0).clamp(10.0, double.infinity);
-  return b.copyWith(fontSize: size);
+String _chatPreviewOpenUrl(GenerateChatTurnResultImage img) {
+  final f = img.fullImageUrl.trim();
+  if (f.isNotEmpty) return f;
+  return img.displayUrl.trim();
+}
+
+List<String> _chatTurnGalleryUrls(List<GenerateChatTurnResultImage> imgs) {
+  return [
+    for (final img in imgs) _chatPreviewOpenUrl(img),
+  ].where((u) => u.isNotEmpty).toList();
+}
+
+int _chatGalleryIndexForTap(List<GenerateChatTurnResultImage> imgs, int tapIndex) {
+  if (tapIndex < 0 || tapIndex >= imgs.length) return 0;
+  if (_chatPreviewOpenUrl(imgs[tapIndex]).isEmpty) return 0;
+  var g = 0;
+  for (var j = 0; j < tapIndex; j++) {
+    if (_chatPreviewOpenUrl(imgs[j]).isNotEmpty) g++;
+  }
+  return g;
 }
 
 /// 用户提示词气泡与图片区共用最大宽度（与聊天气泡上限 248 一致；窄屏随列表内宽变窄）。
@@ -262,12 +277,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
         },
         decoration: InputDecoration(
           hintText: '描述你想生成的图片...',
-          hintStyle: _generateCompactStyle(
-            context,
-            Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).hintColor,
-                ),
-          ),
+          hintStyle: AppTypographyTokens.of(context).composerBody.copyWith(
+                color: Theme.of(context).hintColor,
+              ),
           filled: false,
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
@@ -293,7 +305,7 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                   visualDensity: VisualDensity.compact,
                 ),
         ),
-        style: _generateCompactStyle(context),
+        style: AppTypographyTokens.of(context).composerBody,
       ),
     );
   }
@@ -364,7 +376,12 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                 padding: const EdgeInsets.all(16),
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  Text('配置加载失败：$error'),
+                  Text(
+                    '配置加载失败：$error',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                  ),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: () => ref.invalidate(taskSceneListProvider),
@@ -490,12 +507,12 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                       if (turn.errorMessage != null) ...[
                         Padding(
                           padding: EdgeInsets.only(
-                            bottom: turn.resultThumbUrls.isNotEmpty ? 8 : 0,
+                            bottom: turn.resultImages.isNotEmpty ? 8 : 0,
                           ),
                           child: _ErrorBubble(text: turn.errorMessage!),
                         ),
                       ],
-                      if (turn.resultThumbUrls.isNotEmpty) ...[
+                      if (turn.resultImages.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Align(
                           alignment: Alignment.centerLeft,
@@ -503,15 +520,25 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              for (final url in turn.resultThumbUrls)
+                              for (final entry in turn.resultImages.asMap().entries)
                                 _ChatResultThumb(
-                                  thumbUrl: url,
+                                  displayUrl: entry.value.displayUrl,
                                   onTap: () {
-                                    if (url.isEmpty) return;
+                                    final i = entry.key;
+                                    final galleryUrls = _chatTurnGalleryUrls(
+                                      turn.resultImages,
+                                    );
+                                    if (galleryUrls.isEmpty) return;
+                                    final u = _chatPreviewOpenUrl(turn.resultImages[i]);
+                                    if (u.isEmpty) return;
                                     context.push(
                                       '/preview',
                                       extra: {
-                                        'url': url,
+                                        'urls': galleryUrls,
+                                        'initialIndex': _chatGalleryIndexForTap(
+                                          turn.resultImages,
+                                          i,
+                                        ),
                                         'title': '生成结果',
                                       },
                                     );
@@ -528,7 +555,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                     const SizedBox(height: 8),
                     Text(
                       taskFlow.errorMessage!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                     ),
                   ],
                 ],
@@ -652,8 +681,8 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                                   Container(
                                     width: 42,
                                     height: 42,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.primary,
                                       shape: BoxShape.circle,
                                     ),
                                     child: IconButton(
@@ -665,9 +694,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                                                 selectedScene: selectedScene,
                                                 draft: draft,
                                               ),
-                                      icon: const Icon(
+                                      icon: Icon(
                                         Icons.send_rounded,
-                                        color: Colors.white,
+                                        color: Theme.of(context).colorScheme.onPrimary,
                                       ),
                                     ),
                                   ),
@@ -714,8 +743,8 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                               Container(
                                 width: 42,
                                 height: 42,
-                                decoration: const BoxDecoration(
-                                  color: Colors.black,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
                                   shape: BoxShape.circle,
                                 ),
                                 child: IconButton(
@@ -727,7 +756,10 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                                             selectedScene: selectedScene,
                                             draft: draft,
                                           ),
-                                  icon: const Icon(Icons.send_rounded, color: Colors.white),
+                                  icon: Icon(
+                                    Icons.send_rounded,
+                                    color: Theme.of(context).colorScheme.onPrimary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -797,12 +829,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                           const Spacer(),
                           Text(
                             '配置',
-                            style: _generateCompactStyle(
-                              context,
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
                           const Spacer(),
                           IconButton(
@@ -814,12 +843,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                       const SizedBox(height: 8),
                       Text(
                         '模型',
-                        style: _generateCompactStyle(
-                          context,
-                          Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
+                        style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       const SizedBox(height: 10),
                       Builder(
@@ -873,12 +899,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                       const SizedBox(height: 18),
                       Text(
                         '生图数量',
-                        style: _generateCompactStyle(
-                          context,
-                          Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
+                        style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -904,12 +927,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                         const SizedBox(height: 18),
                         Text(
                           '尺寸',
-                          style: _generateCompactStyle(
-                            context,
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                         const SizedBox(height: 10),
                         Wrap(
@@ -936,12 +956,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                         const SizedBox(height: 18),
                         Text(
                           '分辨率',
-                          style: _generateCompactStyle(
-                            context,
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                         const SizedBox(height: 10),
                         Wrap(
@@ -965,12 +982,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                       const SizedBox(height: 18),
                       Text(
                         '参考图',
-                        style: _generateCompactStyle(
-                          context,
-                          Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
+                        style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -1021,12 +1035,9 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                         const SizedBox(height: 18),
                         Text(
                           '自定义尺寸',
-                          style: _generateCompactStyle(
-                            context,
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                         const SizedBox(height: 10),
                         Builder(
@@ -1081,10 +1092,7 @@ class _GeneratePageState extends ConsumerState<GeneratePage> {
                       const SizedBox(height: 18),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                          textStyle: _generateCompactStyle(
-                            context,
-                            Theme.of(context).textTheme.labelLarge,
-                          ),
+                          textStyle: Theme.of(context).textTheme.labelLarge,
                         ),
                         onPressed: () => Navigator.of(context).pop(),
                         child: const Text('确定'),
@@ -1280,11 +1288,11 @@ class _GeneratingImageSkeleton extends StatelessWidget {
 
 class _ChatResultThumb extends StatefulWidget {
   const _ChatResultThumb({
-    required this.thumbUrl,
+    required this.displayUrl,
     required this.onTap,
   });
 
-  final String thumbUrl;
+  final String displayUrl;
   final VoidCallback onTap;
 
   @override
@@ -1306,7 +1314,7 @@ class _ChatResultThumbState extends State<_ChatResultThumb> {
   @override
   void didUpdateWidget(covariant _ChatResultThumb oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.thumbUrl != widget.thumbUrl) {
+    if (oldWidget.displayUrl != widget.displayUrl) {
       _detachListener();
       _aspectRatio = null;
       _resolveAspectRatio();
@@ -1330,9 +1338,9 @@ class _ChatResultThumbState extends State<_ChatResultThumb> {
   }
 
   void _resolveAspectRatio() {
-    if (widget.thumbUrl.isEmpty) return;
+    if (widget.displayUrl.isEmpty) return;
     _detachListener();
-    final provider = CachedNetworkImageProvider(widget.thumbUrl);
+    final provider = CachedNetworkImageProvider(widget.displayUrl);
     final stream = provider.resolve(ImageConfiguration.empty);
     _imageStreamListener = ImageStreamListener(
       (ImageInfo info, bool _) {
@@ -1384,7 +1392,7 @@ class _ChatResultThumbState extends State<_ChatResultThumb> {
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 ),
                 CachedNetworkImage(
-                  imageUrl: widget.thumbUrl,
+                  imageUrl: widget.displayUrl,
                   fit: BoxFit.contain,
                   placeholder: (context, url) => Container(
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -1409,14 +1417,13 @@ class _ChatResultThumbState extends State<_ChatResultThumb> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       '全屏',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Colors.white,
-                            fontSize: 10,
+                            color: Theme.of(context).colorScheme.onPrimary,
                           ),
                     ),
                   ),
@@ -1444,7 +1451,14 @@ class _LoadingListView extends StatelessWidget {
         const SizedBox(height: 80),
         const Center(child: CircularProgressIndicator()),
         const SizedBox(height: 16),
-        Center(child: Text(message)),
+        Center(
+          child: Text(
+            message,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ),
       ],
     );
   }
@@ -1530,7 +1544,8 @@ class _PromptBubbleActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = Colors.black45;
+    final scheme = Theme.of(context).colorScheme;
+    final iconColor = scheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -1541,7 +1556,7 @@ class _PromptBubbleActions extends StatelessWidget {
           IconButton(
             tooltip: '复制',
             onPressed: () => _copy(context),
-            icon: Icon(Icons.copy_rounded, size: 17, color: c),
+            icon: Icon(Icons.copy_rounded, size: 17, color: iconColor),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             visualDensity: VisualDensity.compact,
@@ -1551,7 +1566,7 @@ class _PromptBubbleActions extends StatelessWidget {
           IconButton(
             tooltip: '填入输入框',
             onPressed: onEdit,
-            icon: Icon(Icons.edit_rounded, size: 17, color: c),
+            icon: Icon(Icons.edit_rounded, size: 17, color: iconColor),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             visualDensity: VisualDensity.compact,
@@ -1596,11 +1611,7 @@ class _UserBubble extends StatelessWidget {
           children: [
             Text(
               text,
-              style: (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
-                  .copyWith(
-                height: 1.45,
-                color: Colors.black87,
-              ),
+              style: AppTypographyTokens.of(context).chatBubbleBody,
             ),
             _PromptBubbleActions(payload: actionPayload, onEdit: onEdit),
           ],
@@ -1639,14 +1650,10 @@ class _ExpandableUserPromptBubbleState extends State<_ExpandableUserPromptBubble
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bodyStyle = (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-      height: 1.45,
-      color: Colors.black87,
-    );
-    final linkStyle = (theme.textTheme.labelSmall ?? const TextStyle()).copyWith(
-      color: Colors.black54,
-      fontWeight: FontWeight.w600,
-    );
+    final scheme = theme.colorScheme;
+    final tokens = AppTypographyTokens.of(context);
+    final bodyStyle = tokens.chatBubbleBody;
+    final linkStyle = tokens.chatBubbleLink;
 
     return Align(
       alignment: Alignment.centerRight,
@@ -1691,8 +1698,8 @@ class _ExpandableUserPromptBubbleState extends State<_ExpandableUserPromptBubble
                       ? InkWell(
                           onTap: () => setState(() => _expanded = !_expanded),
                           borderRadius: BorderRadius.circular(4),
-                          splashColor: Colors.black12,
-                          highlightColor: Colors.black12,
+                          splashColor: scheme.onSurface.withValues(alpha: 0.08),
+                          highlightColor: scheme.onSurface.withValues(alpha: 0.06),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               vertical: 4,
@@ -1742,10 +1749,11 @@ class _ConfigSelectField extends StatelessWidget {
               Expanded(
                 child: Text(
                   text,
-                  style: _generateCompactStyle(context).copyWith(
+                  style: theme.textTheme.bodyLarge?.copyWith(
                     color: enabled
                         ? theme.colorScheme.onSurface
                         : theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -1775,23 +1783,22 @@ class _SelectableChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? Colors.black : const Color(0xFFF5F5F5),
+          color: selected ? scheme.primary : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           label,
-          style: _generateCompactStyle(
-            context,
-            TextStyle(
-              color: selected ? Colors.white : Colors.black,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            ),
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: selected ? scheme.onPrimary : scheme.onSurface,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ),

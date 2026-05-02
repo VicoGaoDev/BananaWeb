@@ -19,7 +19,7 @@ class WelcomePage extends StatelessWidget {
                 width: 96,
                 height: 96,
                 decoration: BoxDecoration(
-                  color: Colors.black,
+                  color: theme.colorScheme.primary,
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(

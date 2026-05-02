@@ -107,7 +107,7 @@ class _ProfileContent extends ConsumerWidget {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.black,
+            color: Theme.of(context).colorScheme.primary,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
@@ -119,19 +119,22 @@ class _ProfileContent extends ConsumerWidget {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Icon(Icons.bolt_rounded, color: Colors.black, size: 22),
+                child: Icon(
+                  Icons.bolt_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       '剩余积分',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.76),
+                          ),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -152,7 +155,7 @@ class _ProfileContent extends ConsumerWidget {
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
+                  foregroundColor: Theme.of(context).colorScheme.primary,
                   minimumSize: const Size(72, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   textStyle: Theme.of(context).textTheme.labelLarge,

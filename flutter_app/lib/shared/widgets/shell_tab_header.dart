@@ -46,7 +46,7 @@ class ShellTabHeader extends StatelessWidget {
             children: [
               Icon(
                 Icons.bolt_rounded,
-                color: Colors.black,
+                color: theme.colorScheme.onSurface,
                 size: (theme.textTheme.labelMedium?.fontSize ?? 14) + 2,
               ),
               const SizedBox(width: 4),

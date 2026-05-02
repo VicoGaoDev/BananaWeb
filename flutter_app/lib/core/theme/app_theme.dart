@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_typography_extension.dart';
+
 class AppTheme {
   static ThemeData light() {
     const primary = Color(0xFF111111);
@@ -88,27 +90,51 @@ class AppTheme {
       ),
     );
 
+    final typoTokens = AppTypographyTokens(
+      composerBody: textTheme.bodyLarge!.copyWith(
+        fontSize:
+            ((textTheme.bodyLarge!.fontSize ?? 16) - 2).clamp(12.0, double.infinity),
+        fontWeight: textTheme.bodyLarge!.fontWeight,
+        height: 1.45,
+        color: colorScheme.onSurface,
+      ),
+      chatBubbleBody: textTheme.bodyMedium!.copyWith(
+        color: colorScheme.onSurface,
+        height: 1.45,
+      ),
+      chatBubbleLink: textTheme.labelSmall!.copyWith(
+        color: colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w600,
+      ),
+      compactParagraph: textTheme.bodyLarge!.copyWith(
+        fontSize:
+            ((textTheme.bodyLarge!.fontSize ?? 16) - 2).clamp(12.0, double.infinity),
+        fontWeight: FontWeight.w400,
+        height: 1.45,
+        color: colorScheme.onSurface,
+      ),
+    );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      extensions: <ThemeExtension<dynamic>>[
+        typoTokens,
+      ],
       scaffoldBackgroundColor: background,
       canvasColor: background,
       splashColor: Colors.black.withValues(alpha: 0.04),
       highlightColor: Colors.black.withValues(alpha: 0.03),
       dividerColor: outline,
       textTheme: textTheme,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         centerTitle: false,
         backgroundColor: background,
         foregroundColor: primary,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w700,
-          color: primary,
-        ),
+        titleTextStyle: textTheme.titleMedium,
       ),
       cardTheme: const CardThemeData(
         margin: EdgeInsets.zero,
@@ -216,9 +242,16 @@ class AppTheme {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
-      listTileTheme: const ListTileThemeData(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      listTileTheme: ListTileThemeData(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         iconColor: primary,
+        titleTextStyle: textTheme.titleSmall?.copyWith(
+          color: colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+        subtitleTextStyle: textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: background,
