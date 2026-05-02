@@ -4,7 +4,53 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/app_providers.dart';
+import '../../../core/network/image_url_resolver.dart';
+import '../../home/presentation/home_shell_controller.dart';
 import '../data/task_models.dart';
+import 'generate_draft_controller.dart';
+import 'task_result_common.dart';
+
+/// 单张任务图的可预览大图 URL。
+String taskImageFullPreviewUrl(ImageUrlResolver r, GeneratedImage image) {
+  var full = r.resolveFullImageLayers(
+    imageUrl: image.imageUrl,
+    previewUrl: image.previewUrl,
+    thumbUrl: image.thumbUrl,
+  );
+  if (full.isEmpty) {
+    full = r.resolveThumbnailLayers(
+      thumbUrl: image.thumbUrl,
+      previewUrl: image.previewUrl,
+      imageUrl: image.imageUrl,
+    );
+  }
+  return full.trim();
+}
+
+/// 与同页横向缩略列表顺序一致的、非空大图 URL（用于纵向滑动预览）。
+List<String> previewFullUrlsForTaskImages(
+  ImageUrlResolver resolver,
+  List<GeneratedImage> images,
+) {
+  return [
+    for (final im in images) taskImageFullPreviewUrl(resolver, im),
+  ].where((u) => u.isNotEmpty).toList();
+}
+
+/// 点到第 [tapIndex] 张图时，在 [previewFullUrlsForTaskImages] 里的下标。
+int galleryIndexForTaskImageTap(
+  ImageUrlResolver r,
+  List<GeneratedImage> images,
+  int tapIndex,
+) {
+  if (tapIndex < 0 || tapIndex >= images.length) return 0;
+  if (taskImageFullPreviewUrl(r, images[tapIndex]).isEmpty) return 0;
+  var g = 0;
+  for (var j = 0; j < tapIndex; j++) {
+    if (taskImageFullPreviewUrl(r, images[j]).isNotEmpty) g++;
+  }
+  return g;
+}
 
 class GenerateResultPage extends ConsumerWidget {
   const GenerateResultPage({
@@ -17,12 +63,16 @@ class GenerateResultPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final imageResolver = ref.watch(imageUrlResolverProvider);
-    final primaryImage = task.images.isEmpty
+    final previewUrls = previewFullUrlsForTaskImages(imageResolver, task.images);
+    final openPrimaryUrl = previewUrls.isNotEmpty ? previewUrls.first : '';
+
+    final GeneratedImage? first = task.images.isEmpty ? null : task.images.first;
+    final primaryDisplay = first == null
         ? ''
         : imageResolver.resolveThumbnailLayers(
-            thumbUrl: task.images.first.thumbUrl,
-            previewUrl: task.images.first.previewUrl,
-            imageUrl: task.images.first.imageUrl,
+            thumbUrl: first.thumbUrl,
+            previewUrl: first.previewUrl,
+            imageUrl: first.imageUrl,
           );
 
     return Scaffold(
@@ -39,78 +89,90 @@ class GenerateResultPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
-          Container(
-            height: 284,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
               borderRadius: BorderRadius.circular(24),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: primaryImage.isEmpty
-                  ? const Center(child: Icon(Icons.image_outlined, size: 32))
-                  : CachedNetworkImage(
-                      imageUrl: primaryImage,
-                      fit: BoxFit.cover,
-                      errorWidget: (context, url, error) =>
-                          const Center(child: Icon(Icons.broken_image_outlined)),
-                    ),
+              onTap: openPrimaryUrl.isEmpty
+                  ? null
+                  : () => context.push(
+                        '/preview',
+                        extra: {
+                          'urls': previewUrls,
+                          'initialIndex': 0,
+                          'title': '生成结果',
+                        },
+                      ),
+              child: Container(
+                height: 284,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: primaryDisplay.isEmpty
+                      ? const Center(child: Icon(Icons.image_outlined, size: 32))
+                      : CachedNetworkImage(
+                          imageUrl: primaryDisplay,
+                          fit: BoxFit.cover,
+                          errorWidget: (context, url, error) =>
+                              const Center(child: Icon(Icons.broken_image_outlined)),
+                        ),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 18),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _ActionIcon(
-                icon: Icons.refresh,
-                label: '重新生成',
-                onTap: () => context.pop(),
-              ),
-              _ActionIcon(
-                icon: Icons.zoom_out_map_outlined,
-                label: '高清放大',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('高清放大能力暂未接入')),
-                  );
+              IconButton(
+                tooltip: '重新生成',
+                iconSize: 28,
+                onPressed: () {
+                  ref.read(generateDraftControllerProvider.notifier).applyFromRegenerate(
+                        prompt: task.prompt,
+                        model: task.model,
+                        numImages: task.numImages,
+                        size: task.size,
+                        resolution: task.resolution,
+                        customSize: task.customSize,
+                      );
+                  ref.read(homeTabIndexProvider.notifier).state = 1;
+                  context.go('/');
                 },
+                icon: Icon(
+                  Icons.refresh,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
-              _ActionIcon(
-                icon: Icons.download_outlined,
-                label: '下载',
-                onTap: primaryImage.isEmpty
+              const SizedBox(width: 40),
+              IconButton(
+                tooltip: '下载',
+                iconSize: 28,
+                onPressed: openPrimaryUrl.isEmpty
                     ? null
                     : () => context.push(
                           '/preview',
                           extra: {
-                            'url': primaryImage,
+                            'urls': previewUrls,
+                            'initialIndex': 0,
                             'title': '生成结果',
                           },
                         ),
-              ),
-              _ActionIcon(
-                icon: Icons.share_outlined,
-                label: '分享',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('分享能力暂未接入')),
-                  );
-                },
-              ),
-              _ActionIcon(
-                icon: Icons.favorite_border,
-                label: '收藏',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('收藏能力暂未接入')),
-                  );
-                },
+                icon: Icon(
+                  Icons.download_outlined,
+                  color: openPrimaryUrl.isEmpty
+                      ? Theme.of(context).disabledColor
+                      : Theme.of(context).colorScheme.primary,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Divider(color: Theme.of(context).colorScheme.outlineVariant),
           if (task.images.length > 1) ...[
+            const SizedBox(height: 18),
+            Divider(color: Theme.of(context).colorScheme.outlineVariant),
             const SizedBox(height: 18),
             SizedBox(
               height: 82,
@@ -120,19 +182,25 @@ class GenerateResultPage extends ConsumerWidget {
                 separatorBuilder: (context, index) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   final image = task.images[index];
-                  final imageUrl = imageResolver.resolveThumbnailLayers(
+                  final displayUrl = imageResolver.resolveThumbnailLayers(
                     thumbUrl: image.thumbUrl,
                     previewUrl: image.previewUrl,
                     imageUrl: image.imageUrl,
                   );
+                  final fullUrl = taskImageFullPreviewUrl(imageResolver, image);
                   return InkWell(
                     borderRadius: BorderRadius.circular(14),
-                    onTap: imageUrl.isEmpty
+                    onTap: fullUrl.isEmpty
                         ? null
                         : () => context.push(
                               '/preview',
                               extra: {
-                                'url': imageUrl,
+                                'urls': previewUrls,
+                                'initialIndex': galleryIndexForTaskImageTap(
+                                  imageResolver,
+                                  task.images,
+                                  index,
+                                ),
                                 'title': '结果预览',
                               },
                             ),
@@ -141,10 +209,10 @@ class GenerateResultPage extends ConsumerWidget {
                       child: Container(
                         width: 82,
                         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        child: imageUrl.isEmpty
+                        child: displayUrl.isEmpty
                             ? const Icon(Icons.image_outlined)
                             : CachedNetworkImage(
-                                imageUrl: imageUrl,
+                                imageUrl: displayUrl,
                                 fit: BoxFit.cover,
                                 errorWidget: (context, url, error) =>
                                     const Icon(Icons.broken_image_outlined),
@@ -157,143 +225,17 @@ class GenerateResultPage extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '生成信息',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 14),
-                _InfoRow(label: '模型', value: task.model),
-                _InfoRow(label: '尺寸', value: task.size),
-                _InfoRow(label: '状态', value: task.status),
-                _InfoRow(label: '生成时间', value: task.createdAt),
-                _InfoRow(label: '数量', value: '${task.numImages} 张'),
-              ],
-            ),
+          TaskGenerationMetaCard(
+            modelKey: task.model,
+            size: task.size,
+            resolution: task.resolution,
+            customSize: task.customSize,
+            createdAt: task.createdAt,
           ),
-          if (task.prompt.isNotEmpty) ...[
+          if (task.prompt.trim().isNotEmpty) ...[
             const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '提示词',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    task.prompt,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          height: 1.55,
-                        ),
-                  ),
-                ],
-              ),
-            ),
+            TaskPromptCopyCard(prompt: task.prompt),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionIcon extends StatelessWidget {
-  const _ActionIcon({
-    required this.icon,
-    required this.label,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = onTap == null
-        ? Theme.of(context).disabledColor
-        : Theme.of(context).colorScheme.onSurface;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: SizedBox(
-        width: 60,
-        child: Column(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.label,
-    required this.value,
-  });
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 82,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
         ],
       ),
     );

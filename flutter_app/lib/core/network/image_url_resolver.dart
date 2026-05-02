@@ -39,4 +39,17 @@ class ImageUrlResolver {
         : (previewUrl.isNotEmpty ? previewUrl : imageUrl);
     return resolve(raw);
   }
+
+  /// Prefer original [imageUrl], then [previewUrl], then [thumbUrl].
+  /// For full-screen preview / save when originals are distinct from thumbnails.
+  String resolveFullImageLayers({
+    String imageUrl = '',
+    String previewUrl = '',
+    String thumbUrl = '',
+  }) {
+    final raw = imageUrl.isNotEmpty
+        ? imageUrl
+        : (previewUrl.isNotEmpty ? previewUrl : thumbUrl);
+    return resolve(raw);
+  }
 }

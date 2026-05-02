@@ -139,6 +139,25 @@ class GenerateDraftController extends StateNotifier<GenerateDraftState> {
   void clearTemplateSource() {
     state = state.copyWith(clearTemplate: true);
   }
+
+  /// 从已完成任务回填创作草稿（输入框与配置项），用于「重新生成」跳转回创作 tab。
+  void applyFromRegenerate({
+    required String prompt,
+    required String model,
+    required int numImages,
+    required String size,
+    required String resolution,
+    required String customSize,
+  }) {
+    state = GenerateDraftState(
+      prompt: prompt,
+      model: model,
+      numImages: numImages.clamp(1, 4),
+      size: size,
+      resolution: resolution,
+      customSize: customSize,
+    );
+  }
 }
 
 final generateDraftControllerProvider =

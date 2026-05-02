@@ -41,13 +41,44 @@ double layoutAspectRatioFromSizeParams(String size, String customSize) {
   return 4 / 3;
 }
 
+/// 会话里每张结果图：列表用缩略/预览链接，点击查看用原图（或最接近的大图）链接。
+class GenerateChatTurnResultImage {
+  const GenerateChatTurnResultImage({
+    required this.displayUrl,
+    required this.fullImageUrl,
+  });
+
+  final String displayUrl;
+  final String fullImageUrl;
+
+  static GenerateChatTurnResultImage fromLayers(
+    ImageUrlResolver resolver, {
+    required String thumbUrl,
+    required String previewUrl,
+    required String imageUrl,
+  }) {
+    final display = resolver.resolveThumbnailLayers(
+      thumbUrl: thumbUrl,
+      previewUrl: previewUrl,
+      imageUrl: imageUrl,
+    );
+    var full = resolver.resolveFullImageLayers(
+      imageUrl: imageUrl,
+      previewUrl: previewUrl,
+      thumbUrl: thumbUrl,
+    );
+    if (full.isEmpty) full = display;
+    return GenerateChatTurnResultImage(displayUrl: display, fullImageUrl: full);
+  }
+}
+
 /// 创作页聊天区一条「提示词 + 生成结果」记录（最多保留 [_kMaxChatTurns] 条）。
 class GenerateChatTurn {
   const GenerateChatTurn({
     required this.prompt,
     required this.taskIds,
     required this.isGenerating,
-    this.resultThumbUrls = const [],
+    this.resultImages = const [],
     this.errorMessage,
     this.generatingSlotCount = 1,
     this.generatingAspectRatio = 4 / 3,
@@ -56,7 +87,7 @@ class GenerateChatTurn {
   final String prompt;
   final List<int> taskIds;
   final bool isGenerating;
-  final List<String> resultThumbUrls;
+  final List<GenerateChatTurnResultImage> resultImages;
   final String? errorMessage;
   /// 生成中占位卡片数量（与本次提交的 num_images 一致）。
   final int generatingSlotCount;
@@ -128,19 +159,20 @@ class GenerateChatTurnsNotifier extends StateNotifier<List<GenerateChatTurn>> {
         flow.tasks.isNotEmpty && flow.tasks.every((item) => item.isTerminal);
     if (!allTerminal) return;
 
-    final urls = <String>[];
+    final images = <GenerateChatTurnResultImage>[];
     var anyFailed = false;
     for (final tr in flow.tasks) {
       if (tr.status == 'failed') {
         anyFailed = true;
       } else if (tr.status == 'success') {
         for (final img in tr.images) {
-          final u = resolver.resolveThumbnailLayers(
+          final slot = GenerateChatTurnResultImage.fromLayers(
+            resolver,
             thumbUrl: img.thumbUrl,
             previewUrl: img.previewUrl,
             imageUrl: img.imageUrl,
           );
-          if (u.isNotEmpty) urls.add(u);
+          if (slot.displayUrl.isNotEmpty) images.add(slot);
         }
       }
     }
@@ -153,7 +185,7 @@ class GenerateChatTurnsNotifier extends StateNotifier<List<GenerateChatTurn>> {
         prompt: turn.prompt,
         taskIds: turn.taskIds,
         isGenerating: false,
-        resultThumbUrls: urls,
+        resultImages: images,
         errorMessage: err,
         generatingSlotCount: turn.generatingSlotCount,
         generatingAspectRatio: turn.generatingAspectRatio,
@@ -181,23 +213,25 @@ class GenerateChatTurnsNotifier extends StateNotifier<List<GenerateChatTurn>> {
         final p = item.prompt.trim();
         if (p.isEmpty) continue;
 
-        final urls = <String>[];
+        final images = <GenerateChatTurnResultImage>[];
         if (item.images.isNotEmpty) {
           for (final im in item.images) {
-            final u = resolver.resolveThumbnailLayers(
+            final slot = GenerateChatTurnResultImage.fromLayers(
+              resolver,
               thumbUrl: im.thumbUrl,
               previewUrl: im.previewUrl,
               imageUrl: im.imageUrl,
             );
-            if (u.isNotEmpty) urls.add(u);
+            if (slot.displayUrl.isNotEmpty) images.add(slot);
           }
         } else {
-          final u = resolver.resolveThumbnailLayers(
+          final slot = GenerateChatTurnResultImage.fromLayers(
+            resolver,
             thumbUrl: item.thumbUrl,
             previewUrl: item.previewUrl,
             imageUrl: item.imageUrl,
           );
-          if (u.isNotEmpty) urls.add(u);
+          if (slot.displayUrl.isNotEmpty) images.add(slot);
         }
 
         final st = item.status.toLowerCase();
@@ -208,7 +242,7 @@ class GenerateChatTurnsNotifier extends StateNotifier<List<GenerateChatTurn>> {
             prompt: p,
             taskIds: item.taskId > 0 ? [item.taskId] : const [],
             isGenerating: false,
-            resultThumbUrls: urls,
+            resultImages: images,
             errorMessage: failed ? '生图失败，请重新发起试试呢！' : null,
           ),
         );

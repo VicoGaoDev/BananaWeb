@@ -68,32 +68,36 @@ class HomeShellPage extends ConsumerWidget {
                   .surface
                   .withValues(alpha: 0.8),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9.6),
-              child: Row(
-                children: [
-                  _NavItem(
-                    label: '模板',
-                    icon: Icons.grid_view_rounded,
-                    selected: currentIndex == 0,
-                    onTap: () =>
-                        ref.read(homeTabIndexProvider.notifier).state = 0,
-                  ),
-                  _NavItem(
-                    label: '创作',
-                    icon: Icons.brush_outlined,
-                    selected: currentIndex == 1,
-                    onTap: () =>
-                        ref.read(homeTabIndexProvider.notifier).state = 1,
-                  ),
-                  _NavItem(
-                    label: '我的',
-                    icon: Icons.person_outline_rounded,
-                    selected: currentIndex == 2,
-                    onTap: () =>
-                        ref.read(homeTabIndexProvider.notifier).state = 2,
-                  ),
-                ],
+            child: SizedBox(
+              height: 56,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _NavItem(
+                      tooltip: '模板',
+                      icon: Icons.grid_view_rounded,
+                      selected: currentIndex == 0,
+                      onTap: () =>
+                          ref.read(homeTabIndexProvider.notifier).state = 0,
+                    ),
+                    _NavItem(
+                      tooltip: '创作',
+                      icon: Icons.auto_awesome_rounded,
+                      selected: currentIndex == 1,
+                      onTap: () =>
+                          ref.read(homeTabIndexProvider.notifier).state = 1,
+                    ),
+                    _NavItem(
+                      tooltip: '我的',
+                      icon: Icons.person_outline_rounded,
+                      selected: currentIndex == 2,
+                      onTap: () =>
+                          ref.read(homeTabIndexProvider.notifier).state = 2,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -105,13 +109,13 @@ class HomeShellPage extends ConsumerWidget {
 
 class _NavItem extends StatelessWidget {
   const _NavItem({
-    required this.label,
+    required this.tooltip,
     required this.icon,
     required this.selected,
     required this.onTap,
   });
 
-  final String label;
+  final String tooltip;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -120,49 +124,41 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4.8),
-          decoration: BoxDecoration(
-            color: Colors.transparent,
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        selected: selected,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
             borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 28.8,
-                height: 28.8,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? theme.colorScheme.surfaceContainerHighest
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9.6),
-                ),
-                child: Icon(
-                  icon,
-                  size: 19.2,
-                  color: selected
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 2.4),
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: selected
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            onTap: onTap,
+            child: SizedBox(
+              width: 72,
+              height: 56,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 21,
+                    color: selected
+                        ? theme.colorScheme.onSurface
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -54,10 +54,35 @@ class AppRouter {
         path: '/preview',
         pageBuilder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
+          final fromList = extra?['urls'];
+          final urls = <String>[];
+          if (fromList is List && fromList.isNotEmpty) {
+            for (final e in fromList) {
+              final s = e.toString().trim();
+              if (s.isNotEmpty) urls.add(s);
+            }
+          } else {
+            final u = extra?['url'] as String? ?? '';
+            if (u.trim().isNotEmpty) urls.add(u.trim());
+          }
+          final rawInitial = extra?['initialIndex'];
+          var initial = 0;
+          if (rawInitial is int) {
+            initial = rawInitial;
+          } else if (rawInitial is num) {
+            initial = rawInitial.toInt();
+          }
+          if (urls.isNotEmpty) {
+            initial = initial.clamp(0, urls.length - 1);
+          } else {
+            initial = 0;
+          }
+
           return AppPageTransitions.fadeThrough(
             state,
             ImagePreviewPage(
-              imageUrl: extra?['url'] as String? ?? '',
+              imageUrls: urls,
+              initialIndex: initial,
               title: extra?['title'] as String? ?? '图片预览',
             ),
           );
