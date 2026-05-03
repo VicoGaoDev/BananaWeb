@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { message, Modal } from "ant-design-vue";
-import { BgColorsOutlined, DeleteOutlined, KeyOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons-vue";
+import { BgColorsOutlined, DeleteOutlined, KeyOutlined, SaveOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons-vue";
 import { deleteAdminConfig, getAdminConfig, setAdminConfig } from "@/api/admin";
 import { appThemes, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 import { useAuthStore } from "@/stores/auth";
 import { uploadReferenceImage } from "@/api/upload";
 
+const route = useRoute();
 const auth = useAuthStore();
+const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const contactQrImage = ref("");
 const announcementEnabled = ref(false);
@@ -27,9 +30,20 @@ const themeOptions = [
 const hasConfig = computed(() => (
   Boolean(contactQrImage.value.trim() || announcementEnabled.value || announcementContent.value.trim())
 ));
+const isSettingsRoute = computed(() => route.path === "/settings");
+const pageTitle = computed(() => (isSettingsRoute.value ? "设置" : "配置管理"));
+const pageDesc = computed(() => (
+  isSettingsRoute.value
+    ? (isAdmin.value
+        ? "在这里调整当前浏览器主题，并管理联系二维码与系统公告。"
+        : "在这里调整当前浏览器主题设置。主题仅保存在本地浏览器中。")
+    : "管理联系二维码与系统公告。接口密钥已迁移到超级管理员的接口管理页面。"
+));
+const showAdminConfig = computed(() => isAdmin.value);
 
 onMounted(async () => {
   currentTheme.value = getCurrentTheme();
+  if (!showAdminConfig.value) return;
   loading.value = true;
   try {
     const res = await getAdminConfig();
@@ -118,17 +132,61 @@ async function handleQrUpload(event: Event) {
     <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
-          <KeyOutlined />
+          <component :is="isSettingsRoute ? SettingOutlined : KeyOutlined" />
         </div>
         <div>
-          <div class="warm-page-title">配置管理</div>
-          <div class="warm-page-desc">管理联系二维码与系统公告。接口密钥已迁移到超级管理员的接口管理页面。</div>
+          <div class="warm-page-title">{{ pageTitle }}</div>
+          <div class="warm-page-desc">{{ pageDesc }}</div>
         </div>
       </div>
     </div>
 
-    <a-spin :spinning="loading">
-      <div class="key-card warm-card motion-fade-up motion-card-lift" style="--motion-delay: 140ms">
+    <div class="theme-card key-card warm-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
+      <div class="theme-section theme-section-standalone">
+        <div class="theme-section-head">
+          <div>
+            <div class="key-label">前端主题风格</div>
+            <div class="theme-tip">仅作用于当前浏览器，本地保存。刷新或重新打开后会继续使用所选主题。</div>
+          </div>
+          <BgColorsOutlined class="theme-section-icon" />
+        </div>
+
+        <a-radio-group
+          v-model:value="currentTheme"
+          class="warm-radio-group theme-radio-group"
+          button-style="solid"
+        >
+          <a-radio-button
+            v-for="option in themeOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </a-radio-button>
+        </a-radio-group>
+
+        <div class="theme-option-list">
+          <div
+            v-for="option in themeOptions"
+            :key="option.value"
+            class="theme-option-card"
+            :class="{ active: currentTheme === option.value }"
+          >
+            <div class="theme-option-title">{{ option.label }}</div>
+            <div class="theme-option-desc">{{ option.desc }}</div>
+          </div>
+        </div>
+
+        <div class="theme-actions">
+          <a-button type="primary" class="warm-primary-btn" @click="applyThemeSelection">
+            应用主题
+          </a-button>
+        </div>
+      </div>
+    </div>
+
+    <a-spin v-if="showAdminConfig" :spinning="loading">
+      <div class="key-card warm-card motion-fade-up motion-card-lift" style="--motion-delay: 180ms">
         <div class="key-footer">
           <a-button type="primary" class="warm-primary-btn" :loading="saving" @click="handleSave">
             <template #icon><SaveOutlined /></template>
@@ -177,45 +235,13 @@ async function handleQrUpload(event: Event) {
           />
         </div>
 
-        <div v-if="isSuperAdmin" class="theme-section">
+        <div v-if="isSuperAdmin" class="theme-admin-tip">
           <div class="theme-section-head">
             <div>
-              <div class="key-label">前端主题风格</div>
-              <div class="theme-tip">仅作用于当前浏览器，本地保存。刷新或重新打开后会继续使用所选主题。</div>
+              <div class="key-label">超级管理员提示</div>
+              <div class="theme-tip">接口管理、COS 配置等超级管理员专属能力仍在管理后台中维护。</div>
             </div>
-            <BgColorsOutlined class="theme-section-icon" />
-          </div>
-
-          <a-radio-group
-            v-model:value="currentTheme"
-            class="warm-radio-group theme-radio-group"
-            button-style="solid"
-          >
-            <a-radio-button
-              v-for="option in themeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </a-radio-button>
-          </a-radio-group>
-
-          <div class="theme-option-list">
-            <div
-              v-for="option in themeOptions"
-              :key="option.value"
-              class="theme-option-card"
-              :class="{ active: currentTheme === option.value }"
-            >
-              <div class="theme-option-title">{{ option.label }}</div>
-              <div class="theme-option-desc">{{ option.desc }}</div>
-            </div>
-          </div>
-
-          <div class="theme-actions">
-            <a-button type="primary" class="warm-primary-btn" @click="applyThemeSelection">
-              应用主题
-            </a-button>
+            <KeyOutlined class="theme-section-icon" />
           </div>
         </div>
       </div>
@@ -228,6 +254,7 @@ async function handleQrUpload(event: Event) {
   max-width: 820px;
 }
 
+.theme-card,
 .key-card {
   padding: 32px;
 }
@@ -338,6 +365,18 @@ async function handleQrUpload(event: Event) {
   padding: 22px 24px;
   border-radius: 22px;
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
+  border: 1px solid var(--theme-panel-border);
+}
+
+.theme-section-standalone {
+  margin-top: 0;
+}
+
+.theme-admin-tip {
+  margin-top: 28px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
 }
 

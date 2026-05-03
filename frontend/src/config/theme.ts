@@ -14,7 +14,7 @@ export const appThemes = {
 
 export type AppThemeName = keyof typeof appThemes;
 
-export const DEFAULT_APP_THEME: AppThemeName = "dark";
+export const DEFAULT_APP_THEME: AppThemeName = "warm";
 
 export function isAppThemeName(value: string | null | undefined): value is AppThemeName {
   return value === "warm" || value === "dark";

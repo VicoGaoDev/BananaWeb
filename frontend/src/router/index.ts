@@ -31,7 +31,14 @@ const router = createRouter({
         {
           path: "credit-logs",
           name: "CreditLogs",
+          meta: { requiresAuth: true },
           component: () => import("@/views/CreditLogsView.vue"),
+        },
+        {
+          path: "settings",
+          name: "Settings",
+          meta: { requiresAuth: true },
+          component: () => import("@/views/admin/ApiKeyView.vue"),
         },
         {
           path: "admin/templates",
@@ -76,6 +83,9 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore();
+  if (to.meta.requiresAuth && !auth.isLoggedIn) {
+    return { name: "Home" };
+  }
   if (to.meta.requiresSuperAdmin && !auth.isSuperAdmin) {
     return { name: "Templates" };
   }

@@ -47,13 +47,14 @@ const routeOrder = new Map<string, number>([
   ["/templates", 1],
   ["/generate", 2],
   ["/history", 3],
-  ["/credit-logs", 4],
-  ["/admin/templates", 5],
-  ["/admin/users", 6],
-  ["/admin/dashboard", 7],
-  ["/admin/api-key", 8],
-  ["/admin/cos-config", 9],
-  ["/admin/external-api-configs", 10],
+  ["/settings", 4],
+  ["/credit-logs", 5],
+  ["/admin/templates", 6],
+  ["/admin/users", 7],
+  ["/admin/dashboard", 8],
+  ["/admin/api-key", 9],
+  ["/admin/cos-config", 10],
+  ["/admin/external-api-configs", 11],
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
@@ -84,6 +85,7 @@ const adminMenuItems = computed(() =>
 );
 
 const userMenuItems = [
+  { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "avatar", label: "上传头像", icon: UploadOutlined, danger: false },
   { key: "password", label: "修改密码", icon: LockOutlined, danger: false },
   { key: "credits", label: "积分记录", icon: ThunderboltOutlined, danger: false },
@@ -96,6 +98,7 @@ const selectedKeys = computed(() => {
   if (p === "/") return [];
   if (p === "/templates") return ["templates"];
   if (p === "/history") return ["history"];
+  if (p === "/settings" || p === "/credit-logs") return [];
   return ["generate"];
 });
 
@@ -134,7 +137,8 @@ function handleAdminMenu({ key }: { key: string }) {
 
 function handleUserMenu({ key }: { key: string }) {
   mobileDrawerOpen.value = false;
-  if (key === "avatar") avatarVisible.value = true;
+  if (key === "settings") router.push("/settings");
+  else if (key === "avatar") avatarVisible.value = true;
   else if (key === "password") pwdVisible.value = true;
   else if (key === "credits") router.push("/credit-logs");
   else if (key === "logout") {
