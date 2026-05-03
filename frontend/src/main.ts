@@ -3,8 +3,11 @@ import { createPinia } from "pinia";
 import Antd from "ant-design-vue";
 import "ant-design-vue/dist/reset.css";
 import App from "./App.vue";
+import { initializeAppTheme } from "./lib/theme";
 import router from "./router";
 import "./styles/global.scss";
+
+initializeAppTheme();
 
 const app = createApp(App);
 app.use(createPinia());

@@ -131,6 +131,7 @@ const previewCurrent = ref("");
 const historyVisible = ref(false);
 const historyItems = ref<PromptHistoryItem[]>([]);
 const historyLoading = ref(false);
+const sceneConfigLoading = ref(true);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
 const taskScenes = ref<TaskSceneConfig[]>([]);
@@ -260,6 +261,10 @@ const activeExtendedToolLabel = computed(() => (
 const activeExtendedToolMenuKeys = computed(() => (
   isExtendedToolMode.value ? [generateMode.value] : []
 ));
+
+const accentIndicatorStyle = { fontSize: "20px", color: "var(--theme-accent)" };
+const smallAccentIndicatorStyle = { fontSize: "18px", color: "var(--theme-accent)" };
+const neutralIndicatorStyle = { fontSize: "24px", color: "var(--text-secondary)" };
 
 type GenerateTaskPayload = {
   model?: string;
@@ -1117,6 +1122,8 @@ async function loadTaskSceneConfigs() {
     taskScenes.value = await getTaskScenes();
   } catch {
     // ignore scene config loading failures, backend will still validate on submit
+  } finally {
+    sceneConfigLoading.value = false;
   }
 }
 
@@ -1271,6 +1278,28 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               class="work-panel settings-panel generate-config-panel"
             >
               <div class="settings-scroll">
+              <template v-if="sceneConfigLoading">
+                <div class="config-skeleton-shell" aria-hidden="true">
+                  <div class="config-skeleton-section">
+                    <div class="config-skeleton-line config-skeleton-line-title"></div>
+                    <div class="config-skeleton-line config-skeleton-line-control"></div>
+                  </div>
+                  <div class="config-skeleton-section">
+                    <div class="config-skeleton-line config-skeleton-line-title"></div>
+                    <div class="config-skeleton-line config-skeleton-line-area"></div>
+                  </div>
+                  <div class="config-skeleton-row">
+                    <div class="config-skeleton-chip"></div>
+                    <div class="config-skeleton-chip"></div>
+                    <div class="config-skeleton-chip"></div>
+                  </div>
+                  <div class="config-skeleton-section config-skeleton-section-last">
+                    <div class="config-skeleton-line config-skeleton-line-title config-skeleton-line-short"></div>
+                    <div class="config-skeleton-line config-skeleton-line-slider"></div>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
                   <label>模型</label>
@@ -1352,6 +1381,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   />
                 </div>
               </div>
+              </template>
 
               </div>
 
@@ -1360,7 +1390,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   type="primary"
                   block
                   size="large"
-                  :disabled="!activePrompt.trim() || hasBlockedUploads"
+                  :disabled="sceneConfigLoading || !activePrompt.trim() || hasBlockedUploads"
                   class="generate-btn"
                   @click="handleGenerate"
                 >
@@ -1376,6 +1406,28 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               class="work-panel settings-panel generate-config-panel"
             >
               <div class="settings-scroll">
+              <template v-if="sceneConfigLoading">
+                <div class="config-skeleton-shell" aria-hidden="true">
+                  <div class="config-skeleton-section">
+                    <div class="config-skeleton-line config-skeleton-line-title"></div>
+                    <div class="config-skeleton-line config-skeleton-line-control"></div>
+                  </div>
+                  <div class="config-skeleton-section">
+                    <div class="config-skeleton-line config-skeleton-line-title"></div>
+                    <div class="config-skeleton-line config-skeleton-line-area"></div>
+                  </div>
+                  <div class="config-skeleton-row">
+                    <div class="config-skeleton-chip"></div>
+                    <div class="config-skeleton-chip"></div>
+                    <div class="config-skeleton-chip"></div>
+                  </div>
+                  <div class="config-skeleton-section config-skeleton-section-last">
+                    <div class="config-skeleton-line config-skeleton-line-title config-skeleton-line-short"></div>
+                    <div class="config-skeleton-line config-skeleton-line-slider"></div>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
                   <label>模型</label>
@@ -1415,7 +1467,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                     <div v-if="item.status !== 'success'" class="upload-thumb-mask" :class="{ error: item.status === 'failed' }">
                       <a-spin
                         v-if="item.status === 'uploading'"
-                        :indicator="h(LoadingOutlined, { style: { fontSize: '18px', color: '#ff9f1a' } })"
+                        :indicator="h(LoadingOutlined, { style: smallAccentIndicatorStyle })"
                       />
                       <span v-else>上传失败</span>
                     </div>
@@ -1436,10 +1488,10 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   >
                     <a-spin
                       v-if="uploading"
-                      :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                      :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                     />
                     <template v-else>
-                      <CloudUploadOutlined style="font-size: 22px; color: #f0a62a" />
+                      <CloudUploadOutlined style="font-size: 22px; color: var(--theme-accent)" />
                       <span>上传</span>
                     </template>
                   </div>
@@ -1508,6 +1560,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   />
                 </div>
               </div>
+              </template>
 
               </div>
 
@@ -1516,7 +1569,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   type="primary"
                   block
                   size="large"
-                  :disabled="!activePrompt.trim() || hasBlockedUploads"
+                  :disabled="sceneConfigLoading || !activePrompt.trim() || hasBlockedUploads"
                   class="generate-btn"
                   @click="handleGenerate"
                 >
@@ -1553,7 +1606,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 >
                   <a-spin
                     v-if="reverseUploading"
-                    :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                    :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                   />
                   <template v-else>
                     <CloudUploadOutlined class="source-upload-icon" />
@@ -1640,7 +1693,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                 >
                   <a-spin
                     v-if="sourceUploading"
-                    :indicator="h(LoadingOutlined, { style: { fontSize: '20px', color: '#ff9f1a' } })"
+                    :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                   />
                   <template v-else>
                     <CloudUploadOutlined class="source-upload-icon" />
@@ -1836,7 +1889,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   <template v-else>
                     <div class="frame-state">
                       <a-spin
-                        :indicator="h(LoadingOutlined, { style: { fontSize: '24px', color: '#7c8db5' } })"
+                        :indicator="h(LoadingOutlined, { style: neutralIndicatorStyle })"
                       />
                       <span>正在生成图片...</span>
                     </div>
@@ -2095,7 +2148,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   &:focus {
     color: #995b00;
     border-color: rgba(239, 195, 113, 0.24);
-    background: linear-gradient(180deg, #ffd06d, #ffb63a);
+    background: var(--theme-control-hover-bg);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.24),
       0 10px 18px rgba(255, 169, 37, 0.18);
@@ -2107,7 +2160,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
 .mode-switch-group-primary .mode-switch-btn.active:focus {
   color: #3f2a08;
   border-color: transparent;
-  background: linear-gradient(180deg, #ffc45b, #ffab25);
+  background: var(--theme-accent);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     0 10px 18px rgba(255, 169, 37, 0.22);
@@ -2373,6 +2426,87 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   flex-direction: column;
 }
 
+.config-skeleton-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 6px;
+}
+
+.config-skeleton-section,
+.config-skeleton-row {
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(250, 250, 250, 0.96);
+  border: 1px solid rgba(228, 228, 231, 0.92);
+}
+
+.config-skeleton-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-skeleton-section-last {
+  padding-bottom: 20px;
+}
+
+.config-skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.config-skeleton-line,
+.config-skeleton-chip {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(228, 228, 231, 0.72), rgba(255, 255, 255, 0.96), rgba(228, 228, 231, 0.72));
+  background-size: 200% 100%;
+  animation: config-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.config-skeleton-line-title {
+  width: 72px;
+  height: 14px;
+}
+
+.config-skeleton-line-short {
+  width: 92px;
+}
+
+.config-skeleton-line-control {
+  width: 100%;
+  height: 52px;
+}
+
+.config-skeleton-line-area {
+  width: 100%;
+  height: 144px;
+  border-radius: 18px;
+}
+
+.config-skeleton-chip {
+  height: 52px;
+}
+
+.config-skeleton-line-slider {
+  width: 100%;
+  height: 56px;
+  border-radius: 18px;
+}
+
+@keyframes config-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 /* --- Card panel --- */
 .work-panel {
   background: linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
@@ -2604,7 +2738,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   }
 
   :deep(.ant-slider-track) {
-    background: linear-gradient(90deg, #ffc45b, #ffab25);
+    background: var(--theme-accent);
     height: 8px;
     border-radius: 999px;
   }
@@ -2624,7 +2758,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
       inset-inline-start: 0;
       inset-block-start: 0;
       border-radius: 50%;
-      border: 3px solid #ffab25;
+      border: 3px solid var(--theme-accent);
       background: #fff;
       box-shadow: 0 4px 12px rgba(255, 171, 37, 0.3);
     }
@@ -2645,7 +2779,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   }
 
   :deep(.ant-slider-dot-active) {
-    border-color: #ffab25;
+    border-color: var(--theme-accent);
   }
 
   :deep(.ant-slider-mark-text) {
@@ -2665,13 +2799,13 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   border-radius: 18px;
   font-size: 16px;
   font-weight: 700;
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  background: var(--theme-accent) !important;
   border: none !important;
   box-shadow: 0 18px 32px rgba(255, 169, 37, 0.26) !important;
 
   &:hover,
   &:focus {
-    background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
+    background: var(--primary-dark) !important;
     box-shadow: 0 20px 34px rgba(255, 169, 37, 0.3) !important;
     transform: translateY(-2px);
   }
@@ -2714,7 +2848,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
 
 .source-upload-icon {
   font-size: 30px;
-  color: #f0a62a;
+  color: var(--theme-accent);
 }
 
 .source-upload-title {
@@ -2811,13 +2945,13 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
 }
 
 .reverse-action-btn-primary {
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  background: var(--theme-accent) !important;
   border: none !important;
   box-shadow: 0 14px 24px rgba(255, 169, 37, 0.22) !important;
 
   &:hover,
   &:focus {
-    background: linear-gradient(180deg, #ffd06d, #ffb63a) !important;
+    background: var(--primary-dark) !important;
     box-shadow: 0 16px 28px rgba(255, 169, 37, 0.26) !important;
   }
 }
@@ -3751,10 +3885,362 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
 
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
   color: #5a3c14 !important;
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  background: var(--theme-accent) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 248, 231, 0.45),
     0 10px 22px rgba(255, 169, 37, 0.22);
+}
+
+html[data-theme="dark"] .generate-page {
+  --config-title-color: var(--theme-title);
+}
+
+html[data-theme="dark"] .generate-page .mode-switch-btn {
+  color: var(--text-secondary);
+
+  &:hover {
+    color: var(--theme-title);
+  }
+}
+
+html[data-theme="dark"] .generate-page .mode-switch-group-primary .mode-switch-btn {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-soft);
+  box-shadow: none;
+
+  &:hover,
+  &:focus {
+    color: var(--theme-title);
+    border-color: var(--theme-border-strong);
+    background: var(--theme-control-hover-bg);
+    box-shadow: 0 10px 18px var(--theme-shadow-soft);
+  }
+}
+
+html[data-theme="dark"] .generate-page .mode-switch-group-primary .mode-switch-btn.active,
+html[data-theme="dark"] .generate-page .mode-switch-group-primary .mode-switch-btn.active:hover,
+html[data-theme="dark"] .generate-page .mode-switch-group-primary .mode-switch-btn.active:focus {
+  color: #fff;
+  border-color: #050505;
+  background: #050505;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.14);
+}
+
+html[data-theme="dark"] .generate-page .mode-switch-btn.tool {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-muted);
+}
+
+html[data-theme="dark"] .generate-page .mode-switch-btn.tool.active {
+  border-color: #050505;
+  background: #050505;
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="dark"] .generate-page .settings-footer {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92) 28%, #fff);
+}
+
+html[data-theme="dark"] .generate-page .history-btn {
+  color: var(--text-secondary) !important;
+  background: var(--theme-panel-bg-soft) !important;
+  border-color: var(--theme-panel-border) !important;
+
+  &:hover {
+    color: var(--theme-title) !important;
+    background: var(--theme-control-hover-bg) !important;
+    border-color: var(--theme-border-strong) !important;
+    box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
+}
+
+html[data-theme="dark"] .generate-page .generate-config-panel .prompt-input {
+  border-color: var(--theme-control-border) !important;
+  background: var(--theme-control-bg) !important;
+  box-shadow: none;
+
+  &:focus,
+  &:hover {
+    border-color: var(--theme-border-accent) !important;
+    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+  }
+
+  :deep(.ant-input-data-count) {
+    color: var(--text-muted);
+  }
+
+  :deep(textarea) {
+    color: var(--theme-title) !important;
+    caret-color: var(--theme-title);
+  }
+
+  :deep(textarea::placeholder) {
+    color: var(--text-muted);
+  }
+}
+
+html[data-theme="dark"] .generate-page .prompt-label-row label,
+html[data-theme="dark"] .generate-page .setting-item label,
+html[data-theme="dark"] .generate-page .field-block > label,
+html[data-theme="dark"] .generate-page .result-panel-head h3,
+html[data-theme="dark"] .generate-page .result-empty .empty-title {
+  color: var(--theme-title) !important;
+}
+
+html[data-theme="dark"] .generate-page .work-panel {
+  background: linear-gradient(180deg, var(--theme-panel-bg) 0%, var(--theme-panel-bg-soft) 100%);
+  border-color: var(--theme-panel-border);
+  box-shadow: 0 18px 45px var(--theme-shadow-soft);
+}
+
+html[data-theme="dark"] .generate-page .panel-hint,
+html[data-theme="dark"] .generate-page .source-upload-desc,
+html[data-theme="dark"] .generate-page .reverse-result-placeholder,
+html[data-theme="dark"] .generate-page .repaint-status-desc,
+html[data-theme="dark"] .generate-page .mask-tip,
+html[data-theme="dark"] .generate-page .result-tip-line,
+html[data-theme="dark"] .generate-page .result-retain-badge,
+html[data-theme="dark"] .generate-page .history-text,
+html[data-theme="dark"] .generate-page .result-list-footnote,
+html[data-theme="dark"] .generate-page .result-empty .empty-desc,
+html[data-theme="dark"] .generate-page .frame-state {
+  color: var(--text-secondary);
+}
+
+html[data-theme="dark"] .generate-page .generate-config-panel .upload-thumb {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-soft);
+  box-shadow: 0 8px 18px var(--theme-shadow-soft);
+
+  &:hover {
+    border-color: var(--theme-border-strong);
+    box-shadow: 0 14px 24px var(--theme-shadow-medium);
+  }
+}
+
+html[data-theme="dark"] .generate-page .generate-config-panel .upload-thumb-mask {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-secondary);
+
+  &.error {
+    background: rgba(255, 240, 240, 0.9);
+  }
+}
+
+html[data-theme="dark"] .generate-page .generate-config-panel .upload-add,
+html[data-theme="dark"] .generate-page .source-upload-empty {
+  border-color: var(--theme-panel-border-strong);
+  background: var(--theme-panel-bg-soft);
+  color: var(--text-secondary);
+  box-shadow: 0 10px 22px var(--theme-shadow-soft);
+
+  &:hover {
+    border-color: var(--theme-border-strong);
+    box-shadow: 0 14px 24px var(--theme-shadow-medium);
+  }
+}
+
+html[data-theme="dark"] .generate-page .generate-config-panel .flat-select {
+  background: var(--theme-control-bg);
+  border-color: var(--theme-control-border);
+  box-shadow: none;
+
+  &:hover {
+    border-color: var(--theme-border-strong);
+    box-shadow: 0 12px 22px var(--theme-shadow-soft);
+  }
+
+  &:focus-within {
+    border-color: #050505;
+    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+  }
+
+  :deep(.ant-select-selector) {
+    color: var(--theme-title);
+  }
+
+  :deep(.ant-select-arrow),
+  :deep(.ant-select-selection-placeholder) {
+    color: var(--text-muted);
+  }
+}
+
+html[data-theme="dark"] .generate-page .model-option-label {
+  color: var(--theme-title);
+}
+
+html[data-theme="dark"] .generate-page .model-option-desc {
+  color: var(--text-secondary);
+}
+
+html[data-theme="dark"] .generate-page .num-slider {
+  :deep(.ant-slider-rail) {
+    background: #e4e4e7;
+  }
+
+  :deep(.ant-slider-track) {
+    background: #050505;
+  }
+
+  :deep(.ant-slider-handle) {
+    &::after {
+      border: 3px solid #050505;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    }
+
+    &:hover::after,
+    &:focus::after {
+      border-color: #050505;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    }
+  }
+
+  :deep(.ant-slider-dot) {
+    border-color: #d4d4d8;
+  }
+
+  :deep(.ant-slider-dot-active) {
+    border-color: #050505;
+  }
+
+  :deep(.ant-slider-mark-text) {
+    color: var(--text-muted);
+  }
+
+  :deep(.ant-slider-mark-text-active) {
+    color: var(--theme-title);
+  }
+}
+
+html[data-theme="dark"] .generate-page .result-retain-badge {
+  background: #ffffff !important;
+  border: 1px solid var(--theme-panel-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .generate-page .result-retain-icon {
+  color: #050505 !important;
+}
+
+html[data-theme="dark"] .generate-page .generate-btn,
+html[data-theme="dark"] .generate-page .reverse-action-btn-primary,
+html[data-theme="dark"] .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+  background: #050505 !important;
+  color: #fff !important;
+  border-color: #050505 !important;
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+html[data-theme="dark"] .generate-page .generate-btn:hover,
+html[data-theme="dark"] .generate-page .generate-btn:focus,
+html[data-theme="dark"] .generate-page .reverse-action-btn-primary:hover,
+html[data-theme="dark"] .generate-page .reverse-action-btn-primary:focus {
+  background: #111111 !important;
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme="dark"] .generate-page .generate-btn:disabled {
+  background: #d4d4d8 !important;
+  color: #71717a !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .generate-page .source-upload-icon,
+html[data-theme="dark"] .generate-page .repaint-status-uploading,
+html[data-theme="dark"] .generate-page .result-tip-link {
+  color: #050505;
+}
+
+html[data-theme="dark"] .generate-page .source-upload-title,
+html[data-theme="dark"] .generate-page .repaint-status-title {
+  color: var(--theme-title);
+}
+
+html[data-theme="dark"] .generate-page .reverse-preview-shell,
+html[data-theme="dark"] .generate-page .reverse-result-card {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-soft);
+}
+
+html[data-theme="dark"] .generate-page .result-frame {
+  border-color: var(--theme-panel-border) !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px var(--theme-shadow-soft) !important;
+}
+
+html[data-theme="dark"] .generate-page .result-frame.pending {
+  background: #ffffff !important;
+}
+
+html[data-theme="dark"] .generate-page .result-frame.failed,
+html[data-theme="dark"] .generate-page .failed-image,
+html[data-theme="dark"] .generate-page .frame-state,
+html[data-theme="dark"] .generate-page .frame-state.error {
+  background: var(--theme-panel-bg-soft) !important;
+}
+
+html[data-theme="dark"] .generate-page .result-card:hover .result-frame.clickable {
+  border-color: var(--theme-border-strong) !important;
+  box-shadow: 0 18px 30px var(--theme-shadow-medium) !important;
+}
+
+html[data-theme="dark"] .generate-page .result-empty {
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .generate-page .result-body {
+  scrollbar-color: rgba(113, 113, 122, 0.42) transparent;
+}
+
+html[data-theme="dark"] .generate-page .result-body::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.42);
+}
+
+html[data-theme="dark"] .generate-page .result-body:hover::-webkit-scrollbar-thumb {
+  background: rgba(82, 82, 91, 0.56);
+}
+
+html[data-theme="dark"] .generate-page .reverse-preview-shell:hover {
+  box-shadow: 0 18px 30px var(--theme-shadow-soft);
+}
+
+html[data-theme="dark"] .generate-page .reverse-action-btn-secondary {
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  border-color: var(--theme-panel-border-strong) !important;
+
+  &:hover,
+  &:focus {
+    color: var(--theme-accent-text-hover) !important;
+    background: var(--theme-control-hover-bg) !important;
+    border-color: var(--theme-border-strong) !important;
+  }
+}
+
+html[data-theme="dark"] .generate-page .reverse-result-placeholder,
+html[data-theme="dark"] .generate-page .repaint-status-card {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-soft);
+}
+
+html[data-theme="dark"] .generate-page .repaint-status-card.ready {
+  background: var(--theme-control-hover-bg);
+  border-color: var(--theme-border-strong);
+}
+
+html[data-theme="dark"] .generate-page .repaint-status-card:hover {
+  box-shadow: 0 14px 24px var(--theme-shadow-soft);
+}
+
+html[data-theme="dark"] .generate-page .brush-preview {
+  background: rgba(5, 5, 5, 0.5);
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme="dark"] .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12) !important;
 }
 
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item .anticon {

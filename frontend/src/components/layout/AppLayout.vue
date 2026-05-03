@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, h, provide, nextTick, watch } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTick, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message } from "ant-design-vue";
@@ -13,6 +13,8 @@ import {
   getAnnouncementConfig,
 } from "@/api/auth";
 import { registerCloudbaseAccount, sendRegisterEmailCode } from "@/lib/cloudbase";
+import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
+import { getCurrentTheme } from "@/lib/theme";
 import type { AnnouncementConfig } from "@/types";
 import {
   PictureOutlined,
@@ -54,11 +56,21 @@ const routeOrder = new Map<string, number>([
   ["/admin/external-api-configs", 10],
 ]);
 
+const currentTheme = ref<AppThemeName>(getCurrentTheme());
+let themeObserver: MutationObserver | null = null;
+
 const primaryMenuItems = [
-  { key: "templates", label: "创意模版", iconSrc: "/nav-templates.svg" },
+  { key: "templates", label: "创意模版", iconSrc: "/nav-templates.svg", darkIconSrc: "/nav-templates-mono.svg" },
   { key: "generate", label: "自定义绘图", iconSrc: "/nav-generate.svg" },
-  { key: "history", label: "历史记录", iconSrc: "/nav-history.svg" },
+  { key: "history", label: "历史记录", iconSrc: "/nav-history.svg", darkIconSrc: "/nav-history-mono.svg" },
 ];
+
+function getPrimaryMenuIconSrc(item: (typeof primaryMenuItems)[number]) {
+  if (currentTheme.value === "dark" && item.darkIconSrc) {
+    return item.darkIconSrc;
+  }
+  return item.iconSrc;
+}
 
 const adminMenuItems = computed(() =>
   [
@@ -263,6 +275,7 @@ const announcementConfig = ref<AnnouncementConfig>({
   announcement_updated_at: null,
 });
 const ANNOUNCEMENT_DISMISS_KEY = "systemAnnouncementDismissState";
+const authInputPrefixStyle = { color: "var(--theme-input-prefix-color)" };
 
 const avatarUrl = computed(() => auth.user?.avatar_url || "");
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
@@ -311,6 +324,16 @@ async function checkAnnouncement() {
 }
 
 onMounted(async () => {
+  if (typeof document !== "undefined") {
+    themeObserver = new MutationObserver(() => {
+      currentTheme.value = getCurrentTheme();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [APP_THEME_ATTRIBUTE],
+    });
+  }
+
   await Promise.allSettled([
     (async () => {
       const res = await getContactConfig();
@@ -325,6 +348,11 @@ onMounted(async () => {
   } catch {
     // ignore sync failures for stale sessions
   }
+});
+
+onBeforeUnmount(() => {
+  themeObserver?.disconnect();
+  themeObserver = null;
 });
 
 function openCreditsContact() {
@@ -408,7 +436,7 @@ async function handleAvatarChange(e: Event) {
         <div class="header-brand" @click="router.push('/')">
           <div class="brand-mark">🍌</div>
           <div class="brand-copy">
-            <span class="brand-name">Banana Web</span>
+            <span class="brand-name">80AI</span>
             <span class="brand-sub">AI Creative Studio</span>
           </div>
         </div>
@@ -430,7 +458,7 @@ async function handleAvatarChange(e: Event) {
           @click="handleMenuClick"
         >
           <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-            <img :src="item.iconSrc" :alt="item.label" class="nav-menu-icon" />
+            <img :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
             <span>{{ item.label }}</span>
           </a-menu-item>
         </a-menu>
@@ -525,7 +553,7 @@ async function handleAvatarChange(e: Event) {
         <div class="mobile-drawer-brand">
           <div class="brand-mark">🍌</div>
           <div class="brand-copy">
-            <span class="brand-name">Banana Web</span>
+            <span class="brand-name">80AI</span>
             <span class="brand-sub">AI Creative Studio</span>
           </div>
         </div>
@@ -555,7 +583,7 @@ async function handleAvatarChange(e: Event) {
             @click="handleMenuClick"
           >
             <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-              <img :src="item.iconSrc" :alt="item.label" class="nav-menu-icon" />
+              <img :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
               <span>{{ item.label }}</span>
             </a-menu-item>
           </a-menu>
@@ -722,7 +750,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="loginForm.account"
                 size="large"
                 placeholder="优先使用邮箱登录"
-                :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(UserOutlined, { style: authInputPrefixStyle })"
               />
             </a-form-item>
             <a-form-item label="密码">
@@ -730,7 +758,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="loginForm.password"
                 size="large"
                 placeholder="请输入密码"
-                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
                 @press-enter="handleLoginSubmit"
               />
             </a-form-item>
@@ -763,7 +791,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="registerForm.email"
                 size="large"
                 placeholder="请输入常用邮箱"
-                :prefix="h(MailOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(MailOutlined, { style: authInputPrefixStyle })"
                 :maxlength="255"
               />
             </a-form-item>
@@ -791,7 +819,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="registerForm.username"
                 size="large"
                 placeholder="2-20 个字符"
-                :prefix="h(UserOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(UserOutlined, { style: authInputPrefixStyle })"
                 :maxlength="20"
               />
             </a-form-item>
@@ -800,7 +828,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="registerForm.password"
                 size="large"
                 placeholder="至少 6 位"
-                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
               />
             </a-form-item>
             <a-form-item label="确认密码">
@@ -808,7 +836,7 @@ async function handleAvatarChange(e: Event) {
                 v-model:value="registerForm.confirmPassword"
                 size="large"
                 placeholder="请再次输入密码"
-                :prefix="h(LockOutlined, { style: { color: '#be9b62' } })"
+                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
                 @press-enter="handleRegisterSubmit"
               />
             </a-form-item>
@@ -839,20 +867,20 @@ async function handleAvatarChange(e: Event) {
 .app-layout {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top, rgba(255, 199, 103, 0.16), transparent 28%),
-    linear-gradient(180deg, #fff8ee 0%, #fffdf9 100%);
+    radial-gradient(circle at top, var(--theme-page-glow), transparent 28%),
+    var(--theme-page-gradient);
 }
 
 .app-header {
-  background: rgba(255, 252, 246, 0.88) !important;
-  box-shadow: 0 16px 32px rgba(236, 185, 88, 0.12);
+  background: var(--theme-header-bg) !important;
+  box-shadow: 0 16px 32px var(--theme-header-shadow);
   padding: 0 24px !important;
   height: 74px;
   line-height: normal;
   position: sticky;
   top: 0;
   z-index: 1000;
-  border-bottom: 1px solid rgba(241, 210, 154, 0.7);
+  border-bottom: 1px solid var(--theme-header-border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -886,8 +914,8 @@ async function handleAvatarChange(e: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #ffd06d, #ffaf29);
-  box-shadow: 0 12px 22px rgba(255, 175, 41, 0.24);
+  background: linear-gradient(180deg, var(--theme-brand-bg-start), var(--theme-brand-bg-end));
+  box-shadow: 0 12px 22px var(--theme-brand-shadow);
   font-size: 24px;
 }
 
@@ -900,7 +928,7 @@ async function handleAvatarChange(e: Event) {
 .brand-name {
   font-size: 18px;
   font-weight: 700;
-  color: #4c341a;
+  color: var(--theme-title);
   letter-spacing: -0.2px;
 }
 
@@ -909,7 +937,7 @@ async function handleAvatarChange(e: Event) {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b8883f;
+  color: var(--theme-subtitle);
 }
 
 .header-menu {
@@ -928,7 +956,7 @@ async function handleAvatarChange(e: Event) {
     padding-inline: 16px !important;
     border-radius: 16px;
     font-weight: 700;
-    color: #7c6644;
+    color: var(--theme-nav-text);
 
     &::after {
       display: none;
@@ -936,14 +964,22 @@ async function handleAvatarChange(e: Event) {
   }
 
   :deep(.ant-menu-item-selected) {
-    background: linear-gradient(180deg, #ffd06d, #ffb02b) !important;
-    color: #523713 !important;
-    box-shadow: 0 10px 18px rgba(255, 176, 43, 0.2);
+    background: linear-gradient(
+      180deg,
+      var(--theme-nav-active-bg-start),
+      var(--theme-nav-active-bg-end)
+    ) !important;
+    color: var(--theme-nav-active-text) !important;
+    box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
+  }
+
+  :deep(.ant-menu-item-selected .nav-menu-icon) {
+    filter: var(--theme-nav-icon-active-filter);
   }
 
   :deep(.ant-menu-item:not(.ant-menu-item-selected):hover) {
-    color: #d58b14 !important;
-    background: rgba(255, 214, 140, 0.28) !important;
+    color: var(--theme-nav-hover-text) !important;
+    background: var(--theme-nav-hover-bg) !important;
   }
 
   :deep(.ant-menu-title-content) {
@@ -958,6 +994,8 @@ async function handleAvatarChange(e: Event) {
   height: 20px;
   display: block;
   flex-shrink: 0;
+  filter: var(--theme-nav-icon-filter);
+  transition: filter var(--motion-duration-fast) var(--motion-ease-soft);
 }
 
 .header-actions {
@@ -975,8 +1013,8 @@ async function handleAvatarChange(e: Event) {
   justify-content: center;
   flex-shrink: 0;
   border: none !important;
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
-  box-shadow: 0 16px 30px rgba(255, 169, 37, 0.26);
+  background: var(--theme-accent) !important;
+  box-shadow: 0 16px 30px var(--theme-fab-shadow);
 }
 
 .mobile-nav-entry {
@@ -993,11 +1031,11 @@ async function handleAvatarChange(e: Event) {
   height: 42px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(255, 247, 232, 0.92);
-  border: 1px solid #efcf93;
-  color: #d48806;
+  background: var(--theme-pill-bg);
+  border: 1px solid var(--theme-pill-border);
+  color: var(--theme-pill-text);
   font-weight: 700;
-  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.14);
+  box-shadow: 0 10px 22px var(--theme-pill-shadow);
   cursor: pointer;
 }
 
@@ -1020,9 +1058,9 @@ async function handleAvatarChange(e: Event) {
   gap: 12px;
   padding: 16px;
   border-radius: 22px;
-  background: linear-gradient(180deg, #fff7e8, #ffefcf);
-  border: 1px solid #efcf93;
-  box-shadow: 0 12px 24px rgba(239, 183, 73, 0.12);
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong));
+  border: 1px solid var(--theme-panel-border-strong);
+  box-shadow: 0 12px 24px var(--theme-card-shadow);
 }
 
 .mobile-user-meta {
@@ -1035,13 +1073,13 @@ async function handleAvatarChange(e: Event) {
 .mobile-user-name {
   font-size: 16px;
   font-weight: 700;
-  color: #4c341a;
+  color: var(--theme-title);
   word-break: break-all;
 }
 
 .mobile-user-role {
   font-size: 12px;
-  color: #9a7948;
+  color: var(--theme-text-secondary);
 }
 
 .mobile-user-credits {
@@ -1050,8 +1088,8 @@ async function handleAvatarChange(e: Event) {
   gap: 6px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  color: #d48806;
+  background: var(--theme-pill-bg-strong);
+  color: var(--theme-pill-text);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1068,7 +1106,7 @@ async function handleAvatarChange(e: Event) {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b8883f;
+  color: var(--theme-subtitle);
 }
 
 .mobile-drawer-menu {
@@ -1083,7 +1121,7 @@ async function handleAvatarChange(e: Event) {
     margin: 4px 0 !important;
     border-radius: 16px;
     font-weight: 700;
-    color: #6f5837;
+    color: var(--theme-nav-text);
   }
 
   :deep(.ant-menu-title-content) {
@@ -1093,9 +1131,17 @@ async function handleAvatarChange(e: Event) {
   }
 
   :deep(.ant-menu-item-selected) {
-    background: linear-gradient(180deg, #ffd06d, #ffb02b) !important;
-    color: #523713 !important;
-    box-shadow: 0 10px 18px rgba(255, 176, 43, 0.18);
+    background: linear-gradient(
+      180deg,
+      var(--theme-nav-active-bg-start),
+      var(--theme-nav-active-bg-end)
+    ) !important;
+    color: var(--theme-nav-active-text) !important;
+    box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
+  }
+
+  :deep(.ant-menu-item-selected .nav-menu-icon) {
+    filter: var(--theme-nav-icon-active-filter);
   }
 
   :deep(.ant-menu-item-danger) {
@@ -1118,20 +1164,20 @@ async function handleAvatarChange(e: Event) {
   height: 40px;
   padding-inline: 14px;
   border-radius: 999px;
-  border: 1px solid #efcf93 !important;
-  background: linear-gradient(180deg, #fff7e8, #ffefcf) !important;
-  color: #b26c04 !important;
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong)) !important;
+  color: var(--theme-accent-text) !important;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+  box-shadow: 0 10px 22px var(--theme-card-shadow);
 
   &:hover {
-    color: #995b00 !important;
-    border-color: #eab65d !important;
-    background: linear-gradient(180deg, #fff2da, #ffe7b8) !important;
-    box-shadow: 0 12px 24px rgba(239, 183, 73, 0.22);
+    color: var(--theme-accent-text-hover) !important;
+    border-color: var(--theme-border-strong) !important;
+    background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong)) !important;
+    box-shadow: 0 12px 24px var(--theme-card-shadow-strong);
   }
 }
 
@@ -1146,22 +1192,22 @@ async function handleAvatarChange(e: Event) {
   border: 1px solid transparent;
 
   &:hover {
-    background: #fff8ec;
-    border-color: #f1ddb7;
+    background: var(--theme-panel-bg-muted);
+    border-color: var(--theme-panel-border);
   }
 }
 
 .user-avatar {
-  background: linear-gradient(180deg, #ffd06d, #ffb02b);
-  color: #5a3c14;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-weight: 700;
-  box-shadow: 0 10px 16px rgba(255, 176, 43, 0.2);
+  box-shadow: 0 10px 16px var(--theme-nav-active-shadow);
 }
 
 .user-name {
   font-size: 14px;
   font-weight: 700;
-  color: #4c341a;
+  color: var(--theme-title);
 }
 
 .credits-badge {
@@ -1171,12 +1217,12 @@ async function handleAvatarChange(e: Event) {
   padding: 0;
   font-size: 15px;
   font-weight: 700;
-  color: #d48806;
+  color: var(--theme-accent-text);
   cursor: pointer;
   transition: color 0.2s, transform 0.2s;
 
   &:hover {
-    color: #b87306;
+    color: var(--theme-accent-text-hover);
     transform: translateY(-1px);
   }
 }
@@ -1205,7 +1251,7 @@ async function handleAvatarChange(e: Event) {
   list-style: disc;
   list-style-position: outside;
   text-align: left;
-  color: #7b6544;
+  color: var(--theme-text-secondary);
   font-size: 14px;
   line-height: 1.6;
 
@@ -1214,7 +1260,7 @@ async function handleAvatarChange(e: Event) {
 
     &::marker {
       font-size: 0.75em;
-      color: #a88e68;
+      color: var(--theme-subtitle);
     }
   }
 }
@@ -1224,16 +1270,16 @@ async function handleAvatarChange(e: Event) {
   height: 240px;
   padding: 10px;
   border-radius: 24px;
-  background: #fffaf1;
-  border: 1px solid #f1dfbf;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
+  box-shadow: inset 0 0 0 1px var(--theme-panel-inset);
 
   img {
     width: 100%;
     height: 100%;
     object-fit: contain;
     border-radius: 18px;
-    background: #fff;
+    background: var(--theme-empty-bg);
   }
 }
 
@@ -1241,9 +1287,9 @@ async function handleAvatarChange(e: Event) {
   width: 100%;
   padding: 26px 18px;
   border-radius: 20px;
-  background: #fffaf1;
-  border: 1px dashed #e8c88f;
-  color: #9a7a52;
+  background: var(--theme-panel-bg-soft);
+  border: 1px dashed var(--theme-empty-border);
+  color: var(--theme-text-secondary);
   line-height: 1.8;
 }
 
@@ -1257,12 +1303,12 @@ async function handleAvatarChange(e: Event) {
 .announcement-content {
   white-space: pre-wrap;
   line-height: 1.85;
-  color: #6b5436;
+  color: var(--theme-text);
   font-size: 14px;
   padding: 16px 18px;
   border-radius: 18px;
-  background: #fffaf1;
-  border: 1px solid #f1dfbf;
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .announcement-actions {
@@ -1330,17 +1376,17 @@ async function handleAvatarChange(e: Event) {
 :deep(.mobile-nav-drawer .ant-drawer-header) {
   padding: 20px 20px 0;
   border-bottom: none;
-  background: linear-gradient(180deg, #fffdf8, #fff9ef);
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
 }
 
 :deep(.mobile-nav-drawer .ant-drawer-title) {
-  color: #4c341a;
+  color: var(--theme-title);
   font-weight: 700;
 }
 
 :deep(.mobile-nav-drawer .ant-drawer-body) {
   padding: 18px 20px 24px;
-  background: linear-gradient(180deg, #fffdf8, #fff6ea);
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-muted));
 }
 
 :deep(.ant-modal .ant-input-affix-wrapper),
@@ -1350,7 +1396,7 @@ async function handleAvatarChange(e: Event) {
 }
 
 :deep(.ant-modal .ant-btn-primary) {
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  background: var(--theme-accent) !important;
   border: none !important;
 }
 
@@ -1363,16 +1409,16 @@ async function handleAvatarChange(e: Event) {
 }
 
 .avatar-modal-preview {
-  background: linear-gradient(180deg, #ffd06d, #ffb02b);
-  color: #5a3c14;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-size: 32px;
   font-weight: 700;
-  box-shadow: 0 16px 28px rgba(255, 176, 43, 0.18);
+  box-shadow: 0 16px 28px var(--theme-nav-active-shadow);
 }
 
 .avatar-modal-text {
   margin-top: 16px;
-  color: #8c7458;
+  color: var(--theme-text-muted);
   font-size: 13px;
 }
 
@@ -1385,9 +1431,9 @@ async function handleAvatarChange(e: Event) {
   padding-inline: 20px;
   border-radius: 999px;
   font-weight: 700;
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
+  background: var(--theme-accent) !important;
   border: none !important;
-  box-shadow: 0 10px 22px rgba(255, 169, 37, 0.22);
+  box-shadow: 0 10px 22px var(--theme-nav-active-shadow);
 }
 
 .register-header-btn {
@@ -1395,15 +1441,15 @@ async function handleAvatarChange(e: Event) {
   padding-inline: 20px;
   border-radius: 999px;
   font-weight: 700;
-  border: 1px solid #efcf93 !important;
-  background: linear-gradient(180deg, #fff7e8, #ffefcf) !important;
-  color: #b26c04 !important;
-  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong)) !important;
+  color: var(--theme-accent-text) !important;
+  box-shadow: 0 10px 22px var(--theme-card-shadow);
 
   &:hover {
-    color: #995b00 !important;
-    border-color: #eab65d !important;
-    background: linear-gradient(180deg, #fff2da, #ffe7b8) !important;
+    color: var(--theme-accent-text-hover) !important;
+    border-color: var(--theme-border-strong) !important;
+    background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong)) !important;
   }
 }
 
@@ -1415,15 +1461,15 @@ async function handleAvatarChange(e: Event) {
   :deep(.ant-tabs-tab) {
     font-weight: 700;
     font-size: 15px;
-    color: #8c7458;
+    color: var(--theme-text-muted);
   }
 
   :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
-    color: #c98511 !important;
+    color: var(--theme-accent-text) !important;
   }
 
   :deep(.ant-tabs-ink-bar) {
-    background: linear-gradient(90deg, #ffc45b, #ffab25);
+    background: var(--theme-accent);
     height: 3px;
     border-radius: 2px;
   }
@@ -1432,15 +1478,15 @@ async function handleAvatarChange(e: Event) {
 .auth-switch-hint {
   text-align: center;
   font-size: 13px;
-  color: #8c7458;
+  color: var(--theme-text-muted);
 
   a {
-    color: #d38a12;
+    color: var(--theme-link);
     font-weight: 600;
     cursor: pointer;
 
     &:hover {
-      color: #b26c04;
+      color: var(--theme-link-hover);
     }
   }
 }
@@ -1516,9 +1562,9 @@ async function handleAvatarChange(e: Event) {
   min-width: 176px;
   padding: 12px;
   border-radius: 18px;
-  border: 1px solid #f1dfbf;
-  background: linear-gradient(180deg, #fffdfa, #fff8ef);
-  box-shadow: 0 16px 28px rgba(164, 122, 47, 0.1);
+  border: 1px solid var(--theme-panel-border);
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
+  box-shadow: 0 16px 28px var(--theme-shadow-soft);
 }
 
 .warm-dropdown .ant-dropdown-menu-item {
@@ -1527,7 +1573,7 @@ async function handleAvatarChange(e: Event) {
   min-height: 50px;
   padding: 10px 16px;
   border-radius: 14px;
-  color: #54463a;
+  color: var(--theme-title);
   font-weight: 700;
   gap: 8px;
   transition:
@@ -1538,18 +1584,18 @@ async function handleAvatarChange(e: Event) {
 }
 
 .warm-dropdown .ant-dropdown-menu-item:hover {
-  background: linear-gradient(180deg, #fff2da, #ffe7b8);
-  color: #8a5607;
-  box-shadow: 0 10px 22px rgba(239, 183, 73, 0.16);
+  background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong));
+  color: var(--theme-accent-text-hover);
+  box-shadow: 0 10px 22px var(--theme-card-shadow);
   transform: translateY(-1px);
 }
 
 .warm-dropdown .ant-dropdown-menu-item-selected {
-  background: linear-gradient(180deg, #ffc45b, #ffab25) !important;
-  color: #5a3c14 !important;
+  background: var(--theme-accent) !important;
+  color: var(--theme-accent-contrast) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 248, 231, 0.45),
-    0 10px 22px rgba(255, 169, 37, 0.22);
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 10px 22px var(--theme-shadow-strong);
 }
 
 .warm-dropdown .ant-dropdown-menu-item .anticon {
@@ -1568,6 +1614,6 @@ async function handleAvatarChange(e: Event) {
 
 .warm-dropdown .ant-dropdown-menu-item-divider {
   margin: 8px 2px;
-  background: #efe4d2;
+  background: var(--theme-border);
 }
 </style>

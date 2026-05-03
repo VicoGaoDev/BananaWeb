@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { DeleteOutlined, KeyOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons-vue";
+import { BgColorsOutlined, DeleteOutlined, KeyOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons-vue";
 import { deleteAdminConfig, getAdminConfig, setAdminConfig } from "@/api/admin";
+import { appThemes, type AppThemeName } from "@/config/theme";
+import { getCurrentTheme, setAppTheme } from "@/lib/theme";
+import { useAuthStore } from "@/stores/auth";
 import { uploadReferenceImage } from "@/api/upload";
 
+const auth = useAuthStore();
+const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const contactQrImage = ref("");
 const announcementEnabled = ref(false);
 const announcementContent = ref("");
@@ -12,12 +17,19 @@ const loading = ref(false);
 const saving = ref(false);
 const qrUploading = ref(false);
 const qrInput = ref<HTMLInputElement | null>(null);
+const currentTheme = ref<AppThemeName>(getCurrentTheme());
+
+const themeOptions = [
+  { label: appThemes.dark.label, value: appThemes.dark.key, desc: "选中菜单、主操作和整体背景走黑灰风格" },
+  { label: appThemes.warm.label, value: appThemes.warm.key, desc: "恢复当前暖色橙金风格" },
+] as const;
 
 const hasConfig = computed(() => (
   Boolean(contactQrImage.value.trim() || announcementEnabled.value || announcementContent.value.trim())
 ));
 
 onMounted(async () => {
+  currentTheme.value = getCurrentTheme();
   loading.value = true;
   try {
     const res = await getAdminConfig();
@@ -32,6 +44,11 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+function applyThemeSelection() {
+  setAppTheme(currentTheme.value);
+  message.success(`已切换为${appThemes[currentTheme.value].label}`);
+}
 
 async function handleSave() {
   if (!hasConfig.value) {
@@ -159,6 +176,48 @@ async function handleQrUpload(event: Event) {
             placeholder="请输入系统公告内容。用户每次登录成功或刷新网站时会触发公告检查，并可选择今日不再弹出。"
           />
         </div>
+
+        <div v-if="isSuperAdmin" class="theme-section">
+          <div class="theme-section-head">
+            <div>
+              <div class="key-label">前端主题风格</div>
+              <div class="theme-tip">仅作用于当前浏览器，本地保存。刷新或重新打开后会继续使用所选主题。</div>
+            </div>
+            <BgColorsOutlined class="theme-section-icon" />
+          </div>
+
+          <a-radio-group
+            v-model:value="currentTheme"
+            class="warm-radio-group theme-radio-group"
+            button-style="solid"
+          >
+            <a-radio-button
+              v-for="option in themeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-radio-button>
+          </a-radio-group>
+
+          <div class="theme-option-list">
+            <div
+              v-for="option in themeOptions"
+              :key="option.value"
+              class="theme-option-card"
+              :class="{ active: currentTheme === option.value }"
+            >
+              <div class="theme-option-title">{{ option.label }}</div>
+              <div class="theme-option-desc">{{ option.desc }}</div>
+            </div>
+          </div>
+
+          <div class="theme-actions">
+            <a-button type="primary" class="warm-primary-btn" @click="applyThemeSelection">
+              应用主题
+            </a-button>
+          </div>
+        </div>
       </div>
     </a-spin>
   </div>
@@ -176,7 +235,7 @@ async function handleQrUpload(event: Event) {
 .key-label {
   font-size: 13px;
   font-weight: 700;
-  color: #8d7457;
+  color: var(--theme-subtitle);
   margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -188,18 +247,18 @@ async function handleQrUpload(event: Event) {
 }
 
 .config-secondary-btn {
-  border-color: #efc784 !important;
-  background: #fff7e8 !important;
-  color: #b16d10 !important;
+  border-color: var(--theme-panel-border-strong) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  color: var(--theme-accent-text) !important;
   border-radius: 12px !important;
   font-weight: 600;
 }
 
 .config-secondary-btn:hover,
 .config-secondary-btn:focus {
-  border-color: #e1a64a !important;
-  background: #fff0d3 !important;
-  color: #c7770d !important;
+  border-color: var(--theme-border-strong) !important;
+  background: var(--theme-control-hover-bg) !important;
+  color: var(--theme-accent-text-hover) !important;
 }
 
 .qr-section {
@@ -212,8 +271,8 @@ async function handleQrUpload(event: Event) {
   gap: 20px;
   padding: 18px 20px;
   border-radius: 20px;
-  background: #fffaf1;
-  border: 1px solid #f1dfbf;
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .qr-preview {
@@ -225,8 +284,8 @@ async function handleQrUpload(event: Event) {
   justify-content: center;
   border-radius: 18px;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #f0dfbe;
+  background: var(--theme-empty-bg);
+  border: 1px solid var(--theme-border);
 
   img {
     width: 100%;
@@ -245,9 +304,9 @@ async function handleQrUpload(event: Event) {
   padding: 16px;
   text-align: center;
   border-radius: 18px;
-  background: #fffdf8;
-  border: 1px dashed #e7c893;
-  color: #9b7b52;
+  background: var(--theme-control-bg);
+  border: 1px dashed var(--theme-empty-border);
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -266,8 +325,87 @@ async function handleQrUpload(event: Event) {
 .announcement-textarea {
   :deep(textarea) {
     border-radius: 16px;
-    border-color: #efdcb9;
-    background: #fffdf8;
+    border-color: var(--theme-control-border);
+    background: var(--theme-control-bg);
+  }
+}
+
+.theme-section {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
+  border: 1px solid var(--theme-panel-border);
+}
+
+.theme-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.theme-section-icon {
+  font-size: 22px;
+  color: var(--theme-accent-text);
+}
+
+.theme-tip {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.theme-radio-group {
+  width: fit-content;
+}
+
+.theme-option-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.theme-option-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--theme-panel-border);
+  background: var(--theme-panel-bg-muted);
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-soft),
+    background var(--motion-duration-base) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.theme-option-card.active {
+  border-color: var(--theme-border-strong);
+  background: var(--theme-control-hover-bg);
+  box-shadow: 0 12px 24px var(--theme-card-shadow);
+}
+
+.theme-option-title {
+  color: var(--theme-title);
+  font-weight: 700;
+}
+
+.theme-option-desc {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.theme-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .theme-option-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

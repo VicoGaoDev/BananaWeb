@@ -189,7 +189,7 @@ onMounted(() => {
 
     <section class="section-block motion-fade-up" style="--motion-delay: 0.18s">
       <div class="section-heading">
-        <div class="section-title">为什么用 Banana Web</div>
+        <div class="section-title">为什么用 80AI</div>
         <div class="section-desc">不是只强调“能生成”，而是强调“稳定地生成出更好的图”。</div>
       </div>
 
@@ -715,6 +715,148 @@ onMounted(() => {
   margin-top: 6px;
 }
 
+:global(html[data-theme="dark"]) {
+  .home-page {
+    .hero-section,
+    .hero-visual,
+    .hero-panel,
+    .metric-card,
+    .showcase-skeleton-card,
+    .showcase-card,
+    .showcase-empty,
+    .promise-item,
+    .hero-secondary-btn {
+      background: #fff !important;
+      border-color: var(--theme-panel-border) !important;
+      box-shadow: none !important;
+    }
+
+    .highlight-card.warm-card {
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+
+    .highlight-card.warm-card.motion-card-lift {
+      transition: none !important;
+    }
+
+    .highlight-card.warm-card:hover {
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+      transform: none !important;
+    }
+
+    .hero-section {
+      background: transparent !important;
+    }
+
+    .hero-visual {
+      border: 1px solid var(--theme-panel-border);
+    }
+
+    .hero-glow-main,
+    .hero-glow-sub {
+      background: rgba(0, 0, 0, 0.05) !important;
+    }
+
+    .hero-badge {
+      background: #fff !important;
+      border: 1px solid var(--theme-panel-border);
+      color: var(--theme-title) !important;
+    }
+
+    .hero-title,
+    .section-title,
+    .panel-title,
+    .showcase-empty-title,
+    .highlight-title {
+      color: var(--theme-title) !important;
+    }
+
+    .hero-desc,
+    .section-desc,
+    .showcase-empty-desc,
+    .highlight-desc,
+    .promise-item,
+    .panel-label,
+    .hero-panel-primary p,
+    .hero-panel-floating {
+      color: var(--text-secondary) !important;
+    }
+
+    .panel-dot,
+    .highlight-icon {
+      background: #050505 !important;
+      color: #fff !important;
+      box-shadow: none !important;
+    }
+
+    .showcase-skeleton-card {
+      border: 1px solid var(--theme-panel-border);
+    }
+
+    .showcase-skeleton-media,
+    .showcase-skeleton-line {
+      background: #ececef !important;
+    }
+
+    .showcase-marquee::before {
+      background: linear-gradient(90deg, #fff 0%, rgba(255, 255, 255, 0) 100%) !important;
+    }
+
+    .showcase-marquee::after {
+      background: linear-gradient(270deg, #fff 0%, rgba(255, 255, 255, 0) 100%) !important;
+    }
+
+    .showcase-card {
+      border: 1px solid var(--theme-panel-border);
+
+      &:hover {
+        border-color: var(--theme-border-strong) !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08) !important;
+      }
+    }
+
+    .showcase-card-mask {
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.78) 100%) !important;
+    }
+
+    .showcase-card-prompt {
+      color: #fff !important;
+    }
+
+    .showcase-overlay {
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.48)) !important;
+    }
+
+    .showcase-overlay-text {
+      background: rgba(255, 255, 255, 0.96) !important;
+      color: #111 !important;
+      border: 1px solid var(--theme-panel-border);
+    }
+
+    .showcase-empty {
+      border: 1px dashed var(--theme-panel-border) !important;
+    }
+
+    .metric-card strong {
+      color: var(--theme-title) !important;
+    }
+
+    .metric-card span {
+      color: var(--text-secondary) !important;
+    }
+
+    .promise-item {
+      .anticon {
+        color: #050505 !important;
+      }
+    }
+  }
+}
+
 @keyframes showcase-scroll-left {
   from {
     transform: translate3d(0, 0, 0);
@@ -801,5 +943,57 @@ onMounted(() => {
   .showcase-skeleton-media {
     height: 136px;
   }
+}
+</style>
+
+<style lang="scss">
+html[data-theme="dark"] .home-page .hero-section.hero-section {
+  background: rgb(252, 252, 252) !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+html[data-theme="dark"] .home-page .section-block,
+html[data-theme="dark"] .home-page .showcase-shell,
+html[data-theme="dark"] .home-page .promise-shell {
+  background: rgb(252, 252, 252) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+html[data-theme="dark"] .home-page .showcase-marquee,
+html[data-theme="dark"] .home-page .showcase-skeleton-row {
+  background: rgb(252, 252, 252) !important;
+}
+
+html[data-theme="dark"] .home-page .showcase-marquee::before {
+  background: linear-gradient(90deg, rgb(252, 252, 252) 0%, rgba(252, 252, 252, 0) 100%) !important;
+}
+
+html[data-theme="dark"] .home-page .showcase-marquee::after {
+  background: linear-gradient(270deg, rgb(252, 252, 252) 0%, rgba(252, 252, 252, 0) 100%) !important;
+}
+
+html[data-theme="dark"] .home-page .highlight-card.warm-card {
+  background: #fff !important;
+  border: 1px solid var(--theme-panel-border) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04) !important;
+}
+
+html[data-theme="dark"] .home-page .metric-card,
+html[data-theme="dark"] .home-page .promise-item {
+  background: #fff !important;
+  border-color: var(--theme-panel-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .home-page .hero-panel,
+html[data-theme="dark"] .home-page .hero-secondary-btn,
+html[data-theme="dark"] .home-page .hero-badge,
+html[data-theme="dark"] .home-page .showcase-empty {
+  background: #fff !important;
+  box-shadow: none !important;
 }
 </style>
