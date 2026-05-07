@@ -11,6 +11,7 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime, timedelta
 
 import httpx
 from pathlib import Path
@@ -36,6 +37,7 @@ MAX_ERROR_MESSAGE_LENGTH = 1800
 MAX_RESPONSE_PREVIEW_LENGTH = 1200
 QUEUE_UNAVAILABLE_ERROR = "任务队列暂不可用，请稍后重试"
 TASK_LOCK_UNAVAILABLE_ERROR = "任务锁服务不可用，请稍后重试"
+PROCESSING_TASK_TIMEOUT_ERROR = "任务处理超时，已自动关闭"
 TASK_PROCESSING_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 
@@ -68,12 +70,32 @@ def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     return mime_type, base64.b64encode(data).decode("utf-8")
 
 
-def _append_inline_image(parts: list[dict], image_url: str) -> bool:
+def _build_reference_image_payload(image_url: str) -> dict[str, object] | None:
     ref = _read_file_as_base64(image_url)
     if not ref:
-        return False
+        return None
     mime_type, b64_data = ref
-    parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+    return {
+        "inline_part": {"inlineData": {"mimeType": mime_type, "data": b64_data}},
+        "base64": b64_data,
+        "mime_type": mime_type,
+        "data_url": f"data:{mime_type};base64,{b64_data}",
+    }
+
+
+def _build_inline_image_part(image_url: str) -> dict | None:
+    reference_payload = _build_reference_image_payload(image_url)
+    if not reference_payload:
+        return None
+    inline_part = reference_payload.get("inline_part")
+    return inline_part if isinstance(inline_part, dict) else None
+
+
+def _append_inline_image(parts: list[dict], image_url: str) -> bool:
+    inline_part = _build_inline_image_part(image_url)
+    if not inline_part:
+        return False
+    parts.append(inline_part)
     return True
 
 
@@ -176,6 +198,16 @@ def _call_gemini_api(
         config = require_scene_config(db, scene_key)
 
         parts: list[dict] = []
+        render_variables = {
+            **build_secret_variables(db),
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "image_size": image_size,
+            "custom_size": custom_size,
+            "generation_config": {},
+            "mode": mode,
+            "reference_image_count": 0,
+        }
         if mode == "inpaint":
             if not _append_inline_image(parts, source_image):
                 logger.warning("Inpaint source image not found: %s", source_image)
@@ -191,8 +223,23 @@ def _call_gemini_api(
                 )
             })
         else:
-            for ref_url in (reference_images or []):
-                _append_inline_image(parts, ref_url)
+            reference_count = 0
+            for index, ref_url in enumerate(reference_images or [], start=1):
+                reference_payload = _build_reference_image_payload(ref_url)
+                if not reference_payload:
+                    logger.warning("Reference image not found or unreadable: index=%d, url=%s", index, ref_url)
+                    continue
+                inline_part = reference_payload["inline_part"]
+                if not isinstance(inline_part, dict):
+                    logger.warning("Reference image payload malformed: index=%d, url=%s", index, ref_url)
+                    continue
+                parts.append(inline_part)
+                reference_count += 1
+                render_variables[f"reference_image_{index}"] = inline_part
+                render_variables[f"reference_image_{index}_base64"] = reference_payload["base64"]
+                render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
+                render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
+            render_variables["reference_image_count"] = reference_count
             parts.append({"text": prompt})
 
         generation_config = {"responseModalities": ["IMAGE"]}
@@ -203,18 +250,11 @@ def _call_gemini_api(
             if image_size:
                 generation_config["imageConfig"]["imageSize"] = image_size
 
+        render_variables["contents_parts"] = parts
+        render_variables["generation_config"] = generation_config
         rendered = render_config(
             config,
-            {
-                **build_secret_variables(db),
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "image_size": image_size,
-                "custom_size": custom_size,
-                "contents_parts": parts,
-                "generation_config": generation_config,
-                "mode": mode,
-            },
+            render_variables,
         )
 
         auth_value = rendered.headers.get("Authorization", "")
@@ -395,6 +435,53 @@ def _rollback_session_safely(db) -> None:
         logger.exception("Failed to rollback database session")
 
 
+def _is_task_processing_timed_out(task: Task) -> bool:
+    timeout_seconds = max(int(settings.PROCESSING_TASK_TIMEOUT_SECONDS or 0), 0)
+    if timeout_seconds <= 0 or (task.status or "") != "processing":
+        return False
+
+    last_progress_at = task.updated_at or task.enqueued_at or task.created_at
+    if last_progress_at is None:
+        return False
+
+    return last_progress_at <= datetime.utcnow() - timedelta(seconds=timeout_seconds)
+
+
+def _expire_processing_task(
+    db,
+    task: Task,
+    images: list[Image] | None = None,
+    *,
+    reason: str = PROCESSING_TASK_TIMEOUT_ERROR,
+) -> bool:
+    if not _is_task_processing_timed_out(task):
+        return False
+
+    task_images = images if images is not None else db.query(Image).filter(Image.task_id == task.id).all()
+    normalized_error = _clip_error_message(reason)
+    for image in task_images:
+        if image.status == "pending":
+            _mark_generation_failure(image, normalized_error)
+
+    task.status = _resolve_task_status(task_images)
+    if task.status == "processing":
+        task.status = "failed"
+    task.error_message = "" if task.status == "success" else normalized_error
+    db.commit()
+    logger.error(
+        "Task processing timed out: task_id=%s, timeout_seconds=%s",
+        task.id,
+        int(settings.PROCESSING_TASK_TIMEOUT_SECONDS or 0),
+        extra={
+            "event": "task.worker.timeout",
+            "task_id": task_external_id(task),
+            "user_id": user_external_id(task.user) if task.user else None,
+            "timeout_seconds": int(settings.PROCESSING_TASK_TIMEOUT_SECONDS or 0),
+        },
+    )
+    return True
+
+
 def _recover_task_after_exception(task_id: int, error_message: str) -> None:
     recovery_db = SessionLocal()
     try:
@@ -506,6 +593,8 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                 },
             )
             return
+        if _expire_processing_task(db, task):
+            return
         queue_duration_ms = None
         total_duration_ms = None
         if task.created_at is not None:
@@ -522,6 +611,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         task.status = "processing"
         task.error_message = ""
         db.commit()
+        db.refresh(task)
         logger.info(
             "Task status switched to processing",
             extra={
@@ -558,6 +648,9 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         all_success = all(image.status == "success" for image in images if image.status != "pending")
 
         for image in pending_images:
+            db.refresh(task)
+            if _expire_processing_task(db, task, images):
+                return
             result, error_message = _call_gemini_api(
                 prompt=task.prompt,
                 aspect_ratio=task.size,
@@ -664,10 +757,16 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
             _mark_generation_failure(image, "关联任务不存在")
             db.commit()
             return
+        if _expire_processing_task(db, task, [image]):
+            return
 
         task.status = "processing"
         task.error_message = ""
         db.commit()
+        db.refresh(task)
+
+        if _expire_processing_task(db, task, [image]):
+            return
 
         ref_urls = _parse_reference_images(task)
         task_mode = (task.mode or "generate").lower()

@@ -240,6 +240,7 @@ def _ensure_schema_compat():
     if "external_api_scene_bindings" in api_key_tables:
         scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
         credit_cost_added = False
+        max_reference_images_added = False
         with engine.begin() as conn:
             if "scene_type" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_type VARCHAR(30) DEFAULT 'generate'"))
@@ -266,6 +267,9 @@ def _ensure_schema_compat():
             if "credit_cost" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
                 credit_cost_added = True
+            if "max_reference_images" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN max_reference_images INTEGER DEFAULT 0"))
+                max_reference_images_added = True
             if "aspect_ratio_options_json" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN aspect_ratio_options_json TEXT"))
             if "image_size_options_json" not in scene_binding_columns:
@@ -309,7 +313,7 @@ def _ensure_schema_compat():
                 )
             )
 
-    from app.services.external_api_config_service import get_default_credit_cost
+    from app.services.external_api_config_service import get_default_credit_cost, get_default_max_reference_images
 
     if "external_api_scene_bindings" in api_key_tables:
         with engine.begin() as conn:
@@ -348,6 +352,18 @@ def _ensure_schema_compat():
                         ),
                         {"scene_key": scene_key, "credit_cost": get_default_credit_cost(scene_key)},
                     )
+            if max_reference_images_added:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE external_api_scene_bindings
+                        SET max_reference_images = :image_edit_default
+                        WHERE scene_type = 'image_edit'
+                          AND (max_reference_images IS NULL OR max_reference_images = 0)
+                        """
+                    ),
+                    {"image_edit_default": get_default_max_reference_images("image_edit")},
+                )
 
 
 def _ensure_template_required_columns():
@@ -545,6 +561,8 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
         if "hide_custom_size" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_custom_size BOOLEAN DEFAULT 1"))
+        if "max_reference_images" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN max_reference_images INTEGER DEFAULT 0"))
         if "aspect_ratio_options_json" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN aspect_ratio_options_json TEXT"))
         if "image_size_options_json" not in scene_binding_columns:

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from "vue";
+import { computed, h, onMounted, reactive, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import {
   CopyOutlined,
@@ -57,6 +57,7 @@ const DEFAULT_CUSTOM_SIZE_OPTIONS_JSON = JSON.stringify([
   { label: "896 x 1152", value: "896x1152" },
   { label: "1280 x 720", value: "1280x720" },
 ], null, 2);
+const DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6;
 
 const configs = ref<ExternalApiConfig[]>([]);
 const sceneBindings = ref<ExternalApiSceneBinding[]>([]);
@@ -123,6 +124,7 @@ const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
   display_name: "",
   subtitle: "",
   credit_cost: 4,
+  max_reference_images: 0,
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
   custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
@@ -135,6 +137,7 @@ const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   hide_aspect_ratio: false,
   hide_resolution: false,
   hide_custom_size: true,
+  max_reference_images: 0,
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
   custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
@@ -241,6 +244,7 @@ function resetSceneForm() {
   sceneForm.display_name = "";
   sceneForm.subtitle = "";
   sceneForm.credit_cost = 4;
+  sceneForm.max_reference_images = 0;
   sceneForm.aspect_ratio_options_json = DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneForm.image_size_options_json = DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneForm.custom_size_options_json = DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
@@ -287,10 +291,24 @@ function fillSceneMetaForm(record: ExternalApiSceneBinding) {
   sceneMetaForm.hide_aspect_ratio = !!record.hide_aspect_ratio;
   sceneMetaForm.hide_resolution = !!record.hide_resolution;
   sceneMetaForm.hide_custom_size = !!record.hide_custom_size;
+  sceneMetaForm.max_reference_images = Number(record.max_reference_images || 0);
   sceneMetaForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneMetaForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneMetaForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
 }
+
+watch(
+  () => sceneForm.scene_type,
+  (sceneType, previousType) => {
+    if (sceneType === previousType) return;
+    if (sceneType === "image_edit" && Number(sceneForm.max_reference_images || 0) <= 0) {
+      sceneForm.max_reference_images = DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES;
+    }
+    if (sceneType === "generate" && Number(sceneForm.max_reference_images || 0) === DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES) {
+      sceneForm.max_reference_images = 0;
+    }
+  }
+);
 
 function validateSceneOptionsJson(raw: string, label: string) {
   try {
@@ -365,6 +383,7 @@ function openCopyScene(record: ExternalApiSceneBinding) {
   sceneForm.display_name = record.display_name || "";
   sceneForm.subtitle = record.subtitle || "";
   sceneForm.credit_cost = Number(record.credit_cost || 0);
+  sceneForm.max_reference_images = Number(record.max_reference_images || 0);
   sceneForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
@@ -588,6 +607,7 @@ async function handleCreateScene() {
       display_name: sceneForm.display_name.trim(),
       subtitle: sceneForm.subtitle.trim(),
       credit_cost: Number(sceneForm.credit_cost || 0),
+      max_reference_images: Number(sceneForm.max_reference_images || 0),
       aspect_ratio_options_json: sceneForm.aspect_ratio_options_json,
       image_size_options_json: sceneForm.image_size_options_json,
       custom_size_options_json: sceneForm.custom_size_options_json,
@@ -627,6 +647,7 @@ async function handleSaveSceneMeta() {
       hide_aspect_ratio: !!sceneMetaForm.hide_aspect_ratio,
       hide_resolution: !!sceneMetaForm.hide_resolution,
       hide_custom_size: !!sceneMetaForm.hide_custom_size,
+      max_reference_images: Number(sceneMetaForm.max_reference_images || 0),
       aspect_ratio_options_json: sceneMetaForm.aspect_ratio_options_json,
       image_size_options_json: sceneMetaForm.image_size_options_json,
       custom_size_options_json: sceneMetaForm.custom_size_options_json,
@@ -967,6 +988,42 @@ function copySecret(value: string, label: string) {
               <div>用于文生图或图编辑接口：</div>
               <pre v-pre>{{ contents_parts }}</pre>
               <pre v-pre>{{ generation_config }}</pre>
+              <pre v-pre>{{ reference_image_1 }}</pre>
+              <pre v-pre>{{ reference_image_1_base64 }}</pre>
+              <pre v-pre>{{ reference_image_1_mime_type }}</pre>
+              <pre v-pre>{{ reference_image_1_data_url }}</pre>
+              <pre v-pre>{{ reference_image_2 }}</pre>
+              <pre v-pre>{{ reference_image_3 }}</pre>
+              <pre v-pre>{{ reference_image_count }}</pre>
+              <div class="scene-desc">
+                图编辑场景会按“最大参考图张数”限制上传与请求回填数量。支持多少张，就会尝试回填多少个
+                <code v-pre>{{ reference_image_N }}</code>
+                占位符；超出的图片不会进入请求。旧模板仍可继续使用
+                <code v-pre>{{ contents_parts }}</code>
+                兼容现有 Gemini 风格请求体。
+              </div>
+              <div class="scene-desc" style="margin-top: 8px">
+                当某个精确占位符不存在时，例如
+                <code v-pre>{{ reference_image_6_base64 }}</code>
+                ，系统会自动移除当前对象或数组项，适合按上传张数动态裁剪
+                <code>image</code>
+                列表。
+              </div>
+              <div class="scene-desc" style="margin-top: 8px">例如：</div>
+              <pre v-pre>{
+  "input": {
+    "image": "{{ reference_image_1 }}",
+    "style": "{{ reference_image_2 }}",
+    "referenceCount": "{{ reference_image_count }}"
+  }
+}</pre>
+              <pre v-pre>{
+  "image": [
+    {
+      "b64_json": "{{ reference_image_1_base64 }}"
+    }
+  ]
+}</pre>
               <div class="scene-desc">
                 宽高比、生图质量、自定义分辨率选项请在场景表单中用 JSON 数组维护，系统会把对应 value 传入
                 <code v-pre>{{ aspect_ratio }}</code>
@@ -1022,6 +1079,17 @@ function copySecret(value: string, label: string) {
             </a-form-item>
           </a-col>
         </a-row>
+
+        <a-form-item label="最大参考图张数">
+          <a-input-number v-model:value="sceneForm.max_reference_images" class="warm-input-number" :min="0" style="width: 100%" />
+          <div class="scene-desc" style="margin-top: 6px">
+            仅图编辑场景生效；前端最多允许上传这么多张参考图，并回填对应数量的
+            <code v-pre>{{ reference_image_1 }}</code>
+            到
+            <code v-pre>{{ reference_image_N }}</code>
+            占位符。文生图场景可填 `0`。
+          </div>
+        </a-form-item>
 
         <a-form-item label="场景类型" required>
           <a-radio-group v-model:value="sceneForm.scene_type" class="warm-radio-group" button-style="solid">
@@ -1152,6 +1220,11 @@ function copySecret(value: string, label: string) {
           <a-col :span="12">
             <a-form-item label="排序值">
               <a-input-number v-model:value="sceneMetaForm.sort_order" class="warm-input-number" :min="0" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="最大参考图张数">
+              <a-input-number v-model:value="sceneMetaForm.max_reference_images" class="warm-input-number" :min="0" style="width: 100%" />
             </a-form-item>
           </a-col>
         </a-row>

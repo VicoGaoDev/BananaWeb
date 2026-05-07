@@ -40,6 +40,7 @@ SCENE_TYPE_PROMPT_REVERSE = "prompt_reverse"
 SCENE_TYPE_INPAINT = "inpaint"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
+_MISSING_PLACEHOLDER = object()
 DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_BANANA, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana", "scene_description": "推荐模型", "sort_order": 10, "hide_aspect_ratio": False, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_BANANA2, "scene_type": SCENE_TYPE_GENERATE, "scene_label": "Banana 2", "scene_description": "尝鲜版", "sort_order": 20, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
@@ -92,6 +93,7 @@ DEFAULT_CUSTOM_SIZE_OPTIONS = [
     {"label": "896 x 1152", "value": "896x1152"},
     {"label": "1280 x 720", "value": "1280x720"},
 ]
+DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6
 
 
 def is_builtin_scene(scene_key: str) -> bool:
@@ -102,6 +104,10 @@ def _get_default_scene_options(scene_type: str) -> tuple[list[dict[str, str]], l
     if scene_type in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT}:
         return DEFAULT_ASPECT_RATIO_OPTIONS, DEFAULT_IMAGE_SIZE_OPTIONS, DEFAULT_CUSTOM_SIZE_OPTIONS
     return [], [], []
+
+
+def get_default_max_reference_images(scene_type: str) -> int:
+    return DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES if scene_type == SCENE_TYPE_IMAGE_EDIT else 0
 
 
 def _normalize_scene_options(raw: str | None, fallback: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -235,7 +241,7 @@ def _normalize_headers(data: Any) -> dict[str, str]:
 def _render_string(template: str, variables: dict[str, Any]) -> Any:
     exact_match = PLACEHOLDER_RE.fullmatch(template)
     if exact_match:
-        return variables.get(exact_match.group(1), "")
+        return variables.get(exact_match.group(1), _MISSING_PLACEHOLDER)
 
     def replace(match: re.Match[str]) -> str:
         name = match.group(1)
@@ -251,9 +257,23 @@ def _render_string(template: str, variables: dict[str, Any]) -> Any:
 
 def _render_json_template(template: Any, variables: dict[str, Any]) -> Any:
     if isinstance(template, dict):
-        return {key: _render_json_template(value, variables) for key, value in template.items()}
+        rendered: dict[str, Any] = {}
+        for key, value in template.items():
+            next_value = _render_json_template(value, variables)
+            if next_value is _MISSING_PLACEHOLDER:
+                continue
+            rendered[key] = next_value
+        if not rendered and template:
+            return _MISSING_PLACEHOLDER
+        return rendered
     if isinstance(template, list):
-        return [_render_json_template(item, variables) for item in template]
+        rendered_items: list[Any] = []
+        for item in template:
+            next_item = _render_json_template(item, variables)
+            if next_item is _MISSING_PLACEHOLDER:
+                continue
+            rendered_items.append(next_item)
+        return rendered_items
     if isinstance(template, str):
         return _render_string(template, variables)
     return template
@@ -311,6 +331,7 @@ def _serialize_scene_binding(
         api_group_name=config.group_name if config else "",
         api_status=config.status if config else None,
         credit_cost=binding.credit_cost,
+        max_reference_images=max(0, int(binding.max_reference_images or 0)),
         aspect_ratio_options_json=aspect_ratio_options_json,
         image_size_options_json=image_size_options_json,
         custom_size_options_json=custom_size_options_json,
@@ -351,6 +372,7 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             hide_resolution=binding.hide_resolution,
             hide_custom_size=bool(binding.hide_custom_size),
             credit_cost=binding.credit_cost,
+            max_reference_images=max(0, int(binding.max_reference_images or 0)),
             aspect_ratio_options=json.loads(binding.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(binding.image_size_options_json or "[]"),
             custom_size_options=json.loads(binding.custom_size_options_json or "[]"),
@@ -433,6 +455,7 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             hide_resolution=item.hide_resolution,
             hide_custom_size=item.hide_custom_size,
             credit_cost=item.credit_cost,
+            max_reference_images=item.max_reference_images,
             aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(item.image_size_options_json or "[]"),
             custom_size_options=json.loads(item.custom_size_options_json or "[]"),
@@ -473,6 +496,7 @@ def create_scene_binding(
         display_name=body.display_name,
         subtitle=body.subtitle,
         credit_cost=body.credit_cost,
+        max_reference_images=body.max_reference_images,
         aspect_ratio_options_json=body.aspect_ratio_options_json,
         image_size_options_json=body.image_size_options_json,
         custom_size_options_json=body.custom_size_options_json,
@@ -541,6 +565,7 @@ def update_scene_binding_meta(
     binding.hide_aspect_ratio = body.hide_aspect_ratio
     binding.hide_resolution = body.hide_resolution
     binding.hide_custom_size = body.hide_custom_size
+    binding.max_reference_images = body.max_reference_images
     binding.aspect_ratio_options_json = body.aspect_ratio_options_json
     binding.image_size_options_json = body.image_size_options_json
     binding.custom_size_options_json = body.custom_size_options_json
@@ -627,14 +652,32 @@ def build_secret_variables(db: Session) -> dict[str, str]:
 
 def _build_test_variables(db: Session) -> dict[str, Any]:
     one_pixel_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XGJ0AAAAASUVORK5CYII="
+    sample_inline_image = {"inlineData": {"mimeType": "image/png", "data": one_pixel_png}}
     return {
         "prompt": "连接测试",
         "aspect_ratio": "1:1",
         "image_size": "2K",
         "custom_size": "1024x1024",
-        "contents_parts": [{"text": "连接测试"}],
+        "contents_parts": [
+            sample_inline_image,
+            sample_inline_image,
+            {"text": "连接测试"},
+        ],
         "generation_config": {"responseModalities": ["TEXT"]},
         "mode": "generate",
+        "reference_image_1": sample_inline_image,
+        "reference_image_2": sample_inline_image,
+        "reference_image_3": sample_inline_image,
+        "reference_image_1_base64": one_pixel_png,
+        "reference_image_2_base64": one_pixel_png,
+        "reference_image_3_base64": one_pixel_png,
+        "reference_image_1_mime_type": "image/png",
+        "reference_image_2_mime_type": "image/png",
+        "reference_image_3_mime_type": "image/png",
+        "reference_image_1_data_url": f"data:image/png;base64,{one_pixel_png}",
+        "reference_image_2_data_url": f"data:image/png;base64,{one_pixel_png}",
+        "reference_image_3_data_url": f"data:image/png;base64,{one_pixel_png}",
+        "reference_image_count": 3,
         "image_data_url": f"data:image/png;base64,{one_pixel_png}",
         "prompt_reverse_text": "请返回测试提示词",
         **build_secret_variables(db),
@@ -807,6 +850,9 @@ def _ensure_scene_bindings(db: Session) -> None:
                 if binding.hide_custom_size is None:
                     binding.hide_custom_size = True
                     updated = True
+                if binding.max_reference_images is None:
+                    binding.max_reference_images = get_default_max_reference_images(binding.scene_type)
+                    updated = True
         for definition in DEFAULT_SCENE_DEFINITIONS:
             if definition["scene_key"] in existing_map:
                 continue
@@ -822,6 +868,7 @@ def _ensure_scene_bindings(db: Session) -> None:
                 hide_custom_size=definition["hide_custom_size"],
                 api_config_id=config.id if config else None,
                 credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+                max_reference_images=get_default_max_reference_images(definition["scene_type"]),
                 aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
                 image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
                 custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
@@ -844,6 +891,7 @@ def _ensure_scene_bindings(db: Session) -> None:
             hide_custom_size=definition["hide_custom_size"],
             api_config_id=config.id if config else None,
             credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+            max_reference_images=get_default_max_reference_images(definition["scene_type"]),
             aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
             image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
             custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],

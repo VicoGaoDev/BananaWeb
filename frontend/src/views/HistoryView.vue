@@ -21,6 +21,7 @@ import { fetchHistory, toggleHistoryPin } from "@/api/history";
 import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { deletePromptHistory } from "@/api/auth";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
+import { withBaseUrl } from "@/lib/assets";
 import type { GenerationModelOption, ImageResult, TaskSource, UserHistoryCard } from "@/types";
 
 const router = useRouter();
@@ -38,6 +39,7 @@ const promptFilter = ref("");
 const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const generationModels = ref<GenerationModelOption[]>([]);
 const detailOpen = ref(false);
+const failedResultAsset = withBaseUrl("failed-result.svg");
 const detailItem = ref<UserHistoryCard | null>(null);
 const selectedImageIds = ref<number[]>([]);
 const batchMode = ref(false);
@@ -305,7 +307,7 @@ function openPreview(url: string) {
 function getHistoryImageSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_url" | "preview_url" | "status">) {
   const displayUrl = getDisplayImageUrl(image);
   if (displayUrl) return displayUrl;
-  return image.status === "failed" ? "/failed-result.svg" : "";
+  return image.status === "failed" ? failedResultAsset : "";
 }
 
 function getHistoryCardMedia(item: UserHistoryCard) {
@@ -903,7 +905,7 @@ function handleReedit(item: UserHistoryCard) {
                 >
                   <img
                     v-if="getNestedImageSrc(img) || img.status === 'failed'"
-                    :src="getNestedImageSrc(img) || '/failed-result.svg'"
+                    :src="getNestedImageSrc(img) || failedResultAsset"
                     :alt="img.status === 'failed' ? '生成失败' : '结果图'"
                     :class="{ 'failed-result-image': img.status === 'failed' }"
                     loading="lazy"

@@ -11,6 +11,7 @@ import {
   getAnnouncementConfig,
 } from "@/api/auth";
 import { registerCloudbaseAccount, sendRegisterEmailCode } from "@/lib/cloudbase";
+import { withBaseUrl } from "@/lib/assets";
 import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
 import type { AnnouncementConfig } from "@/types";
@@ -64,9 +65,9 @@ const currentTheme = ref<AppThemeName>(getCurrentTheme());
 let themeObserver: MutationObserver | null = null;
 
 const primaryMenuItems = [
-  { key: "templates", label: "创意模版", iconSrc: "/nav-templates.svg", darkIconSrc: "/nav-templates-mono.svg" },
-  { key: "generate", label: "自定义绘图", iconSrc: "/nav-generate.svg" },
-  { key: "history", label: "历史记录", iconSrc: "/nav-history.svg", darkIconSrc: "/nav-history-mono.svg" },
+  { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), darkIconSrc: withBaseUrl("nav-templates-mono.svg") },
+  { key: "generate", label: "自定义绘图", iconSrc: withBaseUrl("nav-generate.svg") },
+  { key: "history", label: "历史记录", iconSrc: withBaseUrl("nav-history.svg"), darkIconSrc: withBaseUrl("nav-history-mono.svg") },
 ];
 
 function getPrimaryMenuIconSrc(item: (typeof primaryMenuItems)[number]) {

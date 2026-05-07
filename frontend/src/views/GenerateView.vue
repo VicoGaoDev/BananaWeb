@@ -35,6 +35,7 @@ import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
+import { withBaseUrl } from "@/lib/assets";
 import type { GenerationModelOption, ImageResult, PromptHistoryItem, SceneOptionItem, TaskResult, TaskSceneConfig, UserHistoryCard } from "@/types";
 
 const auth = useAuthStore();
@@ -56,6 +57,8 @@ const DEFAULT_SCENE_COSTS: Record<string, number> = {
 };
 
 const generateMode = ref<GenerateMode>("textGenerate");
+const failedResultAsset = withBaseUrl("failed-result.svg");
+const generateEmptyStateAsset = withBaseUrl("generate-empty-state.svg");
 const prompt = ref("");
 const repaintPrompt = ref("");
 const selectedModel = ref("");
@@ -82,6 +85,7 @@ interface GeneratedTaskItem {
   maskImage?: string;
   createdAt: string;
   status: GeneratedTaskStatus;
+  errorMessage?: string;
   images: ImageResult[];
 }
 
@@ -99,7 +103,7 @@ interface UploadPreviewItem {
   objectUrl?: string;
 }
 
-const MAX_REFS = 6;
+const DEFAULT_MAX_REFERENCE_IMAGES = 6;
 const referenceItems = ref<UploadPreviewItem[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
 const sourceImageUrl = ref("");
@@ -177,6 +181,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     hide_resolution: scene.hide_resolution,
     hide_custom_size: scene.hide_custom_size,
     credit_cost: scene.credit_cost,
+    max_reference_images: scene.max_reference_images,
     aspect_ratio_options: scene.aspect_ratio_options,
     image_size_options: scene.image_size_options,
     custom_size_options: scene.custom_size_options,
@@ -226,6 +231,11 @@ const hasBlockedUploads = computed(() => {
 const selectedModelOption = computed(
   () => generationModels.value.find((item) => item.model_key === selectedModel.value) || null
 );
+const maxReferenceImages = computed(() => {
+  if (!isImageEditMode.value) return 0;
+  const configured = Number(selectedModelOption.value?.max_reference_images || 0);
+  return configured > 0 ? configured : DEFAULT_MAX_REFERENCE_IMAGES;
+});
 const sizeOptions = computed(() => (
   selectedModelOption.value?.aspect_ratio_options?.length
     ? selectedModelOption.value.aspect_ratio_options
@@ -271,6 +281,17 @@ const activeExtendedToolMenuKeys = computed(() => (
   isExtendedToolMode.value ? [generateMode.value] : []
 ));
 
+watch(
+  () => maxReferenceImages.value,
+  (limit) => {
+    if (!isImageEditMode.value || limit <= 0 || referenceItems.value.length <= limit) return;
+    const removedItems = referenceItems.value.slice(limit);
+    removedItems.forEach((item) => revokeObjectUrl(item.objectUrl));
+    referenceItems.value = referenceItems.value.slice(0, limit);
+    message.warning(`当前模型最多支持 ${limit} 张参考图，已自动保留前 ${limit} 张`);
+  }
+);
+
 const accentIndicatorStyle = { fontSize: "20px", color: "var(--theme-accent)" };
 const smallAccentIndicatorStyle = { fontSize: "18px", color: "var(--theme-accent)" };
 const neutralIndicatorStyle = { fontSize: "24px", color: "var(--text-secondary)" };
@@ -306,6 +327,7 @@ function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskI
     numImages: 1,
     createdAt: new Date().toISOString(),
     status: "submitting",
+    errorMessage: "",
     images: createPendingImages(1),
   };
 }
@@ -360,9 +382,11 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
   const current = generatedTasks.value.find((task) => task.taskId === taskId);
   if (!current) return;
   const previousStatus = current.status;
+  const nextErrorMessage = data.error_message || data.images.find((image) => image.status === "failed" && image.error_message)?.error_message || "";
   updateGeneratedTaskByTaskId(taskId, (task) => ({
     ...task,
     status: data.status,
+    errorMessage: nextErrorMessage,
     createdAt: data.created_at || task.createdAt,
     model: data.model || task.model,
     size: data.size || task.size,
@@ -374,7 +398,7 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
   if (previousStatus !== data.status && (data.status === "success" || data.status === "failed")) {
     data.status === "success"
       ? message.success(`任务 #${taskId} 已完成`)
-      : message.warning(`任务 #${taskId} 生成失败`);
+      : message.warning(nextErrorMessage || `任务 #${taskId} 生成失败`);
   }
 }
 
@@ -417,8 +441,13 @@ function convertHistoryCardToGeneratedTask(item: UserHistoryCard): GeneratedTask
     maskImage: item.mask_image || undefined,
     createdAt: item.created_at,
     status: item.status as GeneratedTaskStatus,
+    errorMessage: item.error_message || item.images.find((image) => image.status === "failed" && image.error_message)?.error_message || "",
     images: item.images.length ? item.images : createPendingImages(fallbackImageCount),
   };
+}
+
+function getGeneratedTaskFailureMessage(task: GeneratedTaskItem, image: ImageResult) {
+  return image.error_message || task.errorMessage || "生成失败，请重试";
 }
 
 async function loadRecentGeneratedTasks() {
@@ -593,8 +622,8 @@ async function handleFileChange(e: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
-  if (referenceItems.value.length >= MAX_REFS) {
-    message.warning(`最多上传 ${MAX_REFS} 张参考图`);
+  if (referenceItems.value.length >= maxReferenceImages.value) {
+    message.warning(`当前模型最多上传 ${maxReferenceImages.value} 张参考图`);
     input.value = "";
     return;
   }
@@ -1119,7 +1148,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     } else {
       prompt.value = draft.prompt || "";
       selectedModel.value = draft.model || selectedModel.value;
-      syncReferenceItems(Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, MAX_REFS) : []);
+      syncReferenceItems(Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, maxReferenceImages.value) : []);
       numImages.value = Math.min(4, Math.max(1, Number(draft.num_images || 1)));
       repaintPrompt.value = "";
       revokeObjectUrl(sourcePreviewUrl.value);
@@ -1473,7 +1502,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               <div class="field-block ref-upload-block config-section">
                 <div class="panel-head">
                   <h3>参考图</h3>
-                  <span class="panel-hint">(可选，最多 {{ MAX_REFS }} 张)</span>
+                  <span class="panel-hint">(可选，最多 {{ maxReferenceImages }} 张)</span>
                 </div>
 
                 <input
@@ -1505,7 +1534,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   </div>
 
                   <div
-                    v-if="referenceItems.length < MAX_REFS"
+                    v-if="referenceItems.length < maxReferenceImages"
                     class="upload-add"
                     @click="triggerUpload"
                   >
@@ -1916,9 +1945,9 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
                   </template>
 
                   <template v-else-if="item.image.status === 'failed'">
-                    <img src="/failed-result.svg" alt="生成失败" class="failed-image" />
+                    <img :src="failedResultAsset" alt="生成失败" class="failed-image" />
                     <div class="frame-state error">
-                      <span>生成失败，请重试</span>
+                      <span>{{ getGeneratedTaskFailureMessage(item.task, item.image) }}</span>
                     <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
                       <template #icon><EditOutlined /></template>
                     </a-button>
@@ -1949,7 +1978,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               <div :key="generateMode" class="result-empty-copy">
                 <div class="empty-illustration-shell">
                   <img
-                    src="/generate-empty-state.svg"
+                    :src="generateEmptyStateAsset"
                     alt="生成结果占位插画"
                     class="empty-illustration"
                   />

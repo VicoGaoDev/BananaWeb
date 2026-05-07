@@ -162,6 +162,7 @@ class GenerationModelOptionOut(BaseModel):
     hide_resolution: bool
     hide_custom_size: bool
     credit_cost: int
+    max_reference_images: int = 0
     aspect_ratio_options: list["SceneOptionItem"] = []
     image_size_options: list["SceneOptionItem"] = []
     custom_size_options: list["SceneOptionItem"] = []
@@ -184,6 +185,7 @@ class ExternalApiSceneBindingCreate(BaseModel):
     display_name: str = ""
     subtitle: str = ""
     credit_cost: int
+    max_reference_images: int = 0
     scene_type: SceneTypeType = "generate"
     status: StatusType = "enabled"
     aspect_ratio_options_json: str = "[]"
@@ -217,6 +219,13 @@ class ExternalApiSceneBindingCreate(BaseModel):
     def validate_credit_cost(cls, value: int) -> int:
         if value < 0:
             raise ValueError("积分消耗不能小于 0")
+        return value
+
+    @field_validator("max_reference_images")
+    @classmethod
+    def validate_max_reference_images(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("最大参考图张数不能小于 0")
         return value
 
     @field_validator("status")
@@ -270,6 +279,7 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     hide_aspect_ratio: bool = False
     hide_resolution: bool = False
     hide_custom_size: bool = True
+    max_reference_images: int = 0
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
     custom_size_options_json: str = "[]"
@@ -297,6 +307,13 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     def validate_meta_sort_order(cls, value: int) -> int:
         if value < 0:
             raise ValueError("排序值不能小于 0")
+        return value
+
+    @field_validator("max_reference_images")
+    @classmethod
+    def validate_meta_max_reference_images(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("最大参考图张数不能小于 0")
         return value
 
     @field_validator("aspect_ratio_options_json")
@@ -345,6 +362,7 @@ class ExternalApiSceneBindingOut(BaseModel):
     api_group_name: str = ""
     api_status: StatusType | None = None
     credit_cost: int
+    max_reference_images: int
     aspect_ratio_options_json: str
     image_size_options_json: str
     custom_size_options_json: str
@@ -362,6 +380,7 @@ class TaskSceneConfigOut(BaseModel):
     hide_resolution: bool
     hide_custom_size: bool
     credit_cost: int
+    max_reference_images: int
     aspect_ratio_options: list[SceneOptionItem]
     image_size_options: list[SceneOptionItem]
     custom_size_options: list[SceneOptionItem]

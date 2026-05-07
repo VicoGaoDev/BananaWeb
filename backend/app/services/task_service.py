@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import json
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ ENQUEUE_FAILURE_DESCRIPTION = "任务入队失败，返还积分"
 TASK_SUBMISSION_LOCK_PREFIX = "banana:tasks:submission:user"
 TASK_SUBMISSION_LOCK_TIMEOUT_SECONDS = 30
 TASK_SUBMISSION_LOCK_BLOCKING_TIMEOUT_SECONDS = 5
+PROCESSING_TASK_TIMEOUT_DESCRIPTION = "任务处理超时，已自动关闭"
 task_logger = logging.getLogger("app.task")
 
 
@@ -51,6 +52,59 @@ def _validate_task_create_payload(
 
 def _task_submission_lock_name(user_id: int) -> str:
     return f"{TASK_SUBMISSION_LOCK_PREFIX}:{int(user_id)}"
+
+
+def _expire_stale_processing_tasks(
+    db: Session,
+    *,
+    user_id: int | None = None,
+    business_ids: list[str] | None = None,
+) -> None:
+    timeout_seconds = max(int(settings.PROCESSING_TASK_TIMEOUT_SECONDS or 0), 0)
+    if timeout_seconds <= 0:
+        return
+
+    cutoff = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+    query = db.query(Task).filter(
+        Task.status == "processing",
+        Task.updated_at.is_not(None),
+        Task.updated_at <= cutoff,
+    )
+    if user_id is not None:
+        query = query.filter(Task.user_id == user_id)
+    if business_ids:
+        query = query.filter(Task.business_id.in_(business_ids))
+
+    stale_tasks = query.all()
+    if not stale_tasks:
+        return
+
+    for task in stale_tasks:
+        has_success_image = False
+        for image in task.images:
+            if image.status == "success":
+                has_success_image = True
+                continue
+            image.status = "failed"
+            image.error_message = PROCESSING_TASK_TIMEOUT_DESCRIPTION
+            image.image_url = ""
+            image.preview_url = ""
+            image.image_format = ""
+            image.image_size_bytes = 0
+
+        task.status = "success" if has_success_image and all(image.status == "success" for image in task.images) else "failed"
+        task.error_message = "" if task.status == "success" else PROCESSING_TASK_TIMEOUT_DESCRIPTION
+
+    db.commit()
+    task_logger.error(
+        "stale processing tasks expired",
+        extra={
+            "event": "task.processing.expired",
+            "task_ids": [task_external_id(task) for task in stale_tasks],
+            "task_count": len(stale_tasks),
+            "timeout_seconds": timeout_seconds,
+        },
+    )
 
 
 def create_tasks(
@@ -234,6 +288,8 @@ def ensure_task_submission_capacity(db: Session, user_id: int, new_task_count: i
     if normalized_new_task_count <= 0:
         return
 
+    _expire_stale_processing_tasks(db, user_id=user_id)
+
     per_user_limit = max(int(settings.MAX_ACTIVE_TASKS_PER_USER or 0), 0)
     if per_user_limit:
         current_user_active_count = (
@@ -389,6 +445,8 @@ def mark_tasks_enqueue_failed(
 
 def get_task_detail(db: Session, task_id: str, user_id: int | None = None) -> Task:
     normalized_task_id = normalize_business_id(task_id)
+    if normalized_task_id:
+        _expire_stale_processing_tasks(db, user_id=user_id, business_ids=[normalized_task_id])
     query = db.query(Task).filter(Task.business_id == normalized_task_id)
     if user_id is not None:
         query = query.filter(Task.user_id == user_id)
@@ -412,6 +470,11 @@ def get_task_details(db: Session, task_ids: list[str], user_id: int | None = Non
             continue
         seen_ids.add(normalized_task_id)
         normalized_ids.append(normalized_task_id)
+
+    if not normalized_ids:
+        return []
+
+    _expire_stale_processing_tasks(db, user_id=user_id, business_ids=normalized_ids)
 
     query = db.query(Task).filter(Task.business_id.in_(normalized_ids))
     if user_id is not None:
