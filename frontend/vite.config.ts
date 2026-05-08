@@ -2,9 +2,8 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { resolve } from "path";
 
-export default defineConfig(({ command }) => ({
-  // Use root in dev, but build under the deployed subpath.
-  base: command === "serve" ? "/" : "/80ai/",
+export default defineConfig({
+  base: "/",
   plugins: [vue()],
   resolve: {
     alias: {
@@ -24,4 +23,4 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
-}));
+});
