@@ -13,6 +13,7 @@ import {
 import {
   createExternalApiConfig,
   createExternalApiSceneBinding,
+  deleteExternalApiConfig,
   deleteExternalApiSceneBinding,
   getExternalApiSecrets,
   listExternalApiConfigs,
@@ -88,7 +89,7 @@ const configColumns = [
   { title: "请求地址", dataIndex: "request_url", ellipsis: true },
   { title: "状态", dataIndex: "status", width: 100 },
   { title: "更新时间", dataIndex: "updated_at", width: 180 },
-  { title: "操作", key: "action", width: 260 },
+  { title: "操作", key: "action", width: 360 },
 ];
 
 const bindingColumns = [
@@ -553,6 +554,24 @@ function handleToggleStatus(item: ExternalApiConfig) {
   });
 }
 
+function handleDeleteConfig(item: ExternalApiConfig) {
+  Modal.confirm({
+    title: "删除该接口配置？",
+    content: "删除后会同时解除所有引用它的场景绑定，场景会保留但变成未绑定状态。",
+    centered: true,
+    okButtonProps: { danger: true },
+    onOk: async () => {
+      try {
+        await deleteExternalApiConfig(item.id);
+        message.success("接口配置已删除");
+        await load();
+      } catch (err: any) {
+        message.error(err.response?.data?.detail || "删除接口配置失败");
+      }
+    },
+  });
+}
+
 async function handleBindingChange(
   sceneKey: ExternalApiSceneBinding["scene_key"],
   payload: {
@@ -833,6 +852,9 @@ function copySecret(value: string, label: string) {
                 <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
                 <a-button size="small" :class="record.status === 'enabled' ? 'api-danger-btn' : 'api-secondary-btn'" @click="handleToggleStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
+                </a-button>
+                <a-button size="small" class="api-danger-btn" :icon="h(DeleteOutlined)" @click="handleDeleteConfig(record)">
+                  删除
                 </a-button>
               </a-space>
             </template>

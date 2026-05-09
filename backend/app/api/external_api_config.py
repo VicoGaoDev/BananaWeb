@@ -20,6 +20,7 @@ from app.schemas.external_api_config import (
 )
 from app.services.external_api_config_service import (
     create_config,
+    delete_config,
     delete_scene_binding,
     create_scene_binding,
     list_scene_bindings,
@@ -93,6 +94,16 @@ def patch_external_api_config_status(
     db: Session = Depends(get_db),
 ):
     return set_config_status(db, config_id, body.status)
+
+
+@router.delete("/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_external_api_config(
+    config_id: int,
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    delete_config(db, config_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @scene_router.get("", response_model=list[ExternalApiSceneBindingOut])

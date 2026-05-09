@@ -204,8 +204,8 @@ function buildAnalyticsQuery(): AdminAnalyticsQuery {
     source: filters.source,
     model: filters.model,
     mode: filters.mode,
-    start_date: filters.dateRange?.[0].startOf("day").toISOString(),
-    end_date: filters.dateRange?.[1].endOf("day").toISOString(),
+    start_date: formatQueryDate(filters.dateRange?.[0].startOf("day")),
+    end_date: formatQueryDate(filters.dateRange?.[1].endOf("day")),
   };
 }
 
@@ -216,9 +216,13 @@ function buildHistoryFilter(): HistoryFilter {
     source: filters.source,
     model: filters.model,
     mode: filters.mode,
-    start_date: filters.dateRange?.[0].startOf("day").toISOString(),
-    end_date: filters.dateRange?.[1].endOf("day").toISOString(),
+    start_date: formatQueryDate(filters.dateRange?.[0].startOf("day")),
+    end_date: formatQueryDate(filters.dateRange?.[1].endOf("day")),
   };
+}
+
+function formatQueryDate(value?: Dayjs) {
+  return value ? value.format("YYYY-MM-DDTHH:mm:ss") : undefined;
 }
 
 async function loadUsers() {

@@ -352,6 +352,7 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
     scene_bindings = (
         db.query(ExternalApiSceneBinding)
         .filter(
+            ExternalApiSceneBinding.is_deleted.is_(False),
             ExternalApiSceneBinding.scene_type == SCENE_TYPE_GENERATE,
             ExternalApiSceneBinding.status == "enabled",
         )
@@ -427,10 +428,22 @@ def set_config_status(db: Session, config_id: int, status_value: str) -> Externa
     return _serialize_config(config)
 
 
+def delete_config(db: Session, config_id: int) -> None:
+    config = get_config_or_404(db, config_id)
+    (
+        db.query(ExternalApiSceneBinding)
+        .filter(ExternalApiSceneBinding.api_config_id == config.id)
+        .update({"api_config_id": None}, synchronize_session=False)
+    )
+    db.delete(config)
+    db.commit()
+
+
 def list_scene_bindings(db: Session) -> list[ExternalApiSceneBindingOut]:
     _ensure_scene_bindings(db)
     bindings = (
         db.query(ExternalApiSceneBinding)
+        .filter(ExternalApiSceneBinding.is_deleted.is_(False))
         .order_by(ExternalApiSceneBinding.sort_order.asc(), ExternalApiSceneBinding.id.asc())
         .all()
     )
@@ -509,7 +522,14 @@ def create_scene_binding(
 
 def _require_custom_scene_binding(db: Session, scene_key: str) -> ExternalApiSceneBinding:
     _ensure_scene_bindings(db)
-    binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="调用场景不存在")
     if is_builtin_scene(scene_key):
@@ -523,7 +543,14 @@ def set_scene_binding(
     body: ExternalApiSceneBindingUpdate,
 ) -> ExternalApiSceneBindingOut:
     _ensure_scene_bindings(db)
-    binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="调用场景不存在")
 
@@ -588,13 +615,26 @@ def set_scene_binding_status(
 
 def delete_scene_binding(db: Session, scene_key: str) -> None:
     binding = _require_custom_scene_binding(db, scene_key)
+    if scene_key in DEFAULT_SCENE_MAP:
+        binding.is_deleted = True
+        binding.status = "disabled"
+        binding.api_config_id = None
+        db.commit()
+        return
     db.delete(binding)
     db.commit()
 
 
 def get_scene_credit_cost(db: Session, scene_key: str) -> int:
     _ensure_scene_bindings(db)
-    binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
     if binding.status != "enabled":
@@ -604,7 +644,14 @@ def get_scene_credit_cost(db: Session, scene_key: str) -> int:
 
 def require_scene_config(db: Session, scene_key: str) -> ExternalApiConfig:
     _ensure_scene_bindings(db)
-    binding = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.scene_key == scene_key).first()
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
     if binding.status != "enabled":

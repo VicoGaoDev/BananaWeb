@@ -8,6 +8,7 @@ class ExternalApiSceneBinding(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     scene_key = Column(String(50), nullable=False, unique=True)
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="0")
     scene_type = Column(String(30), nullable=False, default="generate", server_default="generate")
     scene_label = Column(String(100), nullable=False, default="", server_default="")
     scene_description = Column(String(255), nullable=False, default="", server_default="")

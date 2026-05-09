@@ -246,6 +246,8 @@ def _ensure_schema_compat():
         credit_cost_added = False
         max_reference_images_added = False
         with engine.begin() as conn:
+            if "is_deleted" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
             if "scene_type" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN scene_type VARCHAR(30) DEFAULT 'generate'"))
             if "scene_label" not in scene_binding_columns:
@@ -280,6 +282,15 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
             if "custom_size_options_json" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET is_deleted = 0
+                    WHERE is_deleted IS NULL
+                    """
+                )
+            )
             conn.execute(
                 text(
                     """
@@ -570,6 +581,8 @@ def _ensure_scene_binding_required_columns():
 
     scene_binding_columns = {col["name"] for col in inspector.get_columns("external_api_scene_bindings")}
     with engine.begin() as conn:
+        if "is_deleted" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
         if "hide_aspect_ratio" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_aspect_ratio BOOLEAN DEFAULT 0"))
         if "hide_resolution" not in scene_binding_columns:
@@ -584,6 +597,15 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
         if "custom_size_options_json" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET is_deleted = 0
+                WHERE is_deleted IS NULL
+                """
+            )
+        )
         conn.execute(
             text(
                 """

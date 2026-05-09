@@ -45,7 +45,6 @@ const whitelistLoadingId = ref<string | null>(null);
 const columns = [
   { title: "ID", dataIndex: "id", width: 58 },
   { title: "用户", dataIndex: "username", width: 240 },
-  { title: "邮箱", dataIndex: "email", width: 240 },
   { title: "角色", dataIndex: "role", width: 100 },
   { title: "白名单", dataIndex: "is_whitelisted", width: 100 },
   { title: "积分", dataIndex: "credits", width: 100 },
@@ -342,9 +341,6 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
               </div>
             </div>
           </template>
-          <template v-else-if="column.dataIndex === 'email'">
-            <span class="user-email-text">{{ record.email || "-" }}</span>
-          </template>
           <template v-else-if="column.dataIndex === 'role'">
             <a-tag class="warm-tag" :class="record.role === 'admin' ? 'warm-tag-role-admin' : 'warm-tag-role-user'">
               {{ record.role === "admin" ? "管理员" : "普通用户" }}
@@ -615,8 +611,7 @@ function fmtTime(t: string) { return t ? new Date(t).toLocaleString("zh-CN") : "
   font-weight: 700;
 }
 
-.user-cell-sub,
-.user-email-text {
+.user-cell-sub {
   color: #8c7458;
   font-size: 12px;
   word-break: break-all;

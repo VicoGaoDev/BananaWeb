@@ -76,11 +76,15 @@ export function getCreditLogs(
   page = 1,
   pageSize = 20,
   userId?: string,
+  startDate?: string,
+  endDate?: string,
   direction?: "increase" | "decrease",
   mode?: "generate" | "inpaint" | "promptReverse" | "manual",
 ): Promise<{ total: number; items: CreditLog[] }> {
   const params: Record<string, unknown> = { page, page_size: pageSize };
   if (userId) params.user_id = userId;
+  if (startDate) params.start_date = startDate;
+  if (endDate) params.end_date = endDate;
   if (direction) params.direction = direction;
   if (mode) params.mode = mode;
   return client.get("/admin/credit-logs", { params });
@@ -212,6 +216,10 @@ export function updateExternalApiConfig(configId: number, payload: ExternalApiCo
 
 export function updateExternalApiConfigStatus(configId: number, status: ExternalApiConfigStatus): Promise<ExternalApiConfig> {
   return client.patch(`/admin/external-api-configs/${configId}/status`, { status });
+}
+
+export function deleteExternalApiConfig(configId: number): Promise<void> {
+  return client.delete(`/admin/external-api-configs/${configId}`);
 }
 
 export function listExternalApiSceneBindings(): Promise<ExternalApiSceneBinding[]> {

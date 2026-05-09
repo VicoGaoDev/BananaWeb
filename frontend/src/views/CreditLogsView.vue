@@ -7,8 +7,8 @@ import {
   ArrowDownOutlined,
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "@/stores/auth";
-import { getCreditLogs } from "@/api/auth";
-import { listUsers } from "@/api/admin";
+import { getCreditLogs as getUserCreditLogs } from "@/api/auth";
+import { getCreditLogs as getAdminCreditLogs, listUsers } from "@/api/admin";
 import type { CreditLog, AdminUser, TaskMode } from "@/types";
 import dayjs from "dayjs";
 
@@ -54,8 +54,8 @@ async function loadLogs() {
       params.user_id = filterUserId.value;
     }
     if (filterDateRange.value) {
-      params.start_date = filterDateRange.value[0].startOf("day").toISOString();
-      params.end_date = filterDateRange.value[1].endOf("day").toISOString();
+      params.start_date = formatQueryDate(filterDateRange.value[0].startOf("day"));
+      params.end_date = formatQueryDate(filterDateRange.value[1].endOf("day"));
     }
     if (filterDirection.value) {
       params.direction = filterDirection.value;
@@ -63,7 +63,17 @@ async function loadLogs() {
     if (filterMode.value) {
       params.mode = filterMode.value;
     }
-    const res = await getCreditLogs(params as any);
+    const res = isAdmin.value
+      ? await getAdminCreditLogs(
+        page.value,
+        pageSize.value,
+        filterUserId.value,
+        params.start_date as string | undefined,
+        params.end_date as string | undefined,
+        filterDirection.value,
+        filterMode.value,
+      )
+      : await getUserCreditLogs(params as any);
     items.value = res.items;
     total.value = res.total;
   } catch {
@@ -109,6 +119,10 @@ function handleReset() {
 
 function formatTime(t: string) {
   return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
+}
+
+function formatQueryDate(value?: dayjs.Dayjs) {
+  return value ? value.format("YYYY-MM-DDTHH:mm:ss") : undefined;
 }
 
 function directionLabel(record: CreditLog) {
