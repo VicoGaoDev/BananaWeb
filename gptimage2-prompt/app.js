@@ -18,6 +18,7 @@ const state = {
   style: initialFilterState.style,
   category: initialFilterState.category,
   scene: initialFilterState.scene,
+  featured: initialFilterState.featured,
   sidebarCollapsed: readSidebarPreference(),
   mobileDrawerOpen: false,
   mobileSearchOpen: false,
@@ -85,8 +86,10 @@ function bindEvents() {
     state.style = "all";
     state.category = "all";
     state.scene = "all";
+    state.featured = false;
     elements.searchInput.value = "";
     syncFilterStateToUrl();
+    renderHeroStats();
     renderFilters();
     renderResults();
   });
@@ -98,13 +101,26 @@ function bindEvents() {
     }
 
     const filterKey = clearButton.dataset.clearFilter;
-    if (!["style", "category", "scene"].includes(filterKey)) {
+    if (!["style", "category", "scene", "featured"].includes(filterKey)) {
       return;
     }
 
-    state[filterKey] = "all";
+    state[filterKey] = filterKey === "featured" ? false : "all";
     syncFilterStateToUrl();
+    renderHeroStats();
     renderFilters();
+    renderResults();
+  });
+
+  elements.heroStats.addEventListener("click", (event) => {
+    const statButton = event.target.closest("[data-stat-filter]");
+    if (!statButton || statButton.dataset.statFilter !== "featured") {
+      return;
+    }
+
+    state.featured = !state.featured;
+    syncFilterStateToUrl();
+    renderHeroStats();
     renderResults();
   });
 
@@ -252,6 +268,8 @@ function bindEvents() {
     state.style = nextFilterState.style;
     state.category = nextFilterState.category;
     state.scene = nextFilterState.scene;
+    state.featured = nextFilterState.featured;
+    renderHeroStats();
     renderFilters();
     renderResults();
   });
@@ -282,16 +300,21 @@ function renderHeroStats() {
     {
       label: "条精选案例",
       value: allCases.filter((item) => item.featured).length,
+      key: "featured",
+      active: state.featured,
     },
   ];
 
   elements.heroStats.innerHTML = stats
     .map(
       (stat) => `
-        <article class="stat-card">
+        <${stat.key ? "button" : "article"}
+          ${stat.key ? `type="button" data-stat-filter="${escapeAttribute(stat.key)}"` : ""}
+          class="stat-card ${stat.key ? "stat-card-button" : ""} ${stat.active ? "active" : ""}"
+        >
           <span class="stat-value">${stat.value}</span>
           <span class="stat-label">${stat.label}</span>
-        </article>
+        </${stat.key ? "button" : "article"}>
       `
     )
     .join("");
@@ -354,6 +377,8 @@ function renderFilters() {
       renderResults();
     },
   });
+
+  applySectionStates();
 }
 
 function renderSidebarMenu({ container, options, activeValue, onSelect }) {
@@ -434,6 +459,12 @@ function applySidebarState() {
 }
 
 function applySectionStates() {
+  const sectionCurrentMap = {
+    styles: state.style === "all" ? "全部风格" : getStyleLabel(state.style),
+    categories: state.category === "all" ? "全部分类" : getCategoryLabel(state.category),
+    scenes: state.scene === "all" ? "全部场景" : getSceneLabel(state.scene),
+  };
+
   document.querySelectorAll(".sidebar-section").forEach((section) => {
     const sectionKey = section.dataset.section;
     const isOpen = state.sections[sectionKey] !== false;
@@ -442,6 +473,11 @@ function applySectionStates() {
     const toggle = section.querySelector("[data-section-toggle]");
     if (toggle) {
       toggle.setAttribute("aria-expanded", String(isOpen));
+    }
+
+    const currentValue = section.querySelector("[data-section-current]");
+    if (currentValue && sectionCurrentMap[sectionKey]) {
+      currentValue.textContent = sectionCurrentMap[sectionKey];
     }
   });
 }
@@ -457,13 +493,18 @@ function renderResults() {
       : `当前风格：${styleLabel}`;
 
   const hasActiveFilters =
-    state.style !== "all" || state.category !== "all" || state.scene !== "all" || Boolean(state.search);
+    state.style !== "all" ||
+    state.category !== "all" ||
+    state.scene !== "all" ||
+    state.featured ||
+    Boolean(state.search);
 
   elements.resultsTitle.textContent = hasActiveFilters ? `共 ${filteredCases.length} 条结果` : "全部案例";
   elements.resultsMeta.innerHTML = renderResultsMeta({
     styleLabel,
     categoryLabel,
     sceneLabel,
+    featuredLabel: state.featured ? "精选案例" : "",
     searchLabel: state.search ? `搜索 “${state.search}”` : "",
   });
 
@@ -521,6 +562,10 @@ function renderResults() {
 
 function getFilteredCases() {
   return allCases.filter((item) => {
+    if (state.featured && !item.featured) {
+      return false;
+    }
+
     if (state.style !== "all" && !item.styles.includes(state.style)) {
       return false;
     }
@@ -678,8 +723,11 @@ function getShortLabel(label) {
   return compact.length <= 4 ? compact : compact.slice(0, 4);
 }
 
-function renderResultsMeta({ styleLabel, categoryLabel, sceneLabel, searchLabel }) {
+function renderResultsMeta({ styleLabel, categoryLabel, sceneLabel, featuredLabel, searchLabel }) {
   const parts = [
+    featuredLabel
+      ? renderResultsMetaItem({ key: "featured", label: featuredLabel, isActive: true })
+      : `<span class="results-meta-item">全部案例</span>`,
     renderResultsMetaItem({ key: "style", label: styleLabel, isActive: state.style !== "all" }),
     renderResultsMetaItem({ key: "category", label: categoryLabel, isActive: state.category !== "all" }),
     renderResultsMetaItem({ key: "scene", label: sceneLabel, isActive: state.scene !== "all" }),
@@ -715,6 +763,7 @@ function readFilterStateFromUrl() {
       styleLibrary.categories.map((item) => item.value)
     ),
     scene: getValidUrlFilterValue(searchParams.get("scene"), styleLibrary.scenes.map((item) => item.value)),
+    featured: searchParams.get("featured") === "1",
   };
 }
 
@@ -732,6 +781,7 @@ function syncFilterStateToUrl() {
   updateUrlFilterParam(url.searchParams, "style", state.style);
   updateUrlFilterParam(url.searchParams, "category", state.category);
   updateUrlFilterParam(url.searchParams, "scene", state.scene);
+  updateUrlBooleanParam(url.searchParams, "featured", state.featured);
 
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
@@ -743,6 +793,15 @@ function updateUrlFilterParam(searchParams, key, value) {
   }
 
   searchParams.set(key, value);
+}
+
+function updateUrlBooleanParam(searchParams, key, value) {
+  if (!value) {
+    searchParams.delete(key);
+    return;
+  }
+
+  searchParams.set(key, "1");
 }
 
 function isDrawerViewport() {
