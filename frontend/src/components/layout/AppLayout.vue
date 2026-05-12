@@ -369,6 +369,11 @@ function openCreditsContact() {
   creditsContactVisible.value = true;
 }
 
+function goCreditLogs() {
+  mobileDrawerOpen.value = false;
+  router.push("/credit-logs");
+}
+
 function toggleMobileDrawer() {
   mobileDrawerOpen.value = !mobileDrawerOpen.value;
 }
@@ -395,7 +400,10 @@ watch(
         </div>
 
         <div class="mobile-nav-entry">
-          <div v-if="auth.isLoggedIn" class="mobile-nav-credits" @click="openCreditsContact">
+          <a-button type="text" class="mobile-nav-contact-btn" @click="openCreditsContact">
+            联系我们
+          </a-button>
+          <div v-if="auth.isLoggedIn" class="mobile-nav-credits" @click="goCreditLogs">
             <ThunderboltOutlined />
             <span>{{ auth.user?.credits ?? 0 }}</span>
           </div>
@@ -417,6 +425,9 @@ watch(
         </a-menu>
 
         <div class="header-actions">
+          <a-button type="text" class="header-contact-btn" @click="openCreditsContact">
+            联系我们
+          </a-button>
           <template v-if="auth.isLoggedIn">
             <a-dropdown v-if="isAdmin" :trigger="['hover']" overlay-class-name="warm-dropdown">
               <a-button class="admin-btn" type="text">
@@ -434,7 +445,7 @@ watch(
               </template>
             </a-dropdown>
 
-            <div class="credits-badge" @click="openCreditsContact">
+            <div class="credits-badge" @click="goCreditLogs">
               <ThunderboltOutlined />
               <span>{{ auth.user?.credits ?? 0 }}</span>
             </div>
@@ -521,9 +532,14 @@ watch(
               {{ isSuperAdmin ? "超级管理员" : isAdmin ? "管理员" : "普通用户" }}
             </span>
           </div>
-          <div class="mobile-user-credits" @click="openCreditsContact">
-            <ThunderboltOutlined />
-            <span>{{ auth.user?.credits ?? 0 }}</span>
+          <div class="mobile-user-actions">
+            <a-button type="link" size="small" class="mobile-drawer-contact-link" @click="openCreditsContact">
+              联系我们
+            </a-button>
+            <div class="mobile-user-credits" @click="goCreditLogs">
+              <ThunderboltOutlined />
+              <span>{{ auth.user?.credits ?? 0 }}</span>
+            </div>
           </div>
         </div>
 
@@ -575,6 +591,9 @@ watch(
             </a-menu>
           </div>
           <div v-else class="mobile-auth-actions">
+            <a-button block class="mobile-drawer-guest-contact" @click="openCreditsContact">
+              联系我们
+            </a-button>
             <a-button type="primary" class="login-header-btn" block @click="openAuthModal('login')">
               <template #icon><UserOutlined /></template>
               登录
@@ -924,6 +943,26 @@ watch(
   margin-left: auto;
 }
 
+.mobile-nav-contact-btn {
+  height: 42px;
+  padding-inline: 12px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong)) !important;
+  color: var(--theme-title) !important;
+  font-weight: 700;
+  box-shadow: 0 8px 18px var(--theme-card-shadow);
+  flex-shrink: 1;
+  max-width: 42vw;
+
+  &:hover {
+    color: var(--theme-nav-hover-text) !important;
+    background: var(--theme-nav-hover-bg) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
 .mobile-nav-credits {
   display: inline-flex;
   align-items: center;
@@ -980,6 +1019,27 @@ watch(
 .mobile-user-role {
   font-size: 12px;
   color: var(--theme-text-secondary);
+}
+
+.mobile-user-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mobile-drawer-contact-link {
+  padding: 6px 12px !important;
+  height: auto !important;
+  border-radius: 16px !important;
+  font-weight: 700;
+  color: var(--theme-accent-text) !important;
+
+  &:hover {
+    color: var(--theme-nav-hover-text) !important;
+    background: var(--theme-nav-hover-bg) !important;
+  }
 }
 
 .mobile-user-credits {
@@ -1072,6 +1132,23 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   gap: 12px;
 }
 
+.mobile-drawer-guest-contact {
+  height: 48px !important;
+  border-radius: 16px !important;
+  font-weight: 700 !important;
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong)) !important;
+  color: var(--theme-title) !important;
+  box-shadow: 0 8px 18px var(--theme-card-shadow);
+
+  &:hover {
+    color: var(--theme-nav-hover-text) !important;
+    background: var(--theme-nav-hover-bg) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
 .admin-btn {
   height: 40px;
   padding-inline: 14px;
@@ -1120,6 +1197,19 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   font-size: 14px;
   font-weight: 700;
   color: var(--theme-title);
+}
+
+.header-contact-btn {
+  height: 40px !important;
+  padding-inline: 12px !important;
+  font-weight: 700 !important;
+  color: var(--theme-text-secondary) !important;
+  border-radius: 999px !important;
+
+  &:hover {
+    color: var(--theme-nav-hover-text) !important;
+    background: var(--theme-nav-hover-bg) !important;
+  }
 }
 
 .credits-badge {
