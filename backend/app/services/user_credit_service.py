@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.credit_log import CreditLog
 from app.models.user import User
-from app.models.user_credit import UserCredit
+from app.models.user_credit import DEFAULT_CREDIT_EXPIRE_AT, UserCredit
 
 DEFAULT_CREDIT_TYPE = 0
 
@@ -24,7 +24,12 @@ def ensure_user_credit_account(
     )
     if account:
         return account
-    account = UserCredit(user_id=user_id, type=credit_type, balance=balance)
+    account = UserCredit(
+        user_id=user_id,
+        type=credit_type,
+        balance=balance,
+        expire_time=DEFAULT_CREDIT_EXPIRE_AT,
+    )
     db.add(account)
     db.flush()
     return account
