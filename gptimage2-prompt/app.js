@@ -5,12 +5,7 @@ if (!payload) {
 }
 
 const { styleLibrary, casesData } = payload;
-const allCases = [...casesData.cases].sort((left, right) => {
-  if (Boolean(left.featured) !== Boolean(right.featured)) {
-    return left.featured ? -1 : 1;
-  }
-  return right.id - left.id;
-});
+const allCases = [...casesData.cases].sort((left, right) => right.id - left.id);
 const initialFilterState = readFilterStateFromUrl();
 
 const state = {
