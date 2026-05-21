@@ -18,6 +18,7 @@ import {
   SearchOutlined,
   HighlightOutlined,
   AppstoreOutlined,
+  BarChartOutlined,
   LoadingOutlined,
   ExclamationCircleFilled,
   RedoOutlined,
@@ -1666,7 +1667,63 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               <template v-else>
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
-                  <label>模型</label>
+                  <div class="setting-label-row">
+                    <label>选择模型</label>
+                    <div class="model-help">
+                      <a-popover trigger="hover" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <template #content>
+                          <div class="model-help-tip">
+                            <div class="model-help-grid model-help-grid-head">
+                              <div>模型</div>
+                              <div>细节与质量</div>
+                              <div>伪影</div>
+                              <div>推荐使用场景</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（顶级）</div>
+                              <div>最高保真度，锐利边缘、精细纹理、干净文字</div>
+                              <div>最少</div>
+                              <div>最终成品、完美文字、高清精度需求（印刷、专业输出、复杂构图）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（高质量）</div>
+                              <div>平衡，细节较好</div>
+                              <div>较少</div>
+                              <div>大多数日常生产用途（社交媒体、网页素材等）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（性价比）</div>
+                              <div>较粗糙，细节一般</div>
+                              <div>较多</div>
+                              <div>快速迭代、草稿、缩略图、高频批量生成、成本敏感场景</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana Pro</div>
+                              <div>极致细节、复杂构图、文字表现最佳</div>
+                              <div>最少</div>
+                              <div>需要极致细节、复杂构图、文字排版时使用</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana 2</div>
+                              <div>接近 Pro，速度与质量平衡最佳</div>
+                              <div>较少</div>
+                              <div>大多数人日常使用首选（性价比最高）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana</div>
+                              <div>一般，适合快速草稿验证</div>
+                              <div>较多</div>
+                              <div>现在较少使用，主要用于低成本快速测试</div>
+                            </div>
+                          </div>
+                        </template>
+                        <button type="button" class="model-help-trigger">
+                          <BarChartOutlined />
+                          <span>模型对比</span>
+                        </button>
+                      </a-popover>
+                    </div>
+                  </div>
                   <a-select
                     v-model:value="selectedModel"
                     :bordered="false"
@@ -1806,7 +1863,63 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
               <template v-else>
               <div class="settings-row model-row config-section">
                 <div class="setting-item setting-item-full">
-                  <label>模型</label>
+                  <div class="setting-label-row">
+                    <label>选择模型</label>
+                    <div class="model-help">
+                      <a-popover trigger="hover" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <template #content>
+                          <div class="model-help-tip">
+                            <div class="model-help-grid model-help-grid-head">
+                              <div>模型</div>
+                              <div>细节与质量</div>
+                              <div>伪影</div>
+                              <div>推荐使用场景</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（顶级）</div>
+                              <div>最高保真度，锐利边缘、精细纹理、干净文字</div>
+                              <div>最少</div>
+                              <div>最终成品、完美文字、高清精度需求（印刷、专业输出、复杂构图）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（高质量）</div>
+                              <div>平衡，细节较好</div>
+                              <div>较少</div>
+                              <div>大多数日常生产用途（社交媒体、网页素材等）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Image 2（性价比）</div>
+                              <div>较粗糙，细节一般</div>
+                              <div>较多</div>
+                              <div>快速迭代、草稿、缩略图、高频批量生成、成本敏感场景</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana Pro</div>
+                              <div>极致细节、复杂构图、文字表现最佳</div>
+                              <div>最少</div>
+                              <div>需要极致细节、复杂构图、文字排版时使用</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana 2</div>
+                              <div>接近 Pro，速度与质量平衡最佳</div>
+                              <div>较少</div>
+                              <div>大多数人日常使用首选（性价比最高）</div>
+                            </div>
+                            <div class="model-help-grid">
+                              <div>Nano Banana</div>
+                              <div>一般，适合快速草稿验证</div>
+                              <div>较多</div>
+                              <div>已较少使用，主要用于低成本快速测试</div>
+                            </div>
+                          </div>
+                        </template>
+                        <button type="button" class="model-help-trigger">
+                          <BarChartOutlined />
+                          <span>模型对比</span>
+                        </button>
+                      </a-popover>
+                    </div>
+                  </div>
                   <a-select
                     v-model:value="selectedModel"
                     :bordered="false"
@@ -3209,6 +3322,82 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
   font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
+}
+
+.setting-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--config-title-gap);
+}
+
+.setting-label-row label {
+  margin-bottom: 0;
+}
+
+.model-help {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.model-help-trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: help;
+  transition: color var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.model-help:hover .model-help-trigger {
+  color: var(--theme-accent-text-hover);
+}
+
+.model-help-grid {
+  display: grid;
+  grid-template-columns: 1.12fr 12px 1.2fr 20px 0.72fr 6px 1.8fr;
+  gap: 0;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.model-help-grid > div:nth-child(2) {
+  grid-column: 3;
+}
+
+.model-help-grid > div:nth-child(3) {
+  grid-column: 5;
+}
+
+.model-help-grid > div:nth-child(4) {
+  grid-column: 7;
+}
+
+.model-help-grid:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.model-help-grid:last-child {
+  padding-bottom: 0;
+}
+
+.model-help-grid-head {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .generate-config-panel .flat-select {
@@ -4629,6 +4818,30 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-strong);
+}
+
+.model-help-popover {
+  max-width: calc(100vw - 40px);
+
+  .ant-popover-inner {
+    padding: 0;
+    border-radius: 16px;
+    background: rgba(12, 12, 12, 0.96);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  }
+
+  .ant-popover-inner-content {
+    padding: 12px 14px;
+  }
+
+  .ant-popover-arrow::before {
+    background: rgba(12, 12, 12, 0.96);
+  }
+
+  .model-help-tip {
+    width: min(620px, calc(100vw - 68px));
+    color: #f5f5f5;
+  }
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page {
