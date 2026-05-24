@@ -2346,7 +2346,7 @@ watch(() => auth.isLoggedIn, (isLoggedIn) => {
             </div>
             <div class="result-tips">
               <div class="result-tip-line">
-                所有任务可在
+                每日前 10 次失败任务不扣积分，所有任务可在
                 <router-link to="/history" class="result-tip-link">历史图片</router-link>
                 中查看
               </div>
