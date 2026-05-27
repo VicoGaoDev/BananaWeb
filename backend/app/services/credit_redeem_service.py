@@ -9,6 +9,7 @@ from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.user import User
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_balance
+from app.utils.datetime_utils import now_local
 
 REDEEM_KEY_ALPHABET = string.ascii_uppercase + string.digits
 REDEEM_KEY_LENGTH = 16
@@ -133,9 +134,9 @@ def list_redeem_keys(
             .filter((User.username.ilike(keyword)) | (User.email.ilike(keyword)))
         )
     if start_date:
-        query = query.filter(CreditRedeemKey.created_at >= start_date)
+        query = query.filter(CreditRedeemKey.used_at >= start_date)
     if end_date:
-        query = query.filter(CreditRedeemKey.created_at <= end_date)
+        query = query.filter(CreditRedeemKey.used_at <= end_date)
 
     total = query.count()
     rows = (
@@ -192,7 +193,7 @@ def redeem_credit_key(db: Session, *, redeem_key: str, user: User) -> dict:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该兑换码已被禁用")
 
     row.used_by_user_id = user.id
-    row.used_at = datetime.now()
+    row.used_at = now_local()
     db.add(row)
     change_user_credit_balance(
         db,

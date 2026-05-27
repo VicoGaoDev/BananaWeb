@@ -174,7 +174,12 @@ async function toggleStatus(item: AdminRedeemKey) {
 }
 
 function fmtTime(t?: string | null) {
-  return t ? new Date(t).toLocaleString("zh-CN") : "-";
+  return t
+    ? new Date(t).toLocaleString("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        hour12: false,
+      })
+    : "-";
 }
 
 function formatQueryDate(value?: Dayjs) {
@@ -261,7 +266,7 @@ function formatQueryDate(value?: Dayjs) {
       />
       <a-range-picker
         v-model:value="filters.dateRange"
-        :placeholder="['开始日期', '结束日期']"
+        :placeholder="['使用开始', '使用结束']"
         class="redeem-filter-date"
         @change="handleDateRangeChange"
       />
