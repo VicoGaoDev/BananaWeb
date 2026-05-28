@@ -24,11 +24,23 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `mode` | string | 否 | `generate` | 任务模式。当前仅支持 `generate`。 |
-| `model` | string | 否 | 空 | 模型/场景标识。为空时使用默认模型。 |
+| `model` | string | 是 | - | 场景标识，**必填**。文生图与图编辑取值不同，见下方说明。 |
 | `prompt` | string | 是 | - | 提示词，不能为空，最长 5000 字符。 |
 | `size` | string | 否 | `3:4` | 图片宽高比，例如 `1:1`、`3:4`、`9:16`。可选值见 `GET /api/config/task-scenes` 的 `aspect_ratio_options`。 |
 | `resolution` | string | 否 | `4K` | 清晰度档位，例如 `1K`、`2K`、`4K`。可选值见 `GET /api/config/task-scenes` 的 `image_size_options`。 |
-| `reference_images` | string[] | 否 | `null` | 参考图数组，元素为 base64 字符串或 `data:image/...;base64,...` 形式。图编辑时传入。 |
+| `reference_images` | string[] | 否 | `null` | 参考图数组，元素为 base64 字符串或 `data:image/...;base64,...` 形式。**图编辑时必填**（至少 1 张）。 |
+
+### 文生图 `model` 可选值
+
+未传 `reference_images`（或传空数组）时使用：
+
+`gptimage2_high`、`gptimage2_medium`、`gptimage2_low`、`banana_pro`、`banana2`、`banana`
+
+### 图编辑 `model` 可选值
+
+传入 `reference_images` 时使用：
+
+`gptimage2_high_edit`、`gptimage2_medium_edit`、`gptimage2_low_edit`、`banana_pro_edit`、`banana2_edit`、`banana_edit`
 
 ## 文生图请求示例
 
@@ -124,6 +136,24 @@ curl --request POST \
 
 ```json
 {
+  "detail": "model 不能为空"
+}
+```
+
+```json
+{
+  "detail": "文生图 model 无效，可选值：banana、banana2、banana_pro、gptimage2_high、gptimage2_low、gptimage2_medium"
+}
+```
+
+```json
+{
+  "detail": "图编辑须传入 reference_images"
+}
+```
+
+```json
+{
   "detail": "reference_images[0] 必须是图片 base64"
 }
 ```
@@ -136,7 +166,8 @@ curl --request POST \
 
 ## 注意事项
 
-- 图编辑与文生图共用同一组 Body 参数；`size`、`resolution` 是否生效取决于所选 `model`，可先调用 `GET /api/config/task-scenes` 查看场景配置。
+- 图编辑与文生图共用同一组 Body 参数；须根据是否传入 `reference_images` 选择对应的 `model` 取值。
+- `size`、`resolution` 是否生效取决于所选 `model`，可先调用 `GET /api/config/task-scenes` 查看场景配置。
 - 每个 `POST /api/tasks` 请求默认生成 1 张图片，并按场景单价扣积分。
 - 接口会等待外部 AI 服务返回，调用方需要设置足够长的 HTTP 超时时间。
 - 如果生成失败，响应仍可能返回任务对象，`status` 为 `failed`，并带有 `error_message`。

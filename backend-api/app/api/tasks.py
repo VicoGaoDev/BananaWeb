@@ -12,10 +12,7 @@ from app.services.image_delivery_service import (
     serialize_task,
 )
 from app.services.business_id_service import user_external_id
-from app.services.external_api_config_service import (
-    get_default_generation_model_key,
-    require_scene_config,
-)
+from app.services.external_api_config_service import require_scene_config
 from app.services.task_service import (
     create_tasks,
 )
@@ -25,6 +22,26 @@ task_logger = logging.getLogger("app.task")
 BASE64_IMAGE_PATTERN = re.compile(
     r"^(?:data:image/(?:png|jpe?g|gif|webp);base64,)?[A-Za-z0-9+/=\s]+$",
     re.I,
+)
+API_GENERATE_MODELS = frozenset(
+    {
+        "gptimage2_high",
+        "gptimage2_medium",
+        "gptimage2_low",
+        "banana_pro",
+        "banana2",
+        "banana",
+    }
+)
+API_EDIT_MODELS = frozenset(
+    {
+        "gptimage2_high_edit",
+        "gptimage2_medium_edit",
+        "gptimage2_low_edit",
+        "banana_pro_edit",
+        "banana2_edit",
+        "banana_edit",
+    }
 )
 
 
@@ -39,6 +56,27 @@ def _validate_base64_image(value: str, field_name: str) -> str:
 
 def _normalize_base64_images(values: list[str] | None) -> list[str]:
     return [_validate_base64_image(value, f"reference_images[{index}]") for index, value in enumerate(values or [])]
+
+
+def _resolve_api_task_model(model: str, reference_images: list[str]) -> str:
+    task_model = (model or "").strip()
+    if not task_model:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="model 不能为空")
+    is_edit = bool(reference_images)
+    if task_model in API_EDIT_MODELS and not is_edit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="图编辑须传入 reference_images",
+        )
+    allowed = API_EDIT_MODELS if is_edit else API_GENERATE_MODELS
+    if task_model not in allowed:
+        kind = "图编辑" if is_edit else "文生图"
+        options = "、".join(sorted(allowed))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{kind} model 无效，可选值：{options}",
+        )
+    return task_model
 
 
 @router.post("", response_model=list[TaskOut])
@@ -60,11 +98,10 @@ def create(
     )
     if (body.mode or "generate").strip().lower() != "generate":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="暂不开放局部重绘 API")
-    task_model = body.model.strip() or get_default_generation_model_key(db)
+    reference_images = _normalize_base64_images(body.reference_images)
+    task_model = _resolve_api_task_model(body.model, reference_images)
     require_scene_config(db, task_model)
     resolved_resolution = "" if task_model == "banana" else body.resolution
-
-    reference_images = _normalize_base64_images(body.reference_images)
     tasks = create_tasks(
         db,
         user_id=user.id,

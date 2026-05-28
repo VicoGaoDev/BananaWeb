@@ -138,6 +138,14 @@ def md_to_html(md: str, current_slug: str) -> str:
             i += 1
             continue
 
+        if line.startswith("### "):
+            close_ul()
+            title = line[4:].strip()
+            anchor = re.sub(r"[^\w\u4e00-\u9fff-]+", "-", title).strip("-").lower() or "section"
+            out.append(f'<h3 id="{anchor}">{inline_md(title)}</h3>')
+            i += 1
+            continue
+
         if line.startswith("> "):
             close_ul()
             out.append(f'<blockquote>{inline_md(line[2:].strip())}</blockquote>')
@@ -352,6 +360,13 @@ a.brand:hover { background: #f3f4f6; }
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+.doc h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
 .doc p { margin: 12px 0; }
 .doc ul { padding-left: 22px; }
 .doc li { margin: 6px 0; }
@@ -417,7 +432,7 @@ a.brand:hover { background: #f3f4f6; }
   .content { padding: 20px 16px 32px; }
 }
 """
-    js = """document.querySelectorAll('.doc h2').forEach((heading) => {
+    js = """document.querySelectorAll('.doc h2, .doc h3').forEach((heading) => {
   if (heading.id) return;
   const text = heading.textContent || '';
   const id = text.trim().toLowerCase().replace(/\\s+/g, '-').replace(/[^\\w\\u4e00-\\u9fff-]/g, '');

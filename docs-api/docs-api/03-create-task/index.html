@@ -194,7 +194,13 @@ a.brand:hover { background: #f3f4f6; }
 <h2 id="header">Header</h2>
 <div class="table-wrap"><table><thead><tr><th>参数名</th><th>必填</th><th>示例</th><th>说明</th></tr></thead><tbody><tr><td><code>X-API-Key</code></td><td>是</td><td><code>sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></td><td>用户 API Key。</td></tr></tbody></table></div>
 <h2 id="body-参数">Body 参数</h2>
-<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>否</td><td>空</td><td>模型/场景标识。为空时使用默认模型。</td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 5000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。图编辑时传入。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>是</td><td>-</td><td>场景标识，**必填**。文生图与图编辑取值不同，见下方说明。</td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 5000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。**图编辑时必填**（至少 1 张）。</td></tr></tbody></table></div>
+<h3 id="文生图-model-可选值">文生图 <code>model</code> 可选值</h3>
+<p>未传 <code>reference_images</code>（或传空数组）时使用：</p>
+<p><code>gptimage2_high</code>、<code>gptimage2_medium</code>、<code>gptimage2_low</code>、<code>banana_pro</code>、<code>banana2</code>、<code>banana</code></p>
+<h3 id="图编辑-model-可选值">图编辑 <code>model</code> 可选值</h3>
+<p>传入 <code>reference_images</code> 时使用：</p>
+<p><code>gptimage2_high_edit</code>、<code>gptimage2_medium_edit</code>、<code>gptimage2_low_edit</code>、<code>banana_pro_edit</code>、<code>banana2_edit</code>、<code>banana_edit</code></p>
 <h2 id="文生图请求示例">文生图请求示例</h2>
 <pre><code class="language-bash">curl --request POST \
   --url &quot;https://api.80ai.net/api/tasks&quot; \
@@ -260,6 +266,15 @@ a.brand:hover { background: #f3f4f6; }
   &quot;detail&quot;: &quot;积分不足，需要 10 积分，当前余额 5&quot;
 }</code></pre>
 <pre><code class="language-json">{
+  &quot;detail&quot;: &quot;model 不能为空&quot;
+}</code></pre>
+<pre><code class="language-json">{
+  &quot;detail&quot;: &quot;文生图 model 无效，可选值：banana、banana2、banana_pro、gptimage2_high、gptimage2_low、gptimage2_medium&quot;
+}</code></pre>
+<pre><code class="language-json">{
+  &quot;detail&quot;: &quot;图编辑须传入 reference_images&quot;
+}</code></pre>
+<pre><code class="language-json">{
   &quot;detail&quot;: &quot;reference_images[0] 必须是图片 base64&quot;
 }</code></pre>
 <pre><code class="language-json">{
@@ -267,7 +282,8 @@ a.brand:hover { background: #f3f4f6; }
 }</code></pre>
 <h2 id="注意事项">注意事项</h2>
 <ul>
-<li>图编辑与文生图共用同一组 Body 参数；<code>size</code>、<code>resolution</code> 是否生效取决于所选 <code>model</code>，可先调用 <code>GET /api/config/task-scenes</code> 查看场景配置。</li>
+<li>图编辑与文生图共用同一组 Body 参数；须根据是否传入 <code>reference_images</code> 选择对应的 <code>model</code> 取值。</li>
+<li><code>size</code>、<code>resolution</code> 是否生效取决于所选 <code>model</code>，可先调用 <code>GET /api/config/task-scenes</code> 查看场景配置。</li>
 <li>每个 <code>POST /api/tasks</code> 请求默认生成 1 张图片，并按场景单价扣积分。</li>
 <li>接口会等待外部 AI 服务返回，调用方需要设置足够长的 HTTP 超时时间。</li>
 <li>如果生成失败，响应仍可能返回任务对象，<code>status</code> 为 <code>failed</code>，并带有 <code>error_message</code>。</li>
