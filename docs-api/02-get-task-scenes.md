@@ -21,7 +21,7 @@
 
 ```bash
 curl --request GET \
-  --url "https://你的-api域名/api/config/task-scenes"
+  --url "https://api.80ai.net/api/config/task-scenes"
 ```
 
 ## 成功响应
@@ -62,10 +62,11 @@ curl --request GET \
 | `scene_description` | string | 场景说明。 |
 | `credit_cost` | number | 单次/单张消耗积分。 |
 | `max_reference_images` | number | 支持的参考图数量上限。 |
-| `aspect_ratio_options` | array | 可选比例。 |
-| `image_size_options` | array | 可选清晰度。 |
+| `aspect_ratio_options` | array | 可选比例，对应创建任务时的 `size`。 |
+| `image_size_options` | array | 可选清晰度，对应创建任务时的 `resolution`。 |
 | `custom_size_options` | array | 可选自定义尺寸。 |
 
 ## 注意事项
 
+- 创建任务时使用 `size`、`resolution` 即可；部分场景会在服务端内部完成尺寸换算，无需额外传参。
 - 局部重绘和提示词反推暂不开放 API，因此不会出现在本接口响应中。

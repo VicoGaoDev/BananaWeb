@@ -936,6 +936,8 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
         if "custom_size_options_json" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
+        if "resolution_mapping_json" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN resolution_mapping_json TEXT"))
         conn.execute(
             text(
                 """
@@ -969,6 +971,15 @@ def _ensure_scene_binding_required_columns():
                 UPDATE external_api_scene_bindings
                 SET custom_size_options_json = '[]'
                 WHERE custom_size_options_json IS NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET resolution_mapping_json = '{}'
+                WHERE resolution_mapping_json IS NULL
                 """
             )
         )

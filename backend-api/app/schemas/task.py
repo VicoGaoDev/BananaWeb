@@ -42,7 +42,6 @@ class TaskOut(BaseModel):
     prompt: str = ""
     size: str
     resolution: str = ""
-    custom_size: str = ""
     credit_cost: int = 0
     credit_refunded: bool = False
     status: str

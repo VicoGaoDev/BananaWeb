@@ -106,6 +106,7 @@ DEFAULT_CUSTOM_SIZE_OPTIONS = [
     {"label": "896 x 1152", "value": "896x1152"},
     {"label": "1280 x 720", "value": "1280x720"},
 ]
+DEFAULT_RESOLUTION_MAPPING: dict[str, dict[str, str]] = {}
 DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6
 
 
@@ -149,6 +150,64 @@ def _normalize_scene_options(raw: str | None, fallback: list[dict[str, str]]) ->
 
 def _dump_scene_options(items: list[dict[str, str]]) -> str:
     return json.dumps(items, ensure_ascii=False, indent=2)
+
+
+def _normalize_resolution_mapping(raw: str | None) -> dict[str, dict[str, str]]:
+    candidate = (raw or "").strip()
+    if not candidate:
+        return DEFAULT_RESOLUTION_MAPPING.copy()
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return DEFAULT_RESOLUTION_MAPPING.copy()
+
+    if not isinstance(parsed, dict):
+        return DEFAULT_RESOLUTION_MAPPING.copy()
+
+    normalized: dict[str, dict[str, str]] = {}
+    for aspect_ratio, resolution_map in parsed.items():
+        aspect_key = str(aspect_ratio or "").strip()
+        if not aspect_key or not isinstance(resolution_map, dict):
+            continue
+        normalized_resolution_map: dict[str, str] = {}
+        for image_size, mapped_resolution in resolution_map.items():
+            image_size_key = str(image_size or "").strip()
+            mapped_value = str(mapped_resolution or "").strip()
+            if image_size_key and mapped_value:
+                normalized_resolution_map[image_size_key] = mapped_value
+        normalized[aspect_key] = normalized_resolution_map
+    return normalized
+
+
+def _dump_resolution_mapping(items: dict[str, dict[str, str]]) -> str:
+    return json.dumps(items, ensure_ascii=False, indent=2)
+
+
+def _get_resolution_mapping_json(raw: str | None) -> str:
+    return _dump_resolution_mapping(_normalize_resolution_mapping(raw))
+
+
+def resolve_mapped_resolution(
+    db: Session,
+    scene_key: str,
+    aspect_ratio: str,
+    image_size: str,
+) -> str:
+    _ensure_scene_bindings(db)
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
+    if not binding:
+        return ""
+    mapping = _normalize_resolution_mapping(binding.resolution_mapping_json)
+    aspect_key = (aspect_ratio or "").strip()
+    image_size_key = (image_size or "").strip()
+    return (mapping.get(aspect_key, {}).get(image_size_key) or "").strip()
 
 
 def _get_scene_option_json(
@@ -348,6 +407,7 @@ def _serialize_scene_binding(
         aspect_ratio_options_json=aspect_ratio_options_json,
         image_size_options_json=image_size_options_json,
         custom_size_options_json=custom_size_options_json,
+        resolution_mapping_json=_get_resolution_mapping_json(binding.resolution_mapping_json),
     )
 
 
@@ -526,6 +586,7 @@ def create_scene_binding(
         aspect_ratio_options_json=body.aspect_ratio_options_json,
         image_size_options_json=body.image_size_options_json,
         custom_size_options_json=body.custom_size_options_json,
+        resolution_mapping_json=body.resolution_mapping_json,
     )
     db.add(binding)
     db.commit()
@@ -609,6 +670,7 @@ def update_scene_binding_meta(
     binding.aspect_ratio_options_json = body.aspect_ratio_options_json
     binding.image_size_options_json = body.image_size_options_json
     binding.custom_size_options_json = body.custom_size_options_json
+    binding.resolution_mapping_json = body.resolution_mapping_json
     db.commit()
     config = get_config_or_404(db, binding.api_config_id) if binding.api_config_id else None
     return _serialize_scene_binding(binding, config)
@@ -841,6 +903,7 @@ def _build_test_variables(db: Session) -> dict[str, Any]:
         "aspect_ratio": "1:1",
         "image_size": "2K",
         "custom_size": "1024x1024",
+        "mapped_resolution": "2048x2048",
         "contents_parts": [
             sample_inline_image,
             sample_inline_image,
@@ -971,6 +1034,10 @@ def _ensure_scene_bindings(db: Session) -> None:
             if (binding.custom_size_options_json or "") != custom_size_options_json:
                 binding.custom_size_options_json = custom_size_options_json
                 updated = True
+            resolution_mapping_json = _get_resolution_mapping_json(binding.resolution_mapping_json)
+            if (binding.resolution_mapping_json or "") != resolution_mapping_json:
+                binding.resolution_mapping_json = resolution_mapping_json
+                updated = True
             if default_definition:
                 if not (binding.scene_type or "").strip():
                     binding.scene_type = default_definition["scene_type"]
@@ -1054,6 +1121,7 @@ def _ensure_scene_bindings(db: Session) -> None:
                 aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
                 image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
                 custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
+                resolution_mapping_json=_get_resolution_mapping_json(None),
             ))
             updated = True
         if updated:
@@ -1077,6 +1145,7 @@ def _ensure_scene_bindings(db: Session) -> None:
             aspect_ratio_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[0],
             image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
             custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
+            resolution_mapping_json=_get_resolution_mapping_json(None),
         ))
     db.commit()
 

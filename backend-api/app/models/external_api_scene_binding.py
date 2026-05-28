@@ -25,4 +25,5 @@ class ExternalApiSceneBinding(Base):
     aspect_ratio_options_json = Column(Text, nullable=False, default="[]", server_default="[]")
     image_size_options_json = Column(Text, nullable=False, default="[]", server_default="[]")
     custom_size_options_json = Column(Text, nullable=False, default="[]", server_default="[]")
+    resolution_mapping_json = Column(Text, nullable=False, default="{}", server_default="{}")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

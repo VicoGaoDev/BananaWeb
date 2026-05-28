@@ -6,7 +6,11 @@ from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskOut
-from app.services.image_delivery_service import get_optional_cos_config, serialize_task
+from app.services.image_delivery_service import (
+    get_optional_cos_config,
+    sanitize_api_public_message,
+    serialize_task,
+)
 from app.services.business_id_service import user_external_id
 from app.services.external_api_config_service import (
     get_default_generation_model_key,
@@ -96,7 +100,7 @@ def create(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"任务同步处理失败：{exc}",
+            detail=sanitize_api_public_message(f"任务同步处理失败：{exc}"),
         ) from exc
 
     task_logger.info(

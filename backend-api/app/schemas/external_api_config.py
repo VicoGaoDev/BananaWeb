@@ -46,6 +46,34 @@ def _validate_scene_options_json(value: str, field_name: str) -> str:
     return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
+def _validate_resolution_mapping_json(value: str, field_name: str) -> str:
+    raw = (value or "").strip() or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 必须是合法 JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} 必须是 JSON 对象")
+
+    normalized: dict[str, dict[str, str]] = {}
+    for aspect_ratio, resolution_map in parsed.items():
+        aspect_key = str(aspect_ratio or "").strip()
+        if not aspect_key:
+            raise ValueError(f"{field_name} 的宽高比键不能为空")
+        if not isinstance(resolution_map, dict):
+            raise ValueError(f"{field_name} 中 {aspect_key} 的值必须是对象")
+        normalized_resolution_map: dict[str, str] = {}
+        for image_size, mapped_resolution in resolution_map.items():
+            image_size_key = str(image_size or "").strip()
+            mapped_value = str(mapped_resolution or "").strip()
+            if not image_size_key or not mapped_value:
+                raise ValueError(f"{field_name} 中 {aspect_key} 的分辨率键和值不能为空")
+            normalized_resolution_map[image_size_key] = mapped_value
+        normalized[aspect_key] = normalized_resolution_map
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
+
+
 class ExternalApiConfigBase(BaseModel):
     name: str
     description: str = ""
@@ -203,6 +231,7 @@ class ExternalApiSceneBindingCreate(BaseModel):
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
     custom_size_options_json: str = "[]"
+    resolution_mapping_json: str = "{}"
 
     @field_validator("scene_key")
     @classmethod
@@ -263,6 +292,11 @@ class ExternalApiSceneBindingCreate(BaseModel):
     def validate_custom_size_options_json(cls, value: str) -> str:
         return _validate_scene_options_json(value, "自定义分辨率选项 JSON")
 
+    @field_validator("resolution_mapping_json")
+    @classmethod
+    def validate_resolution_mapping_json(cls, value: str) -> str:
+        return _validate_resolution_mapping_json(value, "分辨率映射 JSON")
+
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
@@ -295,6 +329,7 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
     custom_size_options_json: str = "[]"
+    resolution_mapping_json: str = "{}"
 
     @field_validator("scene_key")
     @classmethod
@@ -343,6 +378,11 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     def validate_custom_size_options_json(cls, value: str) -> str:
         return _validate_scene_options_json(value, "自定义分辨率选项 JSON")
 
+    @field_validator("resolution_mapping_json")
+    @classmethod
+    def validate_resolution_mapping_json(cls, value: str) -> str:
+        return _validate_resolution_mapping_json(value, "分辨率映射 JSON")
+
 
 class ExternalApiSceneBindingStatusUpdate(BaseModel):
     status: StatusType
@@ -378,6 +418,7 @@ class ExternalApiSceneBindingOut(BaseModel):
     aspect_ratio_options_json: str
     image_size_options_json: str
     custom_size_options_json: str
+    resolution_mapping_json: str
 
 
 class TaskSceneConfigOut(BaseModel):

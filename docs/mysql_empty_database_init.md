@@ -3,7 +3,7 @@
 在**无任何表**的数据库中执行以下脚本，创建与 `backend/app/models` 一致的结构，并插入默认管理员账号。
 
 - 库 / 连接字符集请使用 `utf8mb4`（例如连接串加 `?charset=utf8mb4`）。
-- `external_api_scene_bindings` 中三个 `TEXT` 字段在 MySQL 中不设默认值（`TEXT`/`BLOB` 在多数配置下不能带 `DEFAULT`），由应用层写入；与 ORM 的 Python 侧默认值 `[]` 行为一致。
+- `external_api_scene_bindings` 中参数类 `TEXT` 字段在 MySQL 中不设默认值（`TEXT`/`BLOB` 在多数配置下不能带 `DEFAULT`），由应用层写入；与 ORM 的 Python 侧默认值行为一致。
 - 若已由应用 `DB_AUTO_CREATE_TABLES` 建表，请勿重复执行建表；仅需按需插入 `users` 或改用 `DB_RUN_SEED`。
 - 首次登录后请立即修改默认密码。
 - 当前版本的“剩余积分余额”不再存储在 `users` 表，而是存储在 `user_credits` 表，默认积分类型为 `type = 0`。
@@ -189,6 +189,7 @@
 - `max_reference_images`: 该场景允许上传的最大参考图数量；图编辑模型常依赖这个值控制前端上传上限。
 - `hide_aspect_ratio` / `hide_resolution` / `hide_custom_size`: 前端是否隐藏相关参数。
 - `aspect_ratio_options_json` / `image_size_options_json` / `custom_size_options_json`: 可选参数列表。
+- `resolution_mapping_json`: 分辨率映射对象，用于把宽高比和生图质量映射为第三方接口的单个分辨率参数。
 - `status`: 场景状态，常见为 `enabled`。
 - `updated_at`: 最后更新时间。
 
@@ -452,6 +453,7 @@ CREATE TABLE external_api_scene_bindings (
   aspect_ratio_options_json TEXT NOT NULL,
   image_size_options_json TEXT NOT NULL,
   custom_size_options_json TEXT NOT NULL,
+  resolution_mapping_json TEXT NOT NULL,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_external_api_scene_bindings_scene_key (scene_key),
@@ -569,7 +571,7 @@ CREATE TABLE user_api_key (
 
 CREATE TABLE images (
   id INT NOT NULL AUTO_INCREMENT,
-  task_id INT NOT NULL,
+  task_id INT DEFAULT NULL,
   image_url VARCHAR(255) DEFAULT '',
   preview_url VARCHAR(500) DEFAULT '',
   image_format VARCHAR(20) DEFAULT '',
@@ -1097,6 +1099,201 @@ WHERE TABLE_SCHEMA = DATABASE()
 ORDER BY ORDINAL_POSITION;
 
 SHOW INDEX FROM feedback WHERE Key_name = 'ix_feedback_is_read';
+```
+
+## 系统消息功能线上升级 SQL
+
+如果当前生产环境还没有系统消息功能，或已经创建过 `system_messages` 但正文列仍是 `TEXT`，需要执行下面这组 SQL。
+
+这次表结构调整包含：
+
+- 新增 `system_messages`：系统邮件主体表。
+- 新增 `system_message_recipients`：用户收件与已读状态表。
+- 将 `content_html` / `content_text` 调整为 `LONGTEXT`，用于保存富文本正文和 base64 图片。
+
+建议先备份数据库，并在低峰期执行。下面 SQL 使用 `CREATE TABLE IF NOT EXISTS` 和 `information_schema` 检查，重复执行会跳过已存在的索引。
+
+```sql
+CREATE TABLE IF NOT EXISTS system_messages (
+  id INT NOT NULL AUTO_INCREMENT,
+  business_id VARCHAR(32) NOT NULL,
+  subject VARCHAR(200) NOT NULL,
+  content_html LONGTEXT NOT NULL,
+  content_text LONGTEXT NOT NULL,
+  sender_id INT NOT NULL,
+  recipient_scope VARCHAR(20) NOT NULL DEFAULT 'selected',
+  recipient_count INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_system_messages_business_id (business_id),
+  KEY ix_system_messages_subject (subject),
+  KEY ix_system_messages_sender_id (sender_id),
+  KEY ix_system_messages_recipient_scope (recipient_scope),
+  CONSTRAINT fk_system_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS system_message_recipients (
+  id INT NOT NULL AUTO_INCREMENT,
+  message_id INT NOT NULL,
+  user_id INT NOT NULL,
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  read_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_system_message_recipient_message_user (message_id, user_id),
+  KEY ix_system_message_recipients_message_id (message_id),
+  KEY ix_system_message_recipients_user_id (user_id),
+  KEY ix_system_message_recipients_is_read (is_read),
+  CONSTRAINT fk_system_message_recipients_message FOREIGN KEY (message_id) REFERENCES system_messages (id),
+  CONSTRAINT fk_system_message_recipients_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE system_messages
+  MODIFY COLUMN content_html LONGTEXT NOT NULL;
+
+ALTER TABLE system_messages
+  MODIFY COLUMN content_text LONGTEXT NOT NULL;
+
+UPDATE system_messages
+SET recipient_scope = 'selected'
+WHERE recipient_scope IS NULL OR recipient_scope = '';
+
+UPDATE system_messages
+SET recipient_count = 0
+WHERE recipient_count IS NULL;
+
+UPDATE system_message_recipients
+SET is_read = 0
+WHERE is_read IS NULL;
+```
+
+如果生产库中 `system_messages` / `system_message_recipients` 是由早期手动 SQL 创建的，可能缺少部分索引。可继续执行下面这组索引补齐 SQL：
+
+```sql
+SET @has_ix_system_messages_subject := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_messages'
+    AND INDEX_NAME = 'ix_system_messages_subject'
+);
+
+SET @create_ix_system_messages_subject := IF(
+  @has_ix_system_messages_subject = 0,
+  'CREATE INDEX ix_system_messages_subject ON system_messages (subject)',
+  'SELECT ''skip ix_system_messages_subject'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_messages_subject;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_ix_system_messages_sender_id := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_messages'
+    AND INDEX_NAME = 'ix_system_messages_sender_id'
+);
+
+SET @create_ix_system_messages_sender_id := IF(
+  @has_ix_system_messages_sender_id = 0,
+  'CREATE INDEX ix_system_messages_sender_id ON system_messages (sender_id)',
+  'SELECT ''skip ix_system_messages_sender_id'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_messages_sender_id;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_ix_system_messages_recipient_scope := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_messages'
+    AND INDEX_NAME = 'ix_system_messages_recipient_scope'
+);
+
+SET @create_ix_system_messages_recipient_scope := IF(
+  @has_ix_system_messages_recipient_scope = 0,
+  'CREATE INDEX ix_system_messages_recipient_scope ON system_messages (recipient_scope)',
+  'SELECT ''skip ix_system_messages_recipient_scope'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_messages_recipient_scope;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_ix_system_message_recipients_message_id := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_message_recipients'
+    AND INDEX_NAME = 'ix_system_message_recipients_message_id'
+);
+
+SET @create_ix_system_message_recipients_message_id := IF(
+  @has_ix_system_message_recipients_message_id = 0,
+  'CREATE INDEX ix_system_message_recipients_message_id ON system_message_recipients (message_id)',
+  'SELECT ''skip ix_system_message_recipients_message_id'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_message_recipients_message_id;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_ix_system_message_recipients_user_id := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_message_recipients'
+    AND INDEX_NAME = 'ix_system_message_recipients_user_id'
+);
+
+SET @create_ix_system_message_recipients_user_id := IF(
+  @has_ix_system_message_recipients_user_id = 0,
+  'CREATE INDEX ix_system_message_recipients_user_id ON system_message_recipients (user_id)',
+  'SELECT ''skip ix_system_message_recipients_user_id'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_message_recipients_user_id;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_ix_system_message_recipients_is_read := (
+  SELECT COUNT(*)
+  FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'system_message_recipients'
+    AND INDEX_NAME = 'ix_system_message_recipients_is_read'
+);
+
+SET @create_ix_system_message_recipients_is_read := IF(
+  @has_ix_system_message_recipients_is_read = 0,
+  'CREATE INDEX ix_system_message_recipients_is_read ON system_message_recipients (is_read)',
+  'SELECT ''skip ix_system_message_recipients_is_read'' AS info'
+);
+PREPARE stmt FROM @create_ix_system_message_recipients_is_read;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+```
+
+执行后可用以下 SQL 检查：
+
+```sql
+SHOW TABLES LIKE 'system_message%';
+
+SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'system_messages'
+  AND COLUMN_NAME IN ('business_id', 'subject', 'content_html', 'content_text', 'sender_id', 'recipient_scope', 'recipient_count')
+ORDER BY ORDINAL_POSITION;
+
+SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'system_message_recipients'
+ORDER BY ORDINAL_POSITION;
+
+SHOW INDEX FROM system_messages;
+SHOW INDEX FROM system_message_recipients;
 ```
 
 ## tasks 历史时间修正 SQL（UTC -> 北京时间）

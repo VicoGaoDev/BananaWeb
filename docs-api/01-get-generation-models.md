@@ -21,7 +21,7 @@
 
 ```bash
 curl --request GET \
-  --url "https://你的-api域名/api/config/generation-models"
+  --url "https://api.80ai.net/api/config/generation-models"
 ```
 
 ## 成功响应

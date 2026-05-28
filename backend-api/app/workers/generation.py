@@ -31,6 +31,7 @@ from app.services.external_api_config_service import (
     build_secret_variables,
     render_config,
     require_scene_config,
+    resolve_mapped_resolution,
     SCENE_INPAINT,
     should_use_multipart_request,
 )
@@ -237,6 +238,7 @@ def _call_gemini_api(
         config = require_scene_config(db, scene_key)
         config_name = config.name
         configured_field_path = (config.result_base64_field or "").strip()
+        mapped_resolution = resolve_mapped_resolution(db, scene_key, aspect_ratio, image_size)
 
         parts: list[dict] = []
         render_variables = {
@@ -245,6 +247,7 @@ def _call_gemini_api(
             "aspect_ratio": aspect_ratio,
             "image_size": image_size,
             "custom_size": custom_size,
+            "mapped_resolution": mapped_resolution,
             "generation_config": {},
             "mode": mode,
             "reference_image_count": 0,

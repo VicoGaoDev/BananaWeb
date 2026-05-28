@@ -1,11 +1,8 @@
-# Banana API 生图接口文档
-
-本文档面向普通用户 API Key 调用方，接口服务来自 `backend-api`。
+# 80AI API 生图接口文档
 
 ## 基础信息
 
-- Base URL：`https://你的-api域名`
-- 本地示例：`http://127.0.0.1:8000`
+- Base URL：`https://api.80ai.net`
 - 数据格式：请求与响应均为 JSON。
 - 鉴权方式：需要鉴权的接口支持以下任一 Header：
 
@@ -44,4 +41,4 @@ Authorization: Bearer sk-yourApiKey
 
 - [查询生图模型列表](./01-get-generation-models.md)
 - [查询任务场景配置](./02-get-task-scenes.md)
-- [创建生图任务](./05-create-task.md)
+- [创建生图任务](./03-create-task.md)
