@@ -55,6 +55,12 @@ def slug_from_link(href: str) -> str | None:
 
 def inline_md(text: str) -> str:
     text = html.escape(text)
+    allowed_tags = ("br", "strong", "em", "ul", "li", "table", "thead", "tbody", "tr", "th", "td")
+    for tag in allowed_tags:
+        text = text.replace(f"&lt;{tag}&gt;", f"<{tag}>")
+        if tag != "br":
+            text = text.replace(f"&lt;/{tag}&gt;", f"</{tag}>")
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
     text = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
@@ -384,6 +390,53 @@ a.brand:hover { background: #f3f4f6; }
   background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 6px;
+}
+.doc strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table table {
+  width: 100%;
+  margin: 8px 0 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  table-layout: fixed;
+}
+.doc table table th,
+.doc table table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.doc table table th:first-child,
+.doc table table td:first-child {
+  width: 220px;
+}
+.doc table table td:first-child code {
+  word-break: break-all;
+  white-space: normal;
+}
+.doc table table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.doc table table tr:last-child td,
+.doc table table tr:last-child th {
+  border-bottom: none;
+}
+.doc table ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.doc table li {
+  margin: 4px 0;
 }
 .doc pre {
   background: var(--code-bg);

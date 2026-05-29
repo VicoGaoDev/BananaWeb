@@ -42,3 +42,16 @@ Authorization: Bearer sk-yourApiKey
 - [查询生图模型列表](./01-get-generation-models.md)
 - [查询任务场景配置](./02-get-task-scenes.md)
 - [创建生图任务](./03-create-task.md)
+
+## 更新静态站点
+
+文档源文件为 `docs-api/*.md`，浏览器实际访问的是 `docs-api/docs-api/` 下的 HTML。**修改 `.md` 后必须执行构建**，否则 HTML 不会变：
+
+```bash
+cd docs-api
+python3 build_site.py
+```
+
+构建完成后，本地预览请硬刷新浏览器（Cmd+Shift+R）。线上 https://80ai.net/docs-api/ 需重新部署 `docs-api/docs-api/` 目录。
+
+> 注意：请直接编辑 `*.md` 源文件，不要手改 `docs-api/docs-api/` 下的 HTML。运行 `build_site.py` 会覆盖 HTML，手改内容会丢失。

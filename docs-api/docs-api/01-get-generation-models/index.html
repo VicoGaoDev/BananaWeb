@@ -106,6 +106,13 @@ a.brand:hover { background: #f3f4f6; }
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+.doc h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
 .doc p { margin: 12px 0; }
 .doc ul { padding-left: 22px; }
 .doc li { margin: 6px 0; }
@@ -123,6 +130,53 @@ a.brand:hover { background: #f3f4f6; }
   background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 6px;
+}
+.doc strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table table {
+  width: 100%;
+  margin: 8px 0 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  table-layout: fixed;
+}
+.doc table table th,
+.doc table table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.doc table table th:first-child,
+.doc table table td:first-child {
+  width: 220px;
+}
+.doc table table td:first-child code {
+  word-break: break-all;
+  white-space: normal;
+}
+.doc table table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.doc table table tr:last-child td,
+.doc table table tr:last-child th {
+  border-bottom: none;
+}
+.doc table ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.doc table li {
+  margin: 4px 0;
 }
 .doc pre {
   background: var(--code-bg);
@@ -231,7 +285,7 @@ a.brand:hover { background: #f3f4f6; }
       <footer class="footer">80AI API</footer>
     </main>
   </div>
-  <script>document.querySelectorAll('.doc h2').forEach((heading) => {
+  <script>document.querySelectorAll('.doc h2, .doc h3').forEach((heading) => {
   if (heading.id) return;
   const text = heading.textContent || '';
   const id = text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '');

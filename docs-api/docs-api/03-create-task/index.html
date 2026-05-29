@@ -106,6 +106,13 @@ a.brand:hover { background: #f3f4f6; }
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+.doc h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
 .doc p { margin: 12px 0; }
 .doc ul { padding-left: 22px; }
 .doc li { margin: 6px 0; }
@@ -123,6 +130,53 @@ a.brand:hover { background: #f3f4f6; }
   background: #f3f4f6;
   padding: 2px 6px;
   border-radius: 6px;
+}
+.doc strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table strong {
+  font-weight: 700;
+  color: #111827;
+}
+.doc table table {
+  width: 100%;
+  margin: 8px 0 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  table-layout: fixed;
+}
+.doc table table th,
+.doc table table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.doc table table th:first-child,
+.doc table table td:first-child {
+  width: 220px;
+}
+.doc table table td:first-child code {
+  word-break: break-all;
+  white-space: normal;
+}
+.doc table table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.doc table table tr:last-child td,
+.doc table table tr:last-child th {
+  border-bottom: none;
+}
+.doc table ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.doc table li {
+  margin: 4px 0;
 }
 .doc pre {
   background: var(--code-bg);
@@ -194,13 +248,7 @@ a.brand:hover { background: #f3f4f6; }
 <h2 id="header">Header</h2>
 <div class="table-wrap"><table><thead><tr><th>参数名</th><th>必填</th><th>示例</th><th>说明</th></tr></thead><tbody><tr><td><code>X-API-Key</code></td><td>是</td><td><code>sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></td><td>用户 API Key。</td></tr></tbody></table></div>
 <h2 id="body-参数">Body 参数</h2>
-<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>是</td><td>-</td><td>场景标识，**必填**。文生图与图编辑取值不同，见下方说明。</td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 5000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。**图编辑时必填**（至少 1 张）。</td></tr></tbody></table></div>
-<h3 id="文生图-model-可选值">文生图 <code>model</code> 可选值</h3>
-<p>未传 <code>reference_images</code>（或传空数组）时使用：</p>
-<p><code>gptimage2_high</code>、<code>gptimage2_medium</code>、<code>gptimage2_low</code>、<code>banana_pro</code>、<code>banana2</code>、<code>banana</code></p>
-<h3 id="图编辑-model-可选值">图编辑 <code>model</code> 可选值</h3>
-<p>传入 <code>reference_images</code> 时使用：</p>
-<p><code>gptimage2_high_edit</code>、<code>gptimage2_medium_edit</code>、<code>gptimage2_low_edit</code>、<code>banana_pro_edit</code>、<code>banana2_edit</code>、<code>banana_edit</code></p>
+<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>是</td><td>-</td><td>场景标识，<strong>必填</strong>。须根据是否传入 <code>reference_images</code> 选择对应取值：<br><br><strong>文生图</strong>（未传 <code>reference_images</code> 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage2_high</code></td><td>⚡️ Image 2 (顶级)</td></tr><tr><td><code>gptimage2_medium</code></td><td>⚡️ Image 2 (高质量)</td></tr><tr><td><code>gptimage2_low</code></td><td>⚡️ Image 2 (性价比)</td></tr><tr><td><code>banana_pro</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana</code></td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 <code>reference_images</code>）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage2_high_edit</code></td><td>⚡️ Image 2 (顶级)</td></tr><tr><td><code>gptimage2_medium_edit</code></td><td>⚡️ Image 2 (高质量)</td></tr><tr><td><code>gptimage2_low_edit</code></td><td>⚡️ Image 2 (性价比)</td></tr><tr><td><code>banana_pro_edit</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2_edit</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana_edit</code></td><td>🍌 Nano Banana</td></tr></tbody></table></td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 5000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。<strong>图编辑时必填</strong>（至少 1 张）。</td></tr></tbody></table></div>
 <h2 id="文生图请求示例">文生图请求示例</h2>
 <pre><code class="language-bash">curl --request POST \
   --url &quot;https://api.80ai.net/api/tasks&quot; \
@@ -291,7 +339,7 @@ a.brand:hover { background: #f3f4f6; }
       <footer class="footer">80AI API</footer>
     </main>
   </div>
-  <script>document.querySelectorAll('.doc h2').forEach((heading) => {
+  <script>document.querySelectorAll('.doc h2, .doc h3').forEach((heading) => {
   if (heading.id) return;
   const text = heading.textContent || '';
   const id = text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '');

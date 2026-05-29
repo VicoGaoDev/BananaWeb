@@ -24,23 +24,11 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `mode` | string | 否 | `generate` | 任务模式。当前仅支持 `generate`。 |
-| `model` | string | 是 | - | 场景标识，**必填**。文生图与图编辑取值不同，见下方说明。 |
+| `model` | string | 是 | - | 场景标识，<strong>必填</strong>。须根据是否传入 `reference_images` 选择对应取值：<br><br><strong>文生图</strong>（未传 `reference_images` 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage2_high`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana`</td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 `reference_images`）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage2_high_edit`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium_edit`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low_edit`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro_edit`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_edit`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana_edit`</td><td>🍌 Nano Banana</td></tr></tbody></table> |
 | `prompt` | string | 是 | - | 提示词，不能为空，最长 5000 字符。 |
 | `size` | string | 否 | `3:4` | 图片宽高比，例如 `1:1`、`3:4`、`9:16`。可选值见 `GET /api/config/task-scenes` 的 `aspect_ratio_options`。 |
 | `resolution` | string | 否 | `4K` | 清晰度档位，例如 `1K`、`2K`、`4K`。可选值见 `GET /api/config/task-scenes` 的 `image_size_options`。 |
-| `reference_images` | string[] | 否 | `null` | 参考图数组，元素为 base64 字符串或 `data:image/...;base64,...` 形式。**图编辑时必填**（至少 1 张）。 |
-
-### 文生图 `model` 可选值
-
-未传 `reference_images`（或传空数组）时使用：
-
-`gptimage2_high`、`gptimage2_medium`、`gptimage2_low`、`banana_pro`、`banana2`、`banana`
-
-### 图编辑 `model` 可选值
-
-传入 `reference_images` 时使用：
-
-`gptimage2_high_edit`、`gptimage2_medium_edit`、`gptimage2_low_edit`、`banana_pro_edit`、`banana2_edit`、`banana_edit`
+| `reference_images` | string[] | 否 | `null` | 参考图数组，元素为 base64 字符串或 `data:image/...;base64,...` 形式。<strong>图编辑时必填</strong>（至少 1 张）。 |
 
 ## 文生图请求示例
 
