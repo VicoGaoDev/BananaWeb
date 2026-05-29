@@ -1,6 +1,6 @@
 import type { ImageResult } from "@/types";
 
-export const IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险，请尝试修改提示词或参考图！";
+export const IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图！";
 export const GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理";
 export const CREDIT_REFUNDED_SUFFIX = "（积分已返还）";
 
