@@ -1329,7 +1329,6 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
   generateMode.value = "imageEdit";
   prompt.value = task.prompt;
   repaintPrompt.value = "";
-  if (task.model) selectedModel.value = task.model;
   size.value = task.size || "9:16";
   resolution.value = task.resolution || "2K";
   customSize.value = task.customSize || "";

@@ -30,6 +30,7 @@ import type {
   ExternalApiConfig,
   ExternalApiConfigPayload,
   ExternalApiConfigTestResult,
+  ExternalApiRequestFormat,
   ExternalApiSceneBinding,
   ExternalApiSceneBindingCreatePayload,
   ExternalApiSceneBindingMetaPayload,
@@ -78,7 +79,11 @@ const sceneEditingKey = ref("");
 const isCopyMode = ref(false);
 const isSceneCopyMode = ref(false);
 const configGroupFilter = ref("all");
+const configRequestFormatFilter = ref<"all" | ExternalApiRequestFormat>("all");
+const configNameFilter = ref("");
 const bindingGroupFilter = ref("all");
+const bindingSceneTypeFilter = ref<"all" | ExternalApiSceneType>("all");
+const bindingNameFilter = ref("");
 const secretVisible = ref(false);
 const tongyiSecretVisible = ref(false);
 const geminiKey = ref("");
@@ -159,16 +164,25 @@ const groupOptions = computed(() => {
   const groups = Array.from(new Set(configs.value.map((item) => item.group_name || "未分组").filter(Boolean)));
   return groups.sort((a, b) => a.localeCompare(b, "zh-CN"));
 });
-const filteredConfigs = computed(() => (
-  configGroupFilter.value === "all"
-    ? configs.value
-    : configs.value.filter((item) => item.group_name === configGroupFilter.value)
-));
-const filteredSceneBindings = computed(() => (
-  bindingGroupFilter.value === "all"
-    ? sceneBindings.value
-    : sceneBindings.value.filter((item) => (item.api_group_name || "未分组") === bindingGroupFilter.value)
-));
+const filteredConfigs = computed(() => configs.value.filter((item) => {
+  if (configGroupFilter.value !== "all" && item.group_name !== configGroupFilter.value) return false;
+  if (configRequestFormatFilter.value !== "all" && item.request_format !== configRequestFormatFilter.value) return false;
+  if (!matchesNameFilter(configNameFilter.value, item.name, item.description)) return false;
+  return true;
+}));
+const filteredSceneBindings = computed(() => sceneBindings.value.filter((item) => {
+  if (bindingGroupFilter.value !== "all" && (item.api_group_name || "未分组") !== bindingGroupFilter.value) return false;
+  if (bindingSceneTypeFilter.value !== "all" && item.scene_type !== bindingSceneTypeFilter.value) return false;
+  if (!matchesNameFilter(
+    bindingNameFilter.value,
+    item.scene_label,
+    item.scene_key,
+    item.display_name,
+    item.scene_description,
+    item.api_config_name,
+  )) return false;
+  return true;
+}));
 const maskedGeminiKey = computed(() => {
   if (!geminiKey.value) return "";
   const value = geminiKey.value;
@@ -192,6 +206,12 @@ function sceneTypeLabel(sceneType: ExternalApiSceneBinding["scene_type"]) {
 
 function requestFormatLabel(requestFormat: ExternalApiConfig["request_format"]) {
   return requestFormat === "multipart" ? "Multipart Form" : "JSON";
+}
+
+function matchesNameFilter(keyword: string, ...fields: Array<string | null | undefined>) {
+  const normalized = keyword.trim().toLowerCase();
+  if (!normalized) return true;
+  return fields.some((field) => (field || "").toLowerCase().includes(normalized));
 }
 
 function resetForm() {
@@ -866,12 +886,38 @@ function copySecret(value: string, label: string) {
 
       <a-card title="接口配置" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
         <template #extra>
-          <a-space>
-            <a-select v-model:value="configGroupFilter" class="warm-select" style="width: 180px">
-              <a-select-option value="all">全部分组</a-select-option>
-              <a-select-option v-for="group in groupOptions" :key="group" :value="group">
+          <a-space wrap>
+            <a-input
+              v-model:value="configNameFilter"
+              class="warm-input"
+              allow-clear
+              placeholder="按名称筛选"
+              style="width: 180px"
+            />
+            <a-select
+              v-model:value="configGroupFilter"
+              class="warm-select"
+              show-search
+              option-filter-prop="label"
+              placeholder="筛选分组"
+              style="width: 180px"
+            >
+              <a-select-option value="all" label="全部分组">全部分组</a-select-option>
+              <a-select-option v-for="group in groupOptions" :key="group" :value="group" :label="group">
                 {{ group }}
               </a-select-option>
+            </a-select>
+            <a-select
+              v-model:value="configRequestFormatFilter"
+              class="warm-select"
+              show-search
+              option-filter-prop="label"
+              placeholder="筛选请求格式"
+              style="width: 180px"
+            >
+              <a-select-option value="all" label="全部格式">全部格式</a-select-option>
+              <a-select-option value="json" label="JSON">JSON</a-select-option>
+              <a-select-option value="multipart" label="Multipart Form">Multipart Form</a-select-option>
             </a-select>
             <a-button type="primary" class="api-primary-btn" :icon="h(PlusOutlined)" @click="openCreate">
               新增接口
@@ -919,12 +965,40 @@ function copySecret(value: string, label: string) {
 
       <a-card title="场景绑定" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
         <template #extra>
-          <a-space>
-            <a-select v-model:value="bindingGroupFilter" class="warm-select" style="width: 180px">
-              <a-select-option value="all">全部分组</a-select-option>
-              <a-select-option v-for="group in groupOptions" :key="group" :value="group">
+          <a-space wrap>
+            <a-input
+              v-model:value="bindingNameFilter"
+              class="warm-input"
+              allow-clear
+              placeholder="按名称筛选"
+              style="width: 180px"
+            />
+            <a-select
+              v-model:value="bindingGroupFilter"
+              class="warm-select"
+              show-search
+              option-filter-prop="label"
+              placeholder="筛选分组"
+              style="width: 180px"
+            >
+              <a-select-option value="all" label="全部分组">全部分组</a-select-option>
+              <a-select-option v-for="group in groupOptions" :key="group" :value="group" :label="group">
                 {{ group }}
               </a-select-option>
+            </a-select>
+            <a-select
+              v-model:value="bindingSceneTypeFilter"
+              class="warm-select"
+              show-search
+              option-filter-prop="label"
+              placeholder="筛选场景类型"
+              style="width: 180px"
+            >
+              <a-select-option value="all" label="全部场景">全部场景</a-select-option>
+              <a-select-option value="generate" label="文生图">文生图</a-select-option>
+              <a-select-option value="image_edit" label="图编辑">图编辑</a-select-option>
+              <a-select-option value="prompt_reverse" label="提示词反推">提示词反推</a-select-option>
+              <a-select-option value="inpaint" label="局部重绘">局部重绘</a-select-option>
             </a-select>
             <a-button type="primary" class="api-primary-btn" :icon="h(PlusOutlined)" @click="openCreateScene">
               新增场景

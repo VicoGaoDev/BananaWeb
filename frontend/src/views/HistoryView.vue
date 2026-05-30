@@ -800,8 +800,7 @@ function handleEditImage(item: UserHistoryCard) {
     "generateDraftFromHistory",
     JSON.stringify({
       mode: "generate",
-      model: item.model,
-      prompt: "",
+      prompt: item.prompt || "",
       reference_images: [referenceImage],
       num_images: 1,
       size: item.size,
