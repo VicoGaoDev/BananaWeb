@@ -11,7 +11,7 @@ class Feedback(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     business_id = Column(String(32), unique=True, nullable=False, index=True, default=generate_business_id)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True, index=True)
     content = Column(Text, nullable=False)
     status = Column(String(20), nullable=False, default="pending", server_default="pending", index=True)
     is_read = Column(Boolean, nullable=False, default=False, server_default=text("0"), index=True)

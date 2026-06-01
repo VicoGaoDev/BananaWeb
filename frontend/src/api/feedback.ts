@@ -6,9 +6,9 @@ import type {
   FeedbackReadCountResponse,
 } from "@/types";
 
-export function createFeedback(taskId: string, content: string): Promise<FeedbackDetail> {
+export function createFeedback(taskId: string | null | undefined, content: string): Promise<FeedbackDetail> {
   return client.post("/feedback", {
-    task_id: taskId,
+    task_id: taskId || undefined,
     content,
   });
 }

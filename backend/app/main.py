@@ -1000,6 +1000,8 @@ def _ensure_feedback_schema():
             conn.execute(text("ALTER TABLE feedback ADD COLUMN user_id INTEGER"))
         if "task_id" not in feedback_columns:
             conn.execute(text("ALTER TABLE feedback ADD COLUMN task_id INTEGER"))
+        elif engine.dialect.name == "mysql":
+            conn.execute(text("ALTER TABLE feedback MODIFY COLUMN task_id INTEGER NULL"))
         if "content" not in feedback_columns:
             conn.execute(text("ALTER TABLE feedback ADD COLUMN content TEXT"))
         if "status" not in feedback_columns:
