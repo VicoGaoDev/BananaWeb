@@ -275,7 +275,8 @@ a.brand:hover { background: #f3f4f6; }
 <p>文档源文件为 <code>docs-api/*.md</code>，浏览器实际访问的是 <code>docs-api/docs-api/</code> 下的 HTML。<strong>修改 <code>.md</code> 后必须执行构建</strong>，否则 HTML 不会变：</p>
 <pre><code class="language-bash">cd docs-api
 python3 build_site.py</code></pre>
-<p>构建完成后，本地预览请硬刷新浏览器（Cmd+Shift+R）。线上 https://80ai.net/docs-api/ 需重新部署 <code>docs-api/docs-api/</code> 目录。</p></article>
+<p>构建完成后，本地预览请硬刷新浏览器（Cmd+Shift+R）。线上 https://80ai.net/docs-api/ 需重新部署 <code>docs-api/docs-api/</code> 目录。</p>
+<blockquote>注意：请直接编辑 <code>*.md</code> 源文件，不要手改 <code>docs-api/docs-api/</code> 下的 HTML。运行 <code>build_site.py</code> 会覆盖 HTML，手改内容会丢失。</blockquote></article>
       <footer class="footer">80AI API</footer>
     </main>
   </div>
