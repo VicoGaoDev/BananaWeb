@@ -183,7 +183,7 @@ def my_credit_logs(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     direction: Optional[str] = Query(None, pattern="^(increase|decrease)$"),
-    mode: Optional[str] = Query(None, pattern="^(text_generate|image_edit|inpaint|promptReverse|manual|redeem)$"),
+    mode: Optional[str] = Query(None, pattern="^(text_generate|image_edit|inpaint|promptReverse|manual|redeem|purchase)$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

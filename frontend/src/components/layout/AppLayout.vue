@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTi
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message, notification } from "ant-design-vue";
+import QRCode from "qrcode";
 import {
   login as apiLogin,
   register as apiRegister,
@@ -12,7 +13,9 @@ import {
   getAnnouncementConfig,
   redeemCreditKey,
 } from "@/api/auth";
-import { getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
+import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
+import { getPaymentOrder } from "@/api/payments";
+import { createFeedback, getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
 import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
 import { withBaseUrl } from "@/lib/assets";
@@ -35,7 +38,7 @@ import {
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
-import type { AnnouncementConfig } from "@/types";
+import type { AnnouncementConfig, PaymentPlan, PaymentOrder } from "@/types";
 import {
   PictureOutlined,
   SettingOutlined,
@@ -54,6 +57,7 @@ import {
   MessageOutlined,
   GiftOutlined,
   AccountBookOutlined,
+  CheckOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -100,7 +104,7 @@ const userCompletedUnreadFeedbackCount = ref(getStoredUserCompletedUnreadFeedbac
 let unsubscribeUserFeedbackCount: (() => void) | null = null;
 const userUnreadSystemMessageCount = ref(getStoredUnreadSystemMessageCount());
 let unsubscribeSystemMessageCount: (() => void) | null = null;
-let systemMessagePollTimer: ReturnType<typeof window.setInterval> | null = null;
+let systemMessagePollTimer: number | null = null;
 let unsubscribeAuthSessionExpired: (() => void) | null = null;
 const UNRESOLVED_FEEDBACK_NOTIFICATION_KEY = "global-admin-unresolved-feedback";
 const USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY = "global-user-unread-system-message";
@@ -160,6 +164,8 @@ const userMenuItems = [
 const userMenuAccountItems = userMenuItems.filter((item) => ["profile", "credits", "api-keys", "settings"].includes(item.key));
 const userMenuNoticeItems = userMenuItems.filter((item) => ["my-feedback", "system-messages"].includes(item.key));
 const userMenuDangerItems = userMenuItems.filter((item) => item.danger);
+
+const creditPurchasePlans = ref<PaymentPlan[]>([]);
 
 function getRouteRank(path: string) {
   if (path.startsWith("/feedbacks/")) return routeOrder.get("/feedbacks/:feedbackId") ?? 0;
@@ -362,6 +368,23 @@ const registerCodeLoading = ref(false);
 const redeemDialogOpen = ref(false);
 const redeemLoading = ref(false);
 const redeemForm = reactive({ key: "" });
+const purchaseDialogOpen = ref(false);
+const selectedPurchasePlanKey = ref("");
+const selectedPurchasePlan = computed(() =>
+  creditPurchasePlans.value.find((item) => item.key === selectedPurchasePlanKey.value) || null
+);
+const purchasePlansLoading = ref(false);
+const purchaseLoading = ref(false);
+const purchaseQrCodeDataUrl = ref("");
+const purchaseOrder = ref<PaymentOrder | null>(null);
+const purchaseStatusText = ref("");
+const purchaseAwaitingPayment = computed(() =>
+  purchaseOrder.value && (purchaseOrder.value.status === "pending_pay" || purchaseOrder.value.status === "paid")
+);
+let purchasePollTimer: number | null = null;
+const purchaseFeedbackDialogOpen = ref(false);
+const purchaseFeedbackSubmitting = ref(false);
+const purchaseFeedbackForm = reactive({ content: "" });
 const authExpiredPromptVisible = ref(false);
 const expiredSessionRedirectPath = ref("");
 
@@ -676,6 +699,99 @@ async function checkAnnouncement() {
   }
 }
 
+async function loadPaymentPlans() {
+  if (!auth.isLoggedIn) return;
+  purchasePlansLoading.value = true;
+  try {
+    const res = await listPaymentPlans();
+    creditPurchasePlans.value = res.items;
+    if (!res.items.some((item) => item.key === selectedPurchasePlanKey.value)) {
+      selectedPurchasePlanKey.value = "";
+    }
+    if (!selectedPurchasePlanKey.value && res.items.length > 0) {
+      selectedPurchasePlanKey.value = res.items[0].key;
+    }
+  } catch {
+    creditPurchasePlans.value = [];
+    selectedPurchasePlanKey.value = "";
+  } finally {
+    purchasePlansLoading.value = false;
+  }
+}
+
+function clearPurchasePollTimer() {
+  if (!purchasePollTimer) return;
+  window.clearTimeout(purchasePollTimer);
+  purchasePollTimer = null;
+}
+
+async function renderPurchaseQrCode(qrCode: string) {
+  purchaseQrCodeDataUrl.value = qrCode
+    ? await QRCode.toDataURL(qrCode, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M",
+    })
+    : "";
+}
+
+async function syncPurchaseOrder(orderNo: string, options?: { silent?: boolean }) {
+  try {
+    const order = await getPaymentOrder(orderNo);
+    purchaseOrder.value = order;
+    if (order.status === "pending_pay") {
+      purchaseStatusText.value = "请使用支付宝扫码完成支付";
+      if (!purchaseQrCodeDataUrl.value && order.qr_code) {
+        await renderPurchaseQrCode(order.qr_code);
+      }
+      clearPurchasePollTimer();
+      purchasePollTimer = window.setTimeout(() => {
+        void syncPurchaseOrder(orderNo, { silent: true });
+      }, 2500);
+      return;
+    }
+    if (order.status === "paid") {
+      purchaseStatusText.value = "已完成支付，积分处理中...";
+      clearPurchasePollTimer();
+      purchasePollTimer = window.setTimeout(() => {
+        void syncPurchaseOrder(orderNo, { silent: true });
+      }, 2500);
+      return;
+    }
+    clearPurchasePollTimer();
+    if (order.status === "credited") {
+      purchaseStatusText.value = "积分已到账";
+      try {
+        auth.updateUser(await getMe());
+      } catch {
+        // ignore refresh failures, order status is still authoritative
+      }
+      await loadPaymentPlans();
+      message.success("支付成功，积分已到账");
+      return;
+    }
+    if (order.status === "closed") {
+      purchaseStatusText.value = "订单已关闭，请重新下单";
+      return;
+    }
+    if (order.status === "failed") {
+      purchaseStatusText.value = "支付失败，请稍后重试";
+      return;
+    }
+  } catch (err: any) {
+    if (!options?.silent) {
+      message.error(err?.response?.data?.detail || "查询支付状态失败");
+    }
+  }
+}
+
+function resetPurchaseState() {
+  clearPurchasePollTimer();
+  purchaseQrCodeDataUrl.value = "";
+  purchaseOrder.value = null;
+  purchaseStatusText.value = "";
+}
+
 onMounted(async () => {
   unsubscribeAdminFeedbackCount = subscribeAdminUnresolvedFeedbackCount((count) => {
     adminUnresolvedFeedbackCount.value = count;
@@ -704,6 +820,7 @@ onMounted(async () => {
       contactQrImage.value = res.contact_qr_image || "";
     })(),
     checkAnnouncement(),
+    loadPaymentPlans(),
   ]);
 
   if (!auth.isLoggedIn) return;
@@ -728,6 +845,7 @@ onBeforeUnmount(() => {
   unsubscribeAuthSessionExpired?.();
   unsubscribeAuthSessionExpired = null;
   stopSystemMessagePolling();
+  clearPurchasePollTimer();
   themeObserver?.disconnect();
   themeObserver = null;
 });
@@ -738,6 +856,7 @@ function openCreditsContact() {
 }
 
 provide("openCreditsContact", openCreditsContact);
+provide("openPurchaseEntry", openPurchaseEntry);
 
 function openRedeemEntry() {
   mobileDrawerOpen.value = false;
@@ -746,6 +865,80 @@ function openRedeemEntry() {
     return;
   }
   redeemDialogOpen.value = true;
+}
+
+function openPurchaseEntry() {
+  mobileDrawerOpen.value = false;
+  if (!auth.isLoggedIn) {
+    openAuthModal("login");
+    return;
+  }
+  if (!creditPurchasePlans.value.length) {
+    void loadPaymentPlans();
+  }
+  resetPurchaseState();
+  purchaseDialogOpen.value = true;
+}
+
+async function handlePurchaseCredits() {
+  const selectedPlan = creditPurchasePlans.value.find((item) => item.key === selectedPurchasePlanKey.value);
+  if (!selectedPlan) return;
+  purchaseLoading.value = true;
+  try {
+    const res = await createPaymentOrder(selectedPlan.key);
+    purchaseOrder.value = {
+      order_no: res.order_no,
+      plan_key: selectedPlan.key,
+      subject: res.subject,
+      amount_fen: res.amount_fen,
+      credits: res.credits,
+      status: res.status,
+      qr_code: res.qr_code,
+      expires_at: res.expires_at ?? null,
+    };
+    purchaseStatusText.value = "请使用支付宝扫码完成支付";
+    await renderPurchaseQrCode(res.qr_code);
+    await syncPurchaseOrder(res.order_no, { silent: true });
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "创建支付订单失败");
+  } finally {
+    purchaseLoading.value = false;
+  }
+}
+
+function openPurchaseFeedbackDialog() {
+  purchaseFeedbackForm.content = "";
+  purchaseFeedbackDialogOpen.value = true;
+}
+
+function closePurchaseFeedbackDialog() {
+  purchaseFeedbackDialogOpen.value = false;
+}
+
+async function handleSubmitPurchaseFeedback() {
+  const normalized = purchaseFeedbackForm.content.trim();
+  if (!normalized) {
+    message.warning("请输入反馈内容");
+    return;
+  }
+
+  const selectedPlan = creditPurchasePlans.value.find((item) => item.key === selectedPurchasePlanKey.value);
+  const planText = selectedPlan ? `当前套餐：¥${selectedPlan.display_amount} / ${selectedPlan.credits}积分` : "当前套餐：未选择";
+  purchaseFeedbackSubmitting.value = true;
+  try {
+    await createFeedback(null, `【积分购买反馈】\n${planText}\n\n${normalized}`);
+    message.success("反馈已提交");
+    closePurchaseFeedbackDialog();
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "提交反馈失败");
+  } finally {
+    purchaseFeedbackSubmitting.value = false;
+  }
+}
+
+function openContactFromPurchaseFeedback() {
+  purchaseFeedbackDialogOpen.value = false;
+  openCreditsContact();
 }
 
 function goCreditLogs() {
@@ -764,6 +957,24 @@ watch(
   }
 );
 
+watch(
+  () => auth.isLoggedIn,
+  (loggedIn) => {
+    if (!loggedIn) {
+      creditPurchasePlans.value = [];
+      selectedPurchasePlanKey.value = "";
+      return;
+    }
+    void loadPaymentPlans();
+  }
+);
+
+watch(purchaseDialogOpen, (open) => {
+  if (!open) {
+    resetPurchaseState();
+  }
+});
+
 </script>
 
 <template>
@@ -772,7 +983,9 @@ watch(
       <div class="header-inner">
         <div class="header-brand-wrap">
           <div class="header-brand" @click="router.push('/')">
-            <div class="brand-mark">🍌</div>
+            <div class="brand-mark">
+              <img src="/香蕉.svg" alt="80AI" class="brand-mark-image" />
+            </div>
             <div class="brand-copy">
               <span class="brand-name">80AI</span>
               <span class="brand-sub">AI Creative Studio</span>
@@ -964,7 +1177,9 @@ watch(
       <div class="mobile-drawer-content">
         <div class="mobile-drawer-brand">
           <div class="mobile-drawer-brand-main">
-            <div class="brand-mark">🍌</div>
+            <div class="brand-mark">
+              <img src="/香蕉.svg" alt="80AI" class="brand-mark-image" />
+            </div>
             <div class="brand-copy">
               <span class="brand-name">80AI</span>
               <span class="brand-sub">AI Creative Studio</span>
@@ -1146,6 +1361,134 @@ watch(
           <li>技术支持</li>
           <li>需求定制</li>
         </ul>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="purchaseDialogOpen"
+      :footer="null"
+      :width="520"
+      centered
+      wrap-class-name="credits-purchase-modal-wrap"
+    >
+      <template #title>
+        <div class="credits-purchase-title">
+          <span>积分套餐</span>
+          <button type="button" class="credits-purchase-title-feedback" @click="openPurchaseFeedbackDialog">
+            遇到问题？
+          </button>
+        </div>
+      </template>
+      <div class="credits-purchase-modal">
+        <template v-if="!purchaseOrder">
+          <div class="credits-purchase-list">
+            <button
+              v-for="plan in creditPurchasePlans"
+              :key="plan.key"
+              type="button"
+              class="credits-purchase-card"
+              :class="[`credits-purchase-card-${plan.key}`, { 'credits-purchase-card-active': selectedPurchasePlanKey === plan.key }]"
+              @click="selectedPurchasePlanKey = plan.key"
+            >
+              <span v-if="plan.tag" class="credits-purchase-tag" :class="`credits-purchase-tag-${plan.key}`">{{ plan.tag }}</span>
+              <div class="credits-purchase-price">
+                <span class="credits-purchase-price-unit">¥</span>
+                <span class="credits-purchase-price-value">{{ plan.display_amount }}</span>
+              </div>
+              <div class="credits-purchase-points">
+                {{ plan.credits }} 积分
+              </div>
+              <div class="credits-purchase-name">{{ plan.title }}</div>
+              <div class="credits-purchase-check" :class="{ 'credits-purchase-check-active': selectedPurchasePlanKey === plan.key }">
+                <CheckOutlined v-if="selectedPurchasePlanKey === plan.key" />
+              </div>
+            </button>
+          </div>
+          <div v-if="purchasePlansLoading" class="credits-purchase-safe-tip">正在加载积分套餐...</div>
+          <div v-else-if="selectedPurchasePlan" class="credits-purchase-safe-tip">
+            支付宝安全支付，实付 ¥{{ selectedPurchasePlan.display_amount }}，到账 {{ selectedPurchasePlan.credits }} 积分
+          </div>
+          <div v-else class="credits-purchase-safe-tip">暂未获取到可售积分套餐，请稍后再试</div>
+          <a-button
+            type="primary"
+            block
+            class="warm-primary-btn credits-purchase-submit"
+            :loading="purchaseLoading"
+            :disabled="purchasePlansLoading || !selectedPurchasePlan"
+            @click="handlePurchaseCredits"
+          >
+            立即购买
+          </a-button>
+        </template>
+        <template v-else>
+          <div class="credits-purchase-qr-panel">
+            <div class="credits-purchase-qr-header">
+              <div class="credits-purchase-qr-subject">{{ purchaseOrder.subject }}</div>
+              <div class="credits-purchase-qr-meta">订单号：{{ purchaseOrder.order_no }}</div>
+            </div>
+            <div v-if="purchaseQrCodeDataUrl" class="credits-purchase-qr-box">
+              <img :src="purchaseQrCodeDataUrl" alt="支付宝支付二维码" class="credits-purchase-qr-image" />
+            </div>
+            <div v-else class="credits-purchase-qr-box credits-purchase-qr-box-empty">
+              正在生成支付二维码...
+            </div>
+            <div class="credits-purchase-qr-summary">
+              <div><span>支付金额</span><strong>¥{{ (purchaseOrder.amount_fen / 100).toFixed(2) }}</strong></div>
+              <div><span>到账积分</span><strong>{{ purchaseOrder.credits }}</strong></div>
+              <div><span>订单状态</span><strong>{{ purchaseOrder.status }}</strong></div>
+            </div>
+            <div class="credits-purchase-safe-tip">{{ purchaseStatusText || "请使用支付宝扫码支付" }}</div>
+            <div class="credits-purchase-qr-actions">
+              <a-button class="warm-secondary-btn" @click="resetPurchaseState">重新选择套餐</a-button>
+              <a-button
+                type="primary"
+                class="warm-primary-btn"
+                :loading="purchaseLoading"
+                @click="purchaseOrder && syncPurchaseOrder(purchaseOrder.order_no)"
+              >
+                我已完成支付
+              </a-button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="purchaseFeedbackDialogOpen"
+      title="提交反馈"
+      :footer="null"
+      :width="420"
+      centered
+      @cancel="closePurchaseFeedbackDialog"
+    >
+      <div class="purchase-feedback-modal">
+        <a-form layout="vertical">
+          <a-form-item label="问题描述" style="margin-bottom: 0">
+            <a-textarea
+              v-model:value="purchaseFeedbackForm.content"
+              :rows="5"
+              :maxlength="500"
+              show-count
+              placeholder="请描述你在积分购买时遇到的问题，我们会尽快处理"
+            />
+          </a-form-item>
+        </a-form>
+        <div class="purchase-feedback-hint">
+          当前购买反馈入口已打开，你也可以通过
+          <button type="button" class="purchase-feedback-contact-link" @click="openContactFromPurchaseFeedback">
+            联系我们
+          </button>
+          获取更快支持。
+        </div>
+        <div class="purchase-feedback-actions">
+          <a-button class="warm-secondary-btn" @click="closePurchaseFeedbackDialog">
+            关闭
+          </a-button>
+          <a-button type="primary" class="warm-primary-btn" :loading="purchaseFeedbackSubmitting" @click="handleSubmitPurchaseFeedback">
+            提交反馈
+          </a-button>
+        </div>
       </div>
     </a-modal>
 
@@ -1468,9 +1811,17 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, var(--theme-brand-bg-start), var(--theme-brand-bg-end));
+  flex-shrink: 0;
+  background: rgb(255, 171, 39);
   box-shadow: 0 12px 22px var(--theme-brand-shadow);
-  font-size: 24px;
+  overflow: hidden;
+}
+
+.brand-mark-image {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+  display: block;
 }
 
 .brand-copy {
@@ -1534,11 +1885,7 @@ watch(
   }
 
   :deep(.ant-menu-item-selected) {
-    background: linear-gradient(
-      180deg,
-      var(--theme-nav-active-bg-start),
-      var(--theme-nav-active-bg-end)
-    ) !important;
+    background: rgb(255, 171, 39) !important;
     color: var(--theme-nav-active-text) !important;
     box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
   }
@@ -1759,11 +2106,7 @@ watch(
   }
 
   :deep(.ant-menu-item-selected) {
-    background: linear-gradient(
-      180deg,
-      var(--theme-nav-active-bg-start),
-      var(--theme-nav-active-bg-end)
-    ) !important;
+    background: rgb(255, 171, 39) !important;
     color: var(--theme-nav-active-text) !important;
     box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
   }
@@ -1994,6 +2337,413 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   border: 1px dashed var(--theme-empty-border);
   color: var(--theme-text-secondary);
   line-height: 1.8;
+}
+
+.credits-purchase-modal {
+  padding: 2px 2px 2px;
+}
+
+.credits-purchase-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credits-purchase-title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding-right: 56px;
+}
+
+.credits-purchase-title-feedback {
+  position: absolute;
+  right: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.credits-purchase-title-feedback:hover {
+  color: var(--theme-accent-text);
+}
+
+.credits-purchase-card {
+  --credits-purchase-accent: #ff8a18;
+  --credits-purchase-accent-start: #ff9a23;
+  --credits-purchase-accent-end: #ff7a11;
+  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
+
+  position: relative;
+  display: grid;
+  grid-template-columns: 90px minmax(82px, 0.72fr) minmax(128px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 70px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(243, 154, 73, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 241, 0.94)),
+    radial-gradient(circle at top, rgba(255, 214, 171, 0.34), transparent 62%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 10px 30px rgba(227, 150, 72, 0.08);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.credits-purchase-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(244, 145, 53, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 14px 36px rgba(227, 150, 72, 0.14);
+}
+
+.credits-purchase-card-active {
+  border: 1px solid #ff8a18;
+  background: #fff1e3;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 14px 30px var(--credits-purchase-accent-shadow);
+}
+
+.credits-purchase-tag {
+  position: absolute;
+  top: -9px;
+  left: 14px;
+  padding: 5px 11px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, var(--credits-purchase-accent-start), var(--credits-purchase-accent-end));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 8px 16px var(--credits-purchase-accent-shadow);
+}
+
+.credits-purchase-card-starter {
+  --credits-purchase-accent: #0ea5e9;
+  --credits-purchase-accent-start: #38bdf8;
+  --credits-purchase-accent-end: #0ea5e9;
+  --credits-purchase-accent-shadow: rgba(14, 165, 233, 0.24);
+}
+
+.credits-purchase-card-light {
+  --credits-purchase-accent: #ff8a18;
+  --credits-purchase-accent-start: #ff9a23;
+  --credits-purchase-accent-end: #ff7a11;
+  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
+}
+
+.credits-purchase-card-popular {
+  --credits-purchase-accent: #ff8a18;
+  --credits-purchase-accent-start: #ff9a23;
+  --credits-purchase-accent-end: #ff7a11;
+  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
+}
+
+.credits-purchase-card-value {
+  --credits-purchase-accent: #f43f5e;
+  --credits-purchase-accent-start: #fb7185;
+  --credits-purchase-accent-end: #f43f5e;
+  --credits-purchase-accent-shadow: rgba(244, 63, 94, 0.24);
+}
+
+.credits-purchase-card-vip {
+  --credits-purchase-accent: #7c3aed;
+  --credits-purchase-accent-start: #a78bfa;
+  --credits-purchase-accent-end: #7c3aed;
+  --credits-purchase-accent-shadow: rgba(124, 58, 237, 0.28);
+}
+
+.credits-purchase-price {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+  color: #22252c;
+}
+
+.credits-purchase-price-value {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.credits-purchase-price-unit {
+  padding-bottom: 0;
+  font-size: 12px;
+  font-weight: 500;
+  transform: translateY(1px);
+}
+
+.credits-purchase-points {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ff7a10;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.credits-purchase-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #76614f;
+  white-space: nowrap;
+}
+
+.credits-purchase-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  border-radius: 999px;
+  border: 1.5px solid #ecd9c9;
+  color: transparent;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.credits-purchase-check-active {
+  border-color: var(--credits-purchase-accent);
+  background: linear-gradient(180deg, var(--credits-purchase-accent-start), var(--credits-purchase-accent-end));
+  color: #fff;
+  box-shadow: 0 10px 20px var(--credits-purchase-accent-shadow);
+}
+
+.credits-purchase-safe-tip {
+  margin: 14px 0 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c69063;
+}
+
+.credits-purchase-submit {
+  height: 46px !important;
+}
+
+.credits-purchase-qr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.credits-purchase-qr-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.credits-purchase-qr-subject {
+  font-size: 18px;
+  font-weight: 700;
+  color: #3c2f23;
+}
+
+.credits-purchase-qr-meta {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+}
+
+.credits-purchase-qr-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 244px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(243, 154, 73, 0.2);
+}
+
+.credits-purchase-qr-box-empty {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+}
+
+.credits-purchase-qr-image {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.credits-purchase-qr-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.credits-purchase-qr-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 250, 245, 0.82);
+  border: 1px solid rgba(243, 154, 73, 0.16);
+}
+
+.credits-purchase-qr-summary span {
+  color: var(--theme-text-secondary);
+}
+
+.credits-purchase-qr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.credits-purchase-qr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.credits-purchase-qr-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.credits-purchase-qr-subject {
+  font-size: 18px;
+  font-weight: 700;
+  color: #3c2f23;
+}
+
+.credits-purchase-qr-meta {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+}
+
+.credits-purchase-qr-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 244px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(243, 154, 73, 0.2);
+}
+
+.credits-purchase-qr-box-empty {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+}
+
+.credits-purchase-qr-image {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.credits-purchase-qr-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.credits-purchase-qr-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 250, 245, 0.82);
+  border: 1px solid rgba(243, 154, 73, 0.16);
+}
+
+.credits-purchase-qr-summary span {
+  color: var(--theme-text-secondary);
+}
+
+.credits-purchase-qr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.purchase-feedback-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+}
+
+.purchase-feedback-hint {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--theme-text-secondary);
+}
+
+.purchase-feedback-contact-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-accent-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.purchase-feedback-contact-link:hover {
+  color: var(--theme-accent-text-hover);
+}
+
+.purchase-feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:deep(.credits-purchase-modal-wrap .ant-modal-content) {
+  border-radius: 22px;
+  padding: 16px 18px 18px;
+  background:
+    radial-gradient(circle at top, rgba(255, 222, 183, 0.36), transparent 38%),
+    linear-gradient(180deg, #fffdf9 0%, #fff9f1 100%);
+  box-shadow:
+    0 22px 60px rgba(83, 57, 28, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+:deep(.credits-purchase-modal-wrap .ant-modal-close) {
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255, 248, 240, 0.88);
+  color: #b88c67;
+}
+
+:deep(.credits-purchase-modal-wrap .ant-modal-close:hover) {
+  background: rgba(255, 241, 227, 0.96);
+  color: #9f724d;
 }
 
 .announcement-modal {
@@ -2293,6 +3043,57 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 
   :deep(.mobile-nav-drawer .ant-drawer-content-wrapper) {
     width: min(88vw, 320px) !important;
+  }
+
+  .credits-purchase-card {
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    padding: 14px 12px;
+  }
+
+  .credits-purchase-price,
+  .credits-purchase-points,
+  .credits-purchase-name {
+    grid-column: 1 / 2;
+  }
+
+  .credits-purchase-check {
+    grid-column: 2 / 3;
+    grid-row: 1 / 4;
+    align-self: center;
+  }
+
+  .credits-purchase-price-value {
+    font-size: 19px;
+  }
+
+  .credits-purchase-points {
+    font-size: 13px;
+    white-space: normal;
+  }
+
+  .credits-purchase-name {
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .credits-purchase-safe-tip {
+    margin: 14px 0 12px;
+    font-size: 10px;
+  }
+
+  .credits-purchase-submit {
+    height: 44px !important;
+  }
+
+  :deep(.credits-purchase-modal-wrap .ant-modal) {
+    max-width: calc(100vw - 24px);
+    margin: 0 auto;
+  }
+
+  :deep(.credits-purchase-modal-wrap .ant-modal-content) {
+    padding: 16px 12px 16px;
+    border-radius: 18px;
   }
 }
 </style>

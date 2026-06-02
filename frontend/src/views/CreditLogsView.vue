@@ -24,7 +24,7 @@ const loading = ref(false);
 const filterUserId = ref<string | undefined>(undefined);
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const filterDirection = ref<"increase" | "decrease" | undefined>(undefined);
-const filterMode = ref<TaskType | "manual" | "redeem" | undefined>(undefined);
+const filterMode = ref<TaskType | "manual" | "redeem" | "purchase" | undefined>(undefined);
 
 const userList = ref<AdminUser[]>([]);
 
@@ -135,6 +135,7 @@ function modeLabel(mode: CreditLog["mode"]) {
   if (mode === "inpaint") return "局部重绘";
   if (mode === "promptReverse") return "提示词反推";
   if (mode === "redeem") return "兑换积分";
+  if (mode === "purchase") return "在线购买";
   return "手动调整";
 }
 
@@ -201,6 +202,7 @@ onMounted(() => {
         <a-select-option value="inpaint">局部重绘</a-select-option>
         <a-select-option value="promptReverse">提示词反推</a-select-option>
         <a-select-option value="redeem">兑换积分</a-select-option>
+        <a-select-option value="purchase">在线购买</a-select-option>
         <a-select-option value="manual">手动调整</a-select-option>
       </a-select>
 

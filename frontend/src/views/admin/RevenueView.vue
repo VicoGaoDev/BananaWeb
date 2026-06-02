@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { inject, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { AccountBookOutlined } from "@ant-design/icons-vue";
+import { AccountBookOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
 import { getAdminAnalyticsRedeemRevenue } from "@/api/admin";
 import { isSessionExpiredError } from "@/lib/authError";
 import RedeemRevenueTable from "@/components/admin/RedeemRevenueTable.vue";
@@ -15,6 +15,7 @@ const loading = ref(false);
 const preset = ref<DatePreset | undefined>("today");
 const dateRange = ref<[Dayjs, Dayjs] | null>(null);
 const redeemRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
+const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 
 function formatQueryDate(value?: Dayjs) {
   return value ? value.format("YYYY-MM-DDTHH:mm:ss") : undefined;
@@ -55,6 +56,10 @@ function handleReset() {
   load();
 }
 
+function handleOpenPurchase() {
+  openPurchaseEntry?.();
+}
+
 async function load() {
   if (!dateRange.value?.[0] || !dateRange.value?.[1]) {
     return;
@@ -92,6 +97,10 @@ onMounted(() => {
           <div class="warm-page-desc">按积分兑换码面值统计已兑换数量与对应售价金额，支持按时间区间筛选。</div>
         </div>
       </div>
+      <a-button type="primary" class="revenue-purchase-entry" @click="handleOpenPurchase">
+        <template #icon><ThunderboltOutlined /></template>
+        验证购买积分
+      </a-button>
     </div>
 
     <div class="analytics-filter warm-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
@@ -129,7 +138,19 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.revenue-purchase-entry {
+  height: 42px;
+}
+
 @media (max-width: 768px) {
+  .warm-page-header {
+    gap: 12px;
+  }
+
+  .revenue-purchase-entry {
+    width: 100%;
+  }
+
   .analytics-filter-row {
     align-items: stretch;
   }

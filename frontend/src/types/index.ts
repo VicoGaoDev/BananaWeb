@@ -314,11 +314,45 @@ export interface CreditLog {
   username: string;
   amount: number;
   type: "allocate" | "consume";
-  mode: TaskType | "manual" | "redeem";
+  mode: TaskType | "manual" | "redeem" | "purchase";
   description: string;
   operator_name: string;
   task_id?: string;
   created_at: string;
+}
+
+export interface PaymentPlan {
+  key: string;
+  title: string;
+  amount_fen: number;
+  display_amount: string;
+  credits: number;
+  tag: string;
+}
+
+export interface PaymentOrder {
+  order_no: string;
+  plan_key: string;
+  subject: string;
+  amount_fen: number;
+  credits: number;
+  status: "created" | "pending_pay" | "paid" | "credited" | "closed" | "failed";
+  qr_code: string;
+  expires_at?: string | null;
+  paid_at?: string | null;
+  credited_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CreatePaymentOrderResult {
+  order_no: string;
+  status: "created" | "pending_pay" | "paid" | "credited" | "closed" | "failed";
+  amount_fen: number;
+  credits: number;
+  subject: string;
+  qr_code: string;
+  expires_at?: string | null;
 }
 
 export type RedeemKeyStatus = "enabled" | "disabled";

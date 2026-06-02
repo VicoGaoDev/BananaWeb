@@ -87,6 +87,7 @@ def on_startup():
     if settings.DB_AUTO_CREATE_TABLES:
         Base.metadata.create_all(bind=engine)
     _ensure_user_credit_schema()
+    _ensure_payment_order_schema()
     _ensure_credit_redeem_key_schema()
     _ensure_user_api_key_schema()
     _drop_legacy_user_credits_column()
@@ -644,6 +645,72 @@ def _ensure_credit_redeem_key_schema():
                 """
             )
         )
+
+
+def _ensure_payment_order_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "users" not in table_names:
+        return
+
+    if "payment_orders" not in table_names:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE payment_orders (
+                        id INTEGER NOT NULL AUTO_INCREMENT,
+                        order_no VARCHAR(64) NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        plan_key VARCHAR(50) NOT NULL DEFAULT '',
+                        subject VARCHAR(255) NOT NULL DEFAULT '',
+                        amount_fen INTEGER NOT NULL DEFAULT 0,
+                        credits INTEGER NOT NULL DEFAULT 0,
+                        status VARCHAR(20) NOT NULL DEFAULT 'created',
+                        out_trade_no VARCHAR(64) NOT NULL,
+                        alipay_trade_no VARCHAR(64) NULL,
+                        buyer_id VARCHAR(64) NOT NULL DEFAULT '',
+                        trade_status VARCHAR(32) NOT NULL DEFAULT '',
+                        notify_payload TEXT NULL,
+                        return_payload TEXT NULL,
+                        paid_at DATETIME NULL,
+                        credited_at DATETIME NULL,
+                        closed_at DATETIME NULL,
+                        failed_at DATETIME NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (id),
+                        UNIQUE KEY uq_payment_orders_order_no (order_no),
+                        UNIQUE KEY uq_payment_orders_out_trade_no (out_trade_no),
+                        UNIQUE KEY uq_payment_orders_alipay_trade_no (alipay_trade_no),
+                        INDEX ix_payment_orders_user_id (user_id),
+                        INDEX ix_payment_orders_status (status),
+                        INDEX ix_payment_orders_user_created_at (user_id, created_at),
+                        CONSTRAINT fk_payment_orders_user_id FOREIGN KEY (user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        return
+
+    payment_columns = {col["name"] for col in inspector.get_columns("payment_orders")}
+    with engine.begin() as conn:
+        if "subject" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN subject VARCHAR(255) NOT NULL DEFAULT '' AFTER plan_key"))
+        if "trade_status" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN trade_status VARCHAR(32) NOT NULL DEFAULT '' AFTER buyer_id"))
+        if "notify_payload" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN notify_payload TEXT NULL AFTER trade_status"))
+        if "return_payload" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN return_payload TEXT NULL AFTER notify_payload"))
+        if "paid_at" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN paid_at DATETIME NULL AFTER return_payload"))
+        if "credited_at" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN credited_at DATETIME NULL AFTER paid_at"))
+        if "closed_at" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN closed_at DATETIME NULL AFTER credited_at"))
+        if "failed_at" not in payment_columns:
+            conn.execute(text("ALTER TABLE payment_orders ADD COLUMN failed_at DATETIME NULL AFTER closed_at"))
 
 
 def _ensure_user_api_key_schema():
@@ -1308,13 +1375,14 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, feedback, system_messages, user_api_keys  # noqa: E402
+from app.api import auth, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, feedback, system_messages, user_api_keys, payment  # noqa: E402
 app.include_router(auth.router)
 app.include_router(user_api_keys.router)
 app.include_router(templates.router)
 app.include_router(tasks.router)
 app.include_router(images.router)
 app.include_router(history.router)
+app.include_router(payment.router)
 app.include_router(feedback.router)
 app.include_router(system_messages.router)
 app.include_router(system_messages.admin_router)

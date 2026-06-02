@@ -7,6 +7,7 @@ from app.models.external_api_config import ExternalApiConfig
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.credit_log import CreditLog
 from app.models.credit_redeem_key import CreditRedeemKey
+from app.models.payment_order import PaymentOrder
 from app.models.user_credit import UserCredit
 from app.models.user_api_key import UserApiKey
 from app.models.prompt_history import PromptHistory
@@ -27,6 +28,7 @@ __all__ = [
     "ExternalApiSceneBinding",
     "CreditLog",
     "CreditRedeemKey",
+    "PaymentOrder",
     "UserCredit",
     "UserApiKey",
     "PromptHistory",

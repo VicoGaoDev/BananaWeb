@@ -92,8 +92,8 @@ const selectedImageIds = ref<number[]>([]);
 const batchMode = ref(false);
 const loadMoreAnchor = ref<HTMLElement | null>(null);
 const HISTORY_POLL_INTERVAL_MS = 10000;
-let historyPollTimer: ReturnType<typeof setInterval> | null = null;
-let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let historyPollTimer: number | null = null;
+let filterDebounceTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
 
 const previewVisible = ref(false);

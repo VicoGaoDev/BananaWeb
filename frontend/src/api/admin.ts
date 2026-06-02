@@ -84,7 +84,7 @@ export function getCreditLogs(
   startDate?: string,
   endDate?: string,
   direction?: "increase" | "decrease",
-  mode?: "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "manual" | "redeem",
+  mode?: "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "manual" | "redeem" | "purchase",
 ): Promise<{ total: number; items: CreditLog[] }> {
   const params: Record<string, unknown> = { page, page_size: pageSize };
   if (userId) params.user_id = userId;

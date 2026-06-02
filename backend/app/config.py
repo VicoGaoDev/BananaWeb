@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     CLOUDBASE_ENV_ID: str = ""
     CLOUDBASE_REGION: str = "ap-shanghai"
     CLOUDBASE_AUTH_TIMEOUT: int = 15
+    ALIPAY_APP_ID: str = ""
+    ALIPAY_PRIVATE_KEY: str = ""
+    ALIPAY_PUBLIC_KEY: str = ""
+    ALIPAY_GATEWAY: str = "https://openapi.alipay.com/gateway.do"
+    ALIPAY_NOTIFY_URL: str = ""
+    ALIPAY_RETURN_URL: str = ""
+    ALIPAY_SIGN_TYPE: str = "RSA2"
+    ALIPAY_TIMEOUT_EXPRESS: str = "15m"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
