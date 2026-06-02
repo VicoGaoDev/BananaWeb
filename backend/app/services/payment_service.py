@@ -363,7 +363,7 @@ def build_alipay_precreate_qr_code(
         "app_id": app_id,
         "method": "alipay.trade.precreate",
         "format": "JSON",
-        "charset": "utf-8",
+        "charset": "UTF-8",
         "sign_type": sign_type,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": "1.0",
@@ -409,7 +409,7 @@ def query_alipay_trade_status(
         "app_id": app_id,
         "method": "alipay.trade.query",
         "format": "JSON",
-        "charset": "utf-8",
+        "charset": "UTF-8",
         "sign_type": sign_type,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": "1.0",
@@ -454,7 +454,7 @@ def _assert_payment_amount_matches_order(order: PaymentOrder, raw_amount: str, *
 def _post_alipay_gateway(*, gateway: str, params: dict[str, str]) -> httpx.Response:
     # Alipay verifies charset from the URL query string for self-signed POST requests.
     return httpx.post(
-        gateway,
+        gateway.rstrip("?"),
         params=params,
         headers={"Accept": "application/json"},
         timeout=20,
@@ -481,11 +481,13 @@ def _parse_alipay_json_response(response: httpx.Response, *, action: str) -> dic
 
 
 def _parse_alipay_json_body(response: httpx.Response) -> dict | None:
+    text_candidates = [response.text]
     for encoding in ("utf-8", "gbk"):
         try:
-            text = response.content.decode(encoding)
+            text_candidates.append(response.content.decode(encoding))
         except UnicodeDecodeError:
             continue
+    for text in text_candidates:
         start = text.find("{")
         end = text.rfind("}")
         if start < 0 or end <= start:
