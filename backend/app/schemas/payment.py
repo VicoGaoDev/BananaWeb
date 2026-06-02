@@ -22,8 +22,7 @@ class CreatePaymentOrderResponse(BaseModel):
     amount_fen: int
     credits: int
     subject: str
-    qr_code: str
-    expires_at: datetime | None = None
+    pay_url: str
 
 
 class PaymentOrderOut(BaseModel):
@@ -33,8 +32,6 @@ class PaymentOrderOut(BaseModel):
     amount_fen: int
     credits: int
     status: str
-    qr_code: str = ""
-    expires_at: datetime | None = None
     paid_at: datetime | None = None
     credited_at: datetime | None = None
     created_at: datetime | None = None

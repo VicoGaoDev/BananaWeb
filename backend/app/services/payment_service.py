@@ -131,8 +131,6 @@ def format_payment_order(order: PaymentOrder) -> dict:
         "amount_fen": int(order.amount_fen or 0),
         "credits": int(order.credits or 0),
         "status": order.status,
-        "qr_code": _extract_qr_code(order.return_payload),
-        "expires_at": None,
         "paid_at": order.paid_at,
         "credited_at": order.credited_at,
         "created_at": order.created_at,
@@ -171,6 +169,8 @@ def create_payment_order(
         missing_config_fields.append("ALIPAY_GATEWAY")
     if not (notify_url or "").strip():
         missing_config_fields.append("ALIPAY_NOTIFY_URL")
+    if not (return_url or "").strip():
+        missing_config_fields.append("ALIPAY_RETURN_URL")
     if not (sign_type or "").strip():
         missing_config_fields.append("ALIPAY_SIGN_TYPE")
     if not (timeout_express or "").strip():
@@ -200,17 +200,18 @@ def create_payment_order(
     db.add(order)
     db.flush()
 
-    qr_code = build_alipay_precreate_qr_code(
+    pay_url = build_alipay_page_pay_url(
         app_id=alipay_app_id,
         gateway=gateway,
         order=order,
         notify_url=notify_url,
+        return_url=build_return_redirect_url(return_url, order.order_no),
         timeout_express=timeout_express,
         private_key=private_key,
         sign_type=sign_type,
     )
     order.status = PAYMENT_STATUS_PENDING_PAY
-    order.return_payload = json.dumps({"qr_code": qr_code}, ensure_ascii=False, separators=(",", ":"))
+    order.return_payload = json.dumps({"pay_url": pay_url}, ensure_ascii=False, separators=(",", ":"))
     db.add(order)
     db.flush()
     return {
@@ -219,8 +220,7 @@ def create_payment_order(
         "amount_fen": int(order.amount_fen or 0),
         "credits": int(order.credits or 0),
         "subject": order.subject,
-        "qr_code": qr_code,
-        "expires_at": None,
+        "pay_url": pay_url,
     }
 
 
@@ -343,55 +343,38 @@ def get_payment_order_by_order_no(
     return query.first()
 
 
-def build_alipay_precreate_qr_code(
+def build_alipay_page_pay_url(
     *,
     app_id: str,
     gateway: str,
     order: PaymentOrder,
     notify_url: str,
+    return_url: str,
     timeout_express: str,
     private_key: str,
     sign_type: str,
 ) -> str:
     biz_content = {
         "out_trade_no": order.out_trade_no,
+        "product_code": "FAST_INSTANT_TRADE_PAY",
         "subject": order.subject,
         "total_amount": f"{Decimal(int(order.amount_fen or 0)) / Decimal('100'):.2f}",
         "timeout_express": timeout_express,
     }
     params = {
         "app_id": app_id,
-        "method": "alipay.trade.precreate",
+        "method": "alipay.trade.page.pay",
         "format": "JSON",
         "charset": "UTF-8",
         "sign_type": sign_type,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": "1.0",
         "notify_url": notify_url,
+        "return_url": return_url,
         "biz_content": json.dumps(biz_content, ensure_ascii=False, separators=(",", ":")),
     }
     params["sign"] = sign_alipay_params(params, private_key=private_key, sign_type=sign_type)
-    try:
-        response = _post_alipay_gateway(gateway=gateway, params=params)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"支付宝预下单请求失败: {exc}",
-        ) from exc
-
-    payload = _parse_alipay_json_response(response, action="支付宝预下单")
-
-    result = payload.get("alipay_trade_precreate_response") or {}
-    result_code = str(result.get("code") or "").strip()
-    if result_code != "10000":
-        sub_msg = str(result.get("sub_msg") or result.get("msg") or "支付宝预下单失败").strip()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=sub_msg)
-
-    qr_code = str(result.get("qr_code") or "").strip()
-    if not qr_code:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="支付宝未返回二维码内容")
-    return qr_code
+    return f"{gateway.rstrip('?')}?{urlencode(params)}"
 
 
 def query_alipay_trade_status(
@@ -509,18 +492,6 @@ def _build_sign_content(payload: dict[str, str]) -> str:
             continue
         filtered_items.append(f"{key}={value}")
     return "&".join(filtered_items)
-
-
-def _extract_qr_code(raw_payload: str) -> str:
-    if not raw_payload:
-        return ""
-    try:
-        parsed = json.loads(raw_payload)
-    except json.JSONDecodeError:
-        return ""
-    if isinstance(parsed, dict):
-        return str(parsed.get("qr_code") or "")
-    return ""
 
 
 def _normalize_private_key(private_key: str) -> str:

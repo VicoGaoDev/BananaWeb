@@ -3,7 +3,6 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTi
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message, notification } from "ant-design-vue";
-import QRCode from "qrcode";
 import {
   login as apiLogin,
   register as apiRegister,
@@ -14,7 +13,6 @@ import {
   redeemCreditKey,
 } from "@/api/auth";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
-import { getPaymentOrder } from "@/api/payments";
 import { createFeedback, getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
 import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
@@ -38,7 +36,7 @@ import {
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
-import type { AnnouncementConfig, PaymentPlan, PaymentOrder } from "@/types";
+import type { AnnouncementConfig, PaymentPlan } from "@/types";
 import {
   PictureOutlined,
   SettingOutlined,
@@ -375,13 +373,6 @@ const selectedPurchasePlan = computed(() =>
 );
 const purchasePlansLoading = ref(false);
 const purchaseLoading = ref(false);
-const purchaseQrCodeDataUrl = ref("");
-const purchaseOrder = ref<PaymentOrder | null>(null);
-const purchaseStatusText = ref("");
-const purchaseAwaitingPayment = computed(() =>
-  purchaseOrder.value && (purchaseOrder.value.status === "pending_pay" || purchaseOrder.value.status === "paid")
-);
-let purchasePollTimer: number | null = null;
 const purchaseFeedbackDialogOpen = ref(false);
 const purchaseFeedbackSubmitting = ref(false);
 const purchaseFeedbackForm = reactive({ content: "" });
@@ -719,77 +710,8 @@ async function loadPaymentPlans() {
   }
 }
 
-function clearPurchasePollTimer() {
-  if (!purchasePollTimer) return;
-  window.clearTimeout(purchasePollTimer);
-  purchasePollTimer = null;
-}
-
-async function renderPurchaseQrCode(qrCode: string) {
-  purchaseQrCodeDataUrl.value = qrCode
-    ? await QRCode.toDataURL(qrCode, {
-      width: 220,
-      margin: 1,
-      errorCorrectionLevel: "M",
-    })
-    : "";
-}
-
-async function syncPurchaseOrder(orderNo: string, options?: { silent?: boolean }) {
-  try {
-    const order = await getPaymentOrder(orderNo);
-    purchaseOrder.value = order;
-    if (order.status === "pending_pay") {
-      purchaseStatusText.value = "请使用支付宝扫码完成支付";
-      if (!purchaseQrCodeDataUrl.value && order.qr_code) {
-        await renderPurchaseQrCode(order.qr_code);
-      }
-      clearPurchasePollTimer();
-      purchasePollTimer = window.setTimeout(() => {
-        void syncPurchaseOrder(orderNo, { silent: true });
-      }, 2500);
-      return;
-    }
-    if (order.status === "paid") {
-      purchaseStatusText.value = "已完成支付，积分处理中...";
-      clearPurchasePollTimer();
-      purchasePollTimer = window.setTimeout(() => {
-        void syncPurchaseOrder(orderNo, { silent: true });
-      }, 2500);
-      return;
-    }
-    clearPurchasePollTimer();
-    if (order.status === "credited") {
-      purchaseStatusText.value = "积分已到账";
-      try {
-        auth.updateUser(await getMe());
-      } catch {
-        // ignore refresh failures, order status is still authoritative
-      }
-      await loadPaymentPlans();
-      message.success("支付成功，积分已到账");
-      return;
-    }
-    if (order.status === "closed") {
-      purchaseStatusText.value = "订单已关闭，请重新下单";
-      return;
-    }
-    if (order.status === "failed") {
-      purchaseStatusText.value = "支付失败，请稍后重试";
-      return;
-    }
-  } catch (err: any) {
-    if (!options?.silent) {
-      message.error(err?.response?.data?.detail || "查询支付状态失败");
-    }
-  }
-}
-
 function resetPurchaseState() {
-  clearPurchasePollTimer();
-  purchaseQrCodeDataUrl.value = "";
-  purchaseOrder.value = null;
-  purchaseStatusText.value = "";
+  purchaseLoading.value = false;
 }
 
 onMounted(async () => {
@@ -845,7 +767,6 @@ onBeforeUnmount(() => {
   unsubscribeAuthSessionExpired?.();
   unsubscribeAuthSessionExpired = null;
   stopSystemMessagePolling();
-  clearPurchasePollTimer();
   themeObserver?.disconnect();
   themeObserver = null;
 });
@@ -886,19 +807,7 @@ async function handlePurchaseCredits() {
   purchaseLoading.value = true;
   try {
     const res = await createPaymentOrder(selectedPlan.key);
-    purchaseOrder.value = {
-      order_no: res.order_no,
-      plan_key: selectedPlan.key,
-      subject: res.subject,
-      amount_fen: res.amount_fen,
-      credits: res.credits,
-      status: res.status,
-      qr_code: res.qr_code,
-      expires_at: res.expires_at ?? null,
-    };
-    purchaseStatusText.value = "请使用支付宝扫码完成支付";
-    await renderPurchaseQrCode(res.qr_code);
-    await syncPurchaseOrder(res.order_no, { silent: true });
+    window.location.href = res.pay_url;
   } catch (err: any) {
     message.error(err.response?.data?.detail || "创建支付订单失败");
   } finally {
@@ -1380,77 +1289,44 @@ watch(purchaseDialogOpen, (open) => {
         </div>
       </template>
       <div class="credits-purchase-modal">
-        <template v-if="!purchaseOrder">
-          <div class="credits-purchase-list">
-            <button
-              v-for="plan in creditPurchasePlans"
-              :key="plan.key"
-              type="button"
-              class="credits-purchase-card"
-              :class="[`credits-purchase-card-${plan.key}`, { 'credits-purchase-card-active': selectedPurchasePlanKey === plan.key }]"
-              @click="selectedPurchasePlanKey = plan.key"
-            >
-              <span v-if="plan.tag" class="credits-purchase-tag" :class="`credits-purchase-tag-${plan.key}`">{{ plan.tag }}</span>
-              <div class="credits-purchase-price">
-                <span class="credits-purchase-price-unit">¥</span>
-                <span class="credits-purchase-price-value">{{ plan.display_amount }}</span>
-              </div>
-              <div class="credits-purchase-points">
-                {{ plan.credits }} 积分
-              </div>
-              <div class="credits-purchase-name">{{ plan.title }}</div>
-              <div class="credits-purchase-check" :class="{ 'credits-purchase-check-active': selectedPurchasePlanKey === plan.key }">
-                <CheckOutlined v-if="selectedPurchasePlanKey === plan.key" />
-              </div>
-            </button>
-          </div>
-          <div v-if="purchasePlansLoading" class="credits-purchase-safe-tip">正在加载积分套餐...</div>
-          <div v-else-if="selectedPurchasePlan" class="credits-purchase-safe-tip">
-            支付宝安全支付，实付 ¥{{ selectedPurchasePlan.display_amount }}，到账 {{ selectedPurchasePlan.credits }} 积分
-          </div>
-          <div v-else class="credits-purchase-safe-tip">暂未获取到可售积分套餐，请稍后再试</div>
-          <a-button
-            type="primary"
-            block
-            class="warm-primary-btn credits-purchase-submit"
-            :loading="purchaseLoading"
-            :disabled="purchasePlansLoading || !selectedPurchasePlan"
-            @click="handlePurchaseCredits"
+        <div class="credits-purchase-list">
+          <button
+            v-for="plan in creditPurchasePlans"
+            :key="plan.key"
+            type="button"
+            class="credits-purchase-card"
+            :class="[`credits-purchase-card-${plan.key}`, { 'credits-purchase-card-active': selectedPurchasePlanKey === plan.key }]"
+            @click="selectedPurchasePlanKey = plan.key"
           >
-            立即购买
-          </a-button>
-        </template>
-        <template v-else>
-          <div class="credits-purchase-qr-panel">
-            <div class="credits-purchase-qr-header">
-              <div class="credits-purchase-qr-subject">{{ purchaseOrder.subject }}</div>
-              <div class="credits-purchase-qr-meta">订单号：{{ purchaseOrder.order_no }}</div>
+            <span v-if="plan.tag" class="credits-purchase-tag" :class="`credits-purchase-tag-${plan.key}`">{{ plan.tag }}</span>
+            <div class="credits-purchase-price">
+              <span class="credits-purchase-price-unit">¥</span>
+              <span class="credits-purchase-price-value">{{ plan.display_amount }}</span>
             </div>
-            <div v-if="purchaseQrCodeDataUrl" class="credits-purchase-qr-box">
-              <img :src="purchaseQrCodeDataUrl" alt="支付宝支付二维码" class="credits-purchase-qr-image" />
+            <div class="credits-purchase-points">
+              {{ plan.credits }} 积分
             </div>
-            <div v-else class="credits-purchase-qr-box credits-purchase-qr-box-empty">
-              正在生成支付二维码...
+            <div class="credits-purchase-name">{{ plan.title }}</div>
+            <div class="credits-purchase-check" :class="{ 'credits-purchase-check-active': selectedPurchasePlanKey === plan.key }">
+              <CheckOutlined v-if="selectedPurchasePlanKey === plan.key" />
             </div>
-            <div class="credits-purchase-qr-summary">
-              <div><span>支付金额</span><strong>¥{{ (purchaseOrder.amount_fen / 100).toFixed(2) }}</strong></div>
-              <div><span>到账积分</span><strong>{{ purchaseOrder.credits }}</strong></div>
-              <div><span>订单状态</span><strong>{{ purchaseOrder.status }}</strong></div>
-            </div>
-            <div class="credits-purchase-safe-tip">{{ purchaseStatusText || "请使用支付宝扫码支付" }}</div>
-            <div class="credits-purchase-qr-actions">
-              <a-button class="warm-secondary-btn" @click="resetPurchaseState">重新选择套餐</a-button>
-              <a-button
-                type="primary"
-                class="warm-primary-btn"
-                :loading="purchaseLoading"
-                @click="purchaseOrder && syncPurchaseOrder(purchaseOrder.order_no)"
-              >
-                我已完成支付
-              </a-button>
-            </div>
-          </div>
-        </template>
+          </button>
+        </div>
+        <div v-if="purchasePlansLoading" class="credits-purchase-safe-tip">正在加载积分套餐...</div>
+        <div v-else-if="selectedPurchasePlan" class="credits-purchase-safe-tip">
+          将跳转到支付宝收银台，实付 ¥{{ selectedPurchasePlan.display_amount }}，到账 {{ selectedPurchasePlan.credits }} 积分
+        </div>
+        <div v-else class="credits-purchase-safe-tip">暂未获取到可售积分套餐，请稍后再试</div>
+        <a-button
+          type="primary"
+          block
+          class="warm-primary-btn credits-purchase-submit"
+          :loading="purchaseLoading"
+          :disabled="purchasePlansLoading || !selectedPurchasePlan"
+          @click="handlePurchaseCredits"
+        >
+          前往支付宝支付
+        </a-button>
       </div>
     </a-modal>
 

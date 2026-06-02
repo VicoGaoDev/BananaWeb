@@ -337,8 +337,6 @@ export interface PaymentOrder {
   amount_fen: number;
   credits: number;
   status: "created" | "pending_pay" | "paid" | "credited" | "closed" | "failed";
-  qr_code: string;
-  expires_at?: string | null;
   paid_at?: string | null;
   credited_at?: string | null;
   created_at?: string | null;
@@ -351,8 +349,7 @@ export interface CreatePaymentOrderResult {
   amount_fen: number;
   credits: number;
   subject: string;
-  qr_code: string;
-  expires_at?: string | null;
+  pay_url: string;
 }
 
 export type RedeemKeyStatus = "enabled" | "disabled";
