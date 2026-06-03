@@ -125,17 +125,23 @@ const router = createRouter({
           component: () => import("@/views/admin/PaymentOrderManageView.vue"),
         },
         {
+          path: "admin/user-tasks",
+          name: "AdminUserTasks",
+          meta: { requiresAdmin: true },
+          component: () => import("@/views/HistoryView.vue"),
+          props: { adminUserTasks: true },
+        },
+        {
           path: "admin/dashboard",
           name: "Dashboard",
           meta: { requiresAdmin: true },
           component: () => import("@/views/admin/DashboardView.vue"),
         },
         {
-          path: "admin/user-tasks",
-          name: "AdminUserTasks",
+          path: "admin/general-settings",
+          name: "AdminGeneralSettings",
           meta: { requiresAdmin: true },
-          component: () => import("@/views/HistoryView.vue"),
-          props: { adminUserTasks: true },
+          component: () => import("@/views/admin/GeneralSettingsView.vue"),
         },
         {
           path: "admin/feedbacks",
@@ -157,9 +163,7 @@ const router = createRouter({
         },
         {
           path: "admin/api-key",
-          name: "ApiKeyManage",
-          meta: { requiresAdmin: true },
-          component: () => import("@/views/admin/ApiKeyView.vue"),
+          redirect: "/admin/general-settings",
         },
         {
           path: "admin/cos-config",

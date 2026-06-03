@@ -169,7 +169,7 @@ function openApiDocs() {
           <KeyOutlined />
         </div>
         <div>
-          <div class="warm-page-title">API Key</div>
+          <div class="warm-page-title">API 调用</div>
           <div class="warm-page-desc">创建和管理你的 API 调用密钥</div>
         </div>
       </div>

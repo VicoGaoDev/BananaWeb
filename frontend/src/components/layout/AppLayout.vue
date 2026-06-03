@@ -82,15 +82,15 @@ const routeOrder = new Map<string, number>([
   ["/feedbacks/:feedbackId", 11],
   ["/admin/templates", 12],
   ["/admin/users", 13],
-  ["/admin/redeem-keys", 14],
-  ["/admin/revenue", 15],
-  ["/admin/payment-orders", 16],
-  ["/admin/dashboard", 17],
-  ["/admin/user-tasks", 18],
-  ["/admin/feedbacks", 19],
-  ["/admin/feedbacks/:feedbackId", 20],
-  ["/admin/system-messages", 21],
-  ["/admin/api-key", 22],
+  ["/admin/user-tasks", 14],
+  ["/admin/dashboard", 15],
+  ["/admin/general-settings", 16],
+  ["/admin/redeem-keys", 17],
+  ["/admin/revenue", 18],
+  ["/admin/payment-orders", 19],
+  ["/admin/feedbacks", 20],
+  ["/admin/feedbacks/:feedbackId", 21],
+  ["/admin/system-messages", 22],
   ["/admin/cos-config", 23],
   ["/admin/external-api-configs", 24],
 ]);
@@ -126,9 +126,10 @@ const adminMenuItems = computed(() =>
   [
     { key: "/admin/templates", label: "模版管理", icon: PictureOutlined, superAdminOnly: false },
     { key: "/admin/users", label: "用户管理", icon: TeamOutlined, superAdminOnly: false },
-    { key: "/admin/dashboard", label: "数据统计", icon: BarChartOutlined, superAdminOnly: false },
     { key: "/admin/user-tasks", label: "用户任务", icon: PictureOutlined, superAdminOnly: false },
-    { key: "/admin/redeem-keys", label: "兑换码管理", icon: GiftOutlined, superAdminOnly: false },
+    { key: "/admin/dashboard", label: "数据统计", icon: BarChartOutlined, superAdminOnly: false },
+    { key: "/admin/general-settings", label: "通用设置", icon: SettingOutlined, superAdminOnly: false },
+    { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
     { key: "/admin/payment-orders", label: "购买订单", icon: AccountBookOutlined, superAdminOnly: false },
     { key: "/admin/feedbacks", label: "用户反馈", icon: MessageOutlined, superAdminOnly: false },
@@ -138,7 +139,10 @@ const adminMenuItems = computed(() =>
   ].filter((item) => !item.superAdminOnly || isSuperAdmin.value)
 );
 const adminMenuBaseItems = computed(() =>
-  adminMenuItems.value.filter((item) => ["/admin/templates", "/admin/users", "/admin/dashboard", "/admin/user-tasks", "/admin/redeem-keys", "/admin/revenue", "/admin/payment-orders"].includes(item.key))
+  adminMenuItems.value.filter((item) => ["/admin/templates", "/admin/users", "/admin/user-tasks", "/admin/dashboard", "/admin/general-settings"].includes(item.key))
+);
+const adminMenuBusinessItems = computed(() =>
+  adminMenuItems.value.filter((item) => ["/admin/redeem-keys", "/admin/revenue", "/admin/payment-orders"].includes(item.key))
 );
 const adminMenuNoticeItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/feedbacks", "/admin/system-messages"].includes(item.key))
@@ -154,8 +158,8 @@ const hasUserUnreadNotice = computed(() => hasUserUnreadFeedback.value || hasUse
 
 const userMenuItems = [
   { key: "profile", label: "个人主页", icon: UserOutlined, danger: false },
-  { key: "credits", label: "积分记录", icon: ThunderboltOutlined, danger: false },
-  { key: "api-keys", label: "API Key", icon: KeyOutlined, danger: false },
+  { key: "credits", label: "积分明细", icon: ThunderboltOutlined, danger: false },
+  { key: "api-keys", label: "API 调用", icon: KeyOutlined, danger: false },
   { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "my-feedback", label: "我的反馈", icon: MessageOutlined, danger: false },
   { key: "system-messages", label: "系统消息", icon: MailOutlined, danger: false },
@@ -933,6 +937,14 @@ watch(purchaseDialogOpen, (open) => {
                   </a-menu-item>
                   <a-menu-divider />
                   <a-menu-item
+                    v-for="item in adminMenuBusinessItems"
+                    :key="item.key"
+                  >
+                    <component :is="item.icon" />
+                    <span style="margin-left: 8px">{{ item.label }}</span>
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item
                     v-for="item in adminMenuNoticeItems"
                     :key="item.key"
                     :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
@@ -1175,6 +1187,11 @@ watch(purchaseDialogOpen, (open) => {
             @click="handleAdminMenu"
           >
             <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
+              <component :is="item.icon" />
+              <span>{{ item.label }}</span>
+            </a-menu-item>
+            <a-menu-divider />
+            <a-menu-item v-for="item in adminMenuBusinessItems" :key="item.key">
               <component :is="item.icon" />
               <span>{{ item.label }}</span>
             </a-menu-item>

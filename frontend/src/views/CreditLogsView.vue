@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { message } from "ant-design-vue";
 import {
-  WalletOutlined,
+  ThunderboltOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
 } from "@ant-design/icons-vue";
@@ -35,10 +35,10 @@ const columns = computed(() => {
     { title: "任务类型", dataIndex: "mode", width: 120 },
     { title: "积分变动", dataIndex: "amount", width: 120 },
     { title: "说明", dataIndex: "description", ellipsis: true },
-    { title: "操作人", dataIndex: "operator_name", width: 120 },
   ];
   if (isAdmin.value) {
     base.splice(1, 0, { title: "用户", dataIndex: "username", width: 120 });
+    base.push({ title: "操作人", dataIndex: "operator_name", width: 120 });
   }
   return base;
 });
@@ -77,7 +77,7 @@ async function loadLogs() {
     items.value = res.items;
     total.value = res.total;
   } catch {
-    message.error("获取积分记录失败");
+    message.error("获取积分明细失败");
   } finally {
     loading.value = false;
   }
@@ -148,8 +148,8 @@ onMounted(() => {
 <template>
   <div class="credit-logs-page">
     <div class="page-header">
-      <WalletOutlined class="header-icon" />
-      <h2>积分记录</h2>
+      <ThunderboltOutlined class="header-icon" />
+      <h2>积分明细</h2>
       <div class="balance-badge" v-if="auth.user">
         余额: <strong>{{ auth.user.credits }}</strong> 积分
       </div>

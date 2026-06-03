@@ -565,15 +565,6 @@ function formatQueryDate(value?: Dayjs) {
     flex-basis: auto;
   }
 
-  .analytics-segmented-group {
-    width: 100%;
-  }
-
-  .analytics-segmented-group :deep(.ant-radio-button-wrapper) {
-    flex: 1;
-    text-align: center;
-  }
-
   .action-btn {
     width: 100%;
   }

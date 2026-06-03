@@ -1059,6 +1059,29 @@ html, body, #app {
   padding-inline: 16px;
 }
 
+@media (max-width: 768px) {
+  .analytics-filter-panel-compact {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .analytics-segmented-group.ant-radio-group {
+    display: inline-flex;
+    width: max-content;
+    min-width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .analytics-segmented-group .ant-radio-button-wrapper {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding-inline: 12px;
+    font-size: 13px;
+  }
+}
+
 .analytics-filter-date.ant-picker {
   width: 240px;
   border-radius: 12px !important;

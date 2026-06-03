@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
       <div class="payment-result-actions">
         <a-button class="warm-secondary-btn" @click="goBack">返回首页</a-button>
         <a-button type="primary" class="warm-primary-btn" :loading="loading" @click="goCreditLogs">
-          查看积分记录
+          查看积分明细
         </a-button>
       </div>
     </section>
