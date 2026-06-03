@@ -479,6 +479,22 @@ export interface AdminAnalyticsBreakdownItem {
   credit_cost: number;
 }
 
+export interface AdminDailyReportTestResult {
+  sent: boolean;
+  report_date: string;
+  range_start: string;
+  range_end: string;
+  revenue_fen: number;
+  revenue_yuan: number;
+  paid_order_count: number;
+  redeem_revenue_yuan: number;
+  redeem_used_count: number;
+  task_total_count: number;
+  task_success_count: number;
+  task_failed_count: number;
+  credit_consumed: number;
+}
+
 export interface AdminAnalyticsBreakdown {
   range_label: string;
   status_breakdown: AdminAnalyticsBreakdownItem[];

@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { DeleteOutlined, SaveOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons-vue";
-import { deleteAdminConfig, getAdminConfig, setAdminConfig } from "@/api/admin";
+import { BellOutlined, DeleteOutlined, SaveOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons-vue";
+import { deleteAdminConfig, getAdminConfig, setAdminConfig, testAdminDailyReportNotify } from "@/api/admin";
 import { uploadReferenceImage } from "@/api/upload";
+import { useAuthStore } from "@/stores/auth";
 
+const auth = useAuthStore();
 const contactQrImage = ref("");
 const announcementEnabled = ref(false);
 const announcementContent = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const qrUploading = ref(false);
+const testingDailyReport = ref(false);
 const qrInput = ref<HTMLInputElement | null>(null);
 
 const hasConfig = computed(() => (
@@ -94,6 +97,36 @@ async function handleQrUpload(event: Event) {
     input.value = "";
   }
 }
+
+async function handleTestDailyReport() {
+  testingDailyReport.value = true;
+  try {
+    const result = await testAdminDailyReportNotify();
+    message.success(result.sent ? "日报测试发送成功" : "日报未发送，请检查企业微信配置");
+    Modal.info({
+      title: "日报测试结果",
+      width: 560,
+      okText: "知道了",
+      content: h("div", { class: "daily-report-result" }, [
+        h("p", null, `发送状态：${result.sent ? "成功" : "未发送"}`),
+        h("p", null, `报表日期：${result.report_date}`),
+        h("p", null, `统计区间：${result.range_start} ~ ${result.range_end}`),
+        h("p", null, `在线支付营业额：¥${Number(result.revenue_yuan || 0).toFixed(2)}`),
+        h("p", null, `支付成功订单数：${result.paid_order_count}`),
+        h("p", null, `兑换码营业额：¥${Number(result.redeem_revenue_yuan || 0).toFixed(2)}`),
+        h("p", null, `兑换码使用次数：${result.redeem_used_count}`),
+        h("p", null, `任务总数：${result.task_total_count}`),
+        h("p", null, `成功任务数：${result.task_success_count}`),
+        h("p", null, `失败任务数：${result.task_failed_count}`),
+        h("p", null, `积分消耗：${result.credit_consumed}`),
+      ]),
+    });
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "日报测试发送失败");
+  } finally {
+    testingDailyReport.value = false;
+  }
+}
 </script>
 
 <template>
@@ -116,6 +149,15 @@ async function handleQrUpload(event: Event) {
           <a-button type="primary" class="warm-primary-btn" :loading="saving" @click="handleSave">
             <template #icon><SaveOutlined /></template>
             保存
+          </a-button>
+          <a-button
+            v-if="auth.isSuperAdmin"
+            class="config-secondary-btn"
+            :loading="testingDailyReport"
+            @click="handleTestDailyReport"
+          >
+            <template #icon><BellOutlined /></template>
+            测试发送日报
           </a-button>
           <a-button class="warm-danger-btn" :disabled="!hasConfig" @click="handleDelete">
             <template #icon><DeleteOutlined /></template>
@@ -274,6 +316,18 @@ async function handleQrUpload(event: Event) {
     border-radius: 16px;
     border-color: var(--theme-control-border);
     background: var(--theme-control-bg);
+  }
+}
+
+:deep(.daily-report-result) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--theme-text);
+
+  p {
+    margin: 0;
+    line-height: 1.7;
   }
 }
 </style>

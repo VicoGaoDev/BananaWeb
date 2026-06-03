@@ -192,3 +192,19 @@ class AnalyticsRedeemRevenueOut(BaseModel):
     items: list[AnalyticsRedeemRevenueItemOut]
     total_used_count: int
     total_amount: float
+
+
+class DailyReportTestOut(BaseModel):
+    sent: bool
+    report_date: str
+    range_start: datetime
+    range_end: datetime
+    revenue_fen: int
+    revenue_yuan: float
+    paid_order_count: int
+    redeem_revenue_yuan: float
+    redeem_used_count: int
+    task_total_count: int
+    task_success_count: int
+    task_failed_count: int
+    credit_consumed: int

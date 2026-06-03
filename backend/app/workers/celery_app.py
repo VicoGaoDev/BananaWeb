@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 celery_app = Celery(
@@ -16,6 +17,14 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    timezone="Asia/Shanghai",
+    enable_utc=False,
+    beat_schedule={
+        "send-daily-wecom-report": {
+            "task": "app.workers.reporting.send_daily_wecom_report",
+            "schedule": crontab(minute=0, hour=0),
+        }
+    },
 )
 
 celery_app.autodiscover_tasks(["app.workers"])

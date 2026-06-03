@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.models.payment_order import PaymentOrder
 from app.models.user import User
-from app.services.user_credit_service import change_user_credit_balance
+from app.services.user_credit_service import change_user_credit_balance, get_user_credit_balance
+from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 ONLINE_PURCHASE_DESCRIPTION_PREFIX = "在线支付订单 "
@@ -343,6 +344,25 @@ def get_payment_order_by_order_no(
     return query.first()
 
 
+def _send_payment_success_notification(db: Session, order: PaymentOrder) -> None:
+    user = order.user
+    username = user.username if user else f"ID {order.user_id}"
+    email = (user.email or "").strip() if user else ""
+    user_label = f"{username} ({email})" if email else username
+    amount_yuan = f"{Decimal(int(order.amount_fen or 0)) / Decimal('100'):.2f}"
+    remain_credit = get_user_credit_balance(db, order.user_id)
+    send_wecom_markdown(
+        "## 💰 订单购买成功\n"
+        f"> 🧾 订单号: `{order.order_no}`\n"
+        f"> 👤 用户: **{user_label}**\n"
+        f"> 📦 套餐: **{order.subject or order.plan_key}**\n"
+        f"> 💵 金额: <font color=\"warning\">¥{amount_yuan}</font>\n"
+        f"> ✨ 积分到账: **{int(order.credits or 0)}**\n"
+        f"> 🪙 当前剩余积分: **{remain_credit}**\n"
+        f"> ⏰ 时间: {now_local().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+
 def build_alipay_page_pay_url(
     *,
     app_id: str,
@@ -601,6 +621,7 @@ def process_alipay_notification(
         order.credited_at = now_local()
         db.add(order)
         db.flush()
+        _send_payment_success_notification(db, order)
         return order
 
     if trade_status == ALIPAY_TRADE_WAITING_STATUS:

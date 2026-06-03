@@ -18,6 +18,8 @@ from app.services.business_id_service import (
 )
 from app.services.task_service import is_task_generation_failure_credit_refunded
 from app.services.task_type_service import get_task_scene_type_map, resolve_task_type_for_task
+from app.services.user_credit_service import get_user_credit_account
+from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 VALID_FEEDBACK_STATUSES = {"pending", "processing", "completed"}
@@ -132,6 +134,26 @@ def _serialize_feedback(item: Feedback, *, db: Session, include_task_images: boo
     }
 
 
+def _send_feedback_created_notification(db: Session, item: Feedback, *, user: User) -> None:
+    content = (item.content or "").strip()
+    content_preview = content if len(content) <= 200 else content[:200] + "..."
+    username = (user.username or "").strip() or f"ID {user.id}"
+    email = (user.email or "").strip()
+    user_label = f"{username} ({email})" if email else username
+    credit_account = get_user_credit_account(db, user.id, create_if_missing=False)
+    remain_credit = int(credit_account.remain_credit or 0) if credit_account else 0
+    used_credit = int(credit_account.used_credit or 0) if credit_account else 0
+    send_wecom_markdown(
+        "## 💬 用户提交新反馈\n"
+        f"> 🧾 反馈单号: `{feedback_external_id(item)}`\n"
+        f"> 👤 用户: **{user_label}**\n"
+        f"> 📉 已使用积分: **{used_credit}**\n"
+        f"> 🪙 剩余积分: **{remain_credit}**\n"
+        f"> ⏰ 提交时间: {now_local().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"> 📝 反馈内容: {content_preview}"
+    )
+
+
 def create_feedback(db: Session, user: User, task_id: str | None, content: str) -> dict:
     task = None
     if task_id:
@@ -147,6 +169,8 @@ def create_feedback(db: Session, user: User, task_id: str | None, content: str) 
     )
     db.add(item)
     db.commit()
+    db.refresh(item)
+    _send_feedback_created_notification(db, item, user=user)
 
     created = _feedback_base_query(db).filter(Feedback.id == item.id).first()
     if not created:

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     CLOUDBASE_ENV_ID: str = ""
     CLOUDBASE_REGION: str = "ap-shanghai"
     CLOUDBASE_AUTH_TIMEOUT: int = 15
+    WECOM_NOTIFY_ENABLED: bool = False
+    WECOM_WEBHOOK_URL: str = ""
+    WECOM_NOTIFY_TIMEOUT_SECONDS: int = 10
     ALIPAY_APP_ID: str = ""
     ALIPAY_PRIVATE_KEY: str = ""
     ALIPAY_PUBLIC_KEY: str = ""

@@ -22,6 +22,7 @@ import type {
   ExternalApiSceneBindingMetaPayload,
   ExternalApiConfigStatus,
   ExternalApiConfigTestResult,
+  AdminDailyReportTestResult,
   FeedbackDetail,
   FeedbackListResponse,
   FeedbackUnresolvedCountResponse,
@@ -260,6 +261,10 @@ export function setAdminConfig(payload: {
 
 export function deleteAdminConfig(): Promise<void> {
   return client.delete("/admin/api-key");
+}
+
+export function testAdminDailyReportNotify(): Promise<AdminDailyReportTestResult> {
+  return client.post("/admin/notify/daily-report/test");
 }
 
 export function getExternalApiSecrets(): Promise<ExternalApiSecretConfig | null> {

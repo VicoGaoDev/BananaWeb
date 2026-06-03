@@ -10,7 +10,7 @@ from app.schemas.admin import (
     CreateUserRequest, UserOut, UpdateStatusRequest, UpdateRoleRequest,
     UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, ResetCreditsRequest, CreditLogOut,
     CreateRedeemKeysBatchRequest, RedeemKeyBatchOut, RedeemKeyOut, UpdateRedeemKeyStatusRequest, PaymentOrderAdminOut,
-    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut,
+    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, DailyReportTestOut,
 )
 from app.schemas.feedback import (
     FeedbackDetail,
@@ -35,6 +35,7 @@ from app.services.feedback_service import (
     update_feedback,
 )
 from app.services.history_service import get_admin_history_cards, get_admin_history_detail, get_all_history
+from app.services.daily_report_service import send_previous_day_report
 
 router = APIRouter(prefix="/api/admin", tags=["管理员"])
 
@@ -464,3 +465,27 @@ def admin_feedback_update(
         process_note=body.process_note,
         result_note=body.result_note,
     )
+
+
+@router.post("/notify/daily-report/test", response_model=DailyReportTestOut)
+def admin_test_daily_report_notify(
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    result = send_previous_day_report(db)
+    stats = result.stats
+    return {
+        "sent": result.sent,
+        "report_date": stats.start_at.strftime("%Y-%m-%d"),
+        "range_start": stats.start_at,
+        "range_end": stats.end_at,
+        "revenue_fen": stats.revenue_fen,
+        "revenue_yuan": stats.revenue_fen / 100,
+        "paid_order_count": stats.paid_order_count,
+        "redeem_revenue_yuan": stats.redeem_revenue_yuan,
+        "redeem_used_count": stats.redeem_used_count,
+        "task_total_count": stats.task_total_count,
+        "task_success_count": stats.task_success_count,
+        "task_failed_count": stats.task_failed_count,
+        "credit_consumed": stats.credit_consumed,
+    }
