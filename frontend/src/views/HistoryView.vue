@@ -1099,6 +1099,7 @@ function handleEditImage(item: UserHistoryCard) {
       :open="detailOpen"
       :item="detailItem"
       :model-options="modelOptions"
+      :show-error-message="isAdminHistoryView"
       show-actions
       @update:open="detailOpen = $event"
       @reedit="handleReedit"

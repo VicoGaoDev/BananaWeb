@@ -1232,6 +1232,29 @@ def get_analytics_payment_revenue(
     }
 
 
+MISSING_INLINE_BASE64_ERROR_MESSAGE = (
+    "生图接口返回内容缺少配置路径 candidates.0.content.parts.0.inlineData.data 对应的 base64 数据；"
+)
+INVALID_REFERENCE_IMAGE_ERROR_MESSAGE = (
+    '生图接口返回 HTTP 400: {"error":{"message":"poll rejected: 400 {\\"error_code\\":\\"bad_request\\",'
+    '\\"message\\":\\"Bad request to openai: Invalid image file or mode for image 1, please check your image file. '
+    'If you believe this is an error, contact us at ***.***.com and include the request ID.\\"}",'
+    '"type":"upstream_error","param":"","code":"provider_request_invalid"}}'
+)
+
+
+def _normalize_error_message_for_analytics(error_message: str | None) -> str:
+    message = (error_message or "").strip() or "未知错误"
+    if "生图接口返回内容缺少配置路径" in message and "对应的 base64 数据" in message:
+        return MISSING_INLINE_BASE64_ERROR_MESSAGE
+    lower = message.lower()
+    if "invalid image file or mode" in lower or (
+        "provider_request_invalid" in lower and "poll rejected" in lower
+    ):
+        return INVALID_REFERENCE_IMAGE_ERROR_MESSAGE
+    return message
+
+
 def get_error_analytics(
     db: Session,
     *,
@@ -1257,7 +1280,7 @@ def get_error_analytics(
 
     error_count_map: dict[str, int] = defaultdict(int)
     for row in rows:
-        normalized_message = (row.error_message or "").strip() or "未知错误"
+        normalized_message = _normalize_error_message_for_analytics(row.error_message)
         error_count_map[normalized_message] += 1
 
     items = [

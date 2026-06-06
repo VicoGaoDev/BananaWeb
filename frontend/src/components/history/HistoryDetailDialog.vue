@@ -13,11 +13,13 @@ const props = withDefaults(defineProps<{
   item: UserHistoryCard | null;
   loading?: boolean;
   showActions?: boolean;
+  showErrorMessage?: boolean;
   modelOptions?: Array<{ label: string; value: string }>;
   title?: string;
 }>(), {
   loading: false,
   showActions: false,
+  showErrorMessage: false,
   modelOptions: () => [],
   title: "任务详情",
 });
@@ -294,7 +296,7 @@ function handleDownload(item: UserHistoryCard) {
               </a-button>
             </div>
             <div class="detail-prompt">{{ item.prompt || "-" }}</div>
-            <div v-if="item.error_message" class="detail-error-block">
+            <div v-if="showErrorMessage && item.error_message" class="detail-error-block">
               <div class="detail-error-label">错误信息</div>
               <div class="detail-error-message">{{ item.error_message }}</div>
             </div>
