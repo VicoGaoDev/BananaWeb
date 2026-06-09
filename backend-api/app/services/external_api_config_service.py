@@ -107,6 +107,7 @@ DEFAULT_CUSTOM_SIZE_OPTIONS = [
     {"label": "1280 x 720", "value": "1280x720"},
 ]
 DEFAULT_RESOLUTION_MAPPING: dict[str, dict[str, str]] = {}
+DEFAULT_RESOLUTION_CREDIT_COSTS: dict[str, int] = {}
 DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6
 
 
@@ -185,6 +186,40 @@ def _dump_resolution_mapping(items: dict[str, dict[str, str]]) -> str:
 
 def _get_resolution_mapping_json(raw: str | None) -> str:
     return _dump_resolution_mapping(_normalize_resolution_mapping(raw))
+
+
+def _normalize_resolution_credit_costs(raw: str | None) -> dict[str, int]:
+    candidate = (raw or "").strip()
+    if not candidate:
+        return DEFAULT_RESOLUTION_CREDIT_COSTS.copy()
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return DEFAULT_RESOLUTION_CREDIT_COSTS.copy()
+
+    if not isinstance(parsed, dict):
+        return DEFAULT_RESOLUTION_CREDIT_COSTS.copy()
+
+    normalized: dict[str, int] = {}
+    for resolution, credit_cost in parsed.items():
+        resolution_key = str(resolution or "").strip()
+        if not resolution_key or isinstance(credit_cost, bool):
+            continue
+        try:
+            normalized_cost = int(credit_cost)
+        except (TypeError, ValueError):
+            continue
+        if normalized_cost >= 0:
+            normalized[resolution_key] = normalized_cost
+    return normalized
+
+
+def _dump_resolution_credit_costs(items: dict[str, int]) -> str:
+    return json.dumps(items, ensure_ascii=False, indent=2)
+
+
+def _get_resolution_credit_costs_json(raw: str | None) -> str:
+    return _dump_resolution_credit_costs(_normalize_resolution_credit_costs(raw))
 
 
 def resolve_mapped_resolution(
@@ -408,6 +443,7 @@ def _serialize_scene_binding(
         image_size_options_json=image_size_options_json,
         custom_size_options_json=custom_size_options_json,
         resolution_mapping_json=_get_resolution_mapping_json(binding.resolution_mapping_json),
+        resolution_credit_costs_json=_get_resolution_credit_costs_json(binding.resolution_credit_costs_json),
     )
 
 
@@ -446,6 +482,7 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             hide_resolution=binding.hide_resolution,
             hide_custom_size=bool(binding.hide_custom_size),
             credit_cost=binding.credit_cost,
+            resolution_credit_costs=_normalize_resolution_credit_costs(binding.resolution_credit_costs_json),
             max_reference_images=max(0, int(binding.max_reference_images or 0)),
             aspect_ratio_options=json.loads(binding.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(binding.image_size_options_json or "[]"),
@@ -541,6 +578,7 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             hide_resolution=item.hide_resolution,
             hide_custom_size=item.hide_custom_size,
             credit_cost=item.credit_cost,
+            resolution_credit_costs=_normalize_resolution_credit_costs(item.resolution_credit_costs_json),
             max_reference_images=item.max_reference_images,
             aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(item.image_size_options_json or "[]"),
@@ -587,6 +625,7 @@ def create_scene_binding(
         image_size_options_json=body.image_size_options_json,
         custom_size_options_json=body.custom_size_options_json,
         resolution_mapping_json=body.resolution_mapping_json,
+        resolution_credit_costs_json=body.resolution_credit_costs_json,
     )
     db.add(binding)
     db.commit()
@@ -637,6 +676,7 @@ def set_scene_binding(
     binding.display_name = body.display_name
     binding.subtitle = body.subtitle
     binding.credit_cost = body.credit_cost
+    binding.resolution_credit_costs_json = body.resolution_credit_costs_json
     db.commit()
     config = get_config_or_404(db, body.api_config_id) if body.api_config_id else None
     return _serialize_scene_binding(binding, config)
@@ -671,6 +711,7 @@ def update_scene_binding_meta(
     binding.image_size_options_json = body.image_size_options_json
     binding.custom_size_options_json = body.custom_size_options_json
     binding.resolution_mapping_json = body.resolution_mapping_json
+    binding.resolution_credit_costs_json = body.resolution_credit_costs_json
     db.commit()
     config = get_config_or_404(db, binding.api_config_id) if binding.api_config_id else None
     return _serialize_scene_binding(binding, config)
@@ -700,7 +741,7 @@ def delete_scene_binding(db: Session, scene_key: str) -> None:
     db.commit()
 
 
-def get_scene_credit_cost(db: Session, scene_key: str) -> int:
+def get_scene_credit_cost(db: Session, scene_key: str, resolution: str = "") -> int:
     _ensure_scene_bindings(db)
     binding = (
         db.query(ExternalApiSceneBinding)
@@ -714,6 +755,10 @@ def get_scene_credit_cost(db: Session, scene_key: str) -> int:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
     if binding.status != "enabled":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"场景 {scene_key} 已被停用")
+    resolution_key = (resolution or "").strip()
+    resolution_costs = _normalize_resolution_credit_costs(binding.resolution_credit_costs_json)
+    if resolution_key and resolution_key in resolution_costs:
+        return resolution_costs[resolution_key]
     return binding.credit_cost
 
 
@@ -1038,6 +1083,10 @@ def _ensure_scene_bindings(db: Session) -> None:
             if (binding.resolution_mapping_json or "") != resolution_mapping_json:
                 binding.resolution_mapping_json = resolution_mapping_json
                 updated = True
+            resolution_credit_costs_json = _get_resolution_credit_costs_json(binding.resolution_credit_costs_json)
+            if (binding.resolution_credit_costs_json or "") != resolution_credit_costs_json:
+                binding.resolution_credit_costs_json = resolution_credit_costs_json
+                updated = True
             if default_definition:
                 if not (binding.scene_type or "").strip():
                     binding.scene_type = default_definition["scene_type"]
@@ -1122,6 +1171,7 @@ def _ensure_scene_bindings(db: Session) -> None:
                 image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
                 custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
                 resolution_mapping_json=_get_resolution_mapping_json(None),
+                resolution_credit_costs_json=_get_resolution_credit_costs_json(None),
             ))
             updated = True
         if updated:
@@ -1146,6 +1196,7 @@ def _ensure_scene_bindings(db: Session) -> None:
             image_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[1],
             custom_size_options_json=_get_scene_option_json(definition["scene_type"], None, None, None)[2],
             resolution_mapping_json=_get_resolution_mapping_json(None),
+            resolution_credit_costs_json=_get_resolution_credit_costs_json(None),
         ))
     db.commit()
 

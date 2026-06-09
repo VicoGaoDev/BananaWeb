@@ -360,6 +360,7 @@ export function updateExternalApiSceneBinding(
   payload: {
     api_config_id: number | null;
     credit_cost: number;
+    resolution_credit_costs_json: string;
     display_name: string;
     subtitle: string;
   },

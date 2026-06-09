@@ -203,11 +203,12 @@
 - `sort_order`: 场景排序。
 - `api_config_id`: 绑定的接口配置。
 - `display_name` / `subtitle`: 前端展示名称与副标题。
-- `credit_cost`: 该场景的积分成本。
+- `credit_cost`: 该场景的默认单任务积分成本。
 - `max_reference_images`: 该场景允许上传的最大参考图数量；图编辑模型常依赖这个值控制前端上传上限。
 - `hide_aspect_ratio` / `hide_resolution` / `hide_custom_size`: 前端是否隐藏相关参数。
 - `aspect_ratio_options_json` / `image_size_options_json` / `custom_size_options_json`: 可选参数列表。
 - `resolution_mapping_json`: 分辨率映射对象，用于把宽高比和生图质量映射为第三方接口的单个分辨率参数。
+- `resolution_credit_costs_json`: 分辨率积分对象，用于按生图质量覆盖默认积分成本，例如 `{"1K":2,"2K":4,"4K":8}`。
 - `status`: 场景状态，常见为 `enabled`。
 - `updated_at`: 最后更新时间。
 
@@ -472,6 +473,7 @@ CREATE TABLE external_api_scene_bindings (
   image_size_options_json TEXT NOT NULL,
   custom_size_options_json TEXT NOT NULL,
   resolution_mapping_json TEXT NOT NULL,
+  resolution_credit_costs_json TEXT NOT NULL,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_external_api_scene_bindings_scene_key (scene_key),

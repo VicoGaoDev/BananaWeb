@@ -321,7 +321,7 @@ def create_tasks(
                 "prompt_length": len((prompt or "").strip()),
             },
         )
-        unit_cost = get_scene_credit_cost(db, scene_key)
+        unit_cost = get_scene_credit_cost(db, scene_key, resolution=resolution)
         task_count = 1 if mode == "inpaint" else num_images
         task_count = ensure_task_submission_capacity(db, user_id=user_id, new_task_count=task_count)
         total_cost = task_count * unit_cost

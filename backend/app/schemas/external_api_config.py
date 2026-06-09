@@ -74,6 +74,33 @@ def _validate_resolution_mapping_json(value: str, field_name: str) -> str:
     return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
+def _validate_resolution_credit_costs_json(value: str, field_name: str) -> str:
+    raw = (value or "").strip() or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 必须是合法 JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} 必须是 JSON 对象")
+
+    normalized: dict[str, int] = {}
+    for resolution, credit_cost in parsed.items():
+        resolution_key = str(resolution or "").strip()
+        if not resolution_key:
+            raise ValueError(f"{field_name} 的分辨率键不能为空")
+        if isinstance(credit_cost, bool):
+            raise ValueError(f"{field_name} 中 {resolution_key} 的积分消耗必须是整数")
+        try:
+            normalized_cost = int(credit_cost)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} 中 {resolution_key} 的积分消耗必须是整数") from exc
+        if normalized_cost < 0:
+            raise ValueError(f"{field_name} 中 {resolution_key} 的积分消耗不能小于 0")
+        normalized[resolution_key] = normalized_cost
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
+
+
 class ExternalApiConfigBase(BaseModel):
     name: str
     description: str = ""
@@ -202,6 +229,7 @@ class GenerationModelOptionOut(BaseModel):
     hide_resolution: bool
     hide_custom_size: bool
     credit_cost: int
+    resolution_credit_costs: dict[str, int] = {}
     max_reference_images: int = 0
     aspect_ratio_options: list["SceneOptionItem"] = []
     image_size_options: list["SceneOptionItem"] = []
@@ -232,6 +260,7 @@ class ExternalApiSceneBindingCreate(BaseModel):
     image_size_options_json: str = "[]"
     custom_size_options_json: str = "[]"
     resolution_mapping_json: str = "{}"
+    resolution_credit_costs_json: str = "{}"
 
     @field_validator("scene_key")
     @classmethod
@@ -297,12 +326,18 @@ class ExternalApiSceneBindingCreate(BaseModel):
     def validate_resolution_mapping_json(cls, value: str) -> str:
         return _validate_resolution_mapping_json(value, "分辨率映射 JSON")
 
+    @field_validator("resolution_credit_costs_json")
+    @classmethod
+    def validate_resolution_credit_costs_json(cls, value: str) -> str:
+        return _validate_resolution_credit_costs_json(value, "分辨率积分 JSON")
+
 
 class ExternalApiSceneBindingUpdate(BaseModel):
     api_config_id: int | None = None
     display_name: str = ""
     subtitle: str = ""
     credit_cost: int
+    resolution_credit_costs_json: str = "{}"
 
     @field_validator("display_name", "subtitle")
     @classmethod
@@ -315,6 +350,11 @@ class ExternalApiSceneBindingUpdate(BaseModel):
         if value < 0:
             raise ValueError("积分消耗不能小于 0")
         return value
+
+    @field_validator("resolution_credit_costs_json")
+    @classmethod
+    def validate_resolution_credit_costs_json(cls, value: str) -> str:
+        return _validate_resolution_credit_costs_json(value, "分辨率积分 JSON")
 
 
 class ExternalApiSceneBindingMetaUpdate(BaseModel):
@@ -330,6 +370,7 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     image_size_options_json: str = "[]"
     custom_size_options_json: str = "[]"
     resolution_mapping_json: str = "{}"
+    resolution_credit_costs_json: str = "{}"
 
     @field_validator("scene_key")
     @classmethod
@@ -383,6 +424,11 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     def validate_resolution_mapping_json(cls, value: str) -> str:
         return _validate_resolution_mapping_json(value, "分辨率映射 JSON")
 
+    @field_validator("resolution_credit_costs_json")
+    @classmethod
+    def validate_resolution_credit_costs_json(cls, value: str) -> str:
+        return _validate_resolution_credit_costs_json(value, "分辨率积分 JSON")
+
 
 class ExternalApiSceneBindingStatusUpdate(BaseModel):
     status: StatusType
@@ -419,6 +465,7 @@ class ExternalApiSceneBindingOut(BaseModel):
     image_size_options_json: str
     custom_size_options_json: str
     resolution_mapping_json: str
+    resolution_credit_costs_json: str
 
 
 class TaskSceneConfigOut(BaseModel):
@@ -433,6 +480,7 @@ class TaskSceneConfigOut(BaseModel):
     hide_resolution: bool
     hide_custom_size: bool
     credit_cost: int
+    resolution_credit_costs: dict[str, int]
     max_reference_images: int
     aspect_ratio_options: list[SceneOptionItem]
     image_size_options: list[SceneOptionItem]

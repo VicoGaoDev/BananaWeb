@@ -646,6 +646,7 @@ export interface ExternalApiSceneBinding {
   api_group_name: string;
   api_status?: ExternalApiConfigStatus | null;
   credit_cost: number;
+  resolution_credit_costs_json: string;
   max_reference_images: number;
   aspect_ratio_options_json: string;
   image_size_options_json: string;
@@ -671,6 +672,7 @@ export interface ExternalApiSceneBindingCreatePayload {
   image_size_options_json: string;
   custom_size_options_json: string;
   resolution_mapping_json: string;
+  resolution_credit_costs_json: string;
 }
 
 export interface ExternalApiSceneBindingMetaPayload {
@@ -686,6 +688,7 @@ export interface ExternalApiSceneBindingMetaPayload {
   image_size_options_json: string;
   custom_size_options_json: string;
   resolution_mapping_json: string;
+  resolution_credit_costs_json: string;
 }
 
 export interface ExternalApiConfigTestResult {
@@ -706,6 +709,7 @@ export interface GenerationModelOption {
   hide_resolution: boolean;
   hide_custom_size: boolean;
   credit_cost: number;
+  resolution_credit_costs: Record<string, number>;
   max_reference_images: number;
   aspect_ratio_options: SceneOptionItem[];
   image_size_options: SceneOptionItem[];
@@ -724,6 +728,7 @@ export interface TaskSceneConfig {
   hide_resolution: boolean;
   hide_custom_size: boolean;
   credit_cost: number;
+  resolution_credit_costs: Record<string, number>;
   max_reference_images: number;
   aspect_ratio_options: SceneOptionItem[];
   image_size_options: SceneOptionItem[];

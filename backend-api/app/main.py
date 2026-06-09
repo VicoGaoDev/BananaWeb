@@ -300,12 +300,23 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN image_size_options_json TEXT"))
             if "custom_size_options_json" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
+            if "resolution_credit_costs_json" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN resolution_credit_costs_json TEXT"))
             conn.execute(
                 text(
                     """
                     UPDATE external_api_scene_bindings
                     SET is_deleted = 0
                     WHERE is_deleted IS NULL
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE external_api_scene_bindings
+                    SET resolution_credit_costs_json = '{}'
+                    WHERE resolution_credit_costs_json IS NULL
                     """
                 )
             )
@@ -938,12 +949,23 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_options_json TEXT"))
         if "resolution_mapping_json" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN resolution_mapping_json TEXT"))
+        if "resolution_credit_costs_json" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN resolution_credit_costs_json TEXT"))
         conn.execute(
             text(
                 """
                 UPDATE external_api_scene_bindings
                 SET is_deleted = 0
                 WHERE is_deleted IS NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE external_api_scene_bindings
+                SET resolution_credit_costs_json = '{}'
+                WHERE resolution_credit_costs_json IS NULL
                 """
             )
         )

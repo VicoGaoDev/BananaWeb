@@ -253,6 +253,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     hide_resolution: scene.hide_resolution,
     hide_custom_size: scene.hide_custom_size,
     credit_cost: scene.credit_cost,
+    resolution_credit_costs: scene.resolution_credit_costs || {},
     max_reference_images: scene.max_reference_images,
     aspect_ratio_options: scene.aspect_ratio_options,
     image_size_options: scene.image_size_options,
@@ -348,12 +349,20 @@ const hideCustomSize = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_custom_size
 ));
 const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
-const selectedModelCreditCost = computed(() => (
-  selectedModelOption.value?.credit_cost
-  ?? sceneCostMap.value[selectedModel.value]
-  ?? DEFAULT_SCENE_COSTS[selectedModel.value]
-  ?? 0
-));
+function resolveSceneCreditCost(sceneKey: string, targetResolution = resolution.value) {
+  const scene = generationModels.value.find((item) => item.model_key === sceneKey)
+    || taskScenes.value.find((item) => item.scene_key === sceneKey);
+  const resolutionKey = (targetResolution || "").trim();
+  const resolutionCosts = scene?.resolution_credit_costs || {};
+  if (resolutionKey && Object.prototype.hasOwnProperty.call(resolutionCosts, resolutionKey)) {
+    return Number(resolutionCosts[resolutionKey] || 0);
+  }
+  return scene?.credit_cost
+    ?? sceneCostMap.value[sceneKey]
+    ?? DEFAULT_SCENE_COSTS[sceneKey]
+    ?? 0;
+}
+const selectedModelCreditCost = computed(() => resolveSceneCreditCost(selectedModel.value, resolution.value));
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
 const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint");
@@ -697,12 +706,7 @@ function startTaskPolling() {
 
 function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
   if (task.mode === "inpaint") return inpaintCreditCost.value;
-  const perImageCost = task.model
-    ? generationModels.value.find((item) => item.model_key === task.model)?.credit_cost
-      ?? sceneCostMap.value[task.model]
-      ?? DEFAULT_SCENE_COSTS[task.model]
-      ?? selectedModelCreditCost.value
-    : selectedModelCreditCost.value;
+  const perImageCost = task.model ? resolveSceneCreditCost(task.model, task.resolution) : selectedModelCreditCost.value;
   return nextNumImages * perImageCost;
 }
 

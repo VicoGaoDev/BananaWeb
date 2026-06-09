@@ -60,6 +60,7 @@ const DEFAULT_CUSTOM_SIZE_OPTIONS_JSON = JSON.stringify([
   { label: "1280 x 720", value: "1280x720" },
 ], null, 2);
 const DEFAULT_RESOLUTION_MAPPING_JSON = JSON.stringify({}, null, 2);
+const DEFAULT_RESOLUTION_CREDIT_COSTS_JSON = JSON.stringify({}, null, 2);
 const DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6;
 
 const configs = ref<ExternalApiConfig[]>([]);
@@ -138,6 +139,7 @@ const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
   custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
   resolution_mapping_json: DEFAULT_RESOLUTION_MAPPING_JSON,
+  resolution_credit_costs_json: DEFAULT_RESOLUTION_CREDIT_COSTS_JSON,
 });
 const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   scene_key: "",
@@ -152,6 +154,7 @@ const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
   custom_size_options_json: DEFAULT_CUSTOM_SIZE_OPTIONS_JSON,
   resolution_mapping_json: DEFAULT_RESOLUTION_MAPPING_JSON,
+  resolution_credit_costs_json: DEFAULT_RESOLUTION_CREDIT_COSTS_JSON,
 });
 
 const modalTitle = computed(() => {
@@ -286,6 +289,7 @@ function resetSceneForm() {
   sceneForm.image_size_options_json = DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneForm.custom_size_options_json = DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
   sceneForm.resolution_mapping_json = DEFAULT_RESOLUTION_MAPPING_JSON;
+  sceneForm.resolution_credit_costs_json = DEFAULT_RESOLUTION_CREDIT_COSTS_JSON;
 }
 
 function buildCopiedSceneLabel(sourceLabel: string) {
@@ -338,6 +342,7 @@ function fillSceneMetaForm(record: ExternalApiSceneBinding) {
   sceneMetaForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneMetaForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
   sceneMetaForm.resolution_mapping_json = record.resolution_mapping_json || DEFAULT_RESOLUTION_MAPPING_JSON;
+  sceneMetaForm.resolution_credit_costs_json = record.resolution_credit_costs_json || DEFAULT_RESOLUTION_CREDIT_COSTS_JSON;
 }
 
 watch(
@@ -409,6 +414,34 @@ function validateResolutionMappingJson(raw: string, label: string) {
   }
 }
 
+function validateResolutionCreditCostsJson(raw: string, label: string) {
+  try {
+    const parsed = JSON.parse(raw || "{}");
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      message.warning(`${label}必须是 JSON 对象`);
+      return false;
+    }
+    for (const [resolution, creditCost] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!String(resolution).trim()) {
+        message.warning(`${label}的分辨率键不能为空`);
+        return false;
+      }
+      if (typeof creditCost === "boolean" || !Number.isInteger(Number(creditCost))) {
+        message.warning(`${label}中 ${resolution} 的积分消耗必须是整数`);
+        return false;
+      }
+      if (Number(creditCost) < 0) {
+        message.warning(`${label}中 ${resolution} 的积分消耗不能小于 0`);
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    message.warning(`${label}不是合法的 JSON`);
+    return false;
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -461,6 +494,7 @@ function openCopyScene(record: ExternalApiSceneBinding) {
   sceneForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
   sceneForm.custom_size_options_json = record.custom_size_options_json || DEFAULT_CUSTOM_SIZE_OPTIONS_JSON;
   sceneForm.resolution_mapping_json = record.resolution_mapping_json || DEFAULT_RESOLUTION_MAPPING_JSON;
+  sceneForm.resolution_credit_costs_json = record.resolution_credit_costs_json || DEFAULT_RESOLUTION_CREDIT_COSTS_JSON;
   sceneModalOpen.value = true;
 }
 
@@ -643,6 +677,7 @@ async function handleBindingChange(
   payload: {
     api_config_id: number | null;
     credit_cost: number;
+    resolution_credit_costs_json: string;
     display_name: string;
     subtitle: string;
   },
@@ -662,12 +697,14 @@ async function handleBindingChange(
 function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial<{
   api_config_id: number | null;
   credit_cost: number;
+  resolution_credit_costs_json: string;
   display_name: string;
   subtitle: string;
 }> = {}) {
   return {
     api_config_id: overrides.api_config_id ?? record.api_config_id ?? null,
     credit_cost: overrides.credit_cost ?? record.credit_cost,
+    resolution_credit_costs_json: overrides.resolution_credit_costs_json ?? record.resolution_credit_costs_json ?? DEFAULT_RESOLUTION_CREDIT_COSTS_JSON,
     display_name: overrides.display_name ?? record.display_name ?? "",
     subtitle: overrides.subtitle ?? record.subtitle ?? "",
   };
@@ -686,6 +723,7 @@ async function handleCreateScene() {
   if (!validateSceneOptionsJson(sceneForm.image_size_options_json, "生图质量选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneForm.custom_size_options_json, "自定义分辨率选项 JSON")) return;
   if (!validateResolutionMappingJson(sceneForm.resolution_mapping_json, "分辨率映射 JSON")) return;
+  if (!validateResolutionCreditCostsJson(sceneForm.resolution_credit_costs_json, "分辨率积分 JSON")) return;
 
   bindingCreating.value = true;
   try {
@@ -707,6 +745,7 @@ async function handleCreateScene() {
       image_size_options_json: sceneForm.image_size_options_json,
       custom_size_options_json: sceneForm.custom_size_options_json,
       resolution_mapping_json: sceneForm.resolution_mapping_json,
+      resolution_credit_costs_json: sceneForm.resolution_credit_costs_json,
     });
     message.success("场景创建成功");
     sceneModalOpen.value = false;
@@ -733,6 +772,7 @@ async function handleSaveSceneMeta() {
   if (!validateSceneOptionsJson(sceneMetaForm.image_size_options_json, "生图质量选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneMetaForm.custom_size_options_json, "自定义分辨率选项 JSON")) return;
   if (!validateResolutionMappingJson(sceneMetaForm.resolution_mapping_json, "分辨率映射 JSON")) return;
+  if (!validateResolutionCreditCostsJson(sceneMetaForm.resolution_credit_costs_json, "分辨率积分 JSON")) return;
 
   sceneMetaSaving.value = true;
   try {
@@ -749,6 +789,7 @@ async function handleSaveSceneMeta() {
       image_size_options_json: sceneMetaForm.image_size_options_json,
       custom_size_options_json: sceneMetaForm.custom_size_options_json,
       resolution_mapping_json: sceneMetaForm.resolution_mapping_json,
+      resolution_credit_costs_json: sceneMetaForm.resolution_credit_costs_json,
     });
     message.success("场景基础信息已更新");
     sceneMetaModalOpen.value = false;
@@ -1370,6 +1411,18 @@ function copySecret(value: string, label: string) {
             占位符。
           </div>
         </a-form-item>
+
+        <a-form-item label="分辨率积分 JSON">
+          <a-textarea
+            v-model:value="sceneForm.resolution_credit_costs_json"
+            class="warm-textarea"
+            :rows="5"
+            placeholder='{"1K":2,"2K":4,"4K":8}'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `生图质量 -> 单张积分` 对象；未配置的分辨率会使用上方“消耗积分”作为默认值。
+          </div>
+        </a-form-item>
       </a-form>
 
       <template #footer>
@@ -1483,6 +1536,18 @@ function copySecret(value: string, label: string) {
             使用 `宽高比 -> 生图质量 -> 第三方分辨率` 对象；匹配结果会映射到请求里的
             <code v-pre>{{ mapped_resolution }}</code>
             占位符。
+          </div>
+        </a-form-item>
+
+        <a-form-item label="分辨率积分 JSON">
+          <a-textarea
+            v-model:value="sceneMetaForm.resolution_credit_costs_json"
+            class="warm-textarea"
+            :rows="5"
+            placeholder='{"1K":2,"2K":4,"4K":8}'
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            使用 `生图质量 -> 单张积分` 对象；未配置的分辨率会使用场景默认积分。
           </div>
         </a-form-item>
       </a-form>
