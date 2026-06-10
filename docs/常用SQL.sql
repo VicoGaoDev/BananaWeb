@@ -149,3 +149,15 @@ GROUP BY u.id, u.username, u.email
 HAVING COUNT(*) >= 2
 ORDER BY redeem_count DESC, total_redeem_credits DESC;
 
+
+
+# 数据库连接池有问题的进程查找
+SELECT GROUP_CONCAT(CONCAT('KILL ', ID, ';') SEPARATOR ' ') AS kill_sql
+FROM information_schema.PROCESSLIST
+WHERE DB = '80ai'
+  AND STATE = 'Waiting for table metadata lock'
+  AND ID <> CONNECTION_ID();
+
+# 一键释放杀掉卡住的进程
+KILL 563192; KILL 563240; KILL 563193; KILL 563195; KILL 563196; KILL 563188; KILL 563189; KILL 563165; KILL 563190; KILL 563182; KILL 563183;
+
