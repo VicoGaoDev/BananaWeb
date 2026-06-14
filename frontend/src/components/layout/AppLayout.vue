@@ -1136,7 +1136,7 @@ watch(purchaseDialogOpen, (open) => {
     </a-layout-header>
 
     <a-layout-content class="app-content">
-      <div class="content-inner" :class="{ 'content-inner-wide': route.name === 'BatchGenerate' }">
+      <div class="content-inner">
         <router-view v-slot="{ Component, route: currentRoute }">
           <transition :name="routeTransitionName" mode="out-in">
             <div :key="currentRoute.path" class="route-page-shell">
@@ -2820,10 +2820,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   margin: 0 auto;
   position: relative;
   z-index: 1;
-}
-
-.content-inner-wide {
-  max-width: 100%;
 }
 
 .route-page-shell {

@@ -2177,7 +2177,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 10px 24px 24px;
+  padding: 10px 0 24px;
 }
 
 .batch-panel,
