@@ -58,7 +58,7 @@ const taskColumns = [
 const columns = [
   { title: "错误次数", dataIndex: "count", width: 120 },
   { title: "错误类别", dataIndex: "error_category", width: 200 },
-  { title: "错误信息", dataIndex: "error_message" },
+  { title: "错误信息", dataIndex: "error_message", width: 720 },
 ];
 
 const filteredItems = computed(() => analytics.value?.items || []);
@@ -482,6 +482,7 @@ onMounted(async () => {
         :loading="loading"
         :pagination="false"
         :row-key="getErrorRowKey"
+        :scroll="{ x: 1040 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'count'">
