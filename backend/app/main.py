@@ -88,6 +88,7 @@ def on_startup():
         Base.metadata.create_all(bind=engine)
     _ensure_user_credit_schema()
     _ensure_payment_order_schema()
+    _ensure_offline_order_schema()
     _ensure_credit_redeem_key_schema()
     _ensure_user_api_key_schema()
     _drop_legacy_user_credits_column()
@@ -812,6 +813,112 @@ def _ensure_payment_order_schema():
             conn.execute(text("ALTER TABLE payment_orders ADD COLUMN closed_at DATETIME NULL AFTER credited_at"))
         if "failed_at" not in payment_columns:
             conn.execute(text("ALTER TABLE payment_orders ADD COLUMN failed_at DATETIME NULL AFTER closed_at"))
+
+
+def _ensure_offline_order_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "users" not in table_names:
+        return
+
+    if "offline_orders" not in table_names:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE offline_orders (
+                        id INTEGER NOT NULL AUTO_INCREMENT,
+                        business_id VARCHAR(32) NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        credit_amount INTEGER NOT NULL DEFAULT 0,
+                        amount_fen INTEGER NOT NULL DEFAULT 0,
+                        remark VARCHAR(500) NOT NULL DEFAULT '',
+                        created_by INTEGER NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (id),
+                        UNIQUE KEY uq_offline_orders_business_id (business_id),
+                        INDEX ix_offline_orders_user_id (user_id),
+                        INDEX ix_offline_orders_created_by (created_by),
+                        INDEX ix_offline_orders_created_at (created_at),
+                        CONSTRAINT fk_offline_orders_user_id FOREIGN KEY (user_id) REFERENCES users (id),
+                        CONSTRAINT fk_offline_orders_created_by FOREIGN KEY (created_by) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        return
+
+    offline_order_columns_info = inspector.get_columns("offline_orders")
+    offline_order_columns = {col["name"] for col in offline_order_columns_info}
+    with engine.begin() as conn:
+        if "business_id" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN business_id VARCHAR(32) NULL"))
+        if "user_id" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN user_id INTEGER NULL"))
+        if "credit_amount" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN credit_amount INTEGER NOT NULL DEFAULT 0"))
+        if "amount_fen" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN amount_fen INTEGER NOT NULL DEFAULT 0"))
+        if "remark" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN remark VARCHAR(500) NOT NULL DEFAULT ''"))
+        if "created_by" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN created_by INTEGER NULL"))
+        if "created_at" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in offline_order_columns:
+            conn.execute(text("ALTER TABLE offline_orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+
+        if "business_id" in {col["name"] for col in inspector.get_columns("offline_orders")}:
+            missing_ids = conn.execute(
+                text("SELECT id FROM offline_orders WHERE business_id IS NULL OR business_id = ''")
+            ).scalars().all()
+            for offline_order_id in missing_ids:
+                conn.execute(
+                    text("UPDATE offline_orders SET business_id = :business_id WHERE id = :id"),
+                    {"business_id": generate_business_id(), "id": offline_order_id},
+                )
+
+    refreshed_inspector = inspect(engine)
+    refreshed_columns_info = refreshed_inspector.get_columns("offline_orders")
+    refreshed_columns = {col["name"] for col in refreshed_columns_info}
+    offline_order_indexes = {index["name"] for index in refreshed_inspector.get_indexes("offline_orders")}
+    offline_order_foreign_keys = {fk.get("name") for fk in refreshed_inspector.get_foreign_keys("offline_orders")}
+    with engine.begin() as conn:
+        if "uq_offline_orders_business_id" not in offline_order_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX uq_offline_orders_business_id ON offline_orders (business_id)"))
+        if "ix_offline_orders_user_id" not in offline_order_indexes:
+            conn.execute(text("CREATE INDEX ix_offline_orders_user_id ON offline_orders (user_id)"))
+        if "ix_offline_orders_created_by" not in offline_order_indexes:
+            conn.execute(text("CREATE INDEX ix_offline_orders_created_by ON offline_orders (created_by)"))
+        if "ix_offline_orders_created_at" not in offline_order_indexes:
+            conn.execute(text("CREATE INDEX ix_offline_orders_created_at ON offline_orders (created_at)"))
+        if "fk_offline_orders_user_id" not in offline_order_foreign_keys and "user_id" in refreshed_columns:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE offline_orders
+                    ADD CONSTRAINT fk_offline_orders_user_id
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                    """
+                )
+            )
+        if "fk_offline_orders_created_by" not in offline_order_foreign_keys and "created_by" in refreshed_columns:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE offline_orders
+                    ADD CONSTRAINT fk_offline_orders_created_by
+                    FOREIGN KEY (created_by) REFERENCES users (id)
+                    """
+                )
+            )
+        if "business_id" in refreshed_columns:
+            conn.execute(text("ALTER TABLE offline_orders MODIFY COLUMN business_id VARCHAR(32) NOT NULL"))
+        if "user_id" in refreshed_columns:
+            conn.execute(text("ALTER TABLE offline_orders MODIFY COLUMN user_id INTEGER NOT NULL"))
+        if "created_by" in refreshed_columns:
+            conn.execute(text("ALTER TABLE offline_orders MODIFY COLUMN created_by INTEGER NOT NULL"))
 
 
 def _ensure_user_api_key_schema():

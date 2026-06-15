@@ -134,6 +134,16 @@
 - `closed_at` / `failed_at`: 关闭或失败时间。
 - `created_at` / `updated_at`: 创建时间、最后更新时间。
 
+### `offline_orders`
+
+- `business_id`: 线下订单对外业务 ID，32 位十六进制字符串。
+- `user_id`: 绑定的用户。
+- `credit_amount`: 线下订单对应积分数。
+- `amount_fen`: 订单金额，单位为分；前端按人民币元输入，后端换算后按分存储。
+- `remark`: 备注。
+- `created_by`: 录入管理员用户 ID。
+- `created_at` / `updated_at`: 创建时间、最后更新时间。
+
 ### `prompt_history`
 
 - `user_id`: 提示词归属用户。

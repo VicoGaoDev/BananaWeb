@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.credit_log import CreditLog
+from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
 from app.models.task import Task
 from app.services.admin_service import REDEEM_UNIT_PRICES
@@ -23,6 +24,8 @@ class DailyReportStats:
     end_at: datetime
     revenue_fen: int
     paid_order_count: int
+    offline_order_revenue_fen: int
+    offline_order_count: int
     redeem_revenue_yuan: float
     redeem_used_count: int
     task_total_count: int
@@ -60,6 +63,18 @@ def collect_daily_report_stats(
             PaymentOrder.credited_at.is_not(None),
             PaymentOrder.credited_at >= start_at,
             PaymentOrder.credited_at < end_at,
+        )
+        .one()
+    )
+
+    offline_order_revenue_fen, offline_order_count = (
+        db.query(
+            func.coalesce(func.sum(OfflineOrder.amount_fen), 0),
+            func.count(OfflineOrder.id),
+        )
+        .filter(
+            OfflineOrder.created_at >= start_at,
+            OfflineOrder.created_at < end_at,
         )
         .one()
     )
@@ -114,6 +129,8 @@ def collect_daily_report_stats(
         end_at=end_at,
         revenue_fen=int(revenue_fen or 0),
         paid_order_count=int(paid_order_count or 0),
+        offline_order_revenue_fen=int(offline_order_revenue_fen or 0),
+        offline_order_count=int(offline_order_count or 0),
         redeem_revenue_yuan=round(redeem_revenue_yuan, 2),
         redeem_used_count=redeem_used_count,
         task_total_count=int(task_total_count or 0),
@@ -125,6 +142,7 @@ def collect_daily_report_stats(
 
 def build_daily_report_markdown(stats: DailyReportStats) -> str:
     revenue_yuan = f"{stats.revenue_fen / 100:.2f}"
+    offline_order_revenue_yuan = f"{stats.offline_order_revenue_fen / 100:.2f}"
     report_date = stats.start_at.strftime("%Y-%m-%d")
     return (
         f"## 📊 每日经营数据日报\n"
@@ -132,6 +150,8 @@ def build_daily_report_markdown(stats: DailyReportStats) -> str:
         f"> 🕒 统计区间: {stats.start_at.strftime('%Y-%m-%d %H:%M')} ~ {stats.end_at.strftime('%Y-%m-%d %H:%M')}\n"
         f"> 💵 在线支付营业额: <font color=\"warning\">¥{revenue_yuan}</font>\n"
         f"> ✅ 支付成功订单数: **{stats.paid_order_count}**\n"
+        f"> 🧾 线下订单营业额: <font color=\"warning\">¥{offline_order_revenue_yuan}</font>\n"
+        f"> 📝 线下订单录入数: **{stats.offline_order_count}**\n"
         f"> 🎟️ 兑换码营业额: <font color=\"warning\">¥{stats.redeem_revenue_yuan:.2f}</font>\n"
         f"> 🔑 兑换码使用次数: **{stats.redeem_used_count}**\n"
         f"> 🖼️ 任务总数: **{stats.task_total_count}**\n"

@@ -1,24 +1,41 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from "vue";
+import { h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { AccountBookOutlined, BellOutlined } from "@ant-design/icons-vue";
-import { getAdminAnalyticsPaymentRevenue, getAdminAnalyticsRedeemRevenue, testAdminDailyReportNotify } from "@/api/admin";
+import { AccountBookOutlined, BellOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import {
+  createOfflineOrder,
+  getAdminAnalyticsOfflineOrderRevenue,
+  getAdminAnalyticsPaymentRevenue,
+  getAdminAnalyticsRedeemRevenue,
+  listUsers,
+  testAdminDailyReportNotify,
+} from "@/api/admin";
 import { isSessionExpiredError } from "@/lib/authError";
 import { useAuthStore } from "@/stores/auth";
 import RedeemRevenueTable from "@/components/admin/RedeemRevenueTable.vue";
-import type { AdminAnalyticsRedeemRevenue } from "@/types";
+import type { AdminAnalyticsRedeemRevenue, AdminUser } from "@/types";
 
 type DatePreset = "today" | "3d" | "7d" | "30d";
 
 const auth = useAuthStore();
 const loading = ref(false);
 const sendingDailyReport = ref(false);
+const creatingOfflineOrder = ref(false);
+const offlineOrderModalOpen = ref(false);
 const preset = ref<DatePreset | undefined>("today");
 const dateRange = ref<[Dayjs, Dayjs] | null>(null);
 const redeemRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const paymentRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
+const offlineOrderRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
+const users = ref<AdminUser[]>([]);
+const offlineOrderForm = reactive({
+  user_id: undefined as string | undefined,
+  credit_amount: 0,
+  amount_yuan: undefined as number | undefined,
+  remark: "",
+});
 
 function formatQueryDate(value?: Dayjs) {
   return value ? value.format("YYYY-MM-DDTHH:mm:ss") : undefined;
@@ -74,6 +91,8 @@ async function handleSendDailyReport() {
         h("p", null, `统计区间：${result.range_start} ~ ${result.range_end}`),
         h("p", null, `在线支付营业额：¥${Number(result.revenue_yuan || 0).toFixed(2)}`),
         h("p", null, `支付成功订单数：${result.paid_order_count}`),
+        h("p", null, `线下订单营业额：¥${Number(result.offline_order_revenue_yuan || 0).toFixed(2)}`),
+        h("p", null, `线下订单录入数：${result.offline_order_count}`),
         h("p", null, `兑换码营业额：¥${Number(result.redeem_revenue_yuan || 0).toFixed(2)}`),
         h("p", null, `兑换码使用次数：${result.redeem_used_count}`),
         h("p", null, `任务总数：${result.task_total_count}`),
@@ -101,12 +120,14 @@ async function load() {
       start_date: formatQueryDate(dateRange.value[0].startOf("day")),
       end_date: formatQueryDate(dateRange.value[1].endOf("day")),
     } as const;
-    const [redeemResult, paymentResult] = await Promise.all([
+    const [redeemResult, paymentResult, offlineOrderResult] = await Promise.all([
       getAdminAnalyticsRedeemRevenue(query),
       getAdminAnalyticsPaymentRevenue(query),
+      getAdminAnalyticsOfflineOrderRevenue(query),
     ]);
     redeemRevenue.value = redeemResult;
     paymentRevenue.value = paymentResult;
+    offlineOrderRevenue.value = offlineOrderResult;
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
     message.error("获取营业额数据失败");
@@ -115,8 +136,58 @@ async function load() {
   }
 }
 
+async function loadUsers() {
+  try {
+    users.value = await listUsers();
+  } catch (err: unknown) {
+    if (isSessionExpiredError(err)) return;
+    message.error("获取用户列表失败");
+  }
+}
+
+function openOfflineOrderModal() {
+  offlineOrderForm.user_id = undefined;
+  offlineOrderForm.credit_amount = 0;
+  offlineOrderForm.amount_yuan = undefined;
+  offlineOrderForm.remark = "";
+  offlineOrderModalOpen.value = true;
+}
+
+async function handleCreateOfflineOrder() {
+  if (!offlineOrderForm.user_id) {
+    message.warning("请选择用户");
+    return;
+  }
+  if (!offlineOrderForm.credit_amount || offlineOrderForm.credit_amount <= 0) {
+    message.warning("请输入有效积分");
+    return;
+  }
+  if (offlineOrderForm.amount_yuan === undefined || offlineOrderForm.amount_yuan === null || offlineOrderForm.amount_yuan <= 0) {
+    message.warning("请输入有效金额");
+    return;
+  }
+  creatingOfflineOrder.value = true;
+  try {
+    await createOfflineOrder({
+      user_id: offlineOrderForm.user_id,
+      credit_amount: offlineOrderForm.credit_amount,
+      amount_yuan: Number(offlineOrderForm.amount_yuan),
+      remark: offlineOrderForm.remark.trim(),
+    });
+    message.success("线下订单录入成功");
+    offlineOrderModalOpen.value = false;
+    await load();
+  } catch (err: unknown) {
+    if (isSessionExpiredError(err)) return;
+    message.error((err as any)?.response?.data?.detail || "线下订单录入失败");
+  } finally {
+    creatingOfflineOrder.value = false;
+  }
+}
+
 onMounted(() => {
   applyPreset("today");
+  loadUsers();
   load();
 });
 </script>
@@ -133,6 +204,15 @@ onMounted(() => {
           <div class="warm-page-desc">统计在线购买与积分兑换码营业额，支持按时间区间筛选。</div>
         </div>
       </div>
+      <a-button
+        v-if="auth.isAdmin"
+        type="primary"
+        class="warm-primary-btn"
+        @click="openOfflineOrderModal"
+      >
+        <template #icon><PlusOutlined /></template>
+        录入线下订单
+      </a-button>
       <a-button
         v-if="auth.isSuperAdmin"
         type="primary"
@@ -184,7 +264,63 @@ onMounted(() => {
         title="兑换码营业额"
         count-label="兑换"
       />
+      <RedeemRevenueTable
+        :data="offlineOrderRevenue"
+        :loading="loading"
+        title="线下订单营业额"
+        count-label="录入"
+      />
     </div>
+
+    <a-modal
+      v-model:open="offlineOrderModalOpen"
+      title="录入线下订单"
+      ok-text="提交"
+      cancel-text="取消"
+      :confirm-loading="creatingOfflineOrder"
+      @ok="handleCreateOfflineOrder"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="用户">
+          <a-select
+            v-model:value="offlineOrderForm.user_id"
+            show-search
+            placeholder="请选择用户"
+            option-filter-prop="label"
+            :options="users.map((user) => ({
+              label: user.email ? `${user.username} (${user.email})` : `${user.username} (${user.id})`,
+              value: user.id,
+            }))"
+          />
+        </a-form-item>
+        <a-form-item label="积分">
+          <a-input-number
+            v-model:value="offlineOrderForm.credit_amount"
+            :min="1"
+            :precision="0"
+            style="width: 100%"
+            placeholder="请输入积分"
+          />
+        </a-form-item>
+        <a-form-item label="金额（人民币元）">
+          <a-input-number
+            v-model:value="offlineOrderForm.amount_yuan"
+            :min="0.01"
+            :precision="2"
+            style="width: 100%"
+            placeholder="请输入金额，例如 19.90"
+          />
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-textarea
+            v-model:value="offlineOrderForm.remark"
+            :rows="3"
+            :maxlength="500"
+            placeholder="可选，填写线下订单备注"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
