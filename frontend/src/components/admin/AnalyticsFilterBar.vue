@@ -44,6 +44,7 @@ const emit = defineEmits<{
   (e: "update:granularity", value: AdminAnalyticsGranularity): void;
   (e: "preset-change", value: string): void;
   (e: "reset"): void;
+  (e: "refresh"): void;
 }>();
 
 const presetOptions = computed(() => {
@@ -175,6 +176,9 @@ const presetOptions = computed(() => {
       />
       <a-button class="analytics-action-btn analytics-action-btn-secondary" :loading="loading" @click="emit('reset')">
         重置
+      </a-button>
+      <a-button class="analytics-action-btn analytics-action-btn-secondary" :loading="loading" @click="emit('refresh')">
+        刷新
       </a-button>
     </div>
   </div>

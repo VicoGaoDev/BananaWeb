@@ -343,6 +343,10 @@ async function loadPageData() {
   await Promise.all([loadAnalytics(), loadHistory()]);
 }
 
+async function handleRefresh() {
+  await Promise.all([loadPageData(), loadStatsData()]);
+}
+
 function handleReset() {
   filters.status = undefined;
   filters.user_id = undefined;
@@ -531,10 +535,11 @@ watch(filterSignature, async () => {
       :filters="filters"
       :granularity="granularity"
       :preset="preset"
-      :loading="analyticsLoading || historyLoading"
+      :loading="analyticsLoading || historyLoading || statsLoading"
       @update:granularity="handleGranularityChange"
       @preset-change="handlePresetChange"
       @reset="handleReset"
+      @refresh="handleRefresh"
     />
 
     <section class="dashboard-section">

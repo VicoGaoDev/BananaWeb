@@ -747,7 +747,6 @@ def get_admin_history_cards(
         .options(selectinload(Image.task).selectinload(Task.images), selectinload(Image.task).selectinload(Task.user))
         .filter(User.role != "superadmin")
         .filter(User.is_whitelisted.is_(False))
-        .filter(Task.is_deleted.is_(False))
         .filter(Image.is_deleted.is_(False))
     )
     running_task_query = (
@@ -765,7 +764,6 @@ def get_admin_history_cards(
         .options(selectinload(Task.images), selectinload(Task.user))
         .filter(User.role != "superadmin")
         .filter(User.is_whitelisted.is_(False))
-        .filter(Task.is_deleted.is_(False))
         .filter(~Task.status.in_(running_statuses))
         .filter(~Task.images.any(Image.is_deleted.is_(False)))
     )
@@ -945,7 +943,7 @@ def get_admin_history_cards(
             "status": _resolve_history_card_status(task.status, image.status),
             "image_format": image_payload["image_format"],
             "image_size_bytes": image_payload["image_size_bytes"],
-            "task_is_deleted": False,
+            "task_is_deleted": bool(task.is_deleted),
             "is_soft_deleted": False,
             "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
             "model": task.model or "",
@@ -994,7 +992,7 @@ def get_admin_history_cards(
             "status": task.status or "pending",
             "image_format": primary_image["image_format"] if primary_image else "",
             "image_size_bytes": primary_image["image_size_bytes"] if primary_image else 0,
-            "task_is_deleted": False,
+            "task_is_deleted": bool(task.is_deleted),
             "is_soft_deleted": False,
             "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
             "model": task.model or "",
@@ -1045,7 +1043,7 @@ def get_admin_history_cards(
             "status": task.status or "pending",
             "image_format": "",
             "image_size_bytes": 0,
-            "task_is_deleted": False,
+            "task_is_deleted": bool(task.is_deleted),
             "is_soft_deleted": False,
             "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
             "model": task.model or "",
