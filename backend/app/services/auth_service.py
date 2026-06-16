@@ -14,10 +14,47 @@ from app.utils.security import create_access_token, hash_password, verify_passwo
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 CLOUDBASE_AUTH_PATH = "/auth"
 NEW_USER_TRIAL_CREDITS = 10
+BANNED_EMAIL_DOMAIN_SUFFIXES = {
+    "minafter.com",
+    "mailto.plus",
+    "yopmail.com",
+    "yopmail.net",
+    "yopmail.fr",
+    "tempmail.com",
+    "tempmail.org",
+    "temp-mail.org",
+    "temp-mail.io",
+    "10minutemail.com",
+    "10minutemail.net",
+    "10minemail.com",
+    "mailinator.com",
+    "guerrillamail.com",
+    "guerrillamail.info",
+    "guerrillamail.biz",
+    "guerrillamail.de",
+    "guerrillamail.net",
+    "sharklasers.com",
+    "grr.la",
+    "guerrillamailblock.com",
+    "dispostable.com",
+    "mailnesia.com",
+    "throwawaymail.com",
+    "fakeinbox.com",
+    "emailondeck.com",
+    "trashmail.com",
+    "getnada.com",
+}
 
 
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def _is_banned_email_domain(domain: str) -> bool:
+    return any(
+        domain == blocked_suffix or domain.endswith(f".{blocked_suffix}")
+        for blocked_suffix in BANNED_EMAIL_DOMAIN_SUFFIXES
+    )
 
 
 def _validate_email(email: str) -> str:
@@ -26,6 +63,12 @@ def _validate_email(email: str) -> str:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱格式不正确")
     if len(normalized) > 255:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱长度不能超过255个字符")
+    domain = normalized.rsplit("@", 1)[-1]
+    if _is_banned_email_domain(domain):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该邮箱域名暂不支持注册，请使用常用邮箱地址",
+        )
     return normalized
 
 

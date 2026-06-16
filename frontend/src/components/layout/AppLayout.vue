@@ -413,9 +413,47 @@ const purchaseFeedbackSubmitting = ref(false);
 const purchaseFeedbackForm = reactive({ content: "" });
 const authExpiredPromptVisible = ref(false);
 const expiredSessionRedirectPath = ref("");
+const bannedEmailDomainSuffixes = [
+  "minafter.com",
+  "mailto.plus",
+  "yopmail.com",
+  "yopmail.net",
+  "yopmail.fr",
+  "tempmail.com",
+  "tempmail.org",
+  "temp-mail.org",
+  "temp-mail.io",
+  "10minutemail.com",
+  "10minutemail.net",
+  "10minemail.com",
+  "mailinator.com",
+  "guerrillamail.com",
+  "guerrillamail.info",
+  "guerrillamail.biz",
+  "guerrillamail.de",
+  "guerrillamail.net",
+  "sharklasers.com",
+  "grr.la",
+  "guerrillamailblock.com",
+  "dispostable.com",
+  "mailnesia.com",
+  "throwawaymail.com",
+  "fakeinbox.com",
+  "emailondeck.com",
+  "trashmail.com",
+  "getnada.com",
+] as const;
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function isBannedEmailDomain(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const atIndex = normalized.lastIndexOf("@");
+  if (atIndex < 0) return false;
+  const domain = normalized.slice(atIndex + 1);
+  return bannedEmailDomainSuffixes.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`));
 }
 
 function openAuthModal(tab: "login" | "register") {
@@ -573,6 +611,10 @@ async function handleSendRegisterCode() {
     message.warning("邮箱格式不正确");
     return;
   }
+  if (isBannedEmailDomain(registerForm.email)) {
+    message.warning("该邮箱域名暂不支持注册，请使用常用邮箱地址");
+    return;
+  }
   registerCodeLoading.value = true;
   try {
     await sendRegisterEmailCode(registerForm.email.trim());
@@ -591,6 +633,10 @@ async function handleRegisterSubmit() {
   }
   if (!isValidEmail(registerForm.email)) {
     message.warning("邮箱格式不正确");
+    return;
+  }
+  if (isBannedEmailDomain(registerForm.email)) {
+    message.warning("该邮箱域名暂不支持注册，请使用常用邮箱地址");
     return;
   }
   if (registerForm.password.length < 6) {
