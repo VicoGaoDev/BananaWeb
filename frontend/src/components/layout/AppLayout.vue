@@ -415,6 +415,7 @@ const authExpiredPromptVisible = ref(false);
 const expiredSessionRedirectPath = ref("");
 const bannedEmailDomainSuffixes = [
   "minafter.com",
+  "mediaholy.com",
   "mailto.plus",
   "yopmail.com",
   "yopmail.net",

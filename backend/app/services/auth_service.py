@@ -16,6 +16,7 @@ CLOUDBASE_AUTH_PATH = "/auth"
 NEW_USER_TRIAL_CREDITS = 10
 BANNED_EMAIL_DOMAIN_SUFFIXES = {
     "minafter.com",
+    "mediaholy.com",
     "mailto.plus",
     "yopmail.com",
     "yopmail.net",
