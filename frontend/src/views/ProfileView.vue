@@ -8,6 +8,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons-vue";
 import { changePassword, getMe, updateProfile, uploadAvatar } from "@/api/auth";
+import { withApiBaseUrl } from "@/lib/assets";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -27,7 +28,7 @@ const pwdForm = ref({
   confirmPassword: "",
 });
 
-const avatarUrl = computed(() => auth.user?.avatar_url || "");
+const avatarUrl = computed(() => withApiBaseUrl(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
 const roleLabel = computed(() => {
   if (auth.user?.role === "superadmin") return "超级管理员";

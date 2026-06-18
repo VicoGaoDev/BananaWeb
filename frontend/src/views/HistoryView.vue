@@ -22,7 +22,7 @@ import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl
 import { deletePromptHistory } from "@/api/auth";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
-import { withBaseUrl } from "@/lib/assets";
+import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import { useAuthStore } from "@/stores/auth";
 import {
   HISTORY_GRID_COLUMN_COUNT_KEY,
@@ -1003,7 +1003,7 @@ function handleEditImage(item: UserHistoryCard) {
               class="result-card-user"
               @click.stop="openUserInfoDialog(item)"
             >
-              <a-avatar :size="22" :src="item.avatar_url || undefined" class="result-card-user-avatar">
+              <a-avatar :size="22" :src="withApiBaseUrl(item.avatar_url) || undefined" class="result-card-user-avatar">
                 {{ item.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <span class="result-card-user-name">{{ item.username || "未知用户" }}</span>
@@ -1172,7 +1172,7 @@ function handleEditImage(item: UserHistoryCard) {
       <a-spin :spinning="userInfoLoading">
         <div v-if="selectedUserInfo" class="user-info-dialog">
           <div class="user-info-header">
-            <a-avatar :size="54" :src="selectedUserInfo.avatar_url || undefined" class="user-info-avatar">
+            <a-avatar :size="54" :src="withApiBaseUrl(selectedUserInfo.avatar_url) || undefined" class="user-info-avatar">
               {{ selectedUserInfo.username?.charAt(0)?.toUpperCase() }}
             </a-avatar>
             <div class="user-info-identity">

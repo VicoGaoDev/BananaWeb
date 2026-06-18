@@ -17,6 +17,7 @@ import {
   listUsers,
 } from "@/api/admin";
 import { setStoredAdminUnresolvedFeedbackCount } from "@/lib/adminFeedbackNotice";
+import { withApiBaseUrl } from "@/lib/assets";
 import { isSessionExpiredError } from "@/lib/authError";
 import AnalyticsFilterBar from "@/components/admin/AnalyticsFilterBar.vue";
 import BreakdownCharts from "@/components/admin/BreakdownCharts.vue";
@@ -633,7 +634,7 @@ watch(filterSignature, async () => {
                   title="查看用户积分"
                   @click="openCreditDialog(record)"
                 >
-                  <a-avatar :size="30" :src="record.avatar_url || undefined" class="table-user-avatar">
+                  <a-avatar :size="30" :src="withApiBaseUrl(record.avatar_url) || undefined" class="table-user-avatar">
                     {{ record.username?.charAt(0)?.toUpperCase() }}
                   </a-avatar>
                 </button>
@@ -709,7 +710,7 @@ watch(filterSignature, async () => {
     >
       <div v-if="creditDialogUser" class="credit-dialog">
         <div class="credit-dialog-user">
-          <a-avatar :size="48" :src="creditDialogUser.avatar_url || undefined" class="credit-dialog-avatar">
+          <a-avatar :size="48" :src="withApiBaseUrl(creditDialogUser.avatar_url) || undefined" class="credit-dialog-avatar">
             {{ creditDialogUser.username?.charAt(0)?.toUpperCase() }}
           </a-avatar>
           <div>

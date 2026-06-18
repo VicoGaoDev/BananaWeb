@@ -17,7 +17,7 @@ import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
 import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
-import { withBaseUrl } from "@/lib/assets";
+import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import {
   getStoredAdminUnresolvedFeedbackCount,
   setStoredAdminUnresolvedFeedbackCount,
@@ -738,7 +738,7 @@ const announcementConfig = ref<AnnouncementConfig>({
 const ANNOUNCEMENT_DISMISS_KEY = "systemAnnouncementDismissState";
 const authInputPrefixStyle = { color: "var(--theme-input-prefix-color)" };
 
-const avatarUrl = computed(() => auth.user?.avatar_url || "");
+const avatarUrl = computed(() => withApiBaseUrl(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
 
 function getTodayString() {

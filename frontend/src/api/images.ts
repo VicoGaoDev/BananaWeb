@@ -1,5 +1,6 @@
 import client from "./client";
 import type { ImageResult } from "@/types";
+import { withApiBaseUrl } from "@/lib/assets";
 
 export function regenerateImage(imageId: number): Promise<any> {
   return client.post(`/images/${imageId}/regenerate`);
@@ -10,12 +11,7 @@ export function deleteImage(imageId: number): Promise<void> {
 }
 
 export function resolveImageUrl(imageUrl?: string): string {
-  if (!imageUrl) return "";
-  if (/^(https?:)?\/\//.test(imageUrl) || imageUrl.startsWith("data:") || imageUrl.startsWith("blob:")) {
-    return imageUrl;
-  }
-  const base = import.meta.env.VITE_API_BASE_URL || "";
-  return `${base}${imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`}`;
+  return withApiBaseUrl(imageUrl || "");
 }
 
 function appendImageTransform(url: string, transform: string): string {

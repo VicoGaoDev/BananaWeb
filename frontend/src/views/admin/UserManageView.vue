@@ -13,6 +13,7 @@ import {
   resetUserCredits,
   getUserPromoDashboard,
 } from "@/api/admin";
+import { withApiBaseUrl } from "@/lib/assets";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser, AdminUserPromoDashboard } from "@/types";
 
@@ -406,7 +407,7 @@ function promoActivityRowKey(record: {
           </template>
           <template v-if="column.dataIndex === 'username'">
             <div class="user-cell">
-              <a-avatar :size="34" :src="record.avatar_url || undefined" class="table-avatar">
+              <a-avatar :size="34" :src="withApiBaseUrl(record.avatar_url) || undefined" class="table-avatar">
                 {{ record.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <div class="user-cell-meta">
@@ -601,7 +602,7 @@ function promoActivityRowKey(record: {
         <div class="whitelist-list">
           <div v-for="user in filteredWhitelistUsers" :key="user.id" class="whitelist-item">
             <div class="user-cell">
-              <a-avatar :size="36" :src="user.avatar_url || undefined" class="table-avatar">
+              <a-avatar :size="36" :src="withApiBaseUrl(user.avatar_url) || undefined" class="table-avatar">
                 {{ user.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <div class="whitelist-user-meta">
