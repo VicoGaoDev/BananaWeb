@@ -5547,7 +5547,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   }
 
   .result-retain-badge {
-    width: 100%;
+    width: auto;
     justify-content: flex-start;
   }
 

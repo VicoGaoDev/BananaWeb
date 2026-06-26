@@ -89,14 +89,14 @@ function handleReset() {
   load();
 }
 
-function showDailyReportResult(result: AdminDailyReportTestResult, title = "日报发送结果") {
+function showDailyReportResult(result: AdminDailyReportTestResult, title = "报告发送结果") {
   Modal.info({
     title,
     width: 560,
     okText: "知道了",
     content: h("div", { class: "daily-report-result" }, [
       h("p", null, `发送状态：${result.sent ? "成功" : "未发送"}`),
-      h("p", null, `报表日期：${result.report_date}`),
+      h("p", null, `报告周期：${result.report_date}`),
       h("p", null, `统计区间：${result.range_start} ~ ${result.range_end}`),
       h("p", { class: "daily-report-total" }, `总营业额：¥${Number(result.total_revenue_yuan || 0).toFixed(2)}`),
       h("p", null, `在线支付营业额：¥${Number(result.revenue_yuan || 0).toFixed(2)}`),
@@ -117,11 +117,11 @@ async function handleSendDailyReport() {
   sendingDailyReport.value = true;
   try {
     const result = await testAdminDailyReportNotify();
-    message.success(result.sent ? "日报发送成功" : "日报未发送，请检查企业微信配置");
+    message.success(result.sent ? "报告发送成功" : "报告未发送，请检查企业微信配置");
     showDailyReportResult(result);
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
-    message.error((err as any)?.response?.data?.detail || "发送日报失败");
+    message.error((err as any)?.response?.data?.detail || "发送报告失败");
   } finally {
     sendingDailyReport.value = false;
   }
@@ -146,12 +146,12 @@ async function handleSendCustomDailyReport() {
       start_date: formatQueryDate(startDate.startOf("day"))!,
       end_date: formatQueryDate(endDate.add(1, "day").startOf("day"))!,
     });
-    message.success(result.sent ? "区间日报发送成功" : "区间日报未发送，请检查企业微信配置");
+    message.success(result.sent ? "周期报告发送成功" : "周期报告未发送，请检查企业微信配置");
     customDailyReportModalOpen.value = false;
-    showDailyReportResult(result, "区间日报发送结果");
+    showDailyReportResult(result, "周期报告发送结果");
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
-    message.error((err as any)?.response?.data?.detail || "发送区间日报失败");
+    message.error((err as any)?.response?.data?.detail || "发送周期报告失败");
   } finally {
     sendingCustomDailyReport.value = false;
   }
@@ -299,7 +299,7 @@ onMounted(() => {
         @click="handleSendDailyReport"
       >
         <template #icon><BellOutlined /></template>
-        发送日报到企业微信
+        发送报告到企业微信
       </a-button>
       <a-button
         v-if="auth.isSuperAdmin"
@@ -309,7 +309,7 @@ onMounted(() => {
         @click="openCustomDailyReportModal"
       >
         <template #icon><CalendarOutlined /></template>
-        按日期发送日报
+        按周期发送报告
       </a-button>
     </div>
 
@@ -395,7 +395,7 @@ onMounted(() => {
 
     <a-modal
       v-model:open="customDailyReportModalOpen"
-      title="按日期区间发送日报"
+      title="按周期发送报告"
       ok-text="发送"
       cancel-text="取消"
       :confirm-loading="sendingCustomDailyReport"

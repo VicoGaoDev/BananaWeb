@@ -159,10 +159,12 @@ def collect_daily_report_stats(
 def build_daily_report_markdown(stats: DailyReportStats) -> str:
     revenue_yuan = f"{stats.revenue_fen / 100:.2f}"
     offline_order_revenue_yuan = f"{stats.offline_order_revenue_fen / 100:.2f}"
-    report_date = stats.start_at.strftime("%Y-%m-%d")
+    report_start_date = stats.start_at.strftime("%Y-%m-%d")
+    report_end_date = (stats.end_at - timedelta(seconds=1)).strftime("%Y-%m-%d")
+    report_period = report_start_date if report_start_date == report_end_date else f"{report_start_date} ~ {report_end_date}"
     return (
-        f"## 📊 每日经营数据日报\n"
-        f"> 📅 日期: **{report_date}**\n"
+        f"## 📊 周期经营数据报告\n"
+        f"> 📅 周期: **{report_period}**\n"
         f"> 🕒 统计区间: {stats.start_at.strftime('%Y-%m-%d %H:%M')} ~ {stats.end_at.strftime('%Y-%m-%d %H:%M')}\n"
         f"> 💰 总营业额: <font color=\"warning\">¥{stats.total_revenue_yuan:.2f}</font>\n"
         f"> 💵 在线支付营业额: <font color=\"warning\">¥{revenue_yuan}</font>\n"
