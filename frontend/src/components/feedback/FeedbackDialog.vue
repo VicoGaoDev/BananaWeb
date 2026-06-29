@@ -10,11 +10,19 @@ const props = withDefaults(defineProps<{
   model?: string;
   prompt?: string;
   createdAt?: string | null;
+  title?: string;
+  contextTitle?: string;
+  requireTask?: boolean;
+  appendContent?: string;
 }>(), {
   taskId: "",
   model: "",
   prompt: "",
   createdAt: null,
+  title: "提交反馈",
+  contextTitle: "任务提示词",
+  requireTask: true,
+  appendContent: "",
 });
 
 const emit = defineEmits<{
@@ -52,7 +60,7 @@ function handleOpenChange(value: boolean) {
 async function handleSubmit() {
   const taskId = (props.taskId || "").trim();
   const normalized = content.value.trim();
-  if (!taskId) {
+  if (props.requireTask && !taskId) {
     message.warning("当前任务暂不支持反馈");
     return;
   }
@@ -63,7 +71,9 @@ async function handleSubmit() {
 
   submitting.value = true;
   try {
-    const detail = await createFeedback(taskId, normalized);
+    const extra = (props.appendContent || "").trim();
+    const contentToSubmit = extra ? `${normalized}\n\n${extra}` : normalized;
+    const detail = await createFeedback(taskId || null, contentToSubmit);
     message.success("反馈已提交");
     emit("submitted", detail);
     closeDialog();
@@ -78,7 +88,7 @@ async function handleSubmit() {
 <template>
   <a-modal
     :open="open"
-    title="提交反馈"
+    :title="title"
     ok-text="提交"
     cancel-text="取消"
     :confirm-loading="submitting"
@@ -90,7 +100,7 @@ async function handleSubmit() {
   >
     <div class="feedback-dialog">
       <div class="feedback-prompt-preview">
-        <div class="feedback-section-title">任务提示词</div>
+        <div class="feedback-section-title">{{ contextTitle }}</div>
         <div class="feedback-prompt-text">{{ promptPreview }}</div>
       </div>
       <a-form layout="vertical">

@@ -11,6 +11,7 @@ class Task(Base):
     business_id = Column(String(32), unique=True, nullable=False, index=True, default=generate_business_id)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     board_id = Column(Integer, ForeignKey("user_boards.id", ondelete="SET NULL"), nullable=True, index=True)
+    canvas_id = Column(Integer, ForeignKey("user_canvas.id", ondelete="SET NULL"), nullable=True, index=True)
     model = Column(String(50), default="")
     source = Column(String(20), nullable=False, default="web", server_default="web")
     mode = Column(String(20), default="generate")
@@ -35,4 +36,6 @@ class Task(Base):
 
     user = relationship("User", backref="tasks")
     board = relationship("UserBoard", back_populates="tasks")
+    canvas = relationship("UserCanvas", back_populates="tasks")
+    canvas_node = relationship("CanvasNode", back_populates="task", uselist=False)
     images = relationship("Image", back_populates="task", lazy="selectin")

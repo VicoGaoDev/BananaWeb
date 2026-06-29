@@ -55,6 +55,8 @@ export type TaskSource = "web" | "app" | "api";
 
 export interface TaskResult {
   id: string;
+  canvas_id?: number | null;
+  mode: TaskMode;
   model: string;
   source: TaskSource;
   prompt: string;
@@ -62,6 +64,12 @@ export interface TaskResult {
   size: string;
   resolution: string;
   custom_size?: string;
+  reference_images?: string[];
+  reference_image_thumbs?: string[];
+  source_image?: string;
+  source_image_thumb?: string;
+  mask_image?: string;
+  mask_image_thumb?: string;
   credit_cost: number;
   credit_refunded?: boolean;
   status: "pending" | "queued" | "processing" | "success" | "failed";
@@ -194,6 +202,72 @@ export interface UserBoardSummary {
 
 export interface UserBoardListResponse {
   items: UserBoardSummary[];
+}
+
+export interface UserCanvasSummary {
+  id: number;
+  project_id: string;
+  name: string;
+  node_count: number;
+  preview_urls: string[];
+  viewport_x: number;
+  viewport_y: number;
+  zoom: number;
+  is_readonly?: boolean;
+  owner_user_id?: string;
+  owner_username?: string;
+  owner_avatar_url?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CanvasNode {
+  id: number;
+  canvas_id: number;
+  task_id: string;
+  node_type: "task" | "text" | "image";
+  content: string;
+  image_url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  task?: TaskResult | null;
+}
+
+export interface CanvasDetail extends UserCanvasSummary {
+  nodes: CanvasNode[];
+}
+
+export interface UserCanvasListResponse {
+  items: UserCanvasSummary[];
+}
+
+export interface CanvasTaskPayload {
+  model?: string;
+  source?: "web" | "app" | "api";
+  prompt: string;
+  num_images: number;
+  size: string;
+  resolution: string;
+  custom_size?: string;
+  mode?: "generate" | "inpaint";
+  reference_images?: string[];
+  source_image?: string;
+  mask_image?: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+}
+
+export interface CanvasTaskCreateResponse {
+  task_id?: string | null;
+  task_ids: string[];
+  nodes: CanvasNode[];
 }
 
 export type FeedbackStatus = "pending" | "processing" | "completed";

@@ -1,0 +1,120 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from app.schemas.task import TaskOut
+
+
+class CanvasCreate(BaseModel):
+    name: str = Field(default="新画布", max_length=100)
+
+
+class CanvasUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    viewport_x: float | None = None
+    viewport_y: float | None = None
+    zoom: float | None = Field(default=None, ge=0.1, le=3)
+
+
+class CanvasViewportUpdate(BaseModel):
+    viewport_x: float = 0
+    viewport_y: float = 0
+    zoom: float = Field(default=1, ge=0.1, le=3)
+
+
+class CanvasNodeUpdate(BaseModel):
+    x: float | None = None
+    y: float | None = None
+    width: float | None = Field(default=None, ge=160, le=1200)
+    height: float | None = Field(default=None, ge=160, le=1600)
+    z_index: int | None = Field(default=None, ge=1)
+    content: str | None = Field(default=None, max_length=5000)
+
+
+class CanvasNodeBatchUpdateItem(CanvasNodeUpdate):
+    id: int
+
+
+class CanvasNodeBatchUpdate(BaseModel):
+    nodes: list[CanvasNodeBatchUpdateItem] = Field(default_factory=list, max_length=500)
+
+
+class CanvasFreeNodeCreate(BaseModel):
+    node_type: Literal["text", "image"]
+    content: str = Field(default="", max_length=5000)
+    image_url: str = Field(default="", max_length=1000)
+    x: float = 0
+    y: float = 0
+    width: float = Field(default=320, ge=120, le=1200)
+    height: float = Field(default=220, ge=120, le=1600)
+
+
+class CanvasTaskCreate(BaseModel):
+    model: str = ""
+    source: Literal["web", "app", "api"] = "web"
+    prompt: str
+    num_images: int = Field(default=1, ge=1, le=8)
+    size: str = "3:4"
+    resolution: str = "4K"
+    custom_size: str = ""
+    mode: Literal["generate", "inpaint"] = "generate"
+    reference_images: list[str] | None = None
+    source_image: str = ""
+    mask_image: str = ""
+    x: float = 0
+    y: float = 0
+    width: float = Field(default=320, ge=160, le=1200)
+    height: float = Field(default=420, ge=160, le=1600)
+
+
+class CanvasSummary(BaseModel):
+    id: int
+    project_id: str
+    name: str
+    node_count: int = 0
+    preview_urls: list[str] = []
+    viewport_x: float = 0
+    viewport_y: float = 0
+    zoom: float = 1
+    is_readonly: bool = False
+    owner_user_id: str = ""
+    owner_username: str = ""
+    owner_avatar_url: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CanvasListResponse(BaseModel):
+    items: list[CanvasSummary]
+
+
+class CanvasNodeOut(BaseModel):
+    id: int
+    canvas_id: int
+    task_id: str
+    node_type: str = "task"
+    content: str = ""
+    image_url: str = ""
+    x: float
+    y: float
+    width: float
+    height: float
+    z_index: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    task: TaskOut | None = None
+
+
+class CanvasDetail(CanvasSummary):
+    nodes: list[CanvasNodeOut] = []
+
+
+class CanvasNodeBatchUpdateResponse(BaseModel):
+    nodes: list[CanvasNodeOut] = []
+
+
+class CanvasTaskCreateResponse(BaseModel):
+    task_id: str | None = None
+    task_ids: list[str] = []
+    nodes: list[CanvasNodeOut] = []

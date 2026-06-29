@@ -98,15 +98,16 @@
 
 # 二、系统模块划分
 
-系统当前分为 7 大模块：
+系统当前分为 8 大模块：
 
 1. **认证与账户模块** — 登录 / 注册 / 修改密码 / JWT / 头像上传
 2. **创意模版模块** — 默认首页、标签筛选、模版详情、模版带入生成页
 3. **自定义绘图模块** — 文生图 / 图编辑、局部重绘、提示词反推
-4. **历史记录模块** — 历史任务浏览、删除、重新编辑、历史提示词
-5. **积分系统模块** — 积分分配、消耗、日志、顶部余额展示
-6. **后台管理模块** — 用户管理、数据统计、模版管理、配置管理、外部接口与场景绑定管理
-7. **AI 能力引擎** — Gemini 生图链路、Qwen-VL 提示词反推链路
+4. **无限画布模块** — 独立画布项目、画布内生图、节点拖拽缩放、自由节点、节点搜索与整理
+5. **历史记录模块** — 历史任务浏览、删除、重新编辑、历史提示词
+6. **积分系统模块** — 积分分配、消耗、日志、顶部余额展示
+7. **后台管理模块** — 用户管理、数据统计、模版管理、配置管理、外部接口与场景绑定管理
+8. **AI 能力引擎** — Gemini 生图链路、Qwen-VL 提示词反推链路
 
 ---
 
@@ -133,7 +134,8 @@
 | 角色    | 功能                                                 |
 | ----- | -------------------------------------------------- |
 | 普通用户  | 注册、登录、修改密码、上传头像、使用模版、生成图片、查看自己的历史与积分               |
-| 管理员   | 拥有普通用户全部能力，另可分配积分、管理模板、维护配置、查看统计                   |
+| 白名单用户 | 拥有普通用户能力，并可在内部测试阶段看到并使用无限画布入口                         |
+| 管理员   | 拥有普通用户全部能力，另可分配积分、管理模板、维护配置、查看统计，并可使用无限画布内部测试入口 |
 | 超级管理员 | 拥有管理员能力，且可创建用户、设置角色、启用/禁用用户、重置用户密码、访问 COS 配置页与接口管理 |
 
 
@@ -288,6 +290,41 @@
 - 文生图 / 图编辑、局部重绘共用右侧图片结果区
 - 提示词反推结果在当前 tab 内展示，不复用右侧图片区
 - 当不同 tab 激活时，空状态文案会根据模式变化
+
+## 5.6 无限画布
+
+### 入口与权限
+
+- 路由入口：`/canvas`
+- 工作台路由：`/canvas/:projectId`
+- `projectId` 为 16 位字母数字公开 ID，不使用数据库自增主键作为 URL
+- 当前处于内部测试阶段，顶部菜单仅对已登录的管理员、超级管理员和白名单用户显示
+- 从工作台返回画布列表时，不自动跳回单个画布；直接访问 `/canvas` 且仅有一个画布时可自动进入该画布工作台
+
+### 画布项目
+
+- 每个用户可创建多个画布项目
+- 画布列表展示画布名称、节点数量、最近预览图和更新时间
+- 工作台左上角使用下拉按钮展示当前画布，可切换、重命名、新建画布
+- 每个画布保存独立视口位置和缩放比例
+
+### 节点能力
+
+- 任务节点：由画布内生图任务生成，展示任务状态、生成图、失败信息、任务操作工具栏
+- 文本节点：可作为自由创意备注，支持编辑、生成图片、删除
+- 图片节点：支持本地上传，按真实宽高比展示，支持作为参考图继续编辑
+- 节点支持拖拽、缩放、删除、双击预览或编辑
+- 支持搜索节点并聚焦到 100% 缩放位置
+- 支持一键整理，将文本节点、上传图片节点、任务节点分组横向排布
+
+### 画布内生图
+
+- 底部配置卡片支持文生图和图编辑模式，默认图编辑
+- 图编辑参考图可本地上传、拖拽上传，也可从画布已有图片中多选
+- 参考图数量遵循当前模型 `max_reference_images` 限制
+- 生成按钮展示预计消耗积分，点击剩余积分可打开购买积分弹窗
+- 画布任务复用普通生图任务链路，统一进行积分扣减、积分不足提示、单用户与全局并发限制、任务入队失败退款
+- 画布任务写入 `tasks.canvas_id`，历史/Board 默认预览不展示画布专属任务
 
 ---
 
@@ -564,12 +601,67 @@ CREATE TABLE tasks (
   reference_images TEXT DEFAULT '',          -- JSON array
   source_image VARCHAR(500) DEFAULT '',
   mask_image VARCHAR(500) DEFAULT '',
+  canvas_id INTEGER,                         -- 关联无限画布；为空表示普通任务
   status VARCHAR(20) DEFAULT 'pending',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 ```
+
+## 10.2.1 用户画布表（user_canvas）
+
+```sql
+CREATE TABLE user_canvas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id VARCHAR(16) NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL,
+  name VARCHAR(100) NOT NULL DEFAULT '',
+  viewport_x DOUBLE NOT NULL DEFAULT 0,
+  viewport_y DOUBLE NOT NULL DEFAULT 0,
+  zoom DOUBLE NOT NULL DEFAULT 1,
+  is_deleted BOOLEAN NOT NULL DEFAULT 0,
+  deleted_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+说明：
+
+- `project_id` 用于 `/canvas/:projectId` 路由，避免暴露内部自增主键。
+- `viewport_x`、`viewport_y`、`zoom` 保存用户在该画布中的视口状态。
+- 删除画布时使用逻辑删除，便于后续审计和恢复策略扩展。
+
+## 10.2.2 画布节点表（canvas_nodes）
+
+```sql
+CREATE TABLE canvas_nodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  canvas_id INTEGER NOT NULL,
+  task_id INTEGER,
+  node_type VARCHAR(20) NOT NULL DEFAULT 'task',
+  content VARCHAR(5000) NOT NULL DEFAULT '',
+  image_url VARCHAR(1000) NOT NULL DEFAULT '',
+  x DOUBLE NOT NULL DEFAULT 0,
+  y DOUBLE NOT NULL DEFAULT 0,
+  width DOUBLE NOT NULL DEFAULT 320,
+  height DOUBLE NOT NULL DEFAULT 420,
+  z_index INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (canvas_id) REFERENCES user_canvas(id),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+```
+
+说明：
+
+- `node_type='task'` 表示任务节点，`task_id` 必填。
+- `node_type='text'` 表示自由文本节点，内容写入 `content`。
+- `node_type='image'` 表示上传图片节点，图片地址写入 `image_url`。
+- 节点位置、尺寸、层级由前端工作台写回，支持批量更新。
 
 ## 10.3 图片结果表（images）
 
@@ -737,7 +829,6 @@ CREATE TABLE external_api_scene_bindings (
 | POST | `/api/tasks`     | 用户  | 创建生图 / 局部重绘任务 |
 | GET  | `/api/tasks/:id` | 用户  | 查询任务结果        |
 
-
 ### 创建任务请求示例
 
 ```json
@@ -765,6 +856,26 @@ CREATE TABLE external_api_scene_bindings (
   "mask_image": "/uploads/mask.png"
 }
 ```
+
+## 11.2.1 无限画布接口
+
+| 方法     | 路径                                      | 权限 | 说明                         |
+| ------ | ----------------------------------------- | ---- | ---------------------------- |
+| GET    | `/api/canvases`                           | 用户 | 获取当前用户画布列表         |
+| POST   | `/api/canvases`                           | 用户 | 新建画布                     |
+| GET    | `/api/canvases/:projectId`                | 用户 | 获取画布详情和节点           |
+| PATCH  | `/api/canvases/:projectId`                | 用户 | 更新画布名称或视口           |
+| POST   | `/api/canvases/:projectId/tasks`          | 用户 | 在画布中创建生图任务         |
+| POST   | `/api/canvases/:projectId/nodes`          | 用户 | 创建自由文本或上传图片节点   |
+| PATCH  | `/api/canvases/:projectId/nodes/:nodeId`  | 用户 | 更新单个节点位置、尺寸或内容 |
+| PATCH  | `/api/canvases/:projectId/nodes/batch`    | 用户 | 批量更新节点位置、尺寸、层级 |
+| DELETE | `/api/canvases/:projectId/nodes/:nodeId`  | 用户 | 删除自由节点                 |
+
+说明：
+
+- `projectId` 对应 `user_canvas.project_id`，不是内部自增 ID。
+- 画布内创建任务复用 `/api/tasks` 的积分扣减、并发限制、任务分发和失败退款逻辑。
+- 画布任务通过 `tasks.canvas_id` 与画布关联，默认不进入普通 Board 预览。
 
 ## 11.3 提示词反推
 
@@ -875,6 +986,7 @@ CREATE TABLE external_api_scene_bindings (
 - 菜单：
   - 创意模版
   - 自定义绘图
+  - 无限画布（内部测试，仅管理员、超级管理员、白名单用户可见）
   - 历史记录
 - 已登录：
   - 左侧显示积分余额
@@ -908,7 +1020,18 @@ CREATE TABLE external_api_scene_bindings (
 
 上传图片、开始生成、开始反推等动作均要求已登录；未登录或会话失效会直接弹登录框。
 
-## 12.4 历史记录页
+## 12.4 无限画布页
+
+- `/canvas` 展示画布列表，支持新建、重命名、删除/隐藏、点击进入工作台
+- `/canvas/:projectId` 为独立工作台，隐藏顶部主菜单，右上角展示剩余积分和返回画布列表入口
+- 左上角画布名称使用下拉按钮展示，可切换其他画布、重命名当前画布或新建画布
+- 工作台支持鼠标滚轮缩放、拖拽平移、节点拖动、节点缩放、双击预览图片或编辑文本
+- 底部配置卡片支持文生图/图编辑切换、参考图上传/画布选择、模型/比例/分辨率/数量配置
+- 点击画布空白处时，若配置卡片没有提示词或参考图则自动收起；存在草稿内容时保持展开
+- 左侧工具栏提供自由节点、搜索节点、历史任务入口；当前自由节点和搜索节点已实现
+- 右上角剩余积分按钮可打开购买积分弹窗
+
+## 12.5 历史记录页
 
 - 支持查看、删除、重新编辑
 - 支持按生图 / 局部重绘分类筛选
@@ -921,20 +1044,20 @@ CREATE TABLE external_api_scene_bindings (
 - 删除操作按单张结果图执行，而不是整任务
 - 局部重绘历史重新编辑会直接进入局部重绘模式
 
-## 12.5 配置管理页
+## 12.6 配置管理页
 
 - Gemini API Key
 - Tongyi API Key
 - 联系二维码上传与预览
 
-## 12.6 COS 配置页
+## 12.7 COS 配置页
 
 - 仅超级管理员可访问
 - 独立菜单入口，不与普通配置管理页混用
 - 包含 `SecretId`、`SecretKey`、`Bucket`、`Region`、可选访问域名
 - 支持保存与清空
 
-## 12.7 接口管理页
+## 12.8 接口管理页
 
 - 仅超级管理员可访问
 - 分为“接口配置”和“场景绑定”两个区域

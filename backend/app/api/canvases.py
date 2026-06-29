@@ -1,0 +1,263 @@
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.database import get_db
+from app.models.user import User
+from app.schemas.canvas import (
+    CanvasCreate,
+    CanvasDetail,
+    CanvasFreeNodeCreate,
+    CanvasListResponse,
+    CanvasNodeBatchUpdate,
+    CanvasNodeBatchUpdateResponse,
+    CanvasNodeOut,
+    CanvasNodeUpdate,
+    CanvasSummary,
+    CanvasTaskCreate,
+    CanvasTaskCreateResponse,
+    CanvasUpdate,
+    CanvasViewportUpdate,
+)
+from app.services.business_id_service import task_external_id, user_external_id
+from app.services.canvas_service import (
+    create_canvas_generation_tasks,
+    create_canvas_free_node,
+    create_user_canvas,
+    delete_canvas_node,
+    delete_user_canvas,
+    get_canvas_detail,
+    list_user_canvases,
+    update_canvas_node,
+    update_canvas_nodes_batch,
+    update_canvas_viewport,
+    update_user_canvas,
+)
+from app.services.external_api_config_service import (
+    SCENE_INPAINT,
+    get_default_generation_model_key,
+    require_scene_config,
+)
+from app.services.task_service import (
+    mark_tasks_dispatched,
+    mark_tasks_enqueue_failed,
+    mark_tasks_queued,
+)
+
+router = APIRouter(prefix="/api/canvases", tags=["无限画布"])
+canvas_logger = logging.getLogger("app.canvas")
+
+
+@router.get("", response_model=CanvasListResponse)
+def list_canvases(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_user_canvases(db, user.id)
+
+
+@router.post("", response_model=CanvasSummary, status_code=status.HTTP_201_CREATED)
+def create_canvas(
+    body: CanvasCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_user_canvas(db, user.id, body.name)
+
+
+@router.get("/{project_id}", response_model=CanvasDetail)
+def get_canvas(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_canvas_detail(db, user.id, project_id, allow_admin_read=user.role in {"admin", "superadmin"})
+
+
+@router.patch("/{project_id}", response_model=CanvasSummary)
+def update_canvas(
+    project_id: str,
+    body: CanvasUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_user_canvas(
+        db,
+        user.id,
+        project_id,
+        name=body.name,
+        viewport_x=body.viewport_x,
+        viewport_y=body.viewport_y,
+        zoom=body.zoom,
+    )
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_canvas(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    delete_user_canvas(db, user.id, project_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{project_id}/viewport", response_model=CanvasSummary)
+def update_viewport(
+    project_id: str,
+    body: CanvasViewportUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_canvas_viewport(
+        db,
+        user.id,
+        project_id,
+        viewport_x=body.viewport_x,
+        viewport_y=body.viewport_y,
+        zoom=body.zoom,
+    )
+
+
+@router.patch("/{project_id}/nodes/batch", response_model=CanvasNodeBatchUpdateResponse)
+def update_nodes_batch(
+    project_id: str,
+    body: CanvasNodeBatchUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_canvas_nodes_batch(db, user.id, project_id, updates=body.nodes)
+
+
+@router.patch("/{project_id}/nodes/{node_id}", response_model=CanvasNodeOut)
+def update_node(
+    project_id: str,
+    node_id: int,
+    body: CanvasNodeUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_canvas_node(
+        db,
+        user.id,
+        project_id,
+        node_id,
+        x=body.x,
+        y=body.y,
+        width=body.width,
+        height=body.height,
+        z_index=body.z_index,
+        content=body.content,
+    )
+
+
+@router.delete("/{project_id}/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_node(
+    project_id: str,
+    node_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    delete_canvas_node(db, user.id, project_id, node_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{project_id}/nodes", response_model=CanvasNodeOut, status_code=status.HTTP_201_CREATED)
+def create_free_node(
+    project_id: str,
+    body: CanvasFreeNodeCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_canvas_free_node(
+        db,
+        user.id,
+        project_id,
+        node_type=body.node_type,
+        content=body.content,
+        image_url=body.image_url,
+        x=body.x,
+        y=body.y,
+        width=body.width,
+        height=body.height,
+    )
+
+
+@router.post("/{project_id}/tasks", response_model=CanvasTaskCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_canvas_task(
+    project_id: str,
+    body: CanvasTaskCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.mode == "inpaint":
+        require_scene_config(db, SCENE_INPAINT)
+        task_model = SCENE_INPAINT
+        resolved_resolution = body.resolution
+    else:
+        task_model = body.model.strip() or get_default_generation_model_key(db)
+        require_scene_config(db, task_model)
+        resolved_resolution = "" if task_model == "banana" else body.resolution
+
+    try:
+        from app.workers.generation import dispatch_generation_task, get_generation_dispatch_mode
+
+        dispatch_mode = get_generation_dispatch_mode()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    tasks, nodes = create_canvas_generation_tasks(
+        db,
+        user.id,
+        project_id,
+        model=task_model,
+        source=body.source,
+        mode=body.mode,
+        prompt=body.prompt,
+        num_images=body.num_images,
+        size=body.size,
+        resolution=resolved_resolution,
+        custom_size=body.custom_size,
+        reference_images=body.reference_images,
+        source_image=body.source_image,
+        mask_image=body.mask_image,
+        x=body.x,
+        y=body.y,
+        width=body.width,
+        height=body.height,
+    )
+
+    dispatched_task_ids: list[int] = []
+    try:
+        for task in tasks:
+            actual_dispatch_mode = dispatch_generation_task(task.id)
+            dispatched_task_ids.append(task.id)
+            canvas_logger.info(
+                "canvas task dispatched",
+                extra={
+                    "event": "canvas.task.dispatch.sent",
+                    "user_id": user_external_id(user),
+                    "project_id": project_id,
+                    "task_id": task_external_id(task),
+                    "dispatch_mode": actual_dispatch_mode,
+                },
+            )
+        mark_tasks_dispatched(db, dispatched_task_ids)
+        if dispatch_mode == "celery":
+            mark_tasks_queued(db, dispatched_task_ids)
+    except Exception as exc:
+        failed_task_ids = [task.id for task in tasks if task.id not in set(dispatched_task_ids)]
+        mark_tasks_enqueue_failed(db, failed_task_ids, error_message=str(exc))
+        if not dispatched_task_ids:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="任务队列暂不可用，请稍后重试",
+            ) from exc
+
+    task_ids = [task_external_id(task) for task in tasks]
+    return CanvasTaskCreateResponse(task_id=task_ids[0] if task_ids else None, task_ids=task_ids, nodes=nodes)

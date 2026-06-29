@@ -274,6 +274,7 @@ def create_tasks(
     source_image: str = "",
     mask_image: str = "",
     board_id: int | None = None,
+    canvas_id: int | None = None,
 ) -> list[Task]:
     mode, num_images = _validate_task_create_payload(
         mode=mode,
@@ -364,7 +365,8 @@ def create_tasks(
         normalized_custom_size = custom_size.strip()
         normalized_source_image = source_image.strip()
         normalized_mask_image = mask_image.strip()
-        normalized_board_id = validate_user_board_id(db, user_id, board_id)
+        normalized_canvas_id = int(canvas_id) if canvas_id is not None else None
+        normalized_board_id = None if normalized_canvas_id is not None else validate_user_board_id(db, user_id, board_id)
         credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
         if normalized_source == "api":
             credit_log_description = f"API {credit_log_description}"
@@ -373,6 +375,7 @@ def create_tasks(
             task = Task(
                 user_id=user_id,
                 board_id=normalized_board_id,
+                canvas_id=normalized_canvas_id,
                 model=normalized_model,
                 source=normalized_source,
                 mode=mode,

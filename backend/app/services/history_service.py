@@ -260,6 +260,7 @@ def get_user_history(
         .options(selectinload(Image.task).selectinload(Task.images))
         .filter(Task.user_id == user_id)
         .filter(Task.is_deleted.is_(False))
+        .filter(Task.canvas_id.is_(None))
         .filter(Image.is_deleted.is_(False))
     )
     prompt_reverse_query = None

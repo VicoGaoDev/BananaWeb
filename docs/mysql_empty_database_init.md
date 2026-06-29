@@ -69,6 +69,7 @@
 - `reference_images`: 参考图列表，JSON 字符串形式存储。
 - `source_image`: 图编辑原图地址。
 - `mask_image`: 图编辑蒙版地址。
+- `canvas_id`: 所属无限画布内部 ID；为空表示普通生图/历史任务。
 - `credit_cost`: 单任务积分消耗。
 - `status`: 任务状态，常见值为 `pending`、`queued`、`processing`、`success`、`failed`。
 - `error_message`: 失败原因或最近一次错误信息。
@@ -78,6 +79,30 @@
 - `request_started_at`: 任务首次真实发起第三方接口请求时间。
 - `request_finished_at`: 任务最近一次第三方接口请求返回时间。
 - `updated_at`: 任务最后一次状态更新时间；成功或失败后会更新。
+
+### `user_canvas`
+
+- `id`: 画布内部主键。
+- `project_id`: 16 位字母数字公开 ID，用于 `/canvas/:projectId` 路由，不对外暴露内部自增主键。
+- `user_id`: 画布归属用户。
+- `name`: 画布名称。
+- `viewport_x` / `viewport_y` / `zoom`: 用户最后保存的画布视口位置与缩放比例。
+- `is_deleted`: 是否逻辑删除。
+- `deleted_at`: 逻辑删除时间。
+- `created_at` / `updated_at`: 创建时间、最后更新时间。
+
+### `canvas_nodes`
+
+- `id`: 节点内部主键。
+- `canvas_id`: 所属画布。
+- `task_id`: 关联任务；任务节点有值，自由文本节点和上传图片节点为空。
+- `node_type`: 节点类型，当前常见为 `task`、`text`、`image`。
+- `content`: 文本节点内容。
+- `image_url`: 上传图片节点地址。
+- `x` / `y`: 节点在画布世界坐标中的位置。
+- `width` / `height`: 节点尺寸。
+- `z_index`: 节点层级。
+- `created_at` / `updated_at`: 创建时间、最后更新时间。
 
 ### `images`
 
@@ -495,6 +520,26 @@ CREATE TABLE user_credits (
   CONSTRAINT fk_user_credits_user FOREIGN KEY (user_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE user_canvas (
+  id INT NOT NULL AUTO_INCREMENT,
+  project_id VARCHAR(16) NOT NULL,
+  user_id INT NOT NULL,
+  name VARCHAR(100) NOT NULL DEFAULT '',
+  viewport_x DOUBLE NOT NULL DEFAULT 0,
+  viewport_y DOUBLE NOT NULL DEFAULT 0,
+  zoom DOUBLE NOT NULL DEFAULT 1,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY idx_user_canvas_project_id (project_id),
+  KEY idx_user_canvas_user_id (user_id),
+  KEY idx_user_canvas_user_updated_at (user_id, updated_at),
+  KEY idx_user_canvas_user_deleted_updated (user_id, is_deleted, updated_at),
+  CONSTRAINT fk_user_canvas_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE external_api_scene_bindings (
   id INT NOT NULL AUTO_INCREMENT,
   scene_key VARCHAR(50) NOT NULL,
@@ -551,6 +596,7 @@ CREATE TABLE tasks (
   reference_images TEXT,
   source_image VARCHAR(500) DEFAULT '',
   mask_image VARCHAR(500) DEFAULT '',
+  canvas_id INT DEFAULT NULL,
   credit_cost INT NOT NULL DEFAULT 0,
   status VARCHAR(20) DEFAULT 'pending',
   error_message TEXT,
@@ -562,7 +608,32 @@ CREATE TABLE tasks (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_tasks_business_id (business_id),
-  CONSTRAINT fk_tasks_user FOREIGN KEY (user_id) REFERENCES users (id)
+  KEY idx_tasks_canvas_id (canvas_id),
+  KEY idx_tasks_user_canvas_deleted_created (user_id, canvas_id, is_deleted, created_at),
+  CONSTRAINT fk_tasks_user FOREIGN KEY (user_id) REFERENCES users (id),
+  CONSTRAINT fk_tasks_canvas FOREIGN KEY (canvas_id) REFERENCES user_canvas (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE canvas_nodes (
+  id INT NOT NULL AUTO_INCREMENT,
+  canvas_id INT NOT NULL,
+  task_id INT DEFAULT NULL,
+  node_type VARCHAR(20) NOT NULL DEFAULT 'task',
+  content VARCHAR(5000) NOT NULL DEFAULT '',
+  image_url VARCHAR(1000) NOT NULL DEFAULT '',
+  x DOUBLE NOT NULL DEFAULT 0,
+  y DOUBLE NOT NULL DEFAULT 0,
+  width DOUBLE NOT NULL DEFAULT 320,
+  height DOUBLE NOT NULL DEFAULT 420,
+  z_index INT NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_canvas_nodes_canvas_id (canvas_id),
+  KEY idx_canvas_nodes_canvas_z (canvas_id, z_index),
+  KEY idx_canvas_nodes_task_id (task_id),
+  CONSTRAINT fk_canvas_nodes_canvas FOREIGN KEY (canvas_id) REFERENCES user_canvas (id),
+  CONSTRAINT fk_canvas_nodes_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE template_tag_relations (

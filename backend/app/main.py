@@ -114,6 +114,7 @@ def _run_startup_schema_sync():
     _ensure_system_message_schema()
     _ensure_history_pin_schema()
     _ensure_user_board_schema()
+    _ensure_user_canvas_schema()
     if settings.should_run_schema_compat:
         _ensure_schema_compat()
     _backfill_task_credit_costs()
@@ -1536,6 +1537,120 @@ def _ensure_user_board_schema():
             conn.execute(text("CREATE INDEX idx_tasks_user_board_deleted_created ON tasks (user_id, board_id, is_deleted, created_at)"))
 
 
+def _ensure_user_canvas_schema():
+    from app.models.user_canvas import generate_canvas_project_id
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "users" not in table_names:
+        return
+    if "user_canvas" not in table_names:
+        from app.models.user_canvas import UserCanvas
+
+        UserCanvas.__table__.create(bind=engine)
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+
+    canvas_columns = {col["name"] for col in inspector.get_columns("user_canvas")}
+    canvas_index_defs = inspector.get_indexes("user_canvas")
+    canvas_indexes = {index["name"] for index in canvas_index_defs}
+    has_canvas_project_id_index = any(index.get("column_names") == ["project_id"] for index in canvas_index_defs)
+    with engine.begin() as conn:
+        if "project_id" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN project_id VARCHAR(16) NULL"))
+        if "name" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN name VARCHAR(100) NOT NULL DEFAULT ''"))
+        if "viewport_x" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN viewport_x DOUBLE NOT NULL DEFAULT 0"))
+        if "viewport_y" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN viewport_y DOUBLE NOT NULL DEFAULT 0"))
+        if "zoom" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN zoom DOUBLE NOT NULL DEFAULT 1"))
+        if "is_deleted" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"))
+        if "deleted_at" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN deleted_at DATETIME NULL"))
+        if "created_at" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in canvas_columns:
+            conn.execute(text("ALTER TABLE user_canvas ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        existing_project_ids = {
+            str(row[0])
+            for row in conn.execute(text("SELECT project_id FROM user_canvas WHERE project_id IS NOT NULL AND project_id != ''")).fetchall()
+        }
+        rows_missing_project_id = conn.execute(text("SELECT id FROM user_canvas WHERE project_id IS NULL OR project_id = ''")).fetchall()
+        for row in rows_missing_project_id:
+            project_id = generate_canvas_project_id()
+            while project_id in existing_project_ids:
+                project_id = generate_canvas_project_id()
+            existing_project_ids.add(project_id)
+            conn.execute(text("UPDATE user_canvas SET project_id = :project_id WHERE id = :id"), {"project_id": project_id, "id": row[0]})
+        if not has_canvas_project_id_index and "idx_user_canvas_project_id" not in canvas_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX idx_user_canvas_project_id ON user_canvas (project_id)"))
+        if "idx_user_canvas_user_updated_at" not in canvas_indexes:
+            conn.execute(text("CREATE INDEX idx_user_canvas_user_updated_at ON user_canvas (user_id, updated_at)"))
+        if "idx_user_canvas_user_deleted_updated" not in canvas_indexes:
+            conn.execute(text("CREATE INDEX idx_user_canvas_user_deleted_updated ON user_canvas (user_id, is_deleted, updated_at)"))
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "tasks" in table_names:
+        task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+        task_indexes = {index["name"] for index in inspector.get_indexes("tasks")}
+        with engine.begin() as conn:
+            if "canvas_id" not in task_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN canvas_id INTEGER NULL"))
+            if "idx_tasks_canvas_id" not in task_indexes:
+                conn.execute(text("CREATE INDEX idx_tasks_canvas_id ON tasks (canvas_id)"))
+            if "idx_tasks_user_canvas_deleted_created" not in task_indexes:
+                conn.execute(text("CREATE INDEX idx_tasks_user_canvas_deleted_created ON tasks (user_id, canvas_id, is_deleted, created_at)"))
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "canvas_nodes" not in table_names:
+        from app.models.canvas_node import CanvasNode
+
+        CanvasNode.__table__.create(bind=engine)
+        inspector = inspect(engine)
+
+    node_columns = {col["name"] for col in inspector.get_columns("canvas_nodes")}
+    node_indexes = {index["name"] for index in inspector.get_indexes("canvas_nodes")}
+    with engine.begin() as conn:
+        if "canvas_id" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN canvas_id INTEGER NOT NULL"))
+        if "task_id" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN task_id INTEGER NULL"))
+        else:
+            try:
+                conn.execute(text("ALTER TABLE canvas_nodes MODIFY task_id INTEGER NULL"))
+            except Exception:
+                pass
+        if "node_type" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN node_type VARCHAR(20) NOT NULL DEFAULT 'task'"))
+        if "content" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN content VARCHAR(5000) NOT NULL DEFAULT ''"))
+        if "image_url" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN image_url VARCHAR(1000) NOT NULL DEFAULT ''"))
+        if "x" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN x DOUBLE NOT NULL DEFAULT 0"))
+        if "y" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN y DOUBLE NOT NULL DEFAULT 0"))
+        if "width" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN width DOUBLE NOT NULL DEFAULT 320"))
+        if "height" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN height DOUBLE NOT NULL DEFAULT 420"))
+        if "z_index" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN z_index INTEGER NOT NULL DEFAULT 1"))
+        if "created_at" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in node_columns:
+            conn.execute(text("ALTER TABLE canvas_nodes ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "idx_canvas_nodes_canvas_z" not in node_indexes:
+            conn.execute(text("CREATE INDEX idx_canvas_nodes_canvas_z ON canvas_nodes (canvas_id, z_index)"))
+        if "idx_canvas_nodes_task_id" not in node_indexes:
+            conn.execute(text("CREATE INDEX idx_canvas_nodes_task_id ON canvas_nodes (task_id)"))
+
+
 def _backfill_task_credit_costs():
     from app.database import SessionLocal
     from app.models.task import Task
@@ -1645,11 +1760,12 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, boards, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, feedback, system_messages, user_api_keys, payment  # noqa: E402
+from app.api import auth, boards, canvases, tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, feedback, system_messages, user_api_keys, payment  # noqa: E402
 app.include_router(auth.router)
 app.include_router(user_api_keys.router)
 app.include_router(templates.router)
 app.include_router(boards.router)
+app.include_router(canvases.router)
 app.include_router(tasks.router)
 app.include_router(images.router)
 app.include_router(history.router)

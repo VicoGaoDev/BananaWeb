@@ -26,5 +26,9 @@
 ## 基线说明
 
 - `2026-06-18-001__manual-schema-migration-baseline.sql` 作为切换到手工迁移流程的基线记录。
-- 最近几次代码提交未引入新的数据库结构变更，因此该基线脚本不包含实际 DDL。
+- 无限画布相关迁移按以下顺序执行：
+  - `2026-06-26-001__add-user-canvas.sql`：新增 `user_canvas`、`canvas_nodes`，并为 `tasks` 增加 `canvas_id`。
+  - `2026-06-29-001__add-canvas-project-id.sql`：为画布增加 16 位公开 `project_id`，用于 `/canvas/:projectId` 路由。
+  - `2026-06-29-002__add-canvas-free-nodes.sql`：支持自由文本节点和上传图片节点，使 `canvas_nodes.task_id` 可为空并增加 `node_type`、`content`、`image_url`。
+- `2026-06-29-003__production-canvas-rollup.sql` 是生产上线便捷汇总脚本，包含以上三份无限画布迁移的最终结构；如果生产尚未执行 001/002，可直接执行该汇总脚本。不要在同一环境中既执行 001/002 又重复执行 003。
 - 若后续需要把更早历史的自动修复逻辑完全回填为迁移脚本，可继续在本目录补充更细化的历史脚本说明。

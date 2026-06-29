@@ -52,6 +52,7 @@ def _build_preview_map(db: Session, user_id: int, board_ids: list[int | None]) -
         .filter(
             Task.user_id == user_id,
             Task.is_deleted.is_(False),
+            Task.canvas_id.is_(None),
             Image.is_deleted.is_(False),
             Image.status == "success",
             or_(Image.image_url != "", Image.preview_url != ""),
@@ -99,6 +100,7 @@ def list_user_boards(
             .filter(
                 Task.user_id == user_id,
                 Task.is_deleted.is_(False),
+                Task.canvas_id.is_(None),
                 Image.is_deleted.is_(False),
             )
             .group_by(Task.board_id)

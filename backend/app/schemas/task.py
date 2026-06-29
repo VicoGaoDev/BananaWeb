@@ -38,6 +38,7 @@ class ImageOut(BaseModel):
 
 class TaskOut(BaseModel):
     id: str
+    canvas_id: int | None = None
     mode: str = "generate"
     model: str = ""
     source: Literal["web", "app", "api"] = "web"
@@ -46,6 +47,12 @@ class TaskOut(BaseModel):
     size: str
     resolution: str = ""
     custom_size: str = ""
+    reference_images: list[str] = []
+    reference_image_thumbs: list[str] = []
+    source_image: str = ""
+    source_image_thumb: str = ""
+    mask_image: str = ""
+    mask_image_thumb: str = ""
     credit_cost: int = 0
     credit_refunded: bool = False
     status: str

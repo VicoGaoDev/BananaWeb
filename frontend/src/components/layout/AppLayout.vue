@@ -66,38 +66,41 @@ const auth = useAuthStore();
 const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const hideTopMenu = computed(() => route.meta.hideTopMenu === true);
+const isWorkbenchLayout = computed(() => route.meta.workbenchLayout === true);
 const mobileDrawerOpen = ref(false);
 const routeTransitionName = ref("route-page-forward");
 const canManagePromoCodes = computed(() => auth.user?.is_whitelisted === true);
+const canAccessCanvasMenu = computed(() => auth.isLoggedIn && (auth.isAdmin || auth.user?.is_whitelisted === true));
 
 const routeOrder = new Map<string, number>([
   ["/", 0],
   ["/templates", 1],
   ["/generate", 2],
-  ["/history", 3],
-  ["/profile", 4],
-  ["/api-keys", 5],
-  ["/system-messages", 6],
-  ["/system-messages/:messageId", 7],
-  ["/settings", 8],
-  ["/credit-logs", 9],
-  ["/promo-codes", 10],
-  ["/feedbacks", 11],
-  ["/feedbacks/:feedbackId", 12],
-  ["/admin/templates", 13],
-  ["/admin/users", 14],
-  ["/admin/user-tasks", 15],
-  ["/admin/dashboard", 16],
-  ["/admin/error-analytics", 17],
-  ["/admin/general-settings", 18],
-  ["/admin/redeem-keys", 19],
-  ["/admin/revenue", 20],
-  ["/admin/payment-orders", 21],
-  ["/admin/feedbacks", 22],
-  ["/admin/feedbacks/:feedbackId", 23],
-  ["/admin/system-messages", 24],
-  ["/admin/cos-config", 25],
-  ["/admin/external-api-configs", 26],
+  ["/canvas", 3],
+  ["/history", 4],
+  ["/profile", 5],
+  ["/api-keys", 6],
+  ["/system-messages", 7],
+  ["/system-messages/:messageId", 8],
+  ["/settings", 9],
+  ["/credit-logs", 10],
+  ["/promo-codes", 11],
+  ["/feedbacks", 12],
+  ["/feedbacks/:feedbackId", 13],
+  ["/admin/templates", 14],
+  ["/admin/users", 15],
+  ["/admin/user-tasks", 16],
+  ["/admin/dashboard", 17],
+  ["/admin/error-analytics", 18],
+  ["/admin/general-settings", 19],
+  ["/admin/redeem-keys", 20],
+  ["/admin/revenue", 21],
+  ["/admin/payment-orders", 22],
+  ["/admin/feedbacks", 23],
+  ["/admin/feedbacks/:feedbackId", 24],
+  ["/admin/system-messages", 25],
+  ["/admin/cos-config", 26],
+  ["/admin/external-api-configs", 27],
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
@@ -114,13 +117,21 @@ const UNRESOLVED_FEEDBACK_NOTIFICATION_KEY = "global-admin-unresolved-feedback";
 const USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY = "global-user-unread-system-message";
 const notifiedUnreadSystemMessageIdsByUser = new Map<string, Set<string>>();
 
-const primaryMenuItems = [
+type PrimaryMenuItem = {
+  key: string;
+  label: string;
+  iconSrc: string;
+  darkIconSrc?: string;
+};
+
+const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
   { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), darkIconSrc: withBaseUrl("nav-templates-mono.svg") },
   { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg") },
+  ...(canAccessCanvasMenu.value ? [{ key: "canvas", label: "无限画布", iconSrc: withBaseUrl("nav-canvas.svg") }] : []),
   { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), darkIconSrc: withBaseUrl("nav-history-mono.svg") },
-];
+]);
 
-function getPrimaryMenuIconSrc(item: (typeof primaryMenuItems)[number]) {
+function getPrimaryMenuIconSrc(item: PrimaryMenuItem) {
   if (currentTheme.value !== "warm" && item.darkIconSrc) {
     return item.darkIconSrc;
   }
@@ -193,6 +204,7 @@ function getRouteRank(path: string) {
   if (path.startsWith("/feedbacks/")) return routeOrder.get("/feedbacks/:feedbackId") ?? 0;
   if (path.startsWith("/system-messages/")) return routeOrder.get("/system-messages/:messageId") ?? 0;
   if (path.startsWith("/admin/feedbacks/")) return routeOrder.get("/admin/feedbacks/:feedbackId") ?? 0;
+  if (path.startsWith("/canvas")) return routeOrder.get("/canvas") ?? 0;
   if (path.startsWith("/history")) return routeOrder.get("/history") ?? 0;
   return routeOrder.get(path) ?? 0;
 }
@@ -202,6 +214,7 @@ const selectedKeys = computed(() => {
   if (p.startsWith("/admin")) return ["admin"];
   if (p === "/") return [];
   if (p === "/templates") return ["templates"];
+  if (p.startsWith("/canvas")) return ["canvas"];
   if (p === "/batch-generate") return ["batch-generate"];
   if (p.startsWith("/history")) return ["history"];
   if (
@@ -245,6 +258,13 @@ function handleMenuClick({ key }: { key: string }) {
   mobileDrawerOpen.value = false;
   if (key === "templates") router.push("/templates");
   else if (key === "generate") router.push("/generate");
+  else if (key === "canvas") {
+    if (!auth.isLoggedIn) {
+      loginModalVisible.value = true;
+      return;
+    }
+    router.push("/canvas");
+  }
   else if (key === "history") {
     if (!auth.isLoggedIn) {
       loginModalVisible.value = true;
@@ -1084,7 +1104,9 @@ watch(purchaseDialogOpen, (open) => {
         </div>
 
         <a-menu
+          :key="primaryMenuItems.map((item) => item.key).join('-')"
           mode="horizontal"
+          :disabled-overflow="true"
           :selected-keys="selectedKeys"
           class="header-menu"
           @click="handleMenuClick"
@@ -1188,7 +1210,7 @@ watch(purchaseDialogOpen, (open) => {
       </div>
     </a-layout-header>
 
-    <a-layout-content class="app-content">
+    <a-layout-content class="app-content" :class="{ 'app-content-workbench': isWorkbenchLayout }">
       <div class="content-inner">
         <router-view v-slot="{ Component, route: currentRoute }">
           <transition :name="routeTransitionName" mode="out-in">
@@ -2889,6 +2911,19 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
       rgba(var(--theme-surface-strong-rgb), 0.46) 34%,
       rgba(var(--theme-page-base-rgb), 0) 100%
     );
+  }
+}
+
+.app-content-workbench {
+  padding: 0;
+
+  &::before {
+    display: none;
+  }
+
+  .content-inner,
+  .route-page-shell {
+    height: 100%;
   }
 }
 

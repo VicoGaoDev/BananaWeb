@@ -24,6 +24,19 @@ const router = createRouter({
           component: () => import("@/views/GenerateView.vue"),
         },
         {
+          path: "canvas",
+          name: "Canvas",
+          meta: { requiresAuth: true },
+          component: () => import("@/views/CanvasListView.vue"),
+        },
+        {
+          path: "canvas/:projectId",
+          name: "CanvasDetail",
+          meta: { requiresAuth: true, hideTopMenu: true, workbenchLayout: true },
+          component: () => import("@/views/CanvasView.vue"),
+          props: (route) => ({ projectId: String(route.params.projectId || "") }),
+        },
+        {
           path: "batch-generate",
           name: "BatchGenerate",
           component: () => import("@/views/BatchGenerateView.vue"),

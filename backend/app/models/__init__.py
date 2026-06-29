@@ -1,5 +1,7 @@
 from app.models.user import User
 from app.models.user_board import UserBoard
+from app.models.user_canvas import UserCanvas
+from app.models.canvas_node import CanvasNode
 from app.models.task import Task
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
@@ -24,6 +26,8 @@ from app.models.template_tag_relation import TemplateTagRelation
 __all__ = [
     "User",
     "UserBoard",
+    "UserCanvas",
+    "CanvasNode",
     "Task",
     "Image",
     "RegenerateLog",
