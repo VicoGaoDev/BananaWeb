@@ -5,6 +5,10 @@ import {
   PROMPT_INTERCEPTION_TIP_SECTIONS,
   PROMPT_INTERCEPTION_TIP_TITLE,
 } from "@/lib/promptInterceptionTip";
+
+function getBodyPopupContainer() {
+  return document.body;
+}
 </script>
 
 <template>
@@ -13,6 +17,7 @@ import {
     placement="bottomRight"
     overlay-class-name="prompt-interception-popover"
     class="prompt-interception-popover-trigger"
+    :get-popup-container="getBodyPopupContainer"
   >
     <template #content>
       <div class="prompt-interception-tip-panel">
@@ -82,6 +87,7 @@ import {
 
 <style lang="scss">
 .prompt-interception-popover {
+  z-index: 1300;
   max-width: calc(100vw - 40px);
 
   .ant-popover-inner {

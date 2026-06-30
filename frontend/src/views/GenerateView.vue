@@ -74,6 +74,10 @@ const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 const COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY = "user-completed-unread-feedback";
 
+function getBodyPopupContainer() {
+  return document.body;
+}
+
 function isInsufficientCreditsError(err: any) {
   const detail = String(err?.response?.data?.detail || err?.message || "");
   return detail.includes("积分不足");
@@ -2129,7 +2133,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <label>选择模型</label>
                     <div class="model-help-group">
                       <div class="model-help">
-                        <a-popover trigger="click" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <a-popover
+                          trigger="click"
+                          placement="bottomRight"
+                          overlay-class-name="model-help-popover"
+                          :get-popup-container="getBodyPopupContainer"
+                        >
                           <template #content>
                             <div class="model-help-tip batch-mode-tip">
                               <div class="batch-mode-tip-title">如何连续生成多张图？</div>
@@ -2151,7 +2160,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         </a-popover>
                       </div>
                       <div class="model-help">
-                        <a-popover trigger="click" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <a-popover
+                          trigger="click"
+                          placement="bottomRight"
+                          overlay-class-name="model-help-popover"
+                          :get-popup-container="getBodyPopupContainer"
+                        >
                           <template #content>
                             <div class="model-help-tip">
                               <div class="model-help-grid model-help-grid-head">
@@ -2353,7 +2367,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <label>选择模型</label>
                     <div class="model-help-group">
                       <div class="model-help">
-                        <a-popover trigger="click" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <a-popover
+                          trigger="click"
+                          placement="bottomRight"
+                          overlay-class-name="model-help-popover"
+                          :get-popup-container="getBodyPopupContainer"
+                        >
                           <template #content>
                             <div class="model-help-tip batch-mode-tip">
                               <div class="batch-mode-tip-title">如何连续生成多张图？</div>
@@ -2375,7 +2394,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         </a-popover>
                       </div>
                       <div class="model-help">
-                        <a-popover trigger="click" placement="bottomRight" overlay-class-name="model-help-popover">
+                        <a-popover
+                          trigger="click"
+                          placement="bottomRight"
+                          overlay-class-name="model-help-popover"
+                          :get-popup-container="getBodyPopupContainer"
+                        >
                           <template #content>
                             <div class="model-help-tip">
                               <div class="model-help-grid model-help-grid-head">
@@ -5765,6 +5789,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 }
 
 .model-help-popover {
+  z-index: 1300;
   max-width: calc(100vw - 40px);
 
   .ant-popover-inner {

@@ -52,6 +52,7 @@ import {
   UserOutlined,
   UserAddOutlined,
   ThunderboltOutlined,
+  ThunderboltFilled,
   MenuOutlined,
   MailOutlined,
   MessageOutlined,
@@ -1148,7 +1149,7 @@ watch(purchaseDialogOpen, (open) => {
         <div class="header-actions">
           <a-button type="text" class="top-link-btn" @click="openPurchaseEntry">
             <span class="purchase-credit-content">
-              <img src="/purchase-credits.svg" alt="" class="purchase-credit-icon" />
+              <ThunderboltFilled class="purchase-credit-icon" />
               <span>购买积分</span>
             </span>
           </a-button>
@@ -1262,16 +1263,21 @@ watch(purchaseDialogOpen, (open) => {
 
       <div class="canvas-side-nav-actions">
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openPurchaseEntry">
-          <img src="/purchase-credits.svg" alt="" class="nav-menu-icon" />
+          <ThunderboltFilled />
           <span>购买积分</span>
         </button>
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openRedeemEntry">
           <GiftOutlined />
           <span>兑换积分</span>
         </button>
+        <span class="canvas-side-nav-divider"></span>
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
           <MessageOutlined />
           <span>联系我们</span>
+        </button>
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
+          <TeamOutlined />
+          <span>业务合作</span>
         </button>
 
         <a-dropdown
@@ -1330,7 +1336,7 @@ watch(purchaseDialogOpen, (open) => {
       </div>
 
       <div class="canvas-side-nav-footer">
-        <button v-if="auth.isLoggedIn" type="button" class="canvas-side-credit-pill" title="积分明细" @click="goCreditLogs">
+        <button v-if="auth.isLoggedIn" type="button" class="canvas-side-credit-pill" title="购买积分" @click="openPurchaseEntry">
           <ThunderboltOutlined />
           <span>{{ auth.user?.credits ?? 0 }}</span>
         </button>
@@ -1360,7 +1366,7 @@ watch(purchaseDialogOpen, (open) => {
               <div class="canvas-side-user-menu-header">
                 <span class="canvas-side-user-menu-name">{{ auth.user?.username }}</span>
                 <span class="canvas-side-user-menu-role">
-                  {{ isSuperAdmin ? "超级管理员" : isAdmin ? "管理员" : "普通用户" }}
+                  {{ isSuperAdmin ? "超级管理员" : isAdmin ? "管理员" : "积分用户" }}
                 </span>
               </div>
               <a-menu-divider />
@@ -1478,7 +1484,7 @@ watch(purchaseDialogOpen, (open) => {
           <div class="mobile-drawer-credit-actions">
             <a-button block class="mobile-drawer-action-btn" @click="openPurchaseEntry">
               <span class="purchase-credit-content">
-                <img src="/purchase-credits.svg" alt="" class="purchase-credit-icon" />
+                <ThunderboltFilled class="purchase-credit-icon" />
                 <span>购买积分</span>
               </span>
             </a-button>
@@ -2125,7 +2131,12 @@ watch(purchaseDialogOpen, (open) => {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .header-menu {
@@ -2344,6 +2355,15 @@ watch(purchaseDialogOpen, (open) => {
 .canvas-side-nav-action {
   height: 58px;
   min-height: 58px;
+}
+
+.canvas-side-nav-divider {
+  width: 52px;
+  height: 1px;
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 2px 0;
+  background: var(--theme-header-border);
 }
 
 .canvas-side-nav-footer {
@@ -3654,6 +3674,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
     min-height: 54px;
   }
 
+  .canvas-side-nav-divider {
+    width: 48px;
+  }
+
   .canvas-side-nav-item .nav-menu-icon {
     width: 18px;
     height: 18px;
@@ -3795,7 +3819,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   max-width: 180px;
   overflow: hidden;
   color: var(--theme-title);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
