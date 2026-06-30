@@ -3099,6 +3099,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   animation: generate-page-enter var(--motion-duration-reveal-soft) ease both;
 }
 
+:global(.app-layout-desktop-side-nav) .generate-page {
+  min-height: calc(100dvh - 44px);
+  height: calc(100dvh - 44px);
+}
+
 @keyframes generate-page-enter {
   from {
     opacity: 0;

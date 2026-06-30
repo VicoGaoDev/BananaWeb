@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTick, watch } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTick, watch, type Component } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message, notification } from "ant-design-vue";
@@ -57,7 +57,10 @@ import {
   MessageOutlined,
   GiftOutlined,
   AccountBookOutlined,
+  AppstoreOutlined,
+  BulbOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -67,6 +70,8 @@ const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const hideTopMenu = computed(() => route.meta.hideTopMenu === true);
 const isWorkbenchLayout = computed(() => route.meta.workbenchLayout === true);
+const isCanvasRoute = computed(() => route.path.startsWith("/canvas"));
+const showDesktopSideNav = computed(() => !hideTopMenu.value || (isWorkbenchLayout.value && isCanvasRoute.value));
 const mobileDrawerOpen = ref(false);
 const routeTransitionName = ref("route-page-forward");
 const canManagePromoCodes = computed(() => auth.user?.is_whitelisted === true);
@@ -122,13 +127,14 @@ type PrimaryMenuItem = {
   label: string;
   iconSrc: string;
   darkIconSrc?: string;
+  icon?: Component;
 };
 
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
-  { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), darkIconSrc: withBaseUrl("nav-templates-mono.svg") },
-  { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg") },
+  { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), icon: AppstoreOutlined },
+  { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: BulbOutlined },
   ...(canAccessCanvasMenu.value ? [{ key: "canvas", label: "无限画布", iconSrc: withBaseUrl("nav-canvas.svg") }] : []),
-  { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), darkIconSrc: withBaseUrl("nav-history-mono.svg") },
+  { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), icon: ClockCircleOutlined },
 ]);
 
 function getPrimaryMenuIconSrc(item: PrimaryMenuItem) {
@@ -335,6 +341,7 @@ async function syncUserCompletedUnreadFeedbackCount() {
 
 async function syncUserUnreadSystemMessageCount(options?: { showToast?: boolean; forceToast?: boolean }) {
   if (!auth.isLoggedIn) return;
+  if (isCanvasRoute.value) return;
   try {
     const previous = userUnreadSystemMessageCount.value;
     const { count } = await getMyUnreadSystemMessageCount();
@@ -381,6 +388,7 @@ function resetUserUnreadSystemMessageNotificationState() {
 }
 
 function startSystemMessagePolling() {
+  if (isCanvasRoute.value) return;
   if (typeof window === "undefined" || systemMessagePollTimer) return;
   systemMessagePollTimer = window.setInterval(() => {
     void syncUserUnreadSystemMessageCount({ showToast: true });
@@ -922,6 +930,10 @@ function openPurchaseEntry() {
   purchaseDialogOpen.value = true;
 }
 
+function getDropdownPopupContainer() {
+  return document.body;
+}
+
 async function handlePurchaseCredits() {
   const selectedPlan = creditPurchasePlans.value.find((item) => item.key === selectedPurchasePlanKey.value);
   if (!selectedPlan) return;
@@ -998,6 +1010,21 @@ watch(
 );
 
 watch(
+  isCanvasRoute,
+  (inCanvas) => {
+    if (inCanvas) {
+      stopSystemMessagePolling();
+      notification.close(USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY);
+      return;
+    }
+    if (!auth.isLoggedIn) return;
+    void syncUserUnreadSystemMessageCount({ showToast: true });
+    startSystemMessagePolling();
+  },
+  { immediate: true }
+);
+
+watch(
   () => auth.isLoggedIn,
   (loggedIn) => {
     if (!loggedIn) {
@@ -1018,7 +1045,7 @@ watch(purchaseDialogOpen, (open) => {
 </script>
 
 <template>
-  <a-layout class="app-layout">
+  <a-layout class="app-layout" :class="{ 'app-layout-desktop-side-nav': showDesktopSideNav }">
     <a-layout-header v-if="!hideTopMenu" class="app-header">
       <div class="header-inner">
         <div class="header-brand-wrap">
@@ -1112,7 +1139,8 @@ watch(purchaseDialogOpen, (open) => {
           @click="handleMenuClick"
         >
           <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-            <img :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+            <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+            <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
             <span>{{ item.label }}</span>
           </a-menu-item>
         </a-menu>
@@ -1210,7 +1238,172 @@ watch(purchaseDialogOpen, (open) => {
       </div>
     </a-layout-header>
 
-    <a-layout-content class="app-content" :class="{ 'app-content-workbench': isWorkbenchLayout }">
+    <aside v-if="showDesktopSideNav" class="canvas-side-nav" aria-label="全局导航">
+      <div class="canvas-side-brand-wrap">
+        <button type="button" class="canvas-side-brand" title="返回首页" @click="router.push('/')">
+          <img src="/香蕉.svg" alt="80AI" class="brand-mark-image" />
+        </button>
+        <span class="canvas-side-brand-name">80AI</span>
+      </div>
+      <nav class="canvas-side-nav-menu">
+        <button
+          v-for="item in primaryMenuItems"
+          :key="item.key"
+          type="button"
+          class="canvas-side-nav-item"
+          :class="{ active: selectedKeys.includes(item.key) }"
+          @click="handleMenuClick({ key: item.key })"
+        >
+          <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+          <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+          <span>{{ item.label }}</span>
+        </button>
+      </nav>
+
+      <div class="canvas-side-nav-actions">
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openPurchaseEntry">
+          <img src="/purchase-credits.svg" alt="" class="nav-menu-icon" />
+          <span>购买积分</span>
+        </button>
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openRedeemEntry">
+          <GiftOutlined />
+          <span>兑换积分</span>
+        </button>
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
+          <MessageOutlined />
+          <span>联系我们</span>
+        </button>
+
+        <a-dropdown
+          v-if="auth.isLoggedIn && isAdmin"
+          :trigger="['hover']"
+          placement="rightBottom"
+          :auto-adjust-overflow="false"
+          :align="{ offset: [8, 0], overflow: { adjustX: false, adjustY: false } }"
+          :get-popup-container="getDropdownPopupContainer"
+          overlay-class-name="warm-dropdown"
+        >
+          <a-badge :count="adminUnresolvedFeedbackCount" :offset="[-2, 2]" :show-zero="false">
+            <button type="button" class="canvas-side-nav-item canvas-side-nav-action">
+              <SettingOutlined />
+              <span>后台管理</span>
+            </button>
+          </a-badge>
+          <template #overlay>
+            <a-menu :selected-keys="adminSelectedKeys" @click="handleAdminMenu">
+              <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
+                <component :is="item.icon" />
+                <span style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item v-for="item in adminMenuBusinessItems" :key="item.key">
+                <component :is="item.icon" />
+                <span style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item
+                v-for="item in adminMenuNoticeItems"
+                :key="item.key"
+                :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
+              >
+                <component :is="item.icon" />
+                <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
+                  <span>{{ item.label }}</span>
+                  <a-badge
+                    v-if="hasAdminUnresolvedFeedback"
+                    :count="adminUnresolvedFeedbackCount"
+                    :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
+                  />
+                </span>
+                <span v-else style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+              <template v-if="adminMenuConfigItems.length">
+                <a-menu-divider />
+                <a-menu-item v-for="item in adminMenuConfigItems" :key="item.key">
+                  <component :is="item.icon" />
+                  <span style="margin-left: 8px">{{ item.label }}</span>
+                </a-menu-item>
+              </template>
+            </a-menu>
+          </template>
+        </a-dropdown>
+      </div>
+
+      <div class="canvas-side-nav-footer">
+        <button v-if="auth.isLoggedIn" type="button" class="canvas-side-credit-pill" title="积分明细" @click="goCreditLogs">
+          <ThunderboltOutlined />
+          <span>{{ auth.user?.credits ?? 0 }}</span>
+        </button>
+
+        <a-dropdown
+          v-if="auth.isLoggedIn"
+          :trigger="['hover']"
+          placement="rightBottom"
+          :get-popup-container="getDropdownPopupContainer"
+          overlay-class-name="warm-dropdown"
+        >
+          <a-badge
+            dot
+            :offset="[-2, 6]"
+            :show-zero="false"
+            :count="hasUserUnreadNotice ? 1 : 0"
+            :dot-style="{ width: '12px', height: '12px', minWidth: '12px', boxShadow: '0 0 0 2px #fffdf8' }"
+          >
+            <button type="button" class="canvas-side-user-trigger" title="账户菜单">
+              <a-avatar :size="44" class="user-avatar" :src="avatarUrl || undefined">
+                {{ avatarFallback }}
+              </a-avatar>
+            </button>
+          </a-badge>
+          <template #overlay>
+            <a-menu @click="handleUserMenu">
+              <div class="canvas-side-user-menu-header">
+                <span class="canvas-side-user-menu-name">{{ auth.user?.username }}</span>
+                <span class="canvas-side-user-menu-role">
+                  {{ isSuperAdmin ? "超级管理员" : isAdmin ? "管理员" : "普通用户" }}
+                </span>
+              </div>
+              <a-menu-divider />
+              <a-menu-item v-for="item in userMenuAccountItems" :key="item.key">
+                <component :is="item.icon" />
+                <span style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item v-for="item in userMenuNoticeItems" :key="item.key" class="user-feedback-dropdown-item">
+                <component :is="item.icon" />
+                <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
+                  <span>{{ item.label }}</span>
+                  <a-badge v-if="hasUserUnreadFeedback" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
+                </span>
+                <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
+                  <span>{{ item.label }}</span>
+                  <a-badge v-if="hasUserUnreadSystemMessage" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
+                </span>
+                <span v-else style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item v-for="item in userMenuDangerItems" :key="item.key" danger>
+                <component :is="item.icon" />
+                <span style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
+
+        <button v-else type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openAuthModal('login')">
+          <UserOutlined />
+          <span>登录</span>
+        </button>
+      </div>
+    </aside>
+
+    <a-layout-content
+      class="app-content"
+      :class="{
+        'app-content-workbench': isWorkbenchLayout,
+        'app-content-desktop-side-nav': showDesktopSideNav,
+      }"
+    >
       <div class="content-inner">
         <router-view v-slot="{ Component, route: currentRoute }">
           <transition :name="routeTransitionName" mode="out-in">
@@ -1273,7 +1466,8 @@ watch(purchaseDialogOpen, (open) => {
             @click="handleMenuClick"
           >
             <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-              <img :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
               <span>{{ item.label }}</span>
             </a-menu-item>
           </a-menu>
@@ -1967,6 +2161,10 @@ watch(purchaseDialogOpen, (open) => {
     filter: var(--theme-nav-icon-active-filter);
   }
 
+  :deep(.ant-menu-item-selected .nav-menu-system-icon) {
+    filter: var(--theme-nav-icon-active-filter);
+  }
+
   :deep(.ant-menu-item:not(.ant-menu-item-selected):hover) {
     color: var(--theme-nav-hover-text) !important;
     background: var(--theme-nav-hover-bg) !important;
@@ -1986,6 +2184,232 @@ watch(purchaseDialogOpen, (open) => {
   flex-shrink: 0;
   filter: var(--theme-nav-icon-filter);
   transition: filter var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.nav-menu-system-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+  filter: var(--theme-nav-icon-filter);
+  font-size: 19px;
+  line-height: 1;
+  transition: filter var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.canvas-side-nav {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1100;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 7px;
+  border-right: 1px solid var(--theme-header-border);
+  background: var(--theme-header-bg);
+  box-shadow: 12px 0 28px var(--theme-header-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.canvas-side-brand-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.canvas-side-brand {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 15px;
+  background: rgb(255, 171, 39);
+  box-shadow: 0 12px 22px var(--theme-brand-shadow);
+  cursor: pointer;
+  transition:
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.canvas-side-brand:hover {
+  box-shadow: 0 14px 26px var(--theme-brand-shadow);
+  transform: translateY(-1px);
+}
+
+.canvas-side-brand-name {
+  color: var(--theme-title);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.2px;
+}
+
+.canvas-side-nav-menu {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.canvas-side-nav-item {
+  width: 58px;
+  height: 58px;
+  min-height: 58px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 3px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--theme-nav-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.canvas-side-nav-item .nav-menu-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.canvas-side-nav-item .nav-menu-system-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 19px;
+}
+
+.canvas-side-nav-item :deep(.anticon) {
+  color: currentColor;
+  font-size: 20px;
+}
+
+.canvas-side-nav-item:hover {
+  color: var(--theme-nav-hover-text);
+  background: var(--theme-nav-hover-bg);
+  transform: translateY(-1px);
+}
+
+.canvas-side-nav-item.active {
+  background: rgb(255, 171, 39);
+  color: var(--theme-nav-active-text);
+  box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
+}
+
+.canvas-side-nav-item.active .nav-menu-icon {
+  filter: var(--theme-nav-icon-active-filter);
+}
+
+.canvas-side-nav-item.active .nav-menu-system-icon {
+  filter: var(--theme-nav-icon-active-filter);
+}
+
+.canvas-side-nav-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.canvas-side-nav-actions :deep(.ant-badge),
+.canvas-side-nav-footer :deep(.ant-badge) {
+  width: 100%;
+}
+
+.canvas-side-nav-action {
+  height: 58px;
+  min-height: 58px;
+}
+
+.canvas-side-nav-footer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--theme-header-border);
+}
+
+.canvas-side-credit-pill {
+  width: 100%;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--theme-pill-text);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: none;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.canvas-side-credit-pill :deep(.anticon) {
+  font-size: 17px;
+}
+
+.canvas-side-credit-pill:hover {
+  background: var(--theme-nav-hover-bg);
+  color: var(--theme-accent-text-hover);
+  transform: translateY(-1px);
+}
+
+.canvas-side-user-trigger {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--theme-nav-text);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.canvas-side-user-trigger:hover {
+  background: var(--theme-nav-hover-bg);
+  color: var(--theme-accent-text-hover);
+  transform: translateY(-1px);
 }
 
 .header-actions {
@@ -2188,6 +2612,10 @@ watch(purchaseDialogOpen, (open) => {
   }
 
   :deep(.ant-menu-item-selected .nav-menu-icon) {
+    filter: var(--theme-nav-icon-active-filter);
+  }
+
+  :deep(.ant-menu-item-selected .nav-menu-system-icon) {
     filter: var(--theme-nav-icon-active-filter);
   }
 
@@ -2927,6 +3355,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   }
 }
 
+.app-content-desktop-side-nav {
+  width: calc(100% - 76px);
+  margin-left: 76px;
+}
+
 .content-inner {
   width: 100%;
   position: relative;
@@ -3118,7 +3551,26 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   flex: 0 0 auto;
 }
 
+@media (min-width: 961px) {
+  .app-layout-desktop-side-nav .app-header {
+    display: none;
+  }
+
+  .app-layout-desktop-side-nav .app-content:not(.app-content-workbench) {
+    padding: 22px 22px 0;
+  }
+}
+
 @media (max-width: 960px) {
+  .app-layout-desktop-side-nav .canvas-side-nav {
+    display: none;
+  }
+
+  .app-content-desktop-side-nav {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .app-header {
     padding-inline: 16px !important;
     height: auto;
@@ -3164,6 +3616,85 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 }
 
 @media (max-width: 640px) {
+  .canvas-side-nav {
+    width: 64px;
+    padding: 9px 5px;
+  }
+
+  .canvas-side-brand {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+  }
+
+  .canvas-side-brand-name {
+    font-size: 12px;
+  }
+
+  .canvas-side-nav-menu {
+    gap: 5px;
+    margin-top: 14px;
+  }
+
+  .canvas-side-nav-actions {
+    gap: 5px;
+    padding-top: 8px;
+  }
+
+  .canvas-side-nav-item {
+    width: 54px;
+    height: 54px;
+    min-height: 54px;
+    border-radius: 14px;
+    font-size: 10px;
+  }
+
+  .canvas-side-nav-action {
+    height: 54px;
+    min-height: 54px;
+  }
+
+  .canvas-side-nav-item .nav-menu-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .canvas-side-nav-item .nav-menu-system-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 17px;
+  }
+
+  .canvas-side-nav-item :deep(.anticon) {
+    font-size: 18px;
+  }
+
+  .canvas-side-nav-footer {
+    gap: 7px;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .canvas-side-credit-pill {
+    min-height: 40px;
+    border-radius: 15px;
+    font-size: 13px;
+  }
+
+  .canvas-side-credit-pill :deep(.anticon) {
+    font-size: 16px;
+  }
+
+  .canvas-side-user-trigger {
+    border-radius: 17px;
+  }
+
+  .app-content-desktop-side-nav {
+    width: 100%;
+    margin-left: 0;
+    padding-inline: 0;
+  }
+
   .brand-sub,
   .user-name {
     display: none;
@@ -3235,6 +3766,15 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 </style>
 
 <style lang="scss">
+.warm-dropdown {
+  z-index: 1300;
+}
+
+.app-layout-desktop-side-nav .generate-page {
+  min-height: calc(100dvh - 44px) !important;
+  height: calc(100dvh - 44px) !important;
+}
+
 .warm-dropdown .ant-dropdown-menu {
   min-width: 176px;
   padding: 12px;
@@ -3243,6 +3783,28 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
   box-shadow: 0 16px 28px var(--theme-shadow-soft);
   color: var(--theme-title);
+}
+
+.warm-dropdown .canvas-side-user-menu-header {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px 10px;
+}
+
+.warm-dropdown .canvas-side-user-menu-name {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--theme-title);
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warm-dropdown .canvas-side-user-menu-role {
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .warm-dropdown .ant-dropdown-menu,
