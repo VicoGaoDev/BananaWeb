@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { message, Modal } from "ant-design-vue";
 import {
   AimOutlined,
-  AppstoreOutlined,
+  ClearOutlined,
   DeleteOutlined,
   DownloadOutlined,
   DownOutlined,
@@ -159,6 +159,7 @@ const viewportSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null);
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const sceneConfigLoading = ref(false);
 const canvasMode = ref<CanvasMode>("imageEdit");
+const composerModeSwitching = ref(false);
 const selectedModel = ref("");
 const prompt = ref("");
 const numImages = ref(1);
@@ -391,8 +392,53 @@ function findNonOverlappingNodePosition(preferred: { x: number; y: number }, siz
   };
 }
 
+function getNodesBounds(sourceNodes = nodes.value) {
+  if (!sourceNodes.length) return null;
+  return sourceNodes.reduce((bounds, node) => {
+    const x = Number(node.x || 0);
+    const y = Number(node.y || 0);
+    const width = Number(node.width || DEFAULT_NODE_WIDTH);
+    const height = getNodeCardHeight(node);
+    return {
+      minX: Math.min(bounds.minX, x),
+      minY: Math.min(bounds.minY, y),
+      maxX: Math.max(bounds.maxX, x + width),
+      maxY: Math.max(bounds.maxY, y + height),
+    };
+  }, {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+  });
+}
+
 function resetViewport() {
-  viewport.value = { x: 80, y: 70, zoom: 1 };
+  const rect = canvasStageRef.value?.getBoundingClientRect();
+  const bounds = getNodesBounds();
+  if (!rect || !bounds) {
+    viewport.value = { x: 80, y: 70, zoom: 1 };
+    scheduleViewportSave();
+    return;
+  }
+
+  const boundsWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const padding = 180;
+  const zoom = Math.min(
+    1,
+    clampZoom(Math.min(
+      (rect.width - padding) / boundsWidth,
+      (rect.height - padding) / boundsHeight
+    ))
+  );
+  const centerX = bounds.minX + boundsWidth / 2;
+  const centerY = bounds.minY + boundsHeight / 2;
+  viewport.value = {
+    zoom,
+    x: rect.width / 2 - centerX * zoom,
+    y: rect.height / 2 - centerY * zoom,
+  };
   scheduleViewportSave();
 }
 
@@ -712,6 +758,16 @@ function collapseGeneratePanel() {
 
 function toggleComposerPopover(target: ComposerPopover) {
   composerPopover.value = composerPopover.value === target ? null : target;
+}
+
+function switchCanvasMode(mode: CanvasMode) {
+  if (canvasMode.value === mode) return;
+  composerModeSwitching.value = true;
+  canvasMode.value = mode;
+  composerPopover.value = null;
+  window.setTimeout(() => {
+    composerModeSwitching.value = false;
+  }, 0);
 }
 
 function setCanvasBackgroundMode(mode: CanvasBackgroundMode) {
@@ -2002,7 +2058,7 @@ onBeforeUnmount(() => {
           <span class="canvas-side-toolbox-divider"></span>
           <a-tooltip :title="canvasReadOnly ? '只读模式下不可整理并保存节点' : '一键整理'" placement="right">
             <button type="button" :disabled="canvasReadOnly" @click="arrangeCanvasNodes">
-              <AppstoreOutlined />
+              <ClearOutlined />
             </button>
           </a-tooltip>
         </div>
@@ -2017,21 +2073,15 @@ onBeforeUnmount(() => {
         <button type="button" class="canvas-feedback-btn" @click="openCanvasFeedback">
           反馈
         </button>
-        <div class="canvas-workbench-topbar canvas-panel">
-          <button v-if="auth.isLoggedIn" type="button" class="canvas-credit-badge" title="购买积分" @click="openPurchaseEntry">
-            <ThunderboltOutlined />
-            <span>{{ auth.user?.credits ?? 0 }}</span>
-          </button>
-          <button type="button" class="canvas-brand-link" title="返回画布列表" @click="goCanvasList">
-            <span class="canvas-brand-mark">
-              <img src="/香蕉.svg" alt="80AI" />
-            </span>
-            <span class="canvas-brand-copy">
-              <span class="canvas-brand-name">80AI</span>
-              <span class="canvas-brand-sub">画布列表</span>
-            </span>
-          </button>
-        </div>
+        <button type="button" class="canvas-brand-link" title="返回画布列表" @click="goCanvasList">
+          <span class="canvas-brand-mark">
+            <img src="/香蕉.svg" alt="80AI" />
+          </span>
+          <span class="canvas-brand-copy">
+            <span class="canvas-brand-name">80AI</span>
+            <span class="canvas-brand-sub">画布列表</span>
+          </span>
+        </button>
       </div>
 
       <div class="canvas-toolbar canvas-panel">
@@ -2042,135 +2092,146 @@ onBeforeUnmount(() => {
         <a-button class="canvas-toolbar-action-btn" :loading="loading" @click="loadCanvasDetail()"><template #icon><ReloadOutlined /></template>刷新</a-button>
       </div>
 
-      <div
-        v-if="generatePanelCollapsed"
-        class="canvas-prompt-collapsed canvas-panel"
+      <section
+        class="canvas-composer-shell canvas-panel"
+        :class="{
+          collapsed: generatePanelCollapsed,
+          expanded: !generatePanelCollapsed,
+          'mode-text-generate': !isImageEditMode,
+          'mode-image-edit': isImageEditMode,
+          'no-mode-transition': composerModeSwitching,
+        }"
         @pointerdown.stop
         @wheel.stop
-        @click.stop="expandGeneratePanel"
+        @click.stop="generatePanelCollapsed ? expandGeneratePanel() : (composerPopover = null)"
       >
-        <input
-          v-model="prompt"
-          type="text"
-          placeholder="每个伟大的想法都始于一个念头..."
-          @focus="expandGeneratePanel"
-        />
-      </div>
+        <Transition name="canvas-composer-content" mode="out-in">
+          <div v-if="generatePanelCollapsed" key="collapsed" class="canvas-prompt-collapsed-content">
+            <input
+              v-model="prompt"
+              type="text"
+              placeholder="每个伟大的想法都始于一个念头..."
+              @focus="expandGeneratePanel"
+            />
+          </div>
 
-      <section v-else class="canvas-bottom-composer canvas-panel" @pointerdown.stop @wheel.stop @click.stop="composerPopover = null">
-        <button type="button" class="canvas-composer-close" title="收起配置" @click="collapseGeneratePanel">
-          ×
-        </button>
-        <input ref="referenceInputRef" type="file" accept="image/*" multiple hidden @change="handleReferenceChange" />
+          <div v-else key="expanded" class="canvas-bottom-composer-content">
+            <button type="button" class="canvas-composer-close" title="收起配置" @click.stop="collapseGeneratePanel">
+              ×
+            </button>
+            <input ref="referenceInputRef" type="file" accept="image/*" multiple hidden @change="handleReferenceChange" />
 
-        <div
-          v-if="isImageEditMode"
-          class="composer-reference-strip"
-          :class="{ dragover: referenceDragActive }"
-          @dragenter.stop.prevent="handleReferenceDragEnter"
-          @dragover.stop.prevent="handleReferenceDragOver"
-          @dragleave.stop.prevent="handleReferenceDragLeave"
-          @drop.stop.prevent="handleReferenceDrop"
-        >
-          <div class="composer-reference-uploader composer-upload-entry">
-            <button
-              type="button"
-              class="composer-reference-placeholder"
-              :disabled="referenceItems.length >= maxReferenceImages"
-              @click="toggleReferenceUploadMenu('reference')"
+            <div
+              v-if="isImageEditMode"
+              class="composer-reference-strip"
+              :class="{ dragover: referenceDragActive }"
+              @dragenter.stop.prevent="handleReferenceDragEnter"
+              @dragover.stop.prevent="handleReferenceDragOver"
+              @dragleave.stop.prevent="handleReferenceDragLeave"
+              @drop.stop.prevent="handleReferenceDrop"
             >
-              <PictureOutlined />
-            </button>
-            <div v-if="uploadMenuOpen && uploadMenuAnchor === 'reference'" class="composer-upload-menu composer-upload-menu-reference">
-              <button type="button" @click="triggerReferenceUpload">
-                <UploadOutlined />
-                <span>本地上传</span>
-              </button>
-              <button type="button" @click="openCanvasReferencePicker">
-                <AimOutlined />
-                <span>从画布选择</span>
-              </button>
+              <div class="composer-reference-uploader composer-upload-entry">
+                <button
+                  type="button"
+                  class="composer-reference-placeholder"
+                  :disabled="referenceItems.length >= maxReferenceImages"
+                  @click="toggleReferenceUploadMenu('reference')"
+                >
+                  <PictureOutlined />
+                </button>
+                <div v-if="uploadMenuOpen && uploadMenuAnchor === 'reference'" class="composer-upload-menu composer-upload-menu-reference">
+                  <button type="button" @click="triggerReferenceUpload">
+                    <UploadOutlined />
+                    <span>本地上传</span>
+                  </button>
+                  <button type="button" @click="openCanvasReferencePicker">
+                    <AimOutlined />
+                    <span>从画布选择</span>
+                  </button>
+                </div>
+              </div>
+              <div v-for="item in referenceItems" :key="item.id" class="composer-reference-item">
+                <img :src="item.localUrl" alt="reference" />
+                <span v-if="item.status !== 'success'" class="reference-status">{{ item.status === 'uploading' ? '上传中' : '失败' }}</span>
+                <button type="button" @click="removeReference(item)">
+                  <DeleteOutlined />
+                </button>
+              </div>
             </div>
-          </div>
-          <div v-for="item in referenceItems" :key="item.id" class="composer-reference-item">
-            <img :src="item.localUrl" alt="reference" />
-            <span v-if="item.status !== 'success'" class="reference-status">{{ item.status === 'uploading' ? '上传中' : '失败' }}</span>
-            <button type="button" @click="removeReference(item)">
-              <DeleteOutlined />
-            </button>
-          </div>
-        </div>
 
-        <textarea
-          v-model="prompt"
-          class="composer-prompt-input"
-          :maxlength="5000"
-          placeholder="描述你希望如何编辑这张图片..."
-        ></textarea>
+            <textarea
+              v-model="prompt"
+              class="composer-prompt-input"
+              :maxlength="5000"
+              placeholder="描述你希望如何编辑这张图片..."
+            ></textarea>
 
-        <div v-if="composerPopover" class="composer-popover-card" @pointerdown.stop @click.stop>
-          <div class="composer-options-grid">
-            <div class="composer-option-field">
-              <label>模型</label>
-              <a-select v-model:value="selectedModel" :loading="sceneConfigLoading" placeholder="请选择模型">
-                <a-select-option v-for="model in generationModels" :key="model.scene_key" :value="model.scene_key">
-                  {{ model.display_name || model.scene_label || model.scene_key }}
+            <div class="composer-footer">
+              <div class="composer-mode-switch" aria-label="生成模式">
+                <button type="button" :class="{ active: isImageEditMode }" @click="switchCanvasMode('imageEdit')">
+                  图编辑
+                </button>
+                <button type="button" :class="{ active: !isImageEditMode }" @click="switchCanvasMode('textGenerate')">
+                  文生图
+                </button>
+              </div>
+              <div class="composer-setting-wrap">
+                <div v-if="composerPopover" class="composer-popover-card" @pointerdown.stop @click.stop>
+                  <div class="composer-options-grid">
+                    <div class="composer-option-field">
+                      <label>模型</label>
+                      <a-select v-model:value="selectedModel" :loading="sceneConfigLoading" placeholder="请选择模型">
+                        <a-select-option v-for="model in generationModels" :key="model.scene_key" :value="model.scene_key">
+                          {{ model.display_name || model.scene_label || model.scene_key }}
+                        </a-select-option>
+                      </a-select>
+                    </div>
+                    <div class="composer-option-field">
+                      <label>质量</label>
+                      <a-select v-model:value="resolution">
+                        <a-select-option v-for="item in resolutionOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
+                      </a-select>
+                    </div>
+                  </div>
+                  <div class="composer-ratio-section">
+                    <label>宽高比</label>
+                    <div class="composer-ratio-list">
+                      <button
+                        v-for="item in sizeOptions"
+                        :key="item.value"
+                        type="button"
+                        class="composer-ratio-item"
+                        :class="{ active: size === item.value }"
+                        @click="size = item.value"
+                      >
+                        <span class="composer-ratio-preview-shell">
+                          <span class="composer-ratio-preview" :style="getRatioPreviewStyle(item.value, 18)"></span>
+                        </span>
+                        <span class="composer-ratio-label">{{ formatRatioOptionLabel(item) }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="composer-setting-group" @click.stop="toggleComposerPopover('model')">
+                  <span class="composer-setting-model-text">{{ selectedModelOption?.display_name || selectedModelOption?.scene_label || selectedModel || '选择模型' }}</span>
+                  <span class="composer-chip-divider"></span>
+                  <span>{{ size }}</span>
+                  <span class="composer-chip-divider"></span>
+                  <span>{{ resolution }}</span>
+                </button>
+              </div>
+              <a-select v-model:value="numImages" class="composer-count-select" popup-class-name="composer-count-dropdown" :bordered="false">
+                <a-select-option v-for="count in taskCountOptions" :key="count" :value="count">
+                  {{ count }}x
                 </a-select-option>
               </a-select>
-            </div>
-            <div class="composer-option-field">
-              <label>质量</label>
-              <a-select v-model:value="resolution">
-                <a-select-option v-for="item in resolutionOptions" :key="item.value" :value="item.value">{{ item.label }}</a-select-option>
-              </a-select>
+              <a-button type="primary" class="composer-generate-btn" :loading="generating" :disabled="!canGenerate" @click="handleGenerate">
+                <template #icon><ThunderboltOutlined /></template>
+                {{ generateButtonText }}
+              </a-button>
             </div>
           </div>
-          <div class="composer-ratio-section">
-            <label>宽高比</label>
-            <div class="composer-ratio-list">
-              <button
-                v-for="item in sizeOptions"
-                :key="item.value"
-                type="button"
-                class="composer-ratio-item"
-                :class="{ active: size === item.value }"
-                @click="size = item.value"
-              >
-                <span class="composer-ratio-preview-shell">
-                  <span class="composer-ratio-preview" :style="getRatioPreviewStyle(item.value, 18)"></span>
-                </span>
-                <span class="composer-ratio-label">{{ formatRatioOptionLabel(item) }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="composer-footer">
-          <div class="composer-mode-switch" aria-label="生成模式">
-            <button type="button" :class="{ active: isImageEditMode }" @click="canvasMode = 'imageEdit'">
-              图编辑
-            </button>
-            <button type="button" :class="{ active: !isImageEditMode }" @click="canvasMode = 'textGenerate'">
-              文生图
-            </button>
-          </div>
-          <button type="button" class="composer-setting-group" @click.stop="toggleComposerPopover('model')">
-            <span class="composer-setting-model-text">{{ selectedModelOption?.display_name || selectedModelOption?.scene_label || selectedModel || '选择模型' }}</span>
-            <span class="composer-chip-divider"></span>
-            <span>{{ size }}</span>
-            <span class="composer-chip-divider"></span>
-            <span>{{ resolution }}</span>
-          </button>
-          <a-select v-model:value="numImages" class="composer-count-select" popup-class-name="composer-count-dropdown" :bordered="false">
-            <a-select-option v-for="count in taskCountOptions" :key="count" :value="count">
-              {{ count }}x
-            </a-select-option>
-          </a-select>
-          <a-button type="primary" class="composer-generate-btn" :loading="generating" :disabled="!canGenerate" @click="handleGenerate">
-            <template #icon><ThunderboltOutlined /></template>
-            {{ generateButtonText }}
-          </a-button>
-        </div>
+        </Transition>
       </section>
 
       <div v-if="!nodes.length && !loading" class="canvas-empty canvas-panel">
@@ -2535,26 +2596,60 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.canvas-prompt-collapsed {
+.canvas-composer-shell {
   position: absolute;
-  bottom: 22px;
   left: 50%;
   z-index: 48;
-  width: min(600px, 38vw);
-  min-width: 400px;
-  height: 50px;
-  display: flex;
-  align-items: center;
-  border-radius: 24px;
-  padding: 0 20px;
-  cursor: text;
+  box-sizing: border-box;
   transform: translateX(-50%);
   isolation: isolate;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+  transition:
+    bottom 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    min-width 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.34s ease-in-out;
+  will-change: bottom, width, height, padding, border-radius;
 }
 
-.canvas-prompt-collapsed::before {
+.canvas-composer-shell.collapsed {
+  bottom: 22px;
+  width: min(600px, 38vw);
+  min-width: 400px;
+  height: 50px;
+  border-radius: 24px;
+  padding: 0 20px;
+  cursor: text;
+}
+
+.canvas-composer-shell.expanded {
+  bottom: 18px;
+  width: min(660px, 42vw);
+  min-width: 470px;
+  border-radius: 20px;
+  padding: 13px;
+  cursor: default;
+  overflow: visible;
+}
+
+.canvas-composer-shell.expanded.mode-text-generate {
+  height: 150px;
+}
+
+.canvas-composer-shell.expanded.mode-image-edit {
+  height: 210px;
+}
+
+.canvas-composer-shell.no-mode-transition {
+  transition: none;
+}
+
+.canvas-composer-shell.collapsed::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -2575,11 +2670,56 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 0 18px color-mix(in srgb, var(--theme-accent) 8%, transparent),
     0 0 24px color-mix(in srgb, var(--theme-accent) 16%, transparent);
+  opacity: 1;
   pointer-events: none;
+  transition: opacity 0.18s ease-in-out;
   animation: collapsedPromptBorderSpin 3.2s linear infinite;
 }
 
-.canvas-prompt-collapsed input {
+.canvas-composer-shell.expanded::before {
+  opacity: 0;
+}
+
+.canvas-prompt-collapsed-content,
+.canvas-bottom-composer-content {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.canvas-prompt-collapsed-content {
+  display: flex;
+  align-items: center;
+}
+
+.canvas-bottom-composer-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: visible;
+}
+
+.canvas-composer-content-enter-active,
+.canvas-composer-content-leave-active {
+  transition:
+    opacity 0.14s ease-in-out,
+    transform 0.14s ease-in-out;
+}
+
+.canvas-composer-content-enter-from,
+.canvas-composer-content-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.canvas-composer-content-enter-to,
+.canvas-composer-content-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.canvas-prompt-collapsed-content input {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -2591,7 +2731,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.canvas-prompt-collapsed input::placeholder {
+.canvas-prompt-collapsed-content input::placeholder {
   color: var(--theme-text-secondary);
 }
 
@@ -2601,29 +2741,20 @@ onBeforeUnmount(() => {
   }
 }
 
-.canvas-bottom-composer {
-  position: absolute;
-  bottom: 18px;
-  left: 50%;
-  z-index: 48;
-  width: min(660px, 42vw);
-  min-width: 470px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border-radius: 20px;
-  padding: 13px;
-  transform: translateX(-50%);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+@media (prefers-reduced-motion: reduce) {
+  .canvas-composer-shell,
+  .canvas-composer-content-enter-active,
+  .canvas-composer-content-leave-active {
+    transition: opacity 0.01s linear;
+  }
 }
 
 .canvas-composer-close {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
+  top: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -2639,8 +2770,9 @@ onBeforeUnmount(() => {
 }
 
 .composer-prompt-input {
-  width: calc(100% - 36px);
+  width: 100%;
   min-height: 70px;
+  flex: 1 1 auto;
   border: 0;
   outline: 0;
   resize: none;
@@ -2766,10 +2898,10 @@ onBeforeUnmount(() => {
 
 .composer-popover-card {
   position: absolute;
-  bottom: 58px;
-  left: 54px;
-  z-index: 2;
-  width: 66.666%;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 6;
+  width: min(440px, calc(66.666vw - 32px));
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -2777,13 +2909,14 @@ onBeforeUnmount(() => {
   border: 1px solid var(--theme-panel-border);
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
   box-shadow: 0 18px 36px var(--theme-card-shadow-strong);
+  transform: translateX(-50%);
 }
 
 .composer-popover-card::after {
   content: "";
   position: absolute;
   bottom: -7px;
-  left: 25%;
+  left: 50%;
   width: 14px;
   height: 14px;
   border-right: 1px solid var(--theme-panel-border);
@@ -2830,7 +2963,7 @@ onBeforeUnmount(() => {
 
 .composer-ratio-list {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -2864,6 +2997,8 @@ onBeforeUnmount(() => {
 }
 
 .composer-footer {
+  margin-top: auto;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2959,9 +3094,16 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 16px color-mix(in srgb, var(--theme-accent) 28%, transparent);
 }
 
+.composer-setting-wrap {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(340px, calc(100% - 270px));
+}
+
 .composer-setting-group {
   width: fit-content;
-  max-width: min(340px, calc(100% - 270px));
+  max-width: 100%;
   min-width: 0;
   flex: 0 1 auto;
   display: inline-flex;
@@ -3265,22 +3407,22 @@ onBeforeUnmount(() => {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 8px;
-  border-radius: 24px;
+  gap: 7px;
+  padding: 8px 7px;
+  border-radius: 22px;
 }
 
 .canvas-side-toolbox button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
   color: var(--theme-title);
-  font-size: 19px;
+  font-size: 17px;
   cursor: pointer;
   transition:
     background 0.18s ease,
@@ -3295,7 +3437,7 @@ onBeforeUnmount(() => {
 }
 
 .canvas-side-toolbox-divider {
-  width: 22px;
+  width: 19px;
   height: 1px;
   background: var(--theme-panel-border);
 }
@@ -3360,58 +3502,6 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
-.canvas-workbench-topbar {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  overflow: visible;
-}
-
-.canvas-credit-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--theme-pill-bg);
-  border: 0;
-  color: var(--theme-pill-text);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-}
-
-.canvas-credit-badge span {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  color: inherit;
-  white-space: nowrap;
-}
-
-.canvas-credit-badge :deep(.anticon) {
-  flex: 0 0 auto;
-  color: inherit;
-}
-
-.canvas-credit-badge:hover {
-  background: var(--theme-nav-hover-bg);
-  color: var(--theme-accent-text-hover);
-  transform: translateY(-1px);
-}
-
 .canvas-brand-link {
   display: inline-flex;
   align-items: center;
@@ -3423,16 +3513,6 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--theme-title);
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.2s ease;
-
-  &:hover {
-    background: var(--theme-panel-bg-muted);
-    border-color: var(--theme-panel-border);
-    transform: translateY(-1px);
-  }
 }
 
 .canvas-brand-mark {
@@ -3716,15 +3796,15 @@ onBeforeUnmount(() => {
   z-index: 30;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px;
+  gap: 5px;
+  padding: 6px;
   border-radius: 999px;
   transform: translateX(-50%);
 
   span {
-    min-width: 46px;
+    min-width: 40px;
     color: var(--theme-title);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
     text-align: center;
   }
@@ -3767,14 +3847,15 @@ onBeforeUnmount(() => {
 }
 
 .canvas-toolbar-icon-btn {
-  width: 34px !important;
-  height: 34px !important;
+  width: 30px !important;
+  height: 30px !important;
 }
 
 .canvas-toolbar-action-btn {
-  height: 34px !important;
-  padding-inline: 10px !important;
-  border-radius: 12px !important;
+  height: 30px !important;
+  padding-inline: 8px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
 
   :deep(.ant-btn-icon) {
     display: inline-flex;
@@ -4207,7 +4288,7 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 720px) {
   .canvas-page {
     height: 100vh;
     min-height: 100vh;
@@ -4220,11 +4301,6 @@ onBeforeUnmount(() => {
   .canvas-workbench-actions {
     top: 58px;
     right: 12px;
-    gap: 5px;
-  }
-
-  .canvas-workbench-topbar {
-    padding: 5px;
     gap: 5px;
   }
 
@@ -4251,12 +4327,6 @@ onBeforeUnmount(() => {
 
   .canvas-settings-card {
     width: min(248px, calc(100vw - 24px));
-  }
-
-  .canvas-credit-badge {
-    height: 30px;
-    padding-inline: 8px;
-    font-size: 11px;
   }
 
   .canvas-feedback-btn {
@@ -4305,29 +4375,34 @@ onBeforeUnmount(() => {
   }
 
   .canvas-side-toolbox {
-    padding: 8px 7px;
-    border-radius: 22px;
+    padding: 7px 6px;
+    border-radius: 20px;
   }
 
   .canvas-side-toolbox button {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     border-radius: 12px;
-    font-size: 18px;
+    font-size: 16px;
   }
 
-  .canvas-prompt-collapsed,
-  .canvas-bottom-composer {
+  .canvas-composer-shell {
     bottom: 12px;
     left: 50%;
     width: calc(100% - 24px);
     min-width: 0;
   }
 
-  .canvas-bottom-composer {
-    max-height: calc(100% - 156px);
-    overflow-y: auto;
+  .canvas-composer-shell.expanded {
     padding: 10px;
+  }
+
+  .canvas-composer-shell.expanded.mode-image-edit {
+    height: min(210px, calc(100% - 156px));
+  }
+
+  .canvas-composer-shell.expanded.mode-text-generate {
+    height: 150px;
   }
 
   .canvas-reference-select-tip {
@@ -4345,8 +4420,8 @@ onBeforeUnmount(() => {
   }
 
   .composer-popover-card {
-    left: 10px;
-    width: calc(100% - 20px);
+    left: 50%;
+    width: min(420px, calc(100vw - 44px));
   }
 
   .composer-popover-card::after {
@@ -4357,8 +4432,13 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   }
 
-  .composer-setting-group {
+  .composer-setting-wrap {
     order: -1;
+    max-width: 100%;
+  }
+
+  .composer-setting-group {
+    width: 100%;
     max-width: 100%;
   }
 
