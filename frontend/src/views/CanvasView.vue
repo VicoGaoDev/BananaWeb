@@ -47,6 +47,15 @@ type UploadStatus = "uploading" | "success" | "failed";
 type ComposerPopover = "model" | "size" | "resolution";
 type UploadMenuAnchor = "reference";
 type CanvasBackgroundMode = "grid" | "solid";
+type CanvasInteractionMode = "pan" | "select";
+
+interface SelectionBoxState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
 
 interface CanvasReferenceOption {
   id: string;
@@ -183,6 +192,7 @@ const freeNodeImageInputRef = ref<HTMLInputElement | null>(null);
 const previewVisible = ref(false);
 const previewCurrent = ref("");
 const selectedNodeId = ref<number | null>(null);
+const selectedNodeIds = ref<Set<number>>(new Set());
 const detailOpen = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
 const feedbackDialogOpen = ref(false);
@@ -200,6 +210,8 @@ const pollingInFlight = ref(false);
 const canvasBackgroundMode = ref<CanvasBackgroundMode>(
   localStorage.getItem(CANVAS_BACKGROUND_STORAGE_KEY) === "solid" ? "solid" : "grid"
 );
+const canvasInteractionMode = ref<CanvasInteractionMode>("pan");
+const selectionBox = ref<SelectionBoxState | null>(null);
 
 const isImageEditMode = computed(() => canvasMode.value === "imageEdit");
 const hasComposerDraftContent = computed(() => !!prompt.value.trim() || referenceItems.value.length > 0);
@@ -236,6 +248,48 @@ const activeTaskIds = computed(() => nodes.value
   .filter((task): task is TaskResult => !!task && !["success", "failed"].includes(task.status))
   .map((task) => task.id));
 const selectedNode = computed(() => nodes.value.find((node) => node.id === selectedNodeId.value) || null);
+const selectionActionNodes = computed(() => {
+  if (canvasInteractionMode.value !== "select") return [];
+  if (selectedNodeIds.value.size) {
+    return nodes.value.filter((node) => selectedNodeIds.value.has(node.id));
+  }
+  return selectedNode.value ? [selectedNode.value] : [];
+});
+const selectionGroupBounds = computed(() => getNodesBounds(selectionActionNodes.value));
+const selectionBoxStyle = computed(() => {
+  const box = selectionBox.value;
+  if (!box) return {};
+  const left = Math.min(box.startX, box.currentX);
+  const top = Math.min(box.startY, box.currentY);
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${Math.abs(box.currentX - box.startX)}px`,
+    height: `${Math.abs(box.currentY - box.startY)}px`,
+  };
+});
+const selectionGroupStyle = computed(() => {
+  const bounds = selectionGroupBounds.value;
+  if (!bounds) return {};
+  const maxZIndex = Math.max(1, ...selectionActionNodes.value.map((node) => Number(node.z_index || 0)));
+  const padding = 10;
+  return {
+    transform: `translate(${bounds.minX - padding}px, ${bounds.minY - padding}px)`,
+    width: `${bounds.maxX - bounds.minX + padding * 2}px`,
+    height: `${bounds.maxY - bounds.minY + padding * 2}px`,
+    zIndex: maxZIndex + 500,
+  };
+});
+const selectionActionToolbarStyle = computed(() => {
+  const bounds = selectionGroupBounds.value;
+  if (!bounds) return {};
+  const maxZIndex = Math.max(1, ...selectionActionNodes.value.map((node) => Number(node.z_index || 0)));
+  return {
+    left: `${viewport.value.x + ((bounds.minX + bounds.maxX) / 2) * viewport.value.zoom}px`,
+    top: `${viewport.value.y + bounds.minY * viewport.value.zoom - 14}px`,
+    zIndex: maxZIndex + 1100,
+  };
+});
 const selectedNodeToolbarStyle = computed(() => {
   const node = selectedNode.value;
   if (!node) return {};
@@ -397,6 +451,22 @@ function screenToWorld(clientX: number, clientY: number) {
   };
 }
 
+function getStageLocalPoint(event: PointerEvent) {
+  const rect = canvasStageRef.value?.getBoundingClientRect();
+  if (!rect) return null;
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function stageLocalToWorld(x: number, y: number) {
+  return {
+    x: (x - viewport.value.x) / viewport.value.zoom,
+    y: (y - viewport.value.y) / viewport.value.zoom,
+  };
+}
+
 function getViewportCenter() {
   const rect = canvasStageRef.value?.getBoundingClientRect();
   if (!rect) return { x: 0, y: 0 };
@@ -470,6 +540,57 @@ function getNodesBounds(sourceNodes = nodes.value) {
   });
 }
 
+function clearCanvasSelection() {
+  selectedNodeId.value = null;
+  selectedNodeIds.value = new Set();
+}
+
+function selectSingleNode(node: CanvasNode) {
+  selectedNodeId.value = node.id;
+  selectedNodeIds.value = new Set();
+}
+
+function isNodeSelected(node: CanvasNode) {
+  return node.id === selectedNodeId.value || selectedNodeIds.value.has(node.id);
+}
+
+function setCanvasInteractionMode(mode: CanvasInteractionMode) {
+  if (canvasInteractionMode.value === mode) return;
+  canvasInteractionMode.value = mode;
+  panState = null;
+  selectionBox.value = null;
+  if (mode === "pan") clearCanvasSelection();
+}
+
+function updateSelectionBoxSelection() {
+  const box = selectionBox.value;
+  if (!box) return;
+  const start = stageLocalToWorld(box.startX, box.startY);
+  const end = stageLocalToWorld(box.currentX, box.currentY);
+  const selectionRect = {
+    minX: Math.min(start.x, end.x),
+    minY: Math.min(start.y, end.y),
+    maxX: Math.max(start.x, end.x),
+    maxY: Math.max(start.y, end.y),
+  };
+  const selectedIds = nodes.value
+    .filter((node) => {
+      const x = Number(node.x || 0);
+      const y = Number(node.y || 0);
+      const width = Number(node.width || DEFAULT_NODE_WIDTH);
+      const height = getNodeCardHeight(node);
+      return !(
+        x + width < selectionRect.minX ||
+        x > selectionRect.maxX ||
+        y + height < selectionRect.minY ||
+        y > selectionRect.maxY
+      );
+    })
+    .map((node) => node.id);
+  selectedNodeIds.value = new Set(selectedIds);
+  selectedNodeId.value = selectedIds.length === 1 ? selectedIds[0] : null;
+}
+
 function resetViewport() {
   const rect = canvasStageRef.value?.getBoundingClientRect();
   const bounds = getNodesBounds();
@@ -500,14 +621,14 @@ function resetViewport() {
 }
 
 function zoomAtCenter(delta: number) {
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   const rect = canvasStageRef.value?.getBoundingClientRect();
   if (!rect) return;
   zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, viewport.value.zoom + delta);
 }
 
 function zoomAt(clientX: number, clientY: number, nextZoomValue: number) {
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   const rect = canvasStageRef.value?.getBoundingClientRect();
   if (!rect) return;
   const nextZoom = clampZoom(nextZoomValue);
@@ -521,7 +642,17 @@ function zoomAt(clientX: number, clientY: number, nextZoomValue: number) {
 }
 
 function handleWheel(event: WheelEvent) {
-  selectedNodeId.value = null;
+  if (canvasInteractionMode.value === "select") {
+    event.preventDefault();
+    viewport.value = {
+      ...viewport.value,
+      x: viewport.value.x - event.deltaX,
+      y: viewport.value.y - event.deltaY,
+    };
+    scheduleViewportSave();
+    return;
+  }
+  clearCanvasSelection();
   if (event.ctrlKey || event.metaKey || Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
     event.preventDefault();
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
@@ -540,10 +671,24 @@ function handleStagePointerDown(event: PointerEvent) {
   if (event.button !== 0) return;
   const target = event.target as HTMLElement;
   if (target.closest(".canvas-node") || target.closest(".canvas-panel")) return;
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   composerPopover.value = null;
   if (!generatePanelCollapsed.value && !hasComposerDraftContent.value) {
     collapseGeneratePanel();
+  }
+  if (canvasInteractionMode.value === "select") {
+    const localPoint = getStageLocalPoint(event);
+    if (!localPoint) return;
+    event.preventDefault();
+    selectionBox.value = {
+      pointerId: event.pointerId,
+      startX: localPoint.x,
+      startY: localPoint.y,
+      currentX: localPoint.x,
+      currentY: localPoint.y,
+    };
+    canvasStageRef.value?.setPointerCapture(event.pointerId);
+    return;
   }
   panState = {
     pointerId: event.pointerId,
@@ -556,6 +701,17 @@ function handleStagePointerDown(event: PointerEvent) {
 }
 
 function handleStagePointerMove(event: PointerEvent) {
+  if (selectionBox.value?.pointerId === event.pointerId) {
+    const localPoint = getStageLocalPoint(event);
+    if (!localPoint) return;
+    selectionBox.value = {
+      ...selectionBox.value,
+      currentX: localPoint.x,
+      currentY: localPoint.y,
+    };
+    updateSelectionBoxSelection();
+    return;
+  }
   if (panState?.pointerId === event.pointerId) {
     viewport.value = {
       ...viewport.value,
@@ -593,6 +749,16 @@ function handleStagePointerMove(event: PointerEvent) {
 }
 
 function handleStagePointerUp(event: PointerEvent) {
+  if (selectionBox.value?.pointerId === event.pointerId) {
+    const box = selectionBox.value;
+    const distance = Math.hypot(box.currentX - box.startX, box.currentY - box.startY);
+    if (distance < 4) {
+      clearCanvasSelection();
+    } else {
+      updateSelectionBoxSelection();
+    }
+    selectionBox.value = null;
+  }
   if (panState?.pointerId === event.pointerId) {
     panState = null;
     scheduleViewportSave();
@@ -622,7 +788,7 @@ function handleStagePointerUp(event: PointerEvent) {
 function startNodeDrag(event: PointerEvent, node: CanvasNode) {
   if (event.button !== 0) return;
   event.stopPropagation();
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
   const now = Date.now();
   if (lastNodePointerDown?.nodeId === node.id && now - lastNodePointerDown.time < 500) {
     lastNodePointerDown = null;
@@ -645,7 +811,7 @@ function startNodeDrag(event: PointerEvent, node: CanvasNode) {
 function handleTextNodePointerDown(event: PointerEvent, node: CanvasNode) {
   if (event.button !== 0) return;
   event.stopPropagation();
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
   const now = Date.now();
   if (lastTextNodePointerDown?.nodeId === node.id && now - lastTextNodePointerDown.time < 600) {
     lastTextNodePointerDown = null;
@@ -670,7 +836,7 @@ function startNodeResize(event: PointerEvent, node: CanvasNode) {
   if (event.button !== 0) return;
   event.stopPropagation();
   if (canvasReadOnly.value) return;
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
   dragState = null;
   resizeState = {
     pointerId: event.pointerId,
@@ -729,7 +895,7 @@ async function handleCanvasSelect(canvas: UserCanvasSummary) {
   if (canvasReadOnly.value) return;
   if (!canvas.project_id || canvas.id === selectedCanvasId.value) return;
   canvasMenuOpen.value = false;
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   await selectCanvas(canvas);
 }
 
@@ -759,7 +925,7 @@ async function openReadonlyOwnerDialog() {
 function handleDocumentPointerDown(event: PointerEvent) {
   const target = event.target as HTMLElement | null;
   if (target && !target.closest(".canvas-node") && !target.closest(".canvas-node-toolbar")) {
-    selectedNodeId.value = null;
+    clearCanvasSelection();
   }
   if (canvasSettingsOpen.value && !target?.closest(".canvas-settings")) {
     canvasSettingsOpen.value = false;
@@ -919,7 +1085,7 @@ function openCanvasReferencePicker() {
     message.info("当前画布暂无可选择的图片");
     return;
   }
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   canvasReferenceSelectMode.value = true;
 }
 
@@ -1117,7 +1283,7 @@ function convertNodeToHistoryCard(node: CanvasNode): UserHistoryCard | null {
 }
 
 function selectNode(node: CanvasNode) {
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
 }
 
 function handleNodeClick(event: MouseEvent, node: CanvasNode) {
@@ -1176,13 +1342,13 @@ function refillGenerateConfigFromNode(node: CanvasNode) {
     remoteUrl: url,
     status: "success" as const,
   }));
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   message.success("已回填到生图配置");
 }
 
 function useFreeNodeForGeneration(node: CanvasNode) {
   generatePanelCollapsed.value = false;
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   if (node.node_type === "text") {
     canvasMode.value = "textGenerate";
     prompt.value = node.content || "";
@@ -1211,13 +1377,106 @@ function useNodeImageForEditing(node: CanvasNode) {
     return;
   }
   generatePanelCollapsed.value = false;
-  selectedNodeId.value = null;
+  clearCanvasSelection();
   canvasMode.value = "imageEdit";
   const beforeCount = referenceItems.value.length;
   addCanvasReference(option);
   if (referenceItems.value.length > beforeCount) {
     message.success("已添加为参考图");
   }
+}
+
+function handleGenerateFromSelection() {
+  const targetNodes = selectionActionNodes.value;
+  if (!targetNodes.length) return;
+  const textNodes = targetNodes.filter((node) => node.node_type === "text");
+  const imageOptions = targetNodes
+    .map((node) => getNodeReferenceOption(node))
+    .filter((option): option is CanvasReferenceOption => !!option);
+  if (!textNodes.length && !imageOptions.length) {
+    message.warning("选中的节点暂无可用于生成图片的内容");
+    return;
+  }
+
+  generatePanelCollapsed.value = false;
+  composerPopover.value = null;
+  let didUpdate = false;
+
+  if (textNodes.length > 1) {
+    message.warning("多个文本节点无法回填提示词，请只选择一个文本节点");
+  } else if (textNodes.length === 1) {
+    prompt.value = textNodes[0].content || "";
+    promptSourceNodeId.value = textNodes[0].id;
+    didUpdate = true;
+  }
+
+  if (imageOptions.length) {
+    canvasMode.value = "imageEdit";
+    const existingReferenceUrls = new Set(referenceItems.value.map((item) => item.remoteUrl).filter(Boolean));
+    const uniqueOptions = imageOptions.filter((option, index, list) => (
+      !existingReferenceUrls.has(option.imageUrl)
+      && list.findIndex((item) => item.imageUrl === option.imageUrl) === index
+    ));
+    const remaining = referenceSlotsRemaining.value;
+    if (!maxReferenceImages.value) {
+      message.warning("当前模型不支持参考图");
+    } else if (remaining <= 0) {
+      message.warning(`当前模型最多支持 ${maxReferenceImages.value} 张参考图`);
+    } else if (!uniqueOptions.length) {
+      message.info("选中的图片已在参考图中");
+    } else {
+      const acceptedOptions = uniqueOptions.slice(0, remaining);
+      acceptedOptions.forEach(addCanvasReference);
+      didUpdate = didUpdate || acceptedOptions.length > 0;
+      if (uniqueOptions.length > remaining) {
+        message.warning(`当前模型最多支持 ${maxReferenceImages.value} 张参考图，已添加前 ${remaining} 张`);
+      }
+    }
+  } else if (textNodes.length === 1) {
+    canvasMode.value = "textGenerate";
+  }
+
+  if (didUpdate) {
+    message.success("已回填到生成配置");
+    clearCanvasSelection();
+  }
+}
+
+function deleteSelectedNodes() {
+  if (canvasReadOnly.value) {
+    message.warning("只读模式下不能删除节点");
+    return;
+  }
+  const targetNodes = selectionActionNodes.value;
+  const projectId = selectedCanvasProjectId.value;
+  if (!targetNodes.length || !projectId) return;
+  const targetIds = new Set(targetNodes.map((node) => node.id));
+  Modal.confirm({
+    title: `删除选中的 ${targetNodes.length} 个节点？`,
+    content: "删除后会从画布移除选中的节点及其关联线。",
+    okText: "删除",
+    cancelText: "取消",
+    okButtonProps: { danger: true },
+    async onOk() {
+      try {
+        const remoteDeletes = targetNodes
+          .filter((node) => !(node as CanvasWorkbenchNode).localObjectUrl && node.id >= 0)
+          .map((node) => (node.task_id ? deleteHistoryTask(node.task_id) : deleteCanvasNode(projectId, node.id)));
+        await Promise.all(remoteDeletes);
+        targetNodes.forEach((node) => revokeObjectUrl((node as CanvasWorkbenchNode).localObjectUrl));
+        nodes.value = nodes.value.filter((node) => !targetIds.has(node.id));
+        edges.value = edges.value.filter((edge) => !targetIds.has(edge.source_node_id) && !targetIds.has(edge.target_node_id));
+        canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? {
+          ...item,
+          node_count: Math.max(0, item.node_count - targetNodes.length),
+        } : item);
+        clearCanvasSelection();
+        message.success("删除成功");
+      } catch (err: any) {
+        message.error(err.response?.data?.detail || "删除失败，请稍后重试");
+      }
+    },
+  });
 }
 
 function openTextNodeEditor(node: CanvasNode) {
@@ -1254,7 +1513,7 @@ async function saveTextNodeContent() {
   try {
     const updated = await updateCanvasNode(projectId, node.id, { content: nextContent });
     nodes.value = nodes.value.map((item) => item.id === updated.id ? updated : item);
-    selectedNodeId.value = updated.id;
+    selectSingleNode(updated);
     textNodeEditTarget.value = null;
     message.success("文本节点已更新");
   } catch (err: any) {
@@ -1291,7 +1550,7 @@ function deleteNode(node: CanvasNode) {
     revokeObjectUrl(localNode.localObjectUrl);
     nodes.value = nodes.value.filter((item) => item.id !== node.id);
     edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
-    if (selectedNodeId.value === node.id) selectedNodeId.value = null;
+    if (selectedNodeId.value === node.id || selectedNodeIds.value.has(node.id)) clearCanvasSelection();
     message.success("删除成功");
     return;
   }
@@ -1308,7 +1567,7 @@ function deleteNode(node: CanvasNode) {
         await deleteCanvasNode(projectId, node.id);
         nodes.value = nodes.value.filter((item) => item.id !== node.id);
         edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
-        if (selectedNodeId.value === node.id) selectedNodeId.value = null;
+        if (selectedNodeId.value === node.id || selectedNodeIds.value.has(node.id)) clearCanvasSelection();
         canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? {
           ...item,
           node_count: Math.max(0, item.node_count - 1),
@@ -1328,7 +1587,7 @@ function deleteNode(node: CanvasNode) {
       await deleteHistoryTask(node.task_id);
       nodes.value = nodes.value.filter((item) => item.id !== node.id);
       edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
-      if (selectedNodeId.value === node.id) selectedNodeId.value = null;
+      if (selectedNodeId.value === node.id || selectedNodeIds.value.has(node.id)) clearCanvasSelection();
       canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? {
         ...item,
         node_count: Math.max(0, item.node_count - 1),
@@ -1496,7 +1755,7 @@ function handleNodeDoubleClick(node: CanvasNode) {
     openTextNodeEditor(node);
     return;
   }
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
   focusCanvasNode(node, 1.5);
 }
 
@@ -1648,7 +1907,7 @@ async function executeArrangeCanvasNodes(projectId: string) {
     const position = nextPositions.get(node.id);
     return position ? { ...node, ...position } : node;
   });
-  selectedNodeId.value = null;
+  clearCanvasSelection();
 
   try {
     const updates = Array.from(nextPositions.entries()).map(([id, position]) => ({ id, ...position }));
@@ -1808,7 +2067,7 @@ async function handleFreeImageUpload(event: Event) {
         }
         revokeObjectUrl(pendingNode.localObjectUrl);
         nodes.value = nodes.value.map((current) => current.id === pendingNode.id ? node : current);
-        if (selectedNodeId.value === pendingNode.id) selectedNodeId.value = node.id;
+        if (selectedNodeId.value === pendingNode.id) selectSingleNode(node);
         successCount += 1;
       } catch (err: any) {
         failedCount += 1;
@@ -1895,7 +2154,7 @@ function focusCanvasNode(node: CanvasNode, targetZoom = 1) {
     x: rect.width / 2 - nodeCenterX * zoom,
     y: rect.height / 2 - nodeCenterY * zoom,
   };
-  selectedNodeId.value = node.id;
+  selectSingleNode(node);
   nodeSearchOpen.value = false;
   scheduleViewportSave();
 }
@@ -1912,7 +2171,11 @@ function focusCanvasNodesAtCurrentZoom(targetNodes: CanvasNode[]) {
     x: rect.width / 2 - centerX * zoom,
     y: rect.height / 2 - centerY * zoom,
   };
-  selectedNodeId.value = targetNodes[0]?.id ?? null;
+  if (targetNodes[0]) {
+    selectSingleNode(targetNodes[0]);
+  } else {
+    clearCanvasSelection();
+  }
   nodeSearchOpen.value = false;
   scheduleViewportSave();
 }
@@ -2172,7 +2435,11 @@ onBeforeUnmount(() => {
     <main
       ref="canvasStageRef"
       class="canvas-stage"
-      :class="{ panning: !!panState, 'background-solid': canvasBackgroundMode === 'solid' }"
+      :class="{
+        panning: !!panState,
+        selecting: canvasInteractionMode === 'select',
+        'background-solid': canvasBackgroundMode === 'solid',
+      }"
       @wheel="handleWheel"
       @pointerdown="handleStagePointerDown"
       @pointermove="handleStagePointerMove"
@@ -2249,8 +2516,14 @@ onBeforeUnmount(() => {
           <button type="button" class="canvas-guide-close" title="关闭操作指南" @click="guideOpen = false">
             ×
           </button>
-          <div class="canvas-guide-title">Windows 操作</div>
+          <div class="canvas-guide-title">操作指南</div>
           <div class="canvas-guide-list">
+            <div class="canvas-guide-section-title">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11h1V5.5a1.5 1.5 0 0 1 3 0V11h1V7.5a1.5 1.5 0 0 1 3 0v6.2c0 4.1-2.6 6.8-6.5 6.8H11c-2.4 0-4.1-1.1-5.4-3.2L3.8 14.2a1.6 1.6 0 0 1 2.7-1.7L8 14.6V11z" />
+              </svg>
+              <span>抓手模式</span>
+            </div>
             <div>
               <kbd>左键拖拽空白</kbd>
               <span>移动画布视野</span>
@@ -2267,6 +2540,25 @@ onBeforeUnmount(() => {
               <kbd>触控板双指滑动</kbd>
               <span>平移或缩放画布</span>
             </div>
+            <div class="canvas-guide-section-title">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 4l12 7-5.2 1.5 3.4 5.7-2.5 1.5-3.4-5.7-3.8 3.8L5 4z" />
+              </svg>
+              <span>选择模式</span>
+            </div>
+            <div>
+              <kbd>左键拖拽空白</kbd>
+              <span>框选节点并临时组合</span>
+            </div>
+            <div>
+              <kbd>鼠标滚轮</kbd>
+              <span>上下滚动画布，不触发缩放</span>
+            </div>
+            <div>
+              <kbd>选中后操作条</kbd>
+              <span>生成图片或删除选中的节点</span>
+            </div>
+            <div class="canvas-guide-section-title">节点操作</div>
             <div>
               <kbd>拖拽图片卡片</kbd>
               <span>调整图片在画布中的位置</span>
@@ -2318,6 +2610,29 @@ onBeforeUnmount(() => {
 
       <div class="canvas-side-toolbox-wrap" @pointerdown.stop @click.stop>
         <div class="canvas-side-toolbox canvas-panel">
+          <a-tooltip title="选择" placement="right">
+            <button
+              type="button"
+              :class="{ active: canvasInteractionMode === 'select' }"
+              @click="setCanvasInteractionMode('select')"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="canvas-side-toolbox-svg">
+                <path d="M5 4l12 7-5.2 1.5 3.4 5.7-2.5 1.5-3.4-5.7-3.8 3.8L5 4z" />
+              </svg>
+            </button>
+          </a-tooltip>
+          <a-tooltip title="抓手" placement="right">
+            <button
+              type="button"
+              :class="{ active: canvasInteractionMode === 'pan' }"
+              @click="setCanvasInteractionMode('pan')"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="canvas-side-toolbox-svg">
+                <path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11h1V5.5a1.5 1.5 0 0 1 3 0V11h1V7.5a1.5 1.5 0 0 1 3 0v6.2c0 4.1-2.6 6.8-6.5 6.8H11c-2.4 0-4.1-1.1-5.4-3.2L3.8 14.2a1.6 1.6 0 0 1 2.7-1.7L8 14.6V11z" />
+              </svg>
+            </button>
+          </a-tooltip>
+          <span class="canvas-side-toolbox-divider"></span>
           <a-tooltip :title="canvasReadOnly ? '只读模式下不可创建自由节点' : '自由节点'" placement="right">
             <button type="button" :disabled="canvasReadOnly" @click="handleCanvasSideTool('freeNode')">
               <PlusOutlined />
@@ -2524,7 +2839,32 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="selectedNode"
+        v-if="selectionBox"
+        class="canvas-selection-box"
+        :style="selectionBoxStyle"
+      ></div>
+
+      <div
+        v-if="selectionActionNodes.length"
+        class="canvas-selection-action-toolbar canvas-panel"
+        :style="selectionActionToolbarStyle"
+        @pointerdown.stop
+        @pointerup.stop
+        @click.stop
+      >
+        <span class="canvas-selection-action-count">已选择 {{ selectionActionNodes.length }} 个</span>
+        <button type="button" @click="handleGenerateFromSelection">
+          <ThunderboltOutlined />
+          <span>生成图片</span>
+        </button>
+        <button type="button" class="danger" :disabled="canvasReadOnly" @click="deleteSelectedNodes">
+          <DeleteOutlined />
+          <span>删除</span>
+        </button>
+      </div>
+
+      <div
+        v-if="selectedNode && !selectionActionNodes.length"
         class="canvas-node-toolbar"
         :style="selectedNodeToolbarStyle"
         @pointerdown.stop
@@ -2623,13 +2963,19 @@ onBeforeUnmount(() => {
         >
           {{ marker.count }} 条关联
         </button>
+        <div
+          v-if="selectionActionNodes.length && selectionGroupBounds"
+          class="canvas-selection-group"
+          :style="selectionGroupStyle"
+          aria-hidden="true"
+        ></div>
         <article
           v-for="node in nodes"
           :key="node.id"
           class="canvas-node"
           :class="{
             failed: node.task?.status === 'failed',
-            selected: node.id === selectedNodeId,
+            selected: isNodeSelected(node),
             'reference-selecting': canvasReferenceSelectMode && getNodeReferenceOption(node),
             'reference-selected': canvasReferenceSelectMode && isCanvasReferenceSelected(node),
             'uploading': node.uploadStatus === 'uploading',
@@ -3524,6 +3870,10 @@ onBeforeUnmount(() => {
     cursor: grabbing;
   }
 
+  &.selecting {
+    cursor: default;
+  }
+
   &.background-solid {
     background: var(--theme-page-base);
     background-size: auto;
@@ -3683,6 +4033,22 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.canvas-guide-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--theme-title);
+  font-size: 12px;
+  font-weight: 900;
+
+  svg {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+  }
+}
+
 .canvas-guide-list div {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
@@ -3691,6 +4057,12 @@ onBeforeUnmount(() => {
   color: var(--theme-text-secondary);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.canvas-guide-list .canvas-guide-section-title {
+  display: inline-flex;
+  grid-template-columns: none;
+  margin-top: 4px;
 }
 
 .canvas-guide-list kbd {
@@ -3748,6 +4120,18 @@ onBeforeUnmount(() => {
   background: var(--theme-panel-bg-muted);
   color: var(--theme-accent-text-hover);
   transform: translateY(-1px);
+}
+
+.canvas-side-toolbox button.active {
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
+  box-shadow: 0 8px 16px var(--theme-nav-active-shadow);
+}
+
+.canvas-side-toolbox-svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
 }
 
 .canvas-side-toolbox-divider {
@@ -4310,6 +4694,85 @@ onBeforeUnmount(() => {
   height: 24px;
   opacity: 0.72;
   font-size: 11px;
+}
+
+.canvas-selection-box {
+  position: absolute;
+  z-index: 45;
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 88%, #fff 12%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-accent) 16%, transparent);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.38) inset;
+  pointer-events: none;
+}
+
+.canvas-selection-group {
+  position: absolute;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  background: rgba(24, 24, 24, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 22px 54px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.canvas-selection-action-toolbar {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 14px;
+  transform: translate(-50%, -100%);
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--theme-title);
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  button:hover:not(:disabled) {
+    background: var(--theme-panel-bg-muted);
+    color: var(--theme-accent-text-hover);
+    transform: translateY(-1px);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+  }
+
+  button.danger {
+    color: #c85a49;
+  }
+
+  button.danger:hover:not(:disabled) {
+    background: rgba(200, 90, 73, 0.12);
+    color: #b84b3b;
+  }
+}
+
+.canvas-selection-action-count {
+  padding: 0 4px;
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .canvas-node-toolbar {
