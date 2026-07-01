@@ -23,3 +23,7 @@ class CanvasNode(Base):
 
     canvas = relationship("UserCanvas", back_populates="nodes")
     task = relationship("Task", back_populates="canvas_node")
+    outgoing_edges = relationship("CanvasEdge", foreign_keys="CanvasEdge.source_node_id", back_populates="source_node")
+    incoming_edges = relationship("CanvasEdge", foreign_keys="CanvasEdge.target_node_id", back_populates="target_node")
+    outgoing_edges = relationship("CanvasEdge", foreign_keys="CanvasEdge.source_node_id", back_populates="source_node")
+    incoming_edges = relationship("CanvasEdge", foreign_keys="CanvasEdge.target_node_id", back_populates="target_node")

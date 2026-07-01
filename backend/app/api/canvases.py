@@ -9,6 +9,8 @@ from app.models.user import User
 from app.schemas.canvas import (
     CanvasCreate,
     CanvasDetail,
+    CanvasEdgeOut,
+    CanvasEdgeUpdate,
     CanvasFreeNodeCreate,
     CanvasListResponse,
     CanvasNodeBatchUpdate,
@@ -32,6 +34,7 @@ from app.services.canvas_service import (
     list_user_canvases,
     update_canvas_node,
     update_canvas_nodes_batch,
+    update_canvas_edge,
     update_canvas_viewport,
     update_user_canvas,
 )
@@ -164,6 +167,23 @@ def delete_node(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.patch("/{project_id}/edges/{edge_id}", response_model=CanvasEdgeOut)
+def update_edge(
+    project_id: str,
+    edge_id: int,
+    body: CanvasEdgeUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return update_canvas_edge(
+        db,
+        user.id,
+        project_id,
+        edge_id,
+        is_collapsed=body.is_collapsed,
+    )
+
+
 @router.post("/{project_id}/nodes", response_model=CanvasNodeOut, status_code=status.HTTP_201_CREATED)
 def create_free_node(
     project_id: str,
@@ -224,6 +244,7 @@ def create_canvas_task(
         resolution=resolved_resolution,
         custom_size=body.custom_size,
         reference_images=body.reference_images,
+        source_node_ids=body.source_node_ids,
         source_image=body.source_image,
         mask_image=body.mask_image,
         x=body.x,

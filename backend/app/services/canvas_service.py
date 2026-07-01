@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.models.canvas_edge import CanvasEdge
 from app.models.canvas_node import CanvasNode
 from app.models.image import Image
 from app.models.task import Task
@@ -13,7 +14,7 @@ from app.services.image_delivery_service import get_optional_cos_config, seriali
 from app.services.task_service import create_tasks
 from app.utils.datetime_utils import now_local
 
-DEFAULT_CANVAS_NAME = "新画布"
+DEFAULT_CANVAS_NAME_PREFIX = "新画板"
 MAX_CANVAS_NAME_LENGTH = 100
 DEFAULT_NODE_WIDTH = 320
 DEFAULT_NODE_HEIGHT = 420
@@ -22,8 +23,12 @@ DEFAULT_CANVAS_PREVIEW_LIMIT = 3
 CANVAS_PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{16}$")
 
 
-def _normalize_canvas_name(name: str | None, *, fallback: str = DEFAULT_CANVAS_NAME) -> str:
-    normalized = (name or "").strip() or fallback
+def _default_canvas_name() -> str:
+    return f"{DEFAULT_CANVAS_NAME_PREFIX}-{now_local().strftime('%y%m%d')}"
+
+
+def _normalize_canvas_name(name: str | None, *, fallback: str | None = None) -> str:
+    normalized = (name or "").strip() or fallback or _default_canvas_name()
     if len(normalized) > MAX_CANVAS_NAME_LENGTH:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"画布名称不能超过 {MAX_CANVAS_NAME_LENGTH} 个字符")
     return normalized
@@ -85,6 +90,21 @@ def _serialize_node(node: CanvasNode, *, cos_config=None) -> dict:
     }
 
 
+def _serialize_edge(edge: CanvasEdge) -> dict:
+    return {
+        "id": edge.id,
+        "canvas_id": edge.canvas_id,
+        "source_node_id": edge.source_node_id,
+        "target_node_id": edge.target_node_id,
+        "edge_type": edge.edge_type or "reference",
+        "source_anchor": edge.source_anchor or "auto",
+        "target_anchor": edge.target_anchor or "auto",
+        "is_collapsed": bool(edge.is_collapsed),
+        "created_at": edge.created_at,
+        "updated_at": edge.updated_at,
+    }
+
+
 def _build_preview_map(db: Session, user_id: int, canvas_ids: list[int]) -> dict[int, list[str]]:
     from app.services.image_delivery_service import serialize_image
 
@@ -119,6 +139,25 @@ def _build_preview_map(db: Session, user_id: int, canvas_ids: list[int]) -> dict
         preview_url = image_payload.get("thumb_url") or image_payload.get("preview_url") or image_payload.get("image_url") or ""
         if preview_url:
             previews.append(preview_url)
+    image_nodes = (
+        db.query(CanvasNode)
+        .filter(
+            CanvasNode.canvas_id.in_(canvas_ids),
+            CanvasNode.task_id.is_(None),
+            CanvasNode.node_type == "image",
+            CanvasNode.image_url != "",
+        )
+        .order_by(CanvasNode.updated_at.desc(), CanvasNode.id.desc())
+        .limit(max(60, len(canvas_ids) * DEFAULT_CANVAS_PREVIEW_LIMIT * 4))
+        .all()
+    )
+    for node in image_nodes:
+        previews = preview_map.setdefault(node.canvas_id, [])
+        if len(previews) >= DEFAULT_CANVAS_PREVIEW_LIMIT:
+            continue
+        image_url = (node.image_url or "").strip()
+        if image_url and image_url not in previews:
+            previews.append(image_url)
     return preview_map
 
 
@@ -263,6 +302,20 @@ def get_canvas_detail(db: Session, user_id: int, project_id: str, *, allow_admin
     cos_config = get_optional_cos_config(db)
     detail = _serialize_canvas_summary(canvas, len(nodes), is_readonly=is_readonly)
     detail["nodes"] = [_serialize_node(node, cos_config=cos_config) for node in nodes]
+    node_ids = [node.id for node in nodes]
+    edges = []
+    if node_ids:
+        edges = (
+            db.query(CanvasEdge)
+            .filter(
+                CanvasEdge.canvas_id == canvas.id,
+                CanvasEdge.source_node_id.in_(node_ids),
+                CanvasEdge.target_node_id.in_(node_ids),
+            )
+            .order_by(CanvasEdge.id.asc())
+            .all()
+        )
+    detail["edges"] = [_serialize_edge(edge) for edge in edges]
     return detail
 
 
@@ -379,6 +432,10 @@ def delete_canvas_node(db: Session, user_id: int, project_id: str, node_id: int)
     )
     if not node:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="画布节点不存在")
+    db.query(CanvasEdge).filter(
+        CanvasEdge.canvas_id == canvas.id,
+        ((CanvasEdge.source_node_id == node.id) | (CanvasEdge.target_node_id == node.id)),
+    ).delete(synchronize_session=False)
     db.delete(node)
     canvas.updated_at = now_local()
     db.commit()
@@ -447,6 +504,7 @@ def create_canvas_generation_tasks(
     resolution: str,
     custom_size: str = "",
     reference_images: list[str] | None = None,
+    source_node_ids: list[int] | None = None,
     source_image: str = "",
     mask_image: str = "",
     x: float = 0,
@@ -455,6 +513,21 @@ def create_canvas_generation_tasks(
     height: float = DEFAULT_NODE_HEIGHT,
 ) -> tuple[list[Task], list[dict]]:
     canvas = get_user_canvas_or_404(db, user_id, project_id)
+    normalized_source_node_ids = list(dict.fromkeys(int(node_id) for node_id in (source_node_ids or []) if int(node_id) > 0))
+    source_nodes: list[CanvasNode] = []
+    if normalized_source_node_ids:
+        source_nodes = (
+            db.query(CanvasNode)
+            .outerjoin(Task, Task.id == CanvasNode.task_id)
+            .filter(
+                CanvasNode.id.in_(normalized_source_node_ids),
+                CanvasNode.canvas_id == canvas.id,
+                ((CanvasNode.task_id.is_(None)) | ((Task.user_id == user_id) & (Task.is_deleted.is_(False)))),
+            )
+            .all()
+        )
+        if len({node.id for node in source_nodes}) != len(normalized_source_node_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="部分来源节点不可用")
     tasks = create_tasks(
         db,
         user_id=user_id,
@@ -492,6 +565,15 @@ def create_canvas_generation_tasks(
         )
         db.add(node)
         nodes.append(node)
+    db.flush()
+    for source_node in source_nodes:
+        for node in nodes:
+            db.add(CanvasEdge(
+                canvas_id=canvas.id,
+                source_node_id=source_node.id,
+                target_node_id=node.id,
+                edge_type="generation",
+            ))
     canvas.updated_at = now_local()
     db.commit()
 
@@ -499,3 +581,27 @@ def create_canvas_generation_tasks(
         db.refresh(node)
     cos_config = get_optional_cos_config(db)
     return tasks, [_serialize_node(node, cos_config=cos_config) for node in nodes]
+
+
+def update_canvas_edge(
+    db: Session,
+    user_id: int,
+    project_id: str,
+    edge_id: int,
+    *,
+    is_collapsed: bool | None = None,
+) -> dict:
+    canvas = get_user_canvas_or_404(db, user_id, project_id)
+    edge = (
+        db.query(CanvasEdge)
+        .filter(CanvasEdge.id == edge_id, CanvasEdge.canvas_id == canvas.id)
+        .first()
+    )
+    if not edge:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="画布连线不存在")
+    if is_collapsed is not None:
+        edge.is_collapsed = is_collapsed
+    canvas.updated_at = now_local()
+    db.commit()
+    db.refresh(edge)
+    return _serialize_edge(edge)

@@ -13,6 +13,7 @@
 --   3. Confirm these objects do not already exist:
 --      SHOW TABLES LIKE 'user_canvas';
 --      SHOW TABLES LIKE 'canvas_nodes';
+--      SHOW TABLES LIKE 'canvas_edges';
 --      SHOW COLUMNS FROM tasks LIKE 'canvas_id';
 
 CREATE TABLE user_canvas (
@@ -64,4 +65,23 @@ CREATE TABLE canvas_nodes (
   INDEX idx_canvas_nodes_task_id (task_id),
   CONSTRAINT fk_canvas_nodes_canvas FOREIGN KEY (canvas_id) REFERENCES user_canvas(id),
   CONSTRAINT fk_canvas_nodes_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE canvas_edges (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  canvas_id INT NOT NULL,
+  source_node_id INT NOT NULL,
+  target_node_id INT NOT NULL,
+  edge_type VARCHAR(20) NOT NULL DEFAULT 'reference',
+  source_anchor VARCHAR(10) NOT NULL DEFAULT 'auto',
+  target_anchor VARCHAR(10) NOT NULL DEFAULT 'auto',
+  is_collapsed BOOLEAN NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_canvas_edges_canvas_id (canvas_id),
+  INDEX idx_canvas_edges_source_node_id (source_node_id),
+  INDEX idx_canvas_edges_target_node_id (target_node_id),
+  CONSTRAINT fk_canvas_edges_canvas FOREIGN KEY (canvas_id) REFERENCES user_canvas(id) ON DELETE CASCADE,
+  CONSTRAINT fk_canvas_edges_source_node FOREIGN KEY (source_node_id) REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_canvas_edges_target_node FOREIGN KEY (target_node_id) REFERENCES canvas_nodes(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

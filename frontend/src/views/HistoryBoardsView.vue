@@ -380,7 +380,7 @@ onMounted(loadBoards);
 }
 
 .board-card {
-  height: 252px;
+  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(236, 220, 198, 0.9);

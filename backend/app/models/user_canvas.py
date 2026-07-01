@@ -33,3 +33,4 @@ class UserCanvas(Base):
     user = relationship("User", backref="canvases")
     nodes = relationship("CanvasNode", back_populates="canvas")
     tasks = relationship("Task", back_populates="canvas")
+    edges = relationship("CanvasEdge", back_populates="canvas")

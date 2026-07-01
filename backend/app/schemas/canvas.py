@@ -7,7 +7,7 @@ from app.schemas.task import TaskOut
 
 
 class CanvasCreate(BaseModel):
-    name: str = Field(default="新画布", max_length=100)
+    name: str = Field(default="", max_length=100)
 
 
 class CanvasUpdate(BaseModel):
@@ -60,6 +60,7 @@ class CanvasTaskCreate(BaseModel):
     custom_size: str = ""
     mode: Literal["generate", "inpaint"] = "generate"
     reference_images: list[str] | None = None
+    source_node_ids: list[int] = Field(default_factory=list, max_length=50)
     source_image: str = ""
     mask_image: str = ""
     x: float = 0
@@ -106,8 +107,26 @@ class CanvasNodeOut(BaseModel):
     task: TaskOut | None = None
 
 
+class CanvasEdgeOut(BaseModel):
+    id: int
+    canvas_id: int
+    source_node_id: int
+    target_node_id: int
+    edge_type: str = "reference"
+    source_anchor: str = "auto"
+    target_anchor: str = "auto"
+    is_collapsed: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CanvasEdgeUpdate(BaseModel):
+    is_collapsed: bool | None = None
+
+
 class CanvasDetail(CanvasSummary):
     nodes: list[CanvasNodeOut] = []
+    edges: list[CanvasEdgeOut] = []
 
 
 class CanvasNodeBatchUpdateResponse(BaseModel):

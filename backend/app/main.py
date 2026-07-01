@@ -1650,6 +1650,42 @@ def _ensure_user_canvas_schema():
         if "idx_canvas_nodes_task_id" not in node_indexes:
             conn.execute(text("CREATE INDEX idx_canvas_nodes_task_id ON canvas_nodes (task_id)"))
 
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "canvas_edges" not in table_names:
+        from app.models.canvas_edge import CanvasEdge
+
+        CanvasEdge.__table__.create(bind=engine)
+        return
+
+    edge_columns = {col["name"] for col in inspector.get_columns("canvas_edges")}
+    edge_indexes = {index["name"] for index in inspector.get_indexes("canvas_edges")}
+    with engine.begin() as conn:
+        if "canvas_id" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN canvas_id INTEGER NOT NULL"))
+        if "source_node_id" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN source_node_id INTEGER NOT NULL"))
+        if "target_node_id" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN target_node_id INTEGER NOT NULL"))
+        if "edge_type" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN edge_type VARCHAR(20) NOT NULL DEFAULT 'reference'"))
+        if "source_anchor" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN source_anchor VARCHAR(10) NOT NULL DEFAULT 'auto'"))
+        if "target_anchor" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN target_anchor VARCHAR(10) NOT NULL DEFAULT 'auto'"))
+        if "is_collapsed" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN is_collapsed BOOLEAN NOT NULL DEFAULT 0"))
+        if "created_at" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in edge_columns:
+            conn.execute(text("ALTER TABLE canvas_edges ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "idx_canvas_edges_canvas_id" not in edge_indexes:
+            conn.execute(text("CREATE INDEX idx_canvas_edges_canvas_id ON canvas_edges (canvas_id)"))
+        if "idx_canvas_edges_source_node_id" not in edge_indexes:
+            conn.execute(text("CREATE INDEX idx_canvas_edges_source_node_id ON canvas_edges (source_node_id)"))
+        if "idx_canvas_edges_target_node_id" not in edge_indexes:
+            conn.execute(text("CREATE INDEX idx_canvas_edges_target_node_id ON canvas_edges (target_node_id)"))
+
 
 def _backfill_task_credit_costs():
     from app.database import SessionLocal

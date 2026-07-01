@@ -1,6 +1,7 @@
 import client from "./client";
 import type {
   CanvasDetail,
+  CanvasEdge,
   CanvasNode,
   CanvasTaskCreateResponse,
   CanvasTaskPayload,
@@ -12,7 +13,14 @@ export function listCanvases(): Promise<UserCanvasListResponse> {
   return client.get("/canvases");
 }
 
-export function createCanvas(name: string = "新画布"): Promise<UserCanvasSummary> {
+export function getDefaultCanvasName(date = new Date()): string {
+  const year = String(date.getFullYear()).slice(-2);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `新画板-${year}${month}${day}`;
+}
+
+export function createCanvas(name: string = getDefaultCanvasName()): Promise<UserCanvasSummary> {
   return client.post("/canvases", { name });
 }
 
@@ -42,6 +50,10 @@ export function updateCanvasNodesBatch(projectId: string, nodes: Array<Partial<P
 
 export function deleteCanvasNode(projectId: string, nodeId: number): Promise<void> {
   return client.delete(`/canvases/${projectId}/nodes/${nodeId}`);
+}
+
+export function updateCanvasEdge(projectId: string, edgeId: number, data: { is_collapsed?: boolean }): Promise<CanvasEdge> {
+  return client.patch(`/canvases/${projectId}/edges/${edgeId}`, data);
 }
 
 export function createCanvasNode(projectId: string, data: {

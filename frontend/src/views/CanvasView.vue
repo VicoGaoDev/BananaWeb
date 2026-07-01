@@ -22,7 +22,7 @@ import {
   ThunderboltOutlined,
   UploadOutlined,
 } from "@ant-design/icons-vue";
-import { createCanvas, createCanvasNode, createCanvasTask, deleteCanvasNode, getCanvas, listCanvases, updateCanvas, updateCanvasNode, updateCanvasNodesBatch, updateCanvasViewport } from "@/api/canvases";
+import { createCanvas, createCanvasNode, createCanvasTask, deleteCanvasNode, getCanvas, listCanvases, updateCanvas, updateCanvasEdge, updateCanvasNode, updateCanvasNodesBatch, updateCanvasViewport } from "@/api/canvases";
 import { listUsers } from "@/api/admin";
 import { getMe } from "@/api/auth";
 import { getTaskScenes } from "@/api/config";
@@ -36,7 +36,7 @@ import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import { getTaskImageFailureMessage } from "@/lib/generationErrors";
 import { useAuthStore } from "@/stores/auth";
-import type { AdminUser, CanvasNode, TaskResult, TaskSceneConfig, UserCanvasSummary, UserHistoryCard } from "@/types";
+import type { AdminUser, CanvasEdge, CanvasNode, TaskResult, TaskSceneConfig, UserCanvasSummary, UserHistoryCard } from "@/types";
 
 const props = defineProps<{
   projectId?: string;
@@ -52,6 +52,7 @@ interface CanvasReferenceOption {
   id: string;
   imageUrl: string;
   displayUrl: string;
+  sourceNodeId?: number;
 }
 
 interface ReferenceItem {
@@ -59,6 +60,7 @@ interface ReferenceItem {
   localUrl: string;
   remoteUrl: string;
   status: UploadStatus;
+  sourceNodeId?: number;
   objectUrl?: string;
 }
 
@@ -143,6 +145,7 @@ const canvasFeedbackAppendContent = computed(() => {
   ].filter(Boolean).join("\n");
 });
 const nodes = ref<CanvasWorkbenchNode[]>([]);
+const edges = ref<CanvasEdge[]>([]);
 const loading = ref(false);
 const creatingCanvas = ref(false);
 const canvasMenuOpen = ref(false);
@@ -166,6 +169,7 @@ const numImages = ref(1);
 const size = ref("9:16");
 const resolution = ref("2K");
 const customSize = ref("");
+const promptSourceNodeId = ref<number | null>(null);
 const generating = ref(false);
 const uploadMenuOpen = ref(false);
 const uploadMenuAnchor = ref<UploadMenuAnchor>("reference");
@@ -276,6 +280,7 @@ const canvasReferenceOptions = computed<CanvasReferenceOption[]>(() => nodes.val
       id: `${node.id}-free-image`,
       imageUrl: node.image_url,
       displayUrl: node.image_url,
+      sourceNodeId: node.id,
     }];
   }
   const task = node.task;
@@ -286,8 +291,59 @@ const canvasReferenceOptions = computed<CanvasReferenceOption[]>(() => nodes.val
       id: `${node.id}-${image.id || index}`,
       imageUrl: image.image_url || image.preview_url || image.thumb_url || "",
       displayUrl: getDisplayImageUrl(image),
+      sourceNodeId: node.id,
     }));
 }));
+const nodeMap = computed(() => new Map(nodes.value.map((node) => [node.id, node])));
+const edgesBySource = computed(() => {
+  const groups = new Map<number, CanvasEdge[]>();
+  edges.value.forEach((edge) => {
+    if (!nodeMap.value.has(edge.source_node_id) || !nodeMap.value.has(edge.target_node_id)) return;
+    const list = groups.get(edge.source_node_id) || [];
+    list.push(edge);
+    groups.set(edge.source_node_id, list);
+  });
+  return groups;
+});
+
+function canCollapseEdgeGroup(sourceNode: CanvasNode | undefined, group: CanvasEdge[]) {
+  if (!sourceNode || !group.length) return false;
+  return sourceNode.node_type === "text" || group.length > 1;
+}
+
+const collapsedSourceIds = computed(() => {
+  const ids = new Set<number>();
+  edgesBySource.value.forEach((group, sourceNodeId) => {
+    const sourceNode = nodeMap.value.get(sourceNodeId);
+    if (canCollapseEdgeGroup(sourceNode, group) && group.every((edge) => edge.is_collapsed)) ids.add(sourceNodeId);
+  });
+  return ids;
+});
+const visibleCanvasEdges = computed(() => edges.value.filter((edge) => {
+  if (collapsedSourceIds.value.has(edge.source_node_id)) return false;
+  return nodeMap.value.has(edge.source_node_id) && nodeMap.value.has(edge.target_node_id);
+}));
+const collapsedEdgeMarkers = computed(() => Array.from(collapsedSourceIds.value).map((sourceNodeId) => {
+  const sourceNode = nodeMap.value.get(sourceNodeId);
+  const group = edgesBySource.value.get(sourceNodeId) || [];
+  if (!sourceNode || !group.length) return null;
+  return {
+    sourceNodeId,
+    count: group.length,
+    x: sourceNode.x + sourceNode.width + 12,
+    y: sourceNode.y + getNodeCardHeight(sourceNode) / 2,
+  };
+}).filter((item): item is { sourceNodeId: number; count: number; x: number; y: number } => !!item));
+const expandedEdgeGroupControls = computed(() => Array.from(edgesBySource.value.entries()).map(([sourceNodeId, group]) => {
+  const sourceNode = nodeMap.value.get(sourceNodeId);
+  if (!sourceNode || !canCollapseEdgeGroup(sourceNode, group) || collapsedSourceIds.value.has(sourceNodeId)) return null;
+  return {
+    sourceNodeId,
+    count: group.length,
+    x: sourceNode.x + sourceNode.width + 12,
+    y: sourceNode.y + getNodeCardHeight(sourceNode) / 2,
+  };
+}).filter((item): item is { sourceNodeId: number; count: number; x: number; y: number } => !!item));
 
 let panState: { pointerId: number; startX: number; startY: number; originX: number; originY: number } | null = null;
 let dragState: { pointerId: number; nodeId: number; startX: number; startY: number; originX: number; originY: number } | null = null;
@@ -648,7 +704,7 @@ async function loadCanvasList(preferredProjectId?: string | null) {
     if (selectedCanvas.value) return;
   }
   if (!res.items.length) {
-    await handleCreateCanvas("我的画布", { silent: true });
+    await handleCreateCanvas(undefined, { silent: true });
     return;
   }
   const nextCanvas = preferredCanvas
@@ -737,6 +793,8 @@ async function loadCanvasDetail(projectId = selectedCanvasProjectId.value) {
     };
     revokeLocalNodeObjectUrls();
     nodes.value = detail.nodes || [];
+    edges.value = detail.edges || [];
+    promptSourceNodeId.value = null;
     const detailSummary = { ...detail, node_count: detail.node_count };
     canvases.value = canvases.value.some((item) => item.id === detail.id)
       ? canvases.value.map((item) => item.id === detail.id ? { ...item, ...detailSummary } : item)
@@ -749,7 +807,7 @@ async function loadCanvasDetail(projectId = selectedCanvasProjectId.value) {
   }
 }
 
-async function handleCreateCanvas(name = `新画布-${canvases.value.length + 1}`, options: { silent?: boolean } = {}) {
+async function handleCreateCanvas(name?: string, options: { silent?: boolean } = {}) {
   if (creatingCanvas.value) return;
   creatingCanvas.value = true;
   try {
@@ -880,6 +938,7 @@ function addCanvasReference(option: CanvasReferenceOption) {
     localUrl: option.displayUrl,
     remoteUrl: option.imageUrl,
     status: "success",
+      sourceNodeId: option.sourceNodeId,
   }];
   if (referenceSlotsRemaining.value <= 0) {
     canvasReferenceSelectMode.value = false;
@@ -893,6 +952,7 @@ function getNodeReferenceOption(node: CanvasNode): CanvasReferenceOption | null 
       id: `${node.id}-free-image`,
       imageUrl: node.image_url,
       displayUrl: node.image_url,
+      sourceNodeId: node.id,
     };
   }
   const task = node.task;
@@ -903,6 +963,7 @@ function getNodeReferenceOption(node: CanvasNode): CanvasReferenceOption | null 
     id: `${node.id}-${image.id || 0}`,
     imageUrl: image.image_url || image.preview_url || image.thumb_url || "",
     displayUrl: getDisplayImageUrl(image),
+    sourceNodeId: node.id,
   };
 }
 
@@ -1107,6 +1168,7 @@ function refillGenerateConfigFromNode(node: CanvasNode) {
   size.value = task.size || size.value;
   resolution.value = task.resolution || resolution.value;
   customSize.value = task.custom_size || "";
+  promptSourceNodeId.value = null;
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
   referenceItems.value = (task.reference_images || []).map((url, index) => ({
     id: `refill-${node.id}-${index}`,
@@ -1124,6 +1186,7 @@ function useFreeNodeForGeneration(node: CanvasNode) {
   if (node.node_type === "text") {
     canvasMode.value = "textGenerate";
     prompt.value = node.content || "";
+    promptSourceNodeId.value = node.id;
     message.success("已回填文本到提示词");
     return;
   }
@@ -1227,6 +1290,7 @@ function deleteNode(node: CanvasNode) {
   if (localNode.localObjectUrl || node.id < 0) {
     revokeObjectUrl(localNode.localObjectUrl);
     nodes.value = nodes.value.filter((item) => item.id !== node.id);
+    edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
     if (selectedNodeId.value === node.id) selectedNodeId.value = null;
     message.success("删除成功");
     return;
@@ -1243,6 +1307,7 @@ function deleteNode(node: CanvasNode) {
       async onOk() {
         await deleteCanvasNode(projectId, node.id);
         nodes.value = nodes.value.filter((item) => item.id !== node.id);
+        edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
         if (selectedNodeId.value === node.id) selectedNodeId.value = null;
         canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? {
           ...item,
@@ -1262,6 +1327,7 @@ function deleteNode(node: CanvasNode) {
     async onOk() {
       await deleteHistoryTask(node.task_id);
       nodes.value = nodes.value.filter((item) => item.id !== node.id);
+      edges.value = edges.value.filter((edge) => edge.source_node_id !== node.id && edge.target_node_id !== node.id);
       if (selectedNodeId.value === node.id) selectedNodeId.value = null;
       canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? {
         ...item,
@@ -1308,6 +1374,10 @@ async function handleGenerate() {
     { x: center.x - taskGroupWidth / 2, y: center.y - taskGroupHeight / 2 },
     { width: taskGroupWidth, height: taskGroupHeight }
   );
+  const sourceNodeIds = Array.from(new Set([
+    ...referenceItems.value.map((item) => item.sourceNodeId).filter((id): id is number => typeof id === "number"),
+    ...(promptSourceNodeId.value ? [promptSourceNodeId.value] : []),
+  ]));
   generating.value = true;
   try {
     const res = await createCanvasTask(projectId, {
@@ -1319,6 +1389,7 @@ async function handleGenerate() {
       resolution: resolution.value,
       custom_size: customSize.value,
       reference_images: isImageEditMode.value ? referenceItems.value.map((item) => item.remoteUrl).filter(Boolean) : [],
+      source_node_ids: sourceNodeIds,
       x: taskPosition.x,
       y: taskPosition.y,
       width: DEFAULT_NODE_WIDTH,
@@ -1326,6 +1397,12 @@ async function handleGenerate() {
     });
     nodes.value = [...nodes.value, ...res.nodes];
     prompt.value = "";
+    promptSourceNodeId.value = null;
+    getCanvas(projectId).then((detail) => {
+      if (detail.project_id !== selectedCanvasProjectId.value) return;
+      nodes.value = detail.nodes || nodes.value;
+      edges.value = detail.edges || [];
+    }).catch(() => {});
     if (res.nodes.length) {
       canvases.value = canvases.value.map((item) => item.id === selectedCanvasId.value ? { ...item, node_count: item.node_count + res.nodes.length } : item);
     }
@@ -1360,6 +1437,7 @@ async function refreshActiveTasks() {
       if (detail.project_id !== selectedCanvasProjectId.value) return;
       canvasReadOnlyState.value = detail.is_readonly === true;
       nodes.value = detail.nodes || [];
+      edges.value = detail.edges || [];
       const detailSummary = { ...detail, node_count: detail.node_count };
       canvases.value = canvases.value.some((item) => item.id === detail.id)
         ? canvases.value.map((item) => item.id === detail.id ? { ...item, ...detailSummary } : item)
@@ -1415,7 +1493,8 @@ function handleNodeDoubleClick(node: CanvasNode) {
     openTextNodeEditor(node);
     return;
   }
-  openPreview(node);
+  selectedNodeId.value = node.id;
+  focusCanvasNode(node, 1.5);
 }
 
 function downloadNode(node: CanvasNode) {
@@ -1469,11 +1548,68 @@ async function arrangeCanvasNodes() {
     message.warning("只读模式下不能整理并保存节点");
     return;
   }
+  Modal.confirm({
+    title: "确认一键整理？",
+    content: "一键整理会重新排列并重组当前画布已有布局，确认后将保存新的节点位置。",
+    okText: "确认整理",
+    cancelText: "取消",
+    centered: true,
+    async onOk() {
+      await executeArrangeCanvasNodes(projectId);
+    },
+  });
+}
 
+async function executeArrangeCanvasNodes(projectId: string) {
+  const nodeById = new Map(nodes.value.map((node) => [node.id, node]));
+  const adjacency = new Map<number, Set<number>>();
+  const incomingCounts = new Map<number, number>();
+  const outgoingCounts = new Map<number, number>();
+  edges.value.forEach((edge) => {
+    if (!nodeById.has(edge.source_node_id) || !nodeById.has(edge.target_node_id)) return;
+    if (!adjacency.has(edge.source_node_id)) adjacency.set(edge.source_node_id, new Set());
+    if (!adjacency.has(edge.target_node_id)) adjacency.set(edge.target_node_id, new Set());
+    adjacency.get(edge.source_node_id)?.add(edge.target_node_id);
+    adjacency.get(edge.target_node_id)?.add(edge.source_node_id);
+    outgoingCounts.set(edge.source_node_id, (outgoingCounts.get(edge.source_node_id) || 0) + 1);
+    incomingCounts.set(edge.target_node_id, (incomingCounts.get(edge.target_node_id) || 0) + 1);
+  });
+
+  const visited = new Set<number>();
+  const relatedGroups: CanvasNode[][] = [];
+  nodes.value.forEach((node) => {
+    if (visited.has(node.id) || !adjacency.has(node.id)) return;
+    const queue = [node.id];
+    const componentIds: number[] = [];
+    visited.add(node.id);
+    while (queue.length) {
+      const currentId = queue.shift()!;
+      componentIds.push(currentId);
+      adjacency.get(currentId)?.forEach((nextId) => {
+        if (visited.has(nextId)) return;
+        visited.add(nextId);
+        queue.push(nextId);
+      });
+    }
+    if (componentIds.length <= 1) return;
+    relatedGroups.push(componentIds
+      .map((id) => nodeById.get(id))
+      .filter((item): item is CanvasWorkbenchNode => !!item)
+      .sort((a, b) => {
+        const aScore = (outgoingCounts.get(a.id) || 0) - (incomingCounts.get(a.id) || 0);
+        const bScore = (outgoingCounts.get(b.id) || 0) - (incomingCounts.get(b.id) || 0);
+        if (aScore !== bScore) return bScore - aScore;
+        return Number(a.z_index || 0) - Number(b.z_index || 0);
+      }));
+  });
+
+  const relatedNodeIds = new Set(relatedGroups.flatMap((group) => group.map((node) => node.id)));
+  const standaloneNodes = nodes.value.filter((node) => !relatedNodeIds.has(node.id));
   const groups = [
-    nodes.value.filter((node) => node.node_type === "text"),
-    nodes.value.filter((node) => node.node_type === "image"),
-    nodes.value.filter((node) => !node.node_type || node.node_type === "task"),
+    ...relatedGroups,
+    standaloneNodes.filter((node) => node.node_type === "text"),
+    standaloneNodes.filter((node) => node.node_type === "image"),
+    standaloneNodes.filter((node) => !node.node_type || node.node_type === "task"),
   ];
   const visibleGroups = groups.filter((group) => group.length);
   if (!visibleGroups.length) return;
@@ -1515,7 +1651,7 @@ async function arrangeCanvasNodes() {
     const updates = Array.from(nextPositions.entries()).map(([id, position]) => ({ id, ...position }));
     const res = await updateCanvasNodesBatch(projectId, updates);
     nodes.value = nodes.value.map((node) => res.nodes.find((item) => item.id === node.id) || node);
-    message.success("画布节点已按类型整理");
+    message.success(relatedGroups.length ? "画布节点已按关系整理" : "画布节点已按类型整理");
   } catch {
     message.warning("节点位置保存失败，请稍后重试");
   }
@@ -1877,6 +2013,66 @@ function getNodeCardHeight(node: CanvasNode) {
   }
   const imageHeight = Number(node.width || DEFAULT_NODE_WIDTH) / getNodeAspectRatioValue(node);
   return Math.max(160, imageHeight);
+}
+
+type CanvasEdgeAnchor = "top" | "right" | "bottom" | "left";
+
+function getAutoEdgeAnchors(source: CanvasNode, target: CanvasNode): { source: CanvasEdgeAnchor; target: CanvasEdgeAnchor } {
+  const sourceCenter = {
+    x: source.x + Number(source.width || DEFAULT_NODE_WIDTH) / 2,
+    y: source.y + getNodeCardHeight(source) / 2,
+  };
+  const targetCenter = {
+    x: target.x + Number(target.width || DEFAULT_NODE_WIDTH) / 2,
+    y: target.y + getNodeCardHeight(target) / 2,
+  };
+  const dx = targetCenter.x - sourceCenter.x;
+  const dy = targetCenter.y - sourceCenter.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0 ? { source: "right", target: "left" } : { source: "left", target: "right" };
+  }
+  return dy >= 0 ? { source: "bottom", target: "top" } : { source: "top", target: "bottom" };
+}
+
+function getAnchorPoint(node: CanvasNode, anchor: CanvasEdgeAnchor) {
+  const width = Number(node.width || DEFAULT_NODE_WIDTH);
+  const height = getNodeCardHeight(node);
+  if (anchor === "top") return { x: node.x + width / 2, y: node.y };
+  if (anchor === "right") return { x: node.x + width, y: node.y + height / 2 };
+  if (anchor === "bottom") return { x: node.x + width / 2, y: node.y + height };
+  return { x: node.x, y: node.y + height / 2 };
+}
+
+function getEdgePath(edge: CanvasEdge) {
+  const source = nodeMap.value.get(edge.source_node_id);
+  const target = nodeMap.value.get(edge.target_node_id);
+  if (!source || !target) return "";
+  const autoAnchors = getAutoEdgeAnchors(source, target);
+  const sourceAnchor = edge.source_anchor === "auto" ? autoAnchors.source : edge.source_anchor;
+  const targetAnchor = edge.target_anchor === "auto" ? autoAnchors.target : edge.target_anchor;
+  const start = getAnchorPoint(source, sourceAnchor);
+  const end = getAnchorPoint(target, targetAnchor);
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  const handle = Math.max(80, Math.min(220, distance * 0.35));
+  const sourceVector = sourceAnchor === "left" ? { x: -handle, y: 0 } : sourceAnchor === "right" ? { x: handle, y: 0 } : sourceAnchor === "top" ? { x: 0, y: -handle } : { x: 0, y: handle };
+  const targetVector = targetAnchor === "left" ? { x: -handle, y: 0 } : targetAnchor === "right" ? { x: handle, y: 0 } : targetAnchor === "top" ? { x: 0, y: -handle } : { x: 0, y: handle };
+  return `M ${start.x} ${start.y} C ${start.x + sourceVector.x} ${start.y + sourceVector.y}, ${end.x + targetVector.x} ${end.y + targetVector.y}, ${end.x} ${end.y}`;
+}
+
+async function setSourceEdgesCollapsed(sourceNodeId: number, collapsed: boolean) {
+  const group = edgesBySource.value.get(sourceNodeId) || [];
+  if (!group.length) return;
+  edges.value = edges.value.map((edge) => edge.source_node_id === sourceNodeId ? { ...edge, is_collapsed: collapsed } : edge);
+  if (canvasReadOnly.value) return;
+  const projectId = selectedCanvasProjectId.value;
+  if (!projectId) return;
+  try {
+    const updatedEdges = await Promise.all(group.map((edge) => updateCanvasEdge(projectId, edge.id, { is_collapsed: collapsed })));
+    const updatedMap = new Map(updatedEdges.map((edge) => [edge.id, edge]));
+    edges.value = edges.value.map((edge) => updatedMap.get(edge.id) || edge);
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "保存连线状态失败");
+  }
 }
 
 watch(generationModels, (models) => {
@@ -2299,7 +2495,7 @@ onBeforeUnmount(() => {
 
       <div v-if="!nodes.length && !loading" class="canvas-empty canvas-panel">
         <h3>开始你的第一张画布作品</h3>
-        <p>在左侧输入提示词并提交，任务会出现在当前视口中心。拖拽空白处移动画布，滚轮缩放查看细节。</p>
+        <p>在底部配置区输入提示词并提交，任务会出现在当前视口中心。拖拽空白处移动画布，滚轮缩放查看细节。</p>
       </div>
 
       <div v-if="canvasReferenceSelectMode" class="canvas-reference-select-tip canvas-panel">
@@ -2371,6 +2567,42 @@ onBeforeUnmount(() => {
         class="canvas-world"
         :style="{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }"
       >
+        <svg class="canvas-edge-layer" aria-hidden="true">
+          <defs>
+            <marker id="canvas-edge-arrow" markerWidth="8" markerHeight="8" refX="6.8" refY="4" orient="auto" markerUnits="strokeWidth">
+              <path d="M 0 0 L 8 4 L 0 8 z" class="canvas-edge-arrow" />
+            </marker>
+          </defs>
+          <path
+            v-for="edge in visibleCanvasEdges"
+            :key="edge.id"
+            class="canvas-edge-path"
+            :d="getEdgePath(edge)"
+            marker-end="url(#canvas-edge-arrow)"
+          />
+        </svg>
+        <button
+          v-for="marker in expandedEdgeGroupControls"
+          :key="`expanded-${marker.sourceNodeId}`"
+          type="button"
+          class="canvas-edge-marker canvas-edge-marker-compact"
+          :style="{ transform: `translate(${marker.x}px, ${marker.y}px)` }"
+          @pointerdown.stop
+          @click.stop="setSourceEdgesCollapsed(marker.sourceNodeId, true)"
+        >
+          收起 {{ marker.count }}
+        </button>
+        <button
+          v-for="marker in collapsedEdgeMarkers"
+          :key="`collapsed-${marker.sourceNodeId}`"
+          type="button"
+          class="canvas-edge-marker"
+          :style="{ transform: `translate(${marker.x}px, ${marker.y}px)` }"
+          @pointerdown.stop
+          @click.stop="setSourceEdgesCollapsed(marker.sourceNodeId, false)"
+        >
+          {{ marker.count }} 条关联
+        </button>
         <article
           v-for="node in nodes"
           :key="node.id"
@@ -3994,6 +4226,70 @@ onBeforeUnmount(() => {
   width: 1px;
   height: 1px;
   transform-origin: 0 0;
+}
+
+.canvas-edge-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.canvas-edge-path {
+  fill: none;
+  stroke: rgba(255, 171, 39, 0.78);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 8 8;
+  filter: drop-shadow(0 5px 10px rgba(124, 82, 25, 0.18));
+}
+
+.canvas-edge-arrow {
+  fill: rgba(255, 171, 39, 0.9);
+}
+
+.canvas-edge-marker {
+  position: absolute;
+  z-index: 22;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 171, 39, 0.36);
+  border-radius: 999px;
+  background: rgba(var(--theme-surface-strong-rgb), 0.94);
+  color: var(--theme-title);
+  box-shadow: 0 10px 24px rgba(90, 61, 28, 0.16);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+  translate: 0 -50%;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.canvas-edge-marker:hover {
+  border-color: rgba(255, 171, 39, 0.68);
+  color: var(--theme-accent-text);
+  transform: translateY(-1px);
+}
+
+.canvas-edge-marker-compact {
+  min-width: 58px;
+  height: 24px;
+  opacity: 0.72;
+  font-size: 11px;
 }
 
 .canvas-node-toolbar {

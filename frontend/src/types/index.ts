@@ -238,8 +238,22 @@ export interface CanvasNode {
   task?: TaskResult | null;
 }
 
+export interface CanvasEdge {
+  id: number;
+  canvas_id: number;
+  source_node_id: number;
+  target_node_id: number;
+  edge_type: string;
+  source_anchor: "auto" | "top" | "right" | "bottom" | "left";
+  target_anchor: "auto" | "top" | "right" | "bottom" | "left";
+  is_collapsed: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface CanvasDetail extends UserCanvasSummary {
   nodes: CanvasNode[];
+  edges: CanvasEdge[];
 }
 
 export interface UserCanvasListResponse {
@@ -256,6 +270,7 @@ export interface CanvasTaskPayload {
   custom_size?: string;
   mode?: "generate" | "inpaint";
   reference_images?: string[];
+  source_node_ids?: number[];
   source_image?: string;
   mask_image?: string;
   x: number;

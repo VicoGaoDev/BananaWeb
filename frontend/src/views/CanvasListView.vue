@@ -63,7 +63,7 @@ async function handleCreateCanvas() {
   if (creating.value) return;
   creating.value = true;
   try {
-    const canvas = await createCanvas(`新画布-${canvases.value.length + 1}`);
+    const canvas = await createCanvas();
     canvases.value = [canvas, ...canvases.value];
     message.success("画布已创建");
     openCanvas(canvas);
@@ -327,7 +327,7 @@ onMounted(() => loadCanvases({ autoOpenSingle: route.query.fromWorkbench !== "1"
 }
 
 .canvas-list-card {
-  height: 252px;
+  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(236, 220, 198, 0.9);
