@@ -3052,14 +3052,16 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   box-shadow: 0 8px 16px var(--credits-purchase-accent-shadow);
 }
 
-.credits-purchase-card-starter {
+.credits-purchase-card-starter,
+.credits-purchase-card-intro {
   --credits-purchase-accent: #0ea5e9;
   --credits-purchase-accent-start: #38bdf8;
   --credits-purchase-accent-end: #0ea5e9;
   --credits-purchase-accent-shadow: rgba(14, 165, 233, 0.24);
 }
 
-.credits-purchase-card-light {
+.credits-purchase-card-light,
+.credits-purchase-card-plus {
   --credits-purchase-accent: #ff8a18;
   --credits-purchase-accent-start: #ff9a23;
   --credits-purchase-accent-end: #ff7a11;
