@@ -473,6 +473,7 @@ const bannedEmailDomainSuffixes = [
   "mailinator.org",
   "mailin8r.com",
   "mailinator.us",
+  "outlook.com",
   "guerrillamail.com",
   "guerrillamail.info",
   "guerrillamail.biz",

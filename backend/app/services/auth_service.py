@@ -38,6 +38,7 @@ BANNED_EMAIL_DOMAIN_SUFFIXES = {
     "mailinator.org",
     "mailin8r.com",
     "mailinator.us",
+    "outlook.com",
     "guerrillamail.com",
     "guerrillamail.info",
     "guerrillamail.biz",
