@@ -86,6 +86,15 @@ interface PendingGroupAssignment {
   nodeOrigins: Array<{ id: number; x: number; y: number }>;
 }
 
+type CanvasOnboardingStepId = "leftTools" | "composer" | "toolbar";
+
+interface CanvasOnboardingStep {
+  id: CanvasOnboardingStepId;
+  title: string;
+  description: string;
+  placement: "right" | "top" | "bottom";
+}
+
 const DEFAULT_ASPECT_RATIO_OPTIONS = [
   { label: "1:1", value: "1:1" },
   { label: "3:4", value: "3:4" },
@@ -178,8 +187,14 @@ const generatePanelCollapsed = ref(false);
 const composerPopover = ref<ComposerPopover | null>(null);
 const projectSwitcherRef = ref<HTMLElement | null>(null);
 const canvasStageRef = ref<HTMLElement | null>(null);
+const canvasSideToolboxRef = ref<HTMLElement | null>(null);
+const canvasToolbarRef = ref<HTMLElement | null>(null);
+const canvasComposerRef = ref<HTMLElement | null>(null);
 const viewport = ref({ x: 0, y: 0, zoom: 1 });
 const viewportSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const canvasOnboardingOpen = ref(false);
+const canvasOnboardingStepIndex = ref(0);
+const canvasOnboardingTargetRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
 
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const sceneConfigLoading = ref(false);
@@ -233,6 +248,26 @@ const selectionBox = ref<SelectionBoxState | null>(null);
 const assignGroupDialogOpen = ref(false);
 const assignGroupDialogLoading = ref(false);
 const pendingGroupAssignment = ref<PendingGroupAssignment | null>(null);
+const canvasOnboardingSteps: CanvasOnboardingStep[] = [
+  {
+    id: "leftTools",
+    title: "左侧工具区",
+    description: "这里可以切换选择/抓手模式，创建自由节点、搜索节点，以及一键整理当前画布。",
+    placement: "right",
+  },
+  {
+    id: "composer",
+    title: "底部创作区",
+    description: "在这里输入提示词、切换图编辑或文生图、上传参考图，并直接发起生成任务。",
+    placement: "top",
+  },
+  {
+    id: "toolbar",
+    title: "缩放与刷新",
+    description: "右下角可以查看当前缩放比例，快速缩放、复位视图，或刷新当前画布数据。",
+    placement: "bottom",
+  },
+];
 
 const isImageEditMode = computed(() => canvasMode.value === "imageEdit");
 const hasComposerDraftContent = computed(() => !!prompt.value.trim() || referenceItems.value.length > 0);
@@ -349,6 +384,44 @@ const modelOptions = computed(() => taskScenes.value.map((item) => ({
   label: item.display_name || item.scene_label || item.scene_key,
   value: item.scene_key,
 })));
+const currentCanvasOnboardingStep = computed(() => canvasOnboardingSteps[canvasOnboardingStepIndex.value] || null);
+const canvasOnboardingStepCountText = computed(() => `${canvasOnboardingStepIndex.value + 1} / ${canvasOnboardingSteps.length}`);
+const canvasOnboardingSpotlightStyle = computed(() => {
+  const rect = canvasOnboardingTargetRect.value;
+  if (!rect) return {};
+  return {
+    top: `${rect.top}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+  };
+});
+const canvasOnboardingCardStyle = computed(() => {
+  const rect = canvasOnboardingTargetRect.value;
+  const step = currentCanvasOnboardingStep.value;
+  if (!rect || !step) return {};
+  const cardWidth = Math.min(360, window.innerWidth - 32);
+  const gap = 18;
+  let top = rect.top;
+  let left = rect.left;
+  if (step.placement === "right") {
+    left = rect.left + rect.width + gap;
+    top = rect.top + rect.height / 2 - 120;
+  } else if (step.placement === "top") {
+    left = rect.left + rect.width / 2 - cardWidth / 2;
+    top = rect.top - 164;
+  } else {
+    left = rect.left + rect.width / 2 - cardWidth / 2;
+    top = rect.top + rect.height + gap;
+  }
+  left = Math.max(16, Math.min(left, window.innerWidth - cardWidth - 16));
+  top = Math.max(16, Math.min(top, window.innerHeight - 220));
+  return {
+    width: `${cardWidth}px`,
+    top: `${top}px`,
+    left: `${left}px`,
+  };
+});
 const nodeSearchResults = computed(() => {
   const query = nodeSearchQuery.value.trim().toLowerCase();
   return nodes.value
@@ -546,6 +619,60 @@ function getViewportCenter() {
   const rect = canvasStageRef.value?.getBoundingClientRect();
   if (!rect) return { x: 0, y: 0 };
   return screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  return Boolean(
+    element.closest("input, textarea, select, [contenteditable='true']")
+    || (element as HTMLInputElement).isContentEditable
+  );
+}
+
+function getCanvasOnboardingStorageKey() {
+  return `banana-canvas-onboarding-seen:${auth.user?.id || "guest"}`;
+}
+
+function markCanvasOnboardingSeen() {
+  localStorage.setItem(getCanvasOnboardingStorageKey(), "1");
+}
+
+function hasSeenCanvasOnboarding() {
+  return localStorage.getItem(getCanvasOnboardingStorageKey()) === "1";
+}
+
+async function clearCanvasOnboardingQuery() {
+  if (route.query.onboarding !== "1") return;
+  const nextQuery = { ...route.query };
+  delete nextQuery.onboarding;
+  await router.replace({ path: route.path, query: nextQuery });
+}
+
+function getCanvasOnboardingTargetElement(stepId: CanvasOnboardingStepId) {
+  if (stepId === "leftTools") return canvasSideToolboxRef.value;
+  if (stepId === "composer") return canvasComposerRef.value;
+  if (stepId === "toolbar") return canvasToolbarRef.value;
+  return null;
+}
+
+function refreshCanvasOnboardingLayout() {
+  if (!canvasOnboardingOpen.value) return;
+  const step = currentCanvasOnboardingStep.value;
+  const element = step ? getCanvasOnboardingTargetElement(step.id) : null;
+  if (!step || !element) {
+    canvasOnboardingTargetRect.value = null;
+    return;
+  }
+  const rect = element.getBoundingClientRect();
+  const paddingX = step.id === "toolbar" ? 4 : 10;
+  const paddingY = step.id === "toolbar" ? 4 : 10;
+  canvasOnboardingTargetRect.value = {
+    top: Math.max(12, rect.top - paddingY),
+    left: Math.max(12, rect.left - paddingX),
+    width: Math.min(window.innerWidth - 24, rect.width + paddingX * 2),
+    height: Math.min(window.innerHeight - 24, rect.height + paddingY * 2),
+  };
 }
 
 function nodeRectsOverlap(
@@ -1192,6 +1319,56 @@ function cancelAssignNodesToGroup() {
   closeAssignGroupDialog();
 }
 
+async function openCanvasOnboarding() {
+  guideOpen.value = false;
+  canvasOnboardingStepIndex.value = 0;
+  canvasOnboardingOpen.value = true;
+  await nextTick();
+  refreshCanvasOnboardingLayout();
+  void clearCanvasOnboardingQuery();
+}
+
+async function reopenCanvasOnboardingFromSettings() {
+  canvasSettingsOpen.value = false;
+  await openCanvasOnboarding();
+}
+
+async function maybeStartCanvasOnboarding() {
+  const shouldForceOnboarding = route.query.onboarding === "1";
+  if (canvasReadOnly.value || hasSeenCanvasOnboarding()) {
+    if (shouldForceOnboarding) await clearCanvasOnboardingQuery();
+    return;
+  }
+  await openCanvasOnboarding();
+}
+
+function closeCanvasOnboarding() {
+  markCanvasOnboardingSeen();
+  canvasOnboardingOpen.value = false;
+  canvasOnboardingTargetRect.value = null;
+}
+
+function skipCanvasOnboarding() {
+  closeCanvasOnboarding();
+}
+
+async function nextCanvasOnboardingStep() {
+  if (canvasOnboardingStepIndex.value >= canvasOnboardingSteps.length - 1) {
+    closeCanvasOnboarding();
+    return;
+  }
+  canvasOnboardingStepIndex.value += 1;
+  await nextTick();
+  refreshCanvasOnboardingLayout();
+}
+
+async function previousCanvasOnboardingStep() {
+  if (canvasOnboardingStepIndex.value <= 0) return;
+  canvasOnboardingStepIndex.value -= 1;
+  await nextTick();
+  refreshCanvasOnboardingLayout();
+}
+
 function resetViewport() {
   const rect = canvasStageRef.value?.getBoundingClientRect();
   const bounds = getNodesBounds();
@@ -1266,6 +1443,26 @@ function handleWheel(event: WheelEvent) {
     y: viewport.value.y - event.deltaY,
   };
   scheduleViewportSave();
+}
+
+function handleGlobalWheel(event: WheelEvent) {
+  if ((!event.ctrlKey && !event.metaKey) || isEditableTarget(event.target)) return;
+  event.preventDefault();
+  zoomAt(event.clientX, event.clientY, viewport.value.zoom * (event.deltaY > 0 ? 0.9 : 1.1));
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if ((!event.ctrlKey && !event.metaKey) || isEditableTarget(event.target)) return;
+  if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    zoomAtCenter(-0.12);
+    return;
+  }
+  if (event.key === "=" || event.key === "+") {
+    event.preventDefault();
+    zoomAtCenter(0.12);
+    return;
+  }
 }
 
 function handleStagePointerDown(event: PointerEvent) {
@@ -3320,6 +3517,12 @@ watch(canvasBackgroundMode, (mode) => {
   localStorage.setItem(CANVAS_BACKGROUND_STORAGE_KEY, mode);
 });
 
+watch([canvasOnboardingOpen, canvasOnboardingStepIndex, generatePanelCollapsed], async ([open]) => {
+  if (!open) return;
+  await nextTick();
+  refreshCanvasOnboardingLayout();
+});
+
 watch(() => props.projectId, async (projectId) => {
   if (!projectId || projectId === selectedCanvasProjectId.value) return;
   canvasReferenceSelectMode.value = false;
@@ -3333,11 +3536,18 @@ watch(() => props.projectId, async (projectId) => {
 
 onMounted(async () => {
   document.addEventListener("pointerdown", handleDocumentPointerDown);
+  window.addEventListener("wheel", handleGlobalWheel, { passive: false });
+  window.addEventListener("keydown", handleGlobalKeydown);
   await Promise.all([loadSceneConfig(), loadCanvasList(props.projectId || null)]);
+  window.addEventListener("resize", refreshCanvasOnboardingLayout);
+  await maybeStartCanvasOnboarding();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
+  window.removeEventListener("wheel", handleGlobalWheel);
+  window.removeEventListener("keydown", handleGlobalKeydown);
+  window.removeEventListener("resize", refreshCanvasOnboardingLayout);
   stopTaskPolling();
   if (viewportSaveTimer.value) clearTimeout(viewportSaveTimer.value);
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
@@ -3448,8 +3658,12 @@ onBeforeUnmount(() => {
               <span>以鼠标位置为中心缩放画布</span>
             </div>
             <div>
-              <kbd>Ctrl + 滚轮</kbd>
-              <span>缩放画布</span>
+              <kbd>Ctrl / Cmd + 滚轮</kbd>
+              <span>优先缩放画布，不触发浏览器页面缩放</span>
+            </div>
+            <div>
+              <kbd>Ctrl / Cmd + +/-</kbd>
+              <span>缩放画布，不触发浏览器页面缩放</span>
             </div>
             <div>
               <kbd>触控板双指滑动</kbd>
@@ -3541,10 +3755,16 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+          <div class="canvas-settings-field">
+            <span>新手引导</span>
+            <button type="button" class="canvas-settings-guide-btn" @click="reopenCanvasOnboardingFromSettings">
+              重新查看新手引导
+            </button>
+          </div>
         </div>
       </div>
 
-      <div class="canvas-side-toolbox-wrap" @pointerdown.stop @click.stop>
+      <div ref="canvasSideToolboxRef" class="canvas-side-toolbox-wrap" @pointerdown.stop @click.stop>
         <div class="canvas-side-toolbox canvas-panel">
           <a-tooltip title="选择" placement="right">
             <button
@@ -3614,7 +3834,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div class="canvas-toolbar canvas-panel">
+      <div ref="canvasToolbarRef" class="canvas-toolbar canvas-panel">
         <a-button shape="circle" class="canvas-toolbar-icon-btn" @click="zoomAtCenter(-0.12)"><template #icon><MinusOutlined /></template></a-button>
         <span>{{ Math.round(viewport.zoom * 100) }}%</span>
         <a-button shape="circle" class="canvas-toolbar-icon-btn" @click="zoomAtCenter(0.12)"><template #icon><PlusOutlined /></template></a-button>
@@ -3623,6 +3843,7 @@ onBeforeUnmount(() => {
       </div>
 
       <section
+        ref="canvasComposerRef"
         class="canvas-composer-shell canvas-panel"
         :class="{
           collapsed: generatePanelCollapsed,
@@ -3763,6 +3984,30 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
       </section>
+
+      <div
+        v-if="canvasOnboardingOpen && currentCanvasOnboardingStep && canvasOnboardingTargetRect"
+        class="canvas-onboarding-overlay"
+        @pointerdown.stop
+        @click.stop
+      >
+        <div class="canvas-onboarding-spotlight" :style="canvasOnboardingSpotlightStyle"></div>
+        <div class="canvas-onboarding-card" :style="canvasOnboardingCardStyle">
+          <button type="button" class="canvas-onboarding-close" title="关闭引导" @click="closeCanvasOnboarding">×</button>
+          <div class="canvas-onboarding-title">{{ currentCanvasOnboardingStep.title }}</div>
+          <div class="canvas-onboarding-description">{{ currentCanvasOnboardingStep.description }}</div>
+          <div class="canvas-onboarding-footer">
+            <span class="canvas-onboarding-step">{{ canvasOnboardingStepCountText }}</span>
+            <div class="canvas-onboarding-actions">
+              <button type="button" class="secondary" @click="skipCanvasOnboarding">跳过</button>
+              <button v-if="canvasOnboardingStepIndex > 0" type="button" class="secondary" @click="previousCanvasOnboardingStep">上一步</button>
+              <button type="button" class="primary" @click="nextCanvasOnboardingStep">
+                {{ canvasOnboardingStepIndex >= canvasOnboardingSteps.length - 1 ? "关闭" : "下一步" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div v-if="!nodes.length && !loading" class="canvas-empty canvas-panel">
         <h3>开始你的第一张画布作品</h3>
@@ -4183,6 +4428,120 @@ onBeforeUnmount(() => {
   border: 1px solid var(--theme-panel-border);
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
   box-shadow: 0 16px 34px var(--theme-card-shadow);
+}
+
+.canvas-onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(10, 10, 14, 0.52);
+}
+
+.canvas-onboarding-spotlight {
+  position: fixed;
+  border: 2px solid color-mix(in srgb, var(--theme-accent) 82%, white 18%);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow:
+    0 0 0 9999px rgba(10, 10, 14, 0.52),
+    0 18px 40px rgba(0, 0, 0, 0.22),
+    0 0 0 6px color-mix(in srgb, var(--theme-accent) 18%, transparent);
+  pointer-events: none;
+}
+
+.canvas-onboarding-card {
+  position: fixed;
+  z-index: 121;
+  padding: 20px 20px 18px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(34, 31, 37, 0.98), rgba(26, 24, 29, 0.98));
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
+  color: #f5f5f7;
+}
+
+.canvas-onboarding-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.canvas-onboarding-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.canvas-onboarding-title {
+  padding-right: 36px;
+  margin-bottom: 10px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.canvas-onboarding-description {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.canvas-onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.canvas-onboarding-step {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.canvas-onboarding-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-onboarding-actions button {
+  height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.canvas-onboarding-actions button.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.canvas-onboarding-actions button.secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.canvas-onboarding-actions button.primary {
+  background: linear-gradient(135deg, #f8e9d0, #ffffff);
+  color: #161317;
+  box-shadow: 0 12px 24px rgba(255, 255, 255, 0.16);
+}
+
+.canvas-onboarding-actions button.primary:hover {
+  transform: translateY(-1px);
 }
 
 .node-search-dialog {
@@ -5007,6 +5366,27 @@ onBeforeUnmount(() => {
     color: var(--theme-accent-contrast);
     box-shadow: 0 8px 16px var(--theme-nav-active-shadow);
   }
+}
+
+.canvas-settings-guide-btn {
+  height: 38px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 12px;
+  background: var(--theme-panel-bg-muted);
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.canvas-settings-guide-btn:hover {
+  border-color: color-mix(in srgb, var(--theme-accent) 42%, var(--theme-panel-border));
+  background: color-mix(in srgb, var(--theme-accent) 12%, var(--theme-panel-bg-muted));
+  transform: translateY(-1px);
 }
 
 .canvas-guide-trigger {
@@ -6359,6 +6739,34 @@ onBeforeUnmount(() => {
     top: 58px;
     right: 12px;
     gap: 5px;
+  }
+
+  .canvas-onboarding-card {
+    padding: 18px 16px 16px;
+    border-radius: 20px;
+  }
+
+  .canvas-onboarding-title {
+    font-size: 16px;
+  }
+
+  .canvas-onboarding-description {
+    font-size: 13px;
+  }
+
+  .canvas-onboarding-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .canvas-onboarding-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .canvas-onboarding-actions button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
   }
 
   .canvas-project-switcher {

@@ -45,7 +45,7 @@ async function loadCanvases(options: { autoCreateWhenEmpty?: boolean } = {}) {
   try {
     canvases.value = (await listCanvases()).items;
     if (options.autoCreateWhenEmpty && canvases.value.length === 0) {
-      await handleCreateCanvas();
+      await handleCreateCanvas({ onboarding: true });
     }
   } catch {
     message.error("获取画布列表失败");
@@ -54,18 +54,21 @@ async function loadCanvases(options: { autoCreateWhenEmpty?: boolean } = {}) {
   }
 }
 
-function openCanvas(canvas: UserCanvasSummary) {
-  router.push(`/canvas/${canvas.project_id}`);
+function openCanvas(canvas: UserCanvasSummary, options: { onboarding?: boolean } = {}) {
+  router.push({
+    path: `/canvas/${canvas.project_id}`,
+    query: options.onboarding ? { onboarding: "1" } : undefined,
+  });
 }
 
-async function handleCreateCanvas() {
+async function handleCreateCanvas(options: { onboarding?: boolean } = {}) {
   if (creating.value) return;
   creating.value = true;
   try {
     const canvas = await createCanvas();
     canvases.value = [canvas, ...canvases.value];
     message.success("画布已创建");
-    openCanvas(canvas);
+    openCanvas(canvas, options);
   } catch {
     message.error("创建画布失败");
   } finally {
