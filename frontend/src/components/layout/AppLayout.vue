@@ -130,12 +130,13 @@ type PrimaryMenuItem = {
   iconSrc: string;
   darkIconSrc?: string;
   icon?: Component;
+  isNew?: boolean;
 };
 
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
   { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), icon: BulbOutlined },
   { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: ThunderboltFilled },
-  ...(canAccessCanvasMenu.value ? [{ key: "canvas", label: "无限画布", iconSrc: withBaseUrl("nav-canvas.svg"), icon: NumberOutlined }] : []),
+  ...(canAccessCanvasMenu.value ? [{ key: "canvas", label: "无限画布", iconSrc: withBaseUrl("nav-canvas.svg"), icon: NumberOutlined, isNew: true }] : []),
   { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), icon: ClockCircleOutlined },
 ]);
 
@@ -1298,6 +1299,7 @@ watch(purchaseDialogOpen, (open) => {
           <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
           <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
           <span>{{ item.label }}</span>
+          <span v-if="item.isNew" class="nav-menu-new-badge">New</span>
         </button>
       </nav>
 
@@ -1517,6 +1519,7 @@ watch(purchaseDialogOpen, (open) => {
               <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
               <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
               <span>{{ item.label }}</span>
+              <span v-if="item.isNew" class="nav-menu-new-badge nav-menu-new-badge-mobile">New</span>
             </a-menu-item>
           </a-menu>
         </div>
@@ -2319,6 +2322,7 @@ watch(purchaseDialogOpen, (open) => {
 }
 
 .canvas-side-nav-item {
+  position: relative;
   width: 58px;
   height: 58px;
   min-height: 58px;
@@ -2378,6 +2382,27 @@ watch(purchaseDialogOpen, (open) => {
 
 .canvas-side-nav-item.active .nav-menu-system-icon {
   filter: var(--theme-nav-icon-active-filter);
+}
+
+.nav-menu-new-badge {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff5f6d, #ff9a44);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 16px rgba(255, 95, 109, 0.28);
+  pointer-events: none;
 }
 
 .canvas-side-nav-actions {
@@ -2665,6 +2690,7 @@ watch(purchaseDialogOpen, (open) => {
     display: inline-flex;
     align-items: center;
     min-width: 0;
+    gap: 8px;
   }
 
   :deep(.ant-menu-item-selected) {
@@ -2689,6 +2715,14 @@ watch(purchaseDialogOpen, (open) => {
     background: #fff1ee !important;
     color: #b84b3b !important;
   }
+}
+
+.nav-menu-new-badge-mobile {
+  position: static;
+  min-width: 30px;
+  height: 18px;
+  margin-left: auto;
+  font-size: 10px;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .app-layout {
