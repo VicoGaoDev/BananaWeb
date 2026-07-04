@@ -1,5 +1,8 @@
 import type { UserInfo } from "@/types";
 
+export const NEW_USER_TRIAL_CREDITS = 6;
+export const PROMO_CODE_REWARD_CREDITS = 20;
+
 const TOKEN_KEY = "token";
 const USER_KEY = "user";
 

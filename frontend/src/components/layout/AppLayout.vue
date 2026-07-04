@@ -34,6 +34,7 @@ import {
   setStoredUnreadSystemMessageCount,
   subscribeUnreadSystemMessageCount,
 } from "@/lib/systemMessageNotice";
+import { NEW_USER_TRIAL_CREDITS, PROMO_CODE_REWARD_CREDITS } from "@/lib/auth";
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
@@ -758,8 +759,8 @@ async function handleRegisterSubmit() {
     notification.success({
       message: "赠送积分已到账",
       description: registerForm.promoCode.trim()
-        ? "新用户注册赠送的 10 个试用积分和推广码额外奖励的 20 个积分已到账。"
-        : "新用户注册赠送的 10 个试用积分已到账。",
+        ? `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分和推广码额外奖励的 ${PROMO_CODE_REWARD_CREDITS} 个积分已到账。`
+        : `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账。`,
       placement: "topRight",
       duration: 6,
     });
