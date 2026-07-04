@@ -29,7 +29,11 @@ import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask } from "@/api/history";
 import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl } from "@/api/images";
 import { getTasks } from "@/api/tasks";
-import { uploadReferenceImage } from "@/api/upload";
+import {
+  isImageUploadTooLarge,
+  MAX_IMAGE_UPLOAD_SIZE_TEXT,
+  uploadReferenceImage,
+} from "@/api/upload";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
@@ -2212,6 +2216,11 @@ async function handleReferenceDrop(event: DragEvent) {
 }
 
 async function uploadReference(file: File) {
+  if (isImageUploadTooLarge(file)) {
+    message.warning(`${file.name} 超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}，已跳过`);
+    return;
+  }
+
   const objectUrl = URL.createObjectURL(file);
   const item: ReferenceItem = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

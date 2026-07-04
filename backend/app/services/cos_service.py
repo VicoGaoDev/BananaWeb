@@ -13,7 +13,7 @@ from app.config import settings
 from app.models.api_key import ApiKey
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 UPLOAD_PURPOSE_PREFIXES = {
     "ref": "ref",
     "source": "source",
@@ -110,7 +110,7 @@ def validate_upload_request(file_name: str, file_size: int, content_type: str, p
     if file_size <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件大小无效")
     if file_size > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件大小不能超过 10 MB")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件大小不能超过 20 MB")
     if not Path(file_name or "").name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件名不能为空")
 

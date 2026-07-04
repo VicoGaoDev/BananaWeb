@@ -2,6 +2,9 @@ import COS from "cos-js-sdk-v5";
 import client from "./client";
 import type { UploadCredential, UploadPurpose } from "@/types";
 
+export const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_UPLOAD_SIZE_TEXT = "20MB";
+
 function inferImageContentType(file: File) {
   if (file.type) return file.type;
   const name = file.name.toLowerCase();
@@ -10,6 +13,10 @@ function inferImageContentType(file: File) {
   if (/\.webp$/.test(name)) return "image/webp";
   if (/\.gif$/.test(name)) return "image/gif";
   return "application/octet-stream";
+}
+
+export function isImageUploadTooLarge(file: File) {
+  return file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES;
 }
 
 function getUploadCredential(file: File, purpose: UploadPurpose): Promise<UploadCredential> {

@@ -45,7 +45,7 @@ async def upload_image(
 
     data = await file.read()
     if len(data) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=400, detail="文件大小不能超过 10 MB")
+        raise HTTPException(status_code=400, detail="文件大小不能超过 20 MB")
 
     ext = Path(file.filename or "img.jpg").suffix or ".jpg"
     filename = f"{uuid.uuid4().hex}{ext}"

@@ -2,7 +2,11 @@
 import { computed, reactive, ref, watch } from "vue";
 import { DeleteOutlined, UploadOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
-import { uploadReferenceImage } from "@/api/upload";
+import {
+  isImageUploadTooLarge,
+  MAX_IMAGE_UPLOAD_SIZE_TEXT,
+  uploadReferenceImage,
+} from "@/api/upload";
 import { resolveImageUrl } from "@/api/images";
 import type { TemplatePayload } from "@/api/templates";
 import type { GenerationModelOption, TemplateTag } from "@/types";
@@ -161,12 +165,20 @@ async function handleRefUpload(e: Event) {
   const files = Array.from(input.files || []);
   if (!files.length) return;
   refUploading.value = true;
+  let uploadedCount = 0;
   try {
     for (const file of files) {
+      if (isImageUploadTooLarge(file)) {
+        message.warning(`${file.name} 超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}，已跳过`);
+        continue;
+      }
       const res = await uploadReferenceImage(file, "template");
       form.reference_images.push(res.url);
+      uploadedCount += 1;
     }
-    message.success("参考图上传成功");
+    if (uploadedCount > 0) {
+      message.success(`成功上传 ${uploadedCount} 张参考图`);
+    }
   } catch {
     message.error("参考图上传失败");
   } finally {
@@ -179,6 +191,11 @@ async function handleResultUpload(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+  if (isImageUploadTooLarge(file)) {
+    message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
+    input.value = "";
+    return;
+  }
   resultUploading.value = true;
   try {
     const res = await uploadReferenceImage(file, "template");

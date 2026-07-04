@@ -19,7 +19,11 @@ import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory } from "@/api/history";
 import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { createTask, getTasks } from "@/api/tasks";
-import { uploadReferenceImage } from "@/api/upload";
+import {
+  isImageUploadTooLarge,
+  MAX_IMAGE_UPLOAD_SIZE_TEXT,
+  uploadReferenceImage,
+} from "@/api/upload";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
@@ -102,7 +106,6 @@ const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 
 const MAX_BATCH_CARDS = 8;
 const DEFAULT_BATCH_CARDS = 3;
-const MAX_REFERENCE_FILE_SIZE = 10 * 1024 * 1024;
 const POLL_INTERVAL_MS = 5000;
 const SUBMISSION_RETRY_DELAY_MS = 5200;
 const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
@@ -969,7 +972,7 @@ async function uploadReferenceFilesToTarget(
   let workingItems = items;
 
   for (const file of acceptedFiles) {
-    if (file.size > MAX_REFERENCE_FILE_SIZE) {
+    if (isImageUploadTooLarge(file)) {
       oversizedCount += 1;
       continue;
     }
@@ -1018,7 +1021,7 @@ async function uploadReferenceFilesToTarget(
     message.success(`成功上传 ${uploadedCount} 张参考图`);
   }
   if (oversizedCount > 0) {
-    message.warning(`${oversizedCount} 张图片超过 10MB，已跳过`);
+    message.warning(`${oversizedCount} 张图片超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}，已跳过`);
   }
   if (failedCount > 0) {
     message.error(`${failedCount} 张参考图上传失败，请重试`);

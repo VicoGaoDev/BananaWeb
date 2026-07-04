@@ -36,7 +36,11 @@ import { createTask, getTasks } from "@/api/tasks";
 import { createTemplateFromTaskImage, listTemplateTags, type TemplatePayload } from "@/api/templates";
 import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
-import { uploadReferenceImage } from "@/api/upload";
+import {
+  isImageUploadTooLarge,
+  MAX_IMAGE_UPLOAD_SIZE_TEXT,
+  uploadReferenceImage,
+} from "@/api/upload";
 import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
 import { getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { useAuthStore } from "@/stores/auth";
@@ -1057,7 +1061,7 @@ async function uploadReferenceFiles(files: File[]) {
   let oversizedCount = 0;
 
   for (const file of acceptedFiles) {
-    if (file.size > 10 * 1024 * 1024) {
+    if (isImageUploadTooLarge(file)) {
       oversizedCount += 1;
       continue;
     }
@@ -1092,7 +1096,7 @@ async function uploadReferenceFiles(files: File[]) {
     message.success(`成功上传 ${uploadedCount} 张参考图`);
   }
   if (oversizedCount > 0) {
-    message.warning(`${oversizedCount} 张图片超过 10MB，已跳过`);
+    message.warning(`${oversizedCount} 张图片超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}，已跳过`);
   }
   if (failedCount > 0) {
     message.error(`${failedCount} 张参考图上传失败，请重试`);
@@ -1211,8 +1215,8 @@ async function handleSourceFileChange(e: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
-  if (file.size > 10 * 1024 * 1024) {
-    message.warning("图片大小不能超过 10MB");
+  if (isImageUploadTooLarge(file)) {
+    message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
     input.value = "";
     return;
   }
@@ -1262,8 +1266,8 @@ async function handleReverseFileChange(e: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
-  if (file.size > 10 * 1024 * 1024) {
-    message.warning("图片大小不能超过 10MB");
+  if (isImageUploadTooLarge(file)) {
+    message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
     input.value = "";
     return;
   }
