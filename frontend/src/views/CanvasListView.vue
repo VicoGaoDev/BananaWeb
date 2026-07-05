@@ -13,6 +13,7 @@ import {
 } from "@ant-design/icons-vue";
 import { createCanvas, deleteCanvas, listCanvases, updateCanvas } from "@/api/canvases";
 import { getAdminCanvases, listUsers } from "@/api/admin";
+import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminUser, UserCanvasSummary } from "@/types";
 
@@ -33,6 +34,8 @@ const renameDialogOpen = ref(false);
 const renameSaving = ref(false);
 const renameTarget = ref<UserCanvasSummary | null>(null);
 const renameName = ref("");
+const userInfoDialogOpen = ref(false);
+const selectedUserInfo = ref<AdminUser | null>(null);
 const isAdminCanvasView = computed(() => props.adminCanvases);
 
 const filteredCanvases = computed(() => {
@@ -86,6 +89,34 @@ function openCanvas(canvas: UserCanvasSummary, options: { onboarding?: boolean }
     path: isAdminCanvasView.value ? `/admin/user-canvases/${canvas.project_id}` : `/canvas/${canvas.project_id}`,
     query: options.onboarding ? { onboarding: "1" } : undefined,
   });
+}
+
+function findAdminUser(userId?: string) {
+  if (!userId) return null;
+  return users.value.find((user) => user.id === userId) || null;
+}
+
+function openUserInfoDialog(canvas: UserCanvasSummary) {
+  if (!isAdminCanvasView.value || !canvas.owner_user_id) return;
+  const matchedUser = findAdminUser(canvas.owner_user_id);
+  selectedUserInfo.value = matchedUser || {
+    id: canvas.owner_user_id,
+    username: canvas.owner_username || "未知用户",
+    avatar_url: canvas.owner_avatar_url || "",
+    role: "user",
+    status: "",
+    is_whitelisted: false,
+    credits: 0,
+    consumed_credits: 0,
+    created_at: "",
+  };
+  userInfoDialogOpen.value = true;
+}
+
+function filterBySelectedUser(user = selectedUserInfo.value) {
+  if (!user?.id) return;
+  userFilter.value = user.id;
+  userInfoDialogOpen.value = false;
 }
 
 async function handleCreateCanvas(options: { onboarding?: boolean } = {}) {
@@ -251,12 +282,18 @@ onMounted(async () => {
           :class="{ 'is-soft-deleted': !!canvas.is_deleted }"
           @click="openCanvas(canvas)"
         >
-          <div v-if="isAdminCanvasView" class="canvas-list-owner-badge" :title="canvas.owner_username || '未知用户'">
+          <button
+            v-if="isAdminCanvasView"
+            type="button"
+            class="canvas-list-owner-badge"
+            :title="canvas.owner_username || '未知用户'"
+            @click.stop="openUserInfoDialog(canvas)"
+          >
             <a-avatar :size="22" :src="withApiBaseUrl(canvas.owner_avatar_url) || undefined" class="canvas-list-owner-avatar">
               {{ canvas.owner_username?.charAt(0)?.toUpperCase() }}
             </a-avatar>
             <span class="canvas-list-owner-name">{{ canvas.owner_username || "未知用户" }}</span>
-          </div>
+          </button>
           <div v-if="isAdminCanvasView && canvas.is_deleted" class="canvas-list-soft-deleted-badge">
             已软删
           </div>
@@ -321,6 +358,13 @@ onMounted(async () => {
         @press-enter="submitRenameCanvas"
       />
     </a-modal>
+
+    <AdminUserInfoDialog
+      v-model:open="userInfoDialogOpen"
+      :user="selectedUserInfo"
+      show-view-data
+      @view-data="filterBySelectedUser"
+    />
   </div>
 </template>
 
@@ -434,6 +478,7 @@ onMounted(async () => {
 }
 
 .canvas-list-owner-badge {
+  appearance: none;
   position: absolute;
   top: 12px;
   left: 12px;
@@ -448,6 +493,7 @@ onMounted(async () => {
   border-radius: 999px;
   background: rgba(35, 27, 20, 0.74);
   color: #fff7eb;
+  cursor: pointer;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
