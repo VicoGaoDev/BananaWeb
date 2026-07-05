@@ -8,6 +8,22 @@ export const CREDIT_REFUNDED_SUFFIX = "（积分已返还）";
 const IMAGE_SAFETY_ERROR_PATTERN = /unsafe|image_unsafe|content blocked/i;
 const INVALID_REFERENCE_IMAGE_PATTERN =
   /invalid image file or mode|provider_request_invalid|bad request to openai|poll rejected: 400|image \d+/i;
+const INVALID_REFERENCE_IMAGE_INDEX_PATTERN = /for image (\d+)/i;
+
+export function extractInvalidReferenceImageIndex(rawMessage?: string) {
+  const match = String(rawMessage || "").match(INVALID_REFERENCE_IMAGE_INDEX_PATTERN);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return Number.isFinite(index) && index > 0 ? index : null;
+}
+
+export function formatInvalidReferenceImageMessage(rawMessage?: string) {
+  const index = extractInvalidReferenceImageIndex(rawMessage);
+  if (!index) {
+    return INVALID_REFERENCE_IMAGE_MESSAGE;
+  }
+  return `第 ${index} 张参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！`;
+}
 
 export function isImageSafetyError(rawMessage?: string) {
   return IMAGE_SAFETY_ERROR_PATTERN.test(String(rawMessage || "").trim());
@@ -24,7 +40,7 @@ export function formatGenerationErrorMessage(rawMessage?: string, fallback = "�
     return IMAGE_SAFETY_ERROR_MESSAGE;
   }
   if (isInvalidReferenceImageError(detail)) {
-    return INVALID_REFERENCE_IMAGE_MESSAGE;
+    return formatInvalidReferenceImageMessage(detail);
   }
   return detail;
 }
@@ -38,7 +54,7 @@ export function formatGenerationTaskFailureMessage(rawMessage?: string, creditRe
   const message = isImageSafetyError(detail)
     ? IMAGE_SAFETY_ERROR_MESSAGE
     : isInvalidReferenceImageError(detail)
-      ? INVALID_REFERENCE_IMAGE_MESSAGE
+      ? formatInvalidReferenceImageMessage(detail)
       : GENERATION_TASK_FAILURE_MESSAGE;
   return creditRefunded ? withCreditRefundedSuffix(message) : message;
 }

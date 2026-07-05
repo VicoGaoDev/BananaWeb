@@ -28,6 +28,7 @@ import {
   UndoOutlined,
   MessageOutlined,
   PlusOutlined,
+  UnorderedListOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -804,6 +805,10 @@ async function handleCreateBoardFromGenerate() {
   } finally {
     boardsLoading.value = false;
   }
+}
+
+function handleGoBoardListFromGenerate() {
+  router.push("/history");
 }
 
 async function handleRenameSelectedBoardFromGenerate() {
@@ -2920,6 +2925,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <PlusOutlined />
                     <span>新建分类</span>
                   </button>
+                  <button
+                    type="button"
+                    class="generate-board-dropdown-action"
+                    @click.stop="handleGoBoardListFromGenerate"
+                  >
+                    <UnorderedListOutlined />
+                    <span>返回分类列表</span>
+                  </button>
                 </div>
               </template>
               <a-select-option
@@ -4867,11 +4880,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .generate-board-dropdown-action {
+  width: 100%;
   height: 30px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 10px;
   border: 0;
   border-radius: 10px;
   color: #7b5428;

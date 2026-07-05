@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
+import datePickerZhCN from "ant-design-vue/es/date-picker/locale/zh_CN";
 import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
 import type { Dayjs } from "dayjs";
 import { AccountBookOutlined, BellOutlined, CalendarOutlined, PlusOutlined } from "@ant-design/icons-vue";
 import {
@@ -21,16 +23,17 @@ import type { AdminAnalyticsRedeemRevenue, AdminDailyReportTestResult, AdminOffl
 
 type DatePreset = "today" | "3d" | "7d" | "30d";
 
+dayjs.locale("zh-cn");
+
 const auth = useAuthStore();
 const loading = ref(false);
 const sendingDailyReport = ref(false);
-const sendingCustomDailyReport = ref(false);
+const sendingCurrentPeriodDailyReport = ref(false);
 const creatingOfflineOrder = ref(false);
 const offlineOrderModalOpen = ref(false);
-const customDailyReportModalOpen = ref(false);
 const preset = ref<DatePreset | undefined>("today");
 const dateRange = ref<[Dayjs, Dayjs] | null>(null);
-const customDailyReportRange = ref<[Dayjs, Dayjs] | null>(null);
+const selectedMonth = ref<Dayjs | null>(null);
 const redeemRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const paymentRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const offlineOrderRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
@@ -57,6 +60,7 @@ function formatQueryDate(value?: Dayjs) {
 function applyPreset(nextPreset: DatePreset) {
   const now = dayjs();
   preset.value = nextPreset;
+  selectedMonth.value = null;
   if (nextPreset === "today") {
     dateRange.value = [now.startOf("day"), now.endOf("day")];
     return;
@@ -72,19 +76,36 @@ function applyPreset(nextPreset: DatePreset) {
   dateRange.value = [now.subtract(29, "day").startOf("day"), now.endOf("day")];
 }
 
+function applyMonth(month: Dayjs) {
+  preset.value = undefined;
+  selectedMonth.value = month;
+  dateRange.value = [month.startOf("month"), month.endOf("month")];
+}
+
 function handlePresetChange(value: DatePreset) {
   applyPreset(value);
   load();
 }
 
+function handleMonthChange(value: Dayjs | null) {
+  if (!value) {
+    selectedMonth.value = null;
+    return;
+  }
+  applyMonth(value);
+  load();
+}
+
 function handleDateRangeChange() {
   preset.value = undefined;
+  selectedMonth.value = null;
   if (dateRange.value?.[0] && dateRange.value?.[1]) {
     load();
   }
 }
 
 function handleReset() {
+  selectedMonth.value = null;
   applyPreset("today");
   load();
 }
@@ -113,6 +134,12 @@ function showDailyReportResult(result: AdminDailyReportTestResult, title = "报�
   });
 }
 
+function formatPeriodRangeLabel(range: [Dayjs, Dayjs]) {
+  const start = range[0].startOf("day");
+  const end = range[1].endOf("day");
+  return `${start.format("YYYY-MM-DD HH:mm:ss")} ~ ${end.format("YYYY-MM-DD HH:mm:ss")}`;
+}
+
 async function handleSendDailyReport() {
   sendingDailyReport.value = true;
   try {
@@ -127,33 +154,40 @@ async function handleSendDailyReport() {
   }
 }
 
-function openCustomDailyReportModal() {
-  customDailyReportRange.value = dateRange.value
-    ? [dateRange.value[0], dateRange.value[1]]
-    : [dayjs().subtract(1, "day").startOf("day"), dayjs().subtract(1, "day").endOf("day")];
-  customDailyReportModalOpen.value = true;
-}
-
-async function handleSendCustomDailyReport() {
-  if (!customDailyReportRange.value?.[0] || !customDailyReportRange.value?.[1]) {
-    message.warning("请选择日期区间");
+function handleSendCurrentPeriodDailyReport() {
+  if (!dateRange.value?.[0] || !dateRange.value?.[1]) {
+    message.warning("请先选择统计周期");
     return;
   }
-  sendingCustomDailyReport.value = true;
+  const periodRange: [Dayjs, Dayjs] = [dateRange.value[0], dateRange.value[1]];
+  Modal.confirm({
+    title: "确认发送当前周期数据",
+    okText: "确认发送",
+    cancelText: "取消",
+    content: h("div", { class: "daily-report-result" }, [
+      h("p", null, "将发送以下统计周期数据到企业微信："),
+      h("p", { class: "daily-report-total" }, formatPeriodRangeLabel(periodRange)),
+    ]),
+    onOk: () => confirmSendCurrentPeriodDailyReport(periodRange),
+  });
+}
+
+async function confirmSendCurrentPeriodDailyReport(periodRange: [Dayjs, Dayjs]) {
+  sendingCurrentPeriodDailyReport.value = true;
   try {
-    const [startDate, endDate] = customDailyReportRange.value;
+    const [startDate, endDate] = periodRange;
     const result = await sendAdminDailyReportRange({
       start_date: formatQueryDate(startDate.startOf("day"))!,
       end_date: formatQueryDate(endDate.add(1, "day").startOf("day"))!,
     });
-    message.success(result.sent ? "周期报告发送成功" : "周期报告未发送，请检查企业微信配置");
-    customDailyReportModalOpen.value = false;
-    showDailyReportResult(result, "周期报告发送结果");
+    message.success(result.sent ? "当前周期数据发送成功" : "当前周期数据未发送，请检查企业微信配置");
+    showDailyReportResult(result, "当前周期数据发送结果");
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
-    message.error((err as any)?.response?.data?.detail || "发送周期报告失败");
+    message.error((err as any)?.response?.data?.detail || "发送当前周期数据失败");
+    throw err;
   } finally {
-    sendingCustomDailyReport.value = false;
+    sendingCurrentPeriodDailyReport.value = false;
   }
 }
 
@@ -279,7 +313,7 @@ onMounted(() => {
         </div>
         <div>
           <div class="warm-page-title">营业额</div>
-          <div class="warm-page-desc">统计在线购买与积分兑换码营业额，支持按时间区间筛选。</div>
+          <div class="warm-page-desc">统计在线购买与积分兑换码营业额，支持按日期区间或月份筛选。</div>
         </div>
       </div>
       <a-button
@@ -299,17 +333,17 @@ onMounted(() => {
         @click="handleSendDailyReport"
       >
         <template #icon><BellOutlined /></template>
-        发送报告到企业微信
+        发送日报到企业微信
       </a-button>
       <a-button
         v-if="auth.isSuperAdmin"
         type="primary"
         class="warm-primary-btn revenue-custom-report-btn"
-        :loading="sendingCustomDailyReport"
-        @click="openCustomDailyReportModal"
+        :loading="sendingCurrentPeriodDailyReport"
+        @click="handleSendCurrentPeriodDailyReport"
       >
         <template #icon><CalendarOutlined /></template>
-        按周期发送报告
+        发送当前周期数据
       </a-button>
     </div>
 
@@ -320,6 +354,15 @@ onMounted(() => {
           :placeholder="['开始日期', '结束日期']"
           class="analytics-filter-date"
           @change="handleDateRangeChange"
+        />
+        <a-date-picker
+          v-model:value="selectedMonth"
+          picker="month"
+          placeholder="选择月份"
+          format="YYYY年M月"
+          :locale="datePickerZhCN"
+          class="analytics-filter-date analytics-filter-month"
+          @change="handleMonthChange"
         />
         <div class="analytics-filter-panel-compact">
           <a-radio-group
@@ -394,25 +437,6 @@ onMounted(() => {
     </div>
 
     <a-modal
-      v-model:open="customDailyReportModalOpen"
-      title="按周期发送报告"
-      ok-text="发送"
-      cancel-text="取消"
-      :confirm-loading="sendingCustomDailyReport"
-      @ok="handleSendCustomDailyReport"
-    >
-      <a-form layout="vertical">
-        <a-form-item label="日期区间" required>
-          <a-range-picker
-            v-model:value="customDailyReportRange"
-            :placeholder="['开始日期', '结束日期']"
-            style="width: 100%"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal
       v-model:open="offlineOrderModalOpen"
       title="录入线下订单"
       ok-text="提交"
@@ -478,6 +502,10 @@ onMounted(() => {
 
 .analytics-filter {
   margin-bottom: 16px;
+}
+
+.analytics-filter-month {
+  width: 148px;
 }
 
 .revenue-total-summary {
@@ -567,6 +595,10 @@ onMounted(() => {
 
   .analytics-filter-date,
   .analytics-action-btn {
+    width: 100%;
+  }
+
+  .analytics-filter-month {
     width: 100%;
   }
 
