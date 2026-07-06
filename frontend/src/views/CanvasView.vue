@@ -9,6 +9,7 @@ import {
   DownloadOutlined,
   DownOutlined,
   EditOutlined,
+  FontSizeOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
   MessageOutlined,
@@ -121,7 +122,7 @@ const CANVAS_GROUP_TITLE_HEIGHT = 40;
 const CANVAS_GROUP_COLORS = ["#8b8b98", "#12d98c", "#f4cc3c", "#24a7f2", "#e83d8b"];
 const DEFAULT_CANVAS_ZOOM = 0.5;
 const MIN_ZOOM = 0.15;
-const MAX_ZOOM = 2.4;
+const MAX_ZOOM = 3;
 const VIEWPORT_SAVE_DELAY_MS = 10000;
 const CANVAS_BACKGROUND_STORAGE_KEY = "banana-canvas-background";
 const failedResultAsset = withBaseUrl("failed-result.svg");
@@ -189,10 +190,12 @@ const canvasMenuOpen = ref(false);
 const guideOpen = ref(false);
 const canvasSettingsOpen = ref(false);
 const freeNodeMenuOpen = ref(false);
+const canvasContextMenuOpen = ref(false);
 const generatePanelCollapsed = ref(false);
 const composerPopover = ref<ComposerPopover | null>(null);
 const projectSwitcherRef = ref<HTMLElement | null>(null);
 const canvasStageRef = ref<HTMLElement | null>(null);
+const canvasContextMenuRef = ref<HTMLElement | null>(null);
 const canvasSideToolboxRef = ref<HTMLElement | null>(null);
 const canvasToolbarRef = ref<HTMLElement | null>(null);
 const canvasComposerRef = ref<HTMLElement | null>(null);
@@ -207,6 +210,8 @@ const canvasOnboardingCardRef = ref<HTMLElement | null>(null);
 const canvasOnboardingCardHeight = ref(220);
 const canvasOnboardingGuideInitialOpen = ref(false);
 const canvasOnboardingGuideAutoOpened = ref(false);
+const canvasContextMenuPosition = ref({ x: 0, y: 0 });
+const pendingFreeImageAnchor = ref<{ x: number; y: number } | null>(null);
 
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const sceneConfigLoading = ref(false);
@@ -340,6 +345,17 @@ const selectionActionNodes = computed(() => {
   }
   return selectedNode.value ? [selectedNode.value] : [];
 });
+const selectionPrimaryNode = computed(() => selectionActionNodes.value.length === 1 ? selectionActionNodes.value[0] : null);
+const selectionPrimaryActionDisabled = computed(() => (
+  selectionPrimaryNode.value?.node_type === "image"
+  && selectionPrimaryNode.value.uploadStatus !== "success"
+  && !selectionPrimaryNode.value.image_url
+));
+const selectionPrimaryActionLabel = computed(() => (
+  selectionPrimaryNode.value?.node_type === "image"
+    ? selectionPrimaryNode.value.uploadStatus === "uploading" ? "上传中" : "编辑图片"
+    : "生成图片"
+));
 const selectionGroupBounds = computed(() => getNodesBounds(selectionActionNodes.value));
 const selectionBoxStyle = computed(() => {
   const box = selectionBox.value;
@@ -1481,6 +1497,25 @@ function zoomAt(clientX: number, clientY: number, nextZoomValue: number) {
   scheduleViewportSave();
 }
 
+function closeCanvasContextMenu() {
+  canvasContextMenuOpen.value = false;
+}
+
+function openCanvasContextMenu(clientX: number, clientY: number, worldPoint: { x: number; y: number }) {
+  pendingFreeImageAnchor.value = worldPoint;
+  canvasContextMenuPosition.value = { x: clientX, y: clientY };
+  canvasContextMenuOpen.value = true;
+  void nextTick(() => {
+    const menu = canvasContextMenuRef.value;
+    if (!menu || !canvasContextMenuOpen.value) return;
+    const padding = 12;
+    canvasContextMenuPosition.value = {
+      x: Math.min(window.innerWidth - menu.offsetWidth - padding, Math.max(padding, clientX)),
+      y: Math.min(window.innerHeight - menu.offsetHeight - padding, Math.max(padding, clientY)),
+    };
+  });
+}
+
 function handleWheel(event: WheelEvent) {
   if (canvasInteractionMode.value === "select") {
     event.preventDefault();
@@ -1532,6 +1567,7 @@ function handleStagePointerDown(event: PointerEvent) {
   const target = event.target as HTMLElement;
   if (target.closest(".canvas-node") || target.closest(".canvas-panel")) return;
   clearCanvasSelection();
+  closeCanvasContextMenu();
   composerPopover.value = null;
   if (!generatePanelCollapsed.value && !hasComposerDraftContent.value) {
     collapseGeneratePanel();
@@ -1558,6 +1594,28 @@ function handleStagePointerDown(event: PointerEvent) {
     originY: viewport.value.y,
   };
   canvasStageRef.value?.setPointerCapture(event.pointerId);
+}
+
+function handleStageContextMenu(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (
+    target.closest(".canvas-node")
+    || target.closest(".canvas-panel")
+    || target.closest(".canvas-persistent-group")
+    || target.closest(".canvas-group-toolbar")
+  ) {
+    closeCanvasContextMenu();
+    return;
+  }
+  const rect = canvasStageRef.value?.getBoundingClientRect();
+  if (!rect) return;
+  event.preventDefault();
+  clearCanvasSelection();
+  composerPopover.value = null;
+  freeNodeMenuOpen.value = false;
+  canvasMenuOpen.value = false;
+  const worldPoint = stageLocalToWorld(event.clientX - rect.left, event.clientY - rect.top);
+  openCanvasContextMenu(event.clientX, event.clientY, worldPoint);
 }
 
 function handleStagePointerMove(event: PointerEvent) {
@@ -1925,11 +1983,13 @@ async function openReadonlyOwnerDialog() {
 function handleDocumentPointerDown(event: PointerEvent) {
   const target = event.target as HTMLElement | null;
   if (
-    target
+    event.button === 0
+    && target
     && !target.closest(".canvas-node")
     && !target.closest(".canvas-node-toolbar")
     && !target.closest(".canvas-persistent-group")
     && !target.closest(".canvas-group-toolbar")
+    && !target.closest(".canvas-context-menu")
   ) {
     clearCanvasSelection();
   }
@@ -1941,6 +2001,9 @@ function handleDocumentPointerDown(event: PointerEvent) {
   }
   if (freeNodeMenuOpen.value && !target?.closest(".canvas-side-toolbox-wrap")) {
     freeNodeMenuOpen.value = false;
+  }
+  if (canvasContextMenuOpen.value && !target?.closest(".canvas-context-menu")) {
+    closeCanvasContextMenu();
   }
   if (!canvasMenuOpen.value) return;
   if (target && projectSwitcherRef.value?.contains(target)) return;
@@ -2473,6 +2536,14 @@ function handleGenerateFromSelection() {
     message.success("已回填到生成配置");
     clearCanvasSelection();
   }
+}
+
+function handleSelectionPrimaryAction() {
+  if (selectionPrimaryNode.value?.node_type === "image") {
+    useNodeImageForEditing(selectionPrimaryNode.value);
+    return;
+  }
+  handleGenerateFromSelection();
 }
 
 async function arrangeSelectedNodes() {
@@ -3087,7 +3158,7 @@ async function executeArrangeCanvasNodes(projectId: string) {
   }
 }
 
-async function createFreeTextNode() {
+async function createFreeTextNode(anchor: { x: number; y: number } | null = null) {
   const projectId = selectedCanvasProjectId.value;
   if (!projectId) return;
   if (canvasReadOnly.value) {
@@ -3095,7 +3166,8 @@ async function createFreeTextNode() {
     return;
   }
   freeNodeMenuOpen.value = false;
-  const center = getViewportCenter();
+  closeCanvasContextMenu();
+  const center = anchor || getViewportCenter();
   const nodeSize = { width: 280, height: 160 };
   const position = findNonOverlappingNodePosition(
     { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 },
@@ -3118,12 +3190,14 @@ async function createFreeTextNode() {
   }
 }
 
-function triggerFreeImageUpload() {
+function triggerFreeImageUpload(anchor: { x: number; y: number } | null = null) {
   if (canvasReadOnly.value) {
     message.warning("只读模式下不能上传图片节点");
     return;
   }
   freeNodeMenuOpen.value = false;
+  closeCanvasContextMenu();
+  pendingFreeImageAnchor.value = anchor ? { ...anchor } : null;
   freeNodeImageInputRef.value?.click();
 }
 
@@ -3148,6 +3222,8 @@ async function handleFreeImageUpload(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);
   input.value = "";
+  const anchorPoint = pendingFreeImageAnchor.value;
+  pendingFreeImageAnchor.value = null;
   if (canvasReadOnly.value) {
     message.warning("只读模式下不能上传图片节点");
     return;
@@ -3163,7 +3239,7 @@ async function handleFreeImageUpload(event: Event) {
   }
   const projectId = selectedCanvasProjectId.value;
   if (!projectId) return;
-  const center = getViewportCenter();
+  const center = anchorPoint || getViewportCenter();
   const nodeWidth = 320;
   const nodeGap = 34;
   const columns = Math.min(4, imageFiles.length);
@@ -3256,6 +3332,21 @@ async function handleFreeImageUpload(event: Event) {
   } catch (err: any) {
     message.error(err.response?.data?.detail || "上传图片节点失败");
   }
+}
+
+function zoomCanvasFromContextMenu(delta: number) {
+  closeCanvasContextMenu();
+  zoomAtCenter(delta);
+}
+
+function resetViewportFromContextMenu() {
+  closeCanvasContextMenu();
+  resetViewport();
+}
+
+async function arrangeCanvasNodesFromContextMenu() {
+  closeCanvasContextMenu();
+  await arrangeCanvasNodes();
 }
 
 function submitNodeSearch() {
@@ -3645,11 +3736,47 @@ onBeforeUnmount(() => {
         'background-solid': canvasBackgroundMode === 'solid',
       }"
       @wheel="handleWheel"
+      @contextmenu="handleStageContextMenu"
       @pointerdown="handleStagePointerDown"
       @pointermove="handleStagePointerMove"
       @pointerup="handleStagePointerUp"
       @pointercancel="handleStagePointerUp"
     >
+      <div
+        v-if="canvasContextMenuOpen"
+        ref="canvasContextMenuRef"
+        class="canvas-context-menu canvas-panel"
+        :style="{ left: `${canvasContextMenuPosition.x}px`, top: `${canvasContextMenuPosition.y}px` }"
+        @pointerdown.stop
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button type="button" :disabled="canvasReadOnly" @click="createFreeTextNode(pendingFreeImageAnchor)">
+          <FontSizeOutlined />
+          <span>添加文本</span>
+        </button>
+        <button type="button" :disabled="canvasReadOnly" @click="triggerFreeImageUpload(pendingFreeImageAnchor)">
+          <PictureOutlined />
+          <span>上传图片</span>
+        </button>
+        <button type="button" :disabled="canvasReadOnly" @click="arrangeCanvasNodesFromContextMenu">
+          <ClearOutlined />
+          <span>整理节点</span>
+        </button>
+        <button type="button" @click="zoomCanvasFromContextMenu(0.12)">
+          <PlusOutlined />
+          <span>放大</span>
+        </button>
+        <button type="button" @click="zoomCanvasFromContextMenu(-0.12)">
+          <MinusOutlined />
+          <span>缩小</span>
+        </button>
+        <button type="button" @click="resetViewportFromContextMenu">
+          <AimOutlined />
+          <span>适应画布</span>
+        </button>
+      </div>
+
       <div ref="projectSwitcherRef" class="canvas-project-switcher" @pointerdown.stop @click.stop>
         <template v-if="canvasReadOnly && readonlyCanvasOwnerFallback">
           <div class="canvas-project-trigger canvas-readonly-project-name" :title="selectedCanvas?.name || '当前画布'">
@@ -3892,8 +4019,14 @@ onBeforeUnmount(() => {
           </a-tooltip>
         </div>
         <div v-if="freeNodeMenuOpen" class="canvas-free-node-menu canvas-panel">
-          <button type="button" @click="createFreeTextNode">文本节点</button>
-          <button type="button" @click="triggerFreeImageUpload">上传图片</button>
+          <button type="button" @click="createFreeTextNode(null)">
+            <FontSizeOutlined />
+            <span>文本节点</span>
+          </button>
+          <button type="button" @click="triggerFreeImageUpload(null)">
+            <PictureOutlined />
+            <span>上传图片</span>
+          </button>
         </div>
         <input ref="freeNodeImageInputRef" type="file" accept="image/*" multiple hidden @change="handleFreeImageUpload" />
       </div>
@@ -4128,9 +4261,9 @@ onBeforeUnmount(() => {
           <ClearOutlined />
           <span>自动排列</span>
         </button>
-        <button type="button" @click="handleGenerateFromSelection">
+        <button type="button" :disabled="selectionPrimaryActionDisabled" @click="handleSelectionPrimaryAction">
           <ThunderboltOutlined />
-          <span>生成图片</span>
+          <span>{{ selectionPrimaryActionLabel }}</span>
         </button>
         <button type="button" class="danger" :disabled="canvasReadOnly" @click="deleteSelectedNodes">
           <DeleteOutlined />
@@ -5649,7 +5782,12 @@ onBeforeUnmount(() => {
 }
 
 .canvas-free-node-menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   height: 36px;
+  padding: 0 12px;
   border: 0;
   border-radius: 12px;
   background: transparent;
@@ -5657,10 +5795,47 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
+  text-align: left;
 }
 
 .canvas-free-node-menu button:hover {
   background: var(--theme-panel-bg-muted);
+}
+
+.canvas-context-menu {
+  position: fixed;
+  z-index: 1600;
+  display: grid;
+  gap: 6px;
+  min-width: 172px;
+  padding: 12px;
+  border-radius: 20px;
+}
+
+.canvas-context-menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  text-align: left;
+}
+
+.canvas-context-menu button:hover {
+  background: var(--theme-panel-bg-muted);
+}
+
+.canvas-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .canvas-workbench-actions {
