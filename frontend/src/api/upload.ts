@@ -4,6 +4,7 @@ import type { UploadCredential, UploadPurpose } from "@/types";
 
 export const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_UPLOAD_SIZE_TEXT = "20MB";
+const JPEG_TO_WEBP_QUALITY = 0.9;
 
 function inferImageContentType(file: File) {
   if (file.type) return file.type;
@@ -17,6 +18,69 @@ function inferImageContentType(file: File) {
 
 export function isImageUploadTooLarge(file: File) {
   return file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES;
+}
+
+function isJpegImage(file: File) {
+  return inferImageContentType(file) === "image/jpeg";
+}
+
+function buildWebpFileName(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, "") + ".webp";
+}
+
+function loadImageFromObjectUrl(objectUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("JPEG 图片加载失败，无法转换为 WebP"));
+    image.src = objectUrl;
+  });
+}
+
+async function convertJpegToWebp(file: File): Promise<File> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageFromObjectUrl(objectUrl);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (!width || !height) {
+      throw new Error("JPEG 图片尺寸无效，无法转换为 WebP");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("浏览器不支持 Canvas 2D，无法转换为 WebP");
+    }
+    context.drawImage(image, 0, 0, width, height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/webp", JPEG_TO_WEBP_QUALITY);
+    });
+    if (!blob) {
+      throw new Error("浏览器不支持导出 WebP，无法转换图片");
+    }
+
+    return new File([blob], buildWebpFileName(file.name), {
+      type: "image/webp",
+      lastModified: file.lastModified || Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function prepareUploadFile(file: File): Promise<File> {
+  if (!isJpegImage(file)) return file;
+  try {
+    return await convertJpegToWebp(file);
+  } catch (error) {
+    console.warn("JPEG 转 WebP 失败，回退原图上传", error);
+    return file;
+  }
 }
 
 function getUploadCredential(file: File, purpose: UploadPurpose): Promise<UploadCredential> {
@@ -35,7 +99,8 @@ export function uploadReferenceImage(
 ): Promise<{ url: string; key: string }> {
   return new Promise(async (resolve, reject) => {
     try {
-      const credential = await getUploadCredential(file, purpose);
+      const uploadFile = await prepareUploadFile(file);
+      const credential = await getUploadCredential(uploadFile, purpose);
       const cos = new COS({
         getAuthorization(_, callback) {
           callback({
@@ -53,7 +118,7 @@ export function uploadReferenceImage(
           Bucket: credential.bucket,
           Region: credential.region,
           Key: credential.key,
-          Body: file,
+          Body: uploadFile,
           onProgress(progressData) {
             onProgress?.((progressData.percent || 0) * 100);
           },
