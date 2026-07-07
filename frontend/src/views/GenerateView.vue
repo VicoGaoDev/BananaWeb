@@ -2281,6 +2281,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                                 <div>大多数人日常使用首选（性价比最高）</div>
                               </div>
                               <div class="model-help-grid">
+                                <div>Nano Banana 2 Lite</div>
+                                <div>轻量版，出图更快，细节略弱于 Nano Banana 2</div>
+                                <div>一般</div>
+                                <div>快速出图、日常草稿、成本敏感场景</div>
+                              </div>
+                              <div class="model-help-grid">
                                 <div>Nano Banana</div>
                                 <div>一般，适合快速草稿验证</div>
                                 <div>较多</div>
@@ -2513,6 +2519,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                                 <div>接近 Pro，速度与质量平衡最佳</div>
                                 <div>较少</div>
                                 <div>大多数人日常使用首选（性价比最高）</div>
+                              </div>
+                              <div class="model-help-grid">
+                                <div>Nano Banana 2 Lite</div>
+                                <div>轻量版，出图更快，细节略弱于 Nano Banana 2</div>
+                                <div>一般</div>
+                                <div>快速出图、日常草稿、成本敏感场景</div>
                               </div>
                               <div class="model-help-grid">
                                 <div>Nano Banana</div>
