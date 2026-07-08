@@ -3038,7 +3038,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </a-select>
             <div class="result-tips">
               <div class="result-tip-line">
-                每日前 10 次失败任务不扣积分
+                每日前 <span class="result-tip-highlight">20</span> 次失败任务不扣积分
               </div>
             </div>
           </div>
@@ -5020,6 +5020,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.result-tip-highlight {
+  display: inline;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: inherit;
+  color: inherit;
 }
 
 .result-head-meta {
