@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+from datetime import timedelta
+
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.models.user_asset import UserAsset
 from app.models.user_asset_category import UserAssetCategory
 from app.schemas.user_asset import UserAssetQuota
@@ -21,10 +25,15 @@ from app.services.cos_service import (
 from app.services.image_delivery_service import build_thumb_url, get_optional_cos_config
 from app.utils.datetime_utils import now_local
 
+logger = logging.getLogger(__name__)
+
 USER_ASSET_LIMIT = 50
 MAX_CATEGORY_NAME_LENGTH = 100
 PENDING_ASSET_STATUS = "pending"
 READY_ASSET_STATUS = "ready"
+DELETED_ASSET_STATUS = "deleted"
+STALE_PENDING_ASSET_TTL_MINUTES = max(int(settings.USER_ASSET_PENDING_TTL_MINUTES or 0), 1)
+STALE_PENDING_ASSET_CLEANUP_BATCH_SIZE = max(int(settings.USER_ASSET_PENDING_CLEANUP_BATCH_SIZE or 0), 1)
 UNCATEGORIZED_FILTER_ID = 0
 
 
@@ -44,9 +53,63 @@ def _active_asset_filter(query, user_id: int):
     )
 
 
+def _ready_asset_filter(query, user_id: int):
+    return _active_asset_filter(query, user_id).filter(
+        UserAsset.status == READY_ASSET_STATUS,
+    )
+
+
+def cleanup_stale_pending_assets(
+    db: Session,
+    *,
+    user_id: int | None = None,
+    limit: int = STALE_PENDING_ASSET_CLEANUP_BATCH_SIZE,
+) -> int:
+    cutoff = now_local() - timedelta(minutes=STALE_PENDING_ASSET_TTL_MINUTES)
+    query = (
+        db.query(UserAsset)
+        .filter(
+            UserAsset.is_deleted.is_(False),
+            UserAsset.status == PENDING_ASSET_STATUS,
+            UserAsset.completed_at.is_(None),
+            UserAsset.created_at < cutoff,
+        )
+    )
+    if user_id is not None:
+        query = query.filter(UserAsset.user_id == user_id)
+    stale_assets = (
+        query.order_by(UserAsset.created_at.asc(), UserAsset.id.asc())
+        .limit(max(int(limit or 0), 1))
+        .all()
+    )
+    if not stale_assets:
+        return 0
+
+    deleted_at = now_local()
+    cleaned_count = 0
+    for asset in stale_assets:
+        try:
+            delete_cos_object(db, asset.object_key, ignore_missing=True)
+        except HTTPException:
+            logger.warning(
+                "Failed to delete stale pending user asset object",
+                extra={"asset_id": asset.id, "user_id": asset.user_id, "object_key": asset.object_key},
+                exc_info=True,
+            )
+        asset.is_deleted = True
+        asset.deleted_at = deleted_at
+        asset.status = DELETED_ASSET_STATUS
+        cleaned_count += 1
+    if cleaned_count:
+        db.commit()
+    return cleaned_count
+
+
 def get_user_asset_quota(db: Session, user_id: int) -> dict:
+    # Clean up expired upload sessions before reporting visible quota.
+    cleanup_stale_pending_assets(db, user_id=user_id)
     used = int(
-        _active_asset_filter(db.query(func.count(UserAsset.id)), user_id).scalar() or 0
+        _ready_asset_filter(db.query(func.count(UserAsset.id)), user_id).scalar() or 0
     )
     remaining = max(USER_ASSET_LIMIT - used, 0)
     return UserAssetQuota(used=used, limit=USER_ASSET_LIMIT, remaining=remaining).model_dump()
@@ -396,6 +459,21 @@ def complete_user_asset_upload(
     if asset.status == READY_ASSET_STATUS:
         return _serialize_user_asset(asset, cos_config=get_optional_cos_config(db))
 
+    cleanup_stale_pending_assets(db, user_id=user_id)
+    ready_used = int(
+        _ready_asset_filter(db.query(func.count(UserAsset.id)), user_id).scalar() or 0
+    )
+    if ready_used >= USER_ASSET_LIMIT:
+        delete_cos_object(db, asset.object_key, ignore_missing=True)
+        asset.is_deleted = True
+        asset.deleted_at = now_local()
+        asset.status = DELETED_ASSET_STATUS
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"素材库最多可保存 {USER_ASSET_LIMIT} 个素材，请删除后再试",
+        )
+
     asset.status = READY_ASSET_STATUS
     asset.width = width
     asset.height = height
@@ -441,6 +519,6 @@ def delete_user_asset(db: Session, user_id: int, asset_id: int) -> dict:
     delete_cos_object(db, asset.object_key, ignore_missing=True)
     asset.is_deleted = True
     asset.deleted_at = now_local()
-    asset.status = "deleted"
+    asset.status = DELETED_ASSET_STATUS
     db.commit()
     return {"quota": get_user_asset_quota(db, user_id)}

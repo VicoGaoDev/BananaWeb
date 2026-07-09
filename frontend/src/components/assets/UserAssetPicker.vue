@@ -410,60 +410,62 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
           </div>
         </div>
 
-        <a-spin :spinning="loading">
-          <div v-if="assets.length" class="asset-grid">
-            <div
-              v-for="asset in assets"
-              :key="asset.id"
-              class="asset-card"
-              :draggable="enableDrag"
-              @dragstart="handleAssetDragStart($event, asset)"
-            >
-              <div class="asset-card-media">
-                <div class="asset-card-thumb" @click="openPreview(asset)">
-                  <img :src="getPreviewImageSrc(asset.thumb_url || asset.image_url)" :alt="asset.file_name" loading="lazy" />
+        <a-spin :spinning="loading" class="asset-content-spin">
+          <div class="asset-content">
+            <div v-if="assets.length" class="asset-grid">
+              <div
+                v-for="asset in assets"
+                :key="asset.id"
+                class="asset-card"
+                :draggable="enableDrag"
+                @dragstart="handleAssetDragStart($event, asset)"
+              >
+                <div class="asset-card-media">
+                  <div class="asset-card-thumb" @click="openPreview(asset)">
+                    <img :src="getPreviewImageSrc(asset.thumb_url || asset.image_url)" :alt="asset.file_name" loading="lazy" />
+                  </div>
+                  <div class="asset-card-actions">
+                    <button type="button" class="asset-card-action asset-card-action-primary" @click.stop="handleSelectAsset(asset)">
+                      作为参考图
+                    </button>
+                    <button
+                      v-if="showInsertToCanvas"
+                      type="button"
+                      class="asset-card-action"
+                      @click.stop="handleInsertAsset(asset)"
+                    >
+                      添加到画布
+                    </button>
+                  </div>
                 </div>
-                <div class="asset-card-actions">
-                  <button type="button" class="asset-card-action asset-card-action-primary" @click.stop="handleSelectAsset(asset)">
-                    作为参考图
-                  </button>
-                  <button
-                    v-if="showInsertToCanvas"
-                    type="button"
-                    class="asset-card-action"
-                    @click.stop="handleInsertAsset(asset)"
-                  >
-                    添加到画布
-                  </button>
+                <div class="asset-card-name" :title="asset.file_name">{{ asset.file_name }}</div>
+                <div class="asset-card-meta-row">
+                  <div class="asset-card-date">{{ formatAssetDate(asset.completed_at || asset.created_at) }}</div>
+                  <a-dropdown :trigger="['click']">
+                    <button type="button" class="asset-card-more-btn" @click.stop>
+                      <MoreOutlined />
+                    </button>
+                    <template #overlay>
+                      <a-menu>
+                        <a-menu-item key="change-category" @click="openCategoryDialog(asset)">
+                          修改分类
+                        </a-menu-item>
+                        <a-menu-item key="rename-asset" @click="openAssetNameDialog(asset)">
+                          修改名称
+                        </a-menu-item>
+                        <a-menu-item key="delete-asset" danger @click="handleDeleteAsset(asset)">
+                          删除
+                        </a-menu-item>
+                      </a-menu>
+                    </template>
+                  </a-dropdown>
                 </div>
-              </div>
-              <div class="asset-card-name" :title="asset.file_name">{{ asset.file_name }}</div>
-              <div class="asset-card-meta-row">
-                <div class="asset-card-date">{{ formatAssetDate(asset.completed_at || asset.created_at) }}</div>
-                <a-dropdown :trigger="['click']">
-                  <button type="button" class="asset-card-more-btn" @click.stop>
-                    <MoreOutlined />
-                  </button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item key="change-category" @click="openCategoryDialog(asset)">
-                        修改分类
-                      </a-menu-item>
-                      <a-menu-item key="rename-asset" @click="openAssetNameDialog(asset)">
-                        修改名称
-                      </a-menu-item>
-                      <a-menu-item key="delete-asset" danger @click="handleDeleteAsset(asset)">
-                        删除
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
               </div>
             </div>
-          </div>
-          <div v-else class="asset-empty">
-            <div class="asset-empty-title">暂无素材</div>
-            <div class="asset-empty-desc">上传参考图后会永久保存到素材库，可在画布页和 AI 生图页复用。每个用户最多可保存 50 个素材。</div>
+            <div v-else class="asset-empty">
+              <div class="asset-empty-title">暂无素材</div>
+              <div class="asset-empty-desc">上传参考图后会永久保存到素材库，可在画布页和 AI 生图页复用。每个用户最多可保存 50 个素材。</div>
+            </div>
           </div>
         </a-spin>
       </section>
@@ -539,10 +541,13 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 }
 
 .asset-sidebar {
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(220, 185, 125, 0.22);
   border-radius: 18px;
   padding: 14px;
   background: rgba(255, 249, 240, 0.72);
+  min-height: 0;
 }
 
 .asset-sidebar-header,
@@ -587,8 +592,14 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-category-list {
   margin-top: 14px;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
 }
 
 .asset-category-btn {
@@ -612,7 +623,46 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 }
 
 .asset-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+}
+
+.asset-content-spin {
+  margin-top: 16px;
+  min-height: 0;
+}
+
+.asset-content {
+  max-height: 540px;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+}
+
+.asset-content::-webkit-scrollbar,
+.asset-category-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.asset-content::-webkit-scrollbar-track,
+.asset-category-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 244, 220, 0.78);
+}
+
+.asset-content::-webkit-scrollbar-thumb,
+.asset-category-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(255, 244, 220, 0.78);
+  background: rgba(191, 148, 79, 0.55);
+}
+
+.asset-content::-webkit-scrollbar-thumb:hover,
+.asset-category-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 124, 52, 0.72);
 }
 
 .asset-search {
@@ -698,7 +748,6 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 }
 
 .asset-grid {
-  margin-top: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 14px;
@@ -1013,6 +1062,17 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 
   .asset-search {
     width: 100%;
+  }
+
+  .asset-category-list {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .asset-content {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 }
 </style>

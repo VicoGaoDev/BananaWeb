@@ -321,31 +321,33 @@ function handleDeleteCategory() {
           </div>
         </div>
 
-        <a-spin :spinning="loading">
-          <div v-if="prompts.length" class="prompt-list">
-            <div v-for="item in prompts" :key="item.id" class="prompt-card">
-              <div class="prompt-card-header">
-                <div class="prompt-card-title">{{ item.title }}</div>
-                <div class="prompt-card-actions">
-                  <a-button type="link" size="small" @click="handleUsePrompt(item)">使用</a-button>
-                  <a-button type="link" size="small" @click="openEditPromptDialog(item)">
-                    <template #icon><EditOutlined /></template>
-                  </a-button>
-                  <a-button type="link" size="small" danger @click="handleDeletePrompt(item)">
-                    <template #icon><DeleteOutlined /></template>
-                  </a-button>
+        <a-spin :spinning="loading" class="prompt-content-spin">
+          <div class="prompt-content">
+            <div v-if="prompts.length" class="prompt-list">
+              <div v-for="item in prompts" :key="item.id" class="prompt-card">
+                <div class="prompt-card-header">
+                  <div class="prompt-card-title">{{ item.title }}</div>
+                  <div class="prompt-card-actions">
+                    <a-button type="link" size="small" @click="handleUsePrompt(item)">使用</a-button>
+                    <a-button type="link" size="small" @click="openEditPromptDialog(item)">
+                      <template #icon><EditOutlined /></template>
+                    </a-button>
+                    <a-button type="link" size="small" danger @click="handleDeletePrompt(item)">
+                      <template #icon><DeleteOutlined /></template>
+                    </a-button>
+                  </div>
                 </div>
+                <div class="prompt-card-meta-row">
+                  <div class="prompt-card-category">{{ item.category_name || "未分类" }}</div>
+                  <div class="prompt-card-date">{{ item.updated_at ? item.updated_at.slice(0, 10) : "-" }}</div>
+                </div>
+                <div class="prompt-card-content">{{ item.content }}</div>
               </div>
-              <div class="prompt-card-meta-row">
-                <div class="prompt-card-category">{{ item.category_name || "未分类" }}</div>
-                <div class="prompt-card-date">{{ item.updated_at ? item.updated_at.slice(0, 10) : "-" }}</div>
-              </div>
-              <div class="prompt-card-content">{{ item.content }}</div>
             </div>
-          </div>
-          <div v-else class="prompt-empty">
-            <div class="prompt-empty-title">暂无提示词</div>
-            <div class="prompt-empty-desc">新建后可在这里统一管理，并一键回填到当前编辑区。</div>
+            <div v-else class="prompt-empty">
+              <div class="prompt-empty-title">暂无提示词</div>
+              <div class="prompt-empty-desc">新建后可在这里统一管理，并一键回填到当前编辑区。</div>
+            </div>
           </div>
         </a-spin>
       </section>
@@ -400,10 +402,13 @@ function handleDeleteCategory() {
 }
 
 .prompt-sidebar {
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(220, 185, 125, 0.22);
   border-radius: 18px;
   padding: 14px;
   background: rgba(255, 249, 240, 0.72);
+  min-height: 0;
 }
 
 .prompt-sidebar-header,
@@ -448,8 +453,14 @@ function handleDeleteCategory() {
 .prompt-category-list {
   margin-top: 14px;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
 }
 
 .prompt-category-btn {
@@ -473,7 +484,46 @@ function handleDeleteCategory() {
 }
 
 .prompt-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+}
+
+.prompt-content-spin {
+  margin-top: 16px;
+  min-height: 0;
+}
+
+.prompt-content {
+  max-height: 540px;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+}
+
+.prompt-content::-webkit-scrollbar,
+.prompt-category-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.prompt-content::-webkit-scrollbar-track,
+.prompt-category-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 244, 220, 0.78);
+}
+
+.prompt-content::-webkit-scrollbar-thumb,
+.prompt-category-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(255, 244, 220, 0.78);
+  background: rgba(191, 148, 79, 0.55);
+}
+
+.prompt-content::-webkit-scrollbar-thumb:hover,
+.prompt-category-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 124, 52, 0.72);
 }
 
 .prompt-search {
@@ -529,13 +579,9 @@ function handleDeleteCategory() {
 }
 
 .prompt-list {
-  margin-top: 16px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  max-height: 540px;
-  overflow: auto;
-  padding-right: 4px;
 }
 
 .prompt-card {
@@ -640,7 +686,17 @@ function handleDeleteCategory() {
 
   .prompt-list {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-content {
     max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .prompt-category-list {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .prompt-search {
