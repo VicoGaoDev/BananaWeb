@@ -83,6 +83,7 @@ const columns = [
 ];
 
 const filteredItems = computed(() => analytics.value?.items || []);
+const showTaskTable = computed(() => fallbackOnly.value || Boolean(selectedErrorCategory.value));
 
 const filteredFailedTaskCount = computed(() => (
   filteredItems.value.reduce((sum, item) => sum + item.count, 0)
@@ -295,7 +296,7 @@ async function load() {
 }
 
 async function loadTaskTable(page = taskTablePage.value) {
-  if (!selectedErrorCategory.value || !dateRange.value?.[0] || !dateRange.value?.[1]) {
+  if (!dateRange.value?.[0] || !dateRange.value?.[1] || (!fallbackOnly.value && !selectedErrorCategory.value)) {
     taskTableItems.value = [];
     taskTableTotal.value = 0;
     taskTablePage.value = 1;
@@ -594,14 +595,18 @@ onMounted(async () => {
       </a-table>
     </div>
 
-    <div v-if="selectedErrorCategory" class="warm-card warm-table-card motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
+    <div v-if="showTaskTable" class="warm-card warm-table-card motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
       <div class="table-card-head">
         <div>
-          <div class="table-card-title">当天任务情况</div>
+          <div class="table-card-title">{{ fallbackOnly ? "备用接口任务情况" : "当天任务情况" }}</div>
           <div class="table-card-desc">
             {{
               fallbackOnly
-                ? (selectedBucketLabel ? `查看“${selectedErrorCategory}”在 ${selectedBucketLabel} 触发备用接口的任务。` : `查看“${selectedErrorCategory}”对应的备用接口任务。`)
+                ? (
+                  selectedErrorCategory
+                    ? (selectedBucketLabel ? `查看“${selectedErrorCategory}”在 ${selectedBucketLabel} 触发备用接口的任务。` : `查看“${selectedErrorCategory}”对应的备用接口任务。`)
+                    : "当前直接展示所选时间范围内所有使用过备用接口的任务。"
+                )
                 : (selectedBucketLabel ? `查看“${selectedErrorCategory}”在 ${selectedBucketLabel} 的失败任务明细。` : `查看“${selectedErrorCategory}”对应的失败任务明细。`)
             }}
           </div>
