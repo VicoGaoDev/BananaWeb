@@ -270,6 +270,34 @@ export interface UserAssetListResponse {
   quota: UserAssetQuota;
 }
 
+export interface UserPromptCategory {
+  id: number;
+  name: string;
+  sort_order: number;
+  prompt_count: number;
+  updated_at?: string | null;
+}
+
+export interface UserPromptCategoryListResponse {
+  items: UserPromptCategory[];
+  uncategorized_count: number;
+}
+
+export interface UserPrompt {
+  id: number;
+  category_id?: number | null;
+  category_name: string;
+  title: string;
+  content: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface UserPromptListResponse {
+  items: UserPrompt[];
+  total: number;
+}
+
 export interface UserCanvasSummary {
   id: number;
   project_id: string;

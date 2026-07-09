@@ -7,7 +7,6 @@ import {
   FontSizeOutlined,
   CloseOutlined,
   CloudUploadOutlined,
-  ClockCircleOutlined,
   ClearOutlined,
   CopyOutlined,
   DeleteOutlined,
@@ -43,7 +42,7 @@ import {
   MAX_IMAGE_UPLOAD_SIZE_TEXT,
   uploadReferenceImage,
 } from "@/api/upload";
-import { getMe, getPromptHistory, deletePromptHistory } from "@/api/auth";
+import { getMe } from "@/api/auth";
 import { getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
@@ -51,6 +50,7 @@ import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
+import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
 import { withBaseUrl } from "@/lib/assets";
@@ -78,7 +78,7 @@ import {
   readStoredBoardKey,
   writeStoredBoardKey,
 } from "@/lib/boardPreference";
-import type { BoardKey, GenerationModelOption, ImageResult, PromptHistoryItem, SceneOptionItem, TaskResult, TaskSceneConfig, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard } from "@/types";
+import type { BoardKey, GenerationModelOption, ImageResult, SceneOptionItem, TaskResult, TaskSceneConfig, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -283,9 +283,7 @@ const VNodes = defineComponent({
   },
 });
 
-const historyVisible = ref(false);
-const historyItems = ref<PromptHistoryItem[]>([]);
-const historyLoading = ref(false);
+const promptLibraryVisible = ref(false);
 const sceneConfigLoading = ref(true);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
@@ -1820,26 +1818,9 @@ function handleDownload(imageId: number, imageUrl: string, previewUrl?: string) 
   a.click();
 }
 
-async function openHistory() {
+async function openPromptLibrary() {
   if (!(await ensureAuthenticated())) return;
-  historyVisible.value = true;
-  historyLoading.value = true;
-  try {
-    historyItems.value = await getPromptHistory();
-  } catch {
-    message.error("获取历史提示词失败");
-  } finally {
-    historyLoading.value = false;
-  }
-}
-
-async function removeHistoryItem(id: number) {
-  try {
-    await deletePromptHistory(id);
-    historyItems.value = historyItems.value.filter((i) => i.id !== id);
-  } catch {
-    message.error("删除失败");
-  }
+  promptLibraryVisible.value = true;
 }
 
 async function removeGeneratedTask(task: GeneratedTaskItem) {
@@ -1881,16 +1862,18 @@ function confirmRemoveGeneratedTask(task: GeneratedTaskItem) {
   });
 }
 
-function useHistoryPrompt(text: string) {
-  prompt.value = text;
-  generateMode.value = "textGenerate";
-  historyVisible.value = false;
-}
-
-function historyModeLabel(mode: PromptHistoryItem["mode"]) {
-  if (mode === "inpaint") return "局部重绘";
-  if (mode === "promptReverse") return "提示词反推";
-  return "文生图/图编辑";
+function useLibraryPrompt(item: UserPrompt) {
+  const content = (item.content || "").trim();
+  if (!content) {
+    message.warning("该提示词内容为空");
+    return;
+  }
+  if (generateMode.value === "inpaint") {
+    repaintPrompt.value = content;
+  } else {
+    prompt.value = content;
+  }
+  message.success("已回填到编辑区");
 }
 
 function applyDraft(raw: string | null, successText: string, storageKey: string) {
@@ -2334,9 +2317,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   <label>提示词</label>
                   <div class="prompt-label-actions">
                     <PromptInterceptionTip />
-                    <a-button type="text" class="history-btn" @click="openHistory">
-                      <template #icon><ClockCircleOutlined /></template>
-                    </a-button>
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
                   </div>
                 </div>
                 <a-textarea
@@ -2644,9 +2625,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   <label>提示词</label>
                   <div class="prompt-label-actions">
                     <PromptInterceptionTip />
-                    <a-button type="text" class="history-btn" @click="openHistory">
-                      <template #icon><ClockCircleOutlined /></template>
-                    </a-button>
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
                   </div>
                 </div>
                 <a-textarea
@@ -2956,6 +2935,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               <div class="prompt-block inpaint-prompt-block">
                 <div class="prompt-label-row">
                   <label>提示词</label>
+                  <div class="prompt-label-actions">
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
+                  </div>
                 </div>
                 <a-textarea
                   v-model:value="repaintPrompt"
@@ -3235,49 +3217,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       </section>
     </div>
 
-    <!-- Prompt history dialog -->
-    <a-modal
-      v-model:open="historyVisible"
-      title="历史提示词"
-      :footer="null"
-      :width="560"
-      centered
-    >
-      <a-spin :spinning="historyLoading">
-        <div v-if="historyItems.length === 0 && !historyLoading" class="history-empty">
-          暂无历史提示词
-        </div>
-        <TransitionGroup v-else name="history-item" tag="div" class="history-list">
-          <div
-            v-for="(item, index) in historyItems"
-            :key="item.id"
-            class="history-item"
-            :style="{ '--history-item-delay': `${Math.min(index, 9) * 35}ms` }"
-            @click="useHistoryPrompt(item.prompt)"
-          >
-            <div v-if="item.source_image" class="history-thumb">
-              <img :src="getPreviewImageSrc(item.source_image)" alt="历史图片" />
-            </div>
-            <div class="history-content">
-              <div class="history-meta">
-                <span class="history-tag">{{ historyModeLabel(item.mode) }}</span>
-              </div>
-              <div class="history-text">{{ item.prompt }}</div>
-            </div>
-            <a-button
-              type="text"
-              shape="circle"
-              size="small"
-              class="history-del"
-              @click.stop="removeHistoryItem(item.id)"
-            >
-              <template #icon><DeleteOutlined /></template>
-            </a-button>
-          </div>
-        </TransitionGroup>
-      </a-spin>
-    </a-modal>
-
     <div v-if="previewVisible" style="display: none">
       <a-image
         :src="previewCurrent"
@@ -3310,6 +3249,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       :model="feedbackTarget?.model"
       :prompt="feedbackTarget?.prompt"
       :created-at="feedbackTarget?.createdAt"
+    />
+    <UserPromptLibraryModal
+      v-model:open="promptLibraryVisible"
+      @select-prompt="useLibraryPrompt"
     />
     <UserAssetPicker
       v-model:open="assetPickerOpen"
@@ -3796,6 +3739,36 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.prompt-library-btn,
+.asset-library-btn {
+  height: 32px;
+  padding: 0 12px !important;
+  border-radius: 12px;
+  color: #a88962 !important;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 250, 242, 0.92) !important;
+  border: 1px solid rgba(241, 221, 183, 0.95) !important;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
+    color: #d38a12 !important;
+    background: rgba(255, 238, 205, 0.92) !important;
+    border-color: #efc784 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
 .generate-config-panel .prompt-input {
   border: none !important;
   background: transparent !important;
@@ -4010,37 +3983,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.asset-library-btn {
-  height: 30px;
-  padding-inline: 12px !important;
-  border-radius: 999px !important;
-  color: #a46d19 !important;
-  font-size: 12px;
-  font-weight: 700;
-  background: linear-gradient(180deg, rgba(255, 247, 231, 0.96), rgba(255, 238, 205, 0.96)) !important;
-  border: 1px solid rgba(239, 199, 132, 0.96) !important;
-  box-shadow: 0 8px 18px rgba(236, 185, 88, 0.12);
-  transition:
-    transform var(--motion-duration-press) var(--motion-ease-soft),
-    color var(--motion-duration-fast) var(--motion-ease-soft),
-    background var(--motion-duration-fast) var(--motion-ease-soft),
-    border-color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
-
-  &:hover {
-    color: #8f5a0d !important;
-    background: linear-gradient(180deg, rgba(255, 241, 214, 0.98), rgba(255, 230, 183, 0.98)) !important;
-    border-color: #efc784 !important;
-    transform: translateY(-1px);
-    box-shadow: 0 12px 22px rgba(236, 185, 88, 0.18);
-  }
-
-  &:active {
-    transform: translateY(0);
-    box-shadow: 0 6px 14px rgba(236, 185, 88, 0.12);
-  }
 }
 
 .panel-hint {
@@ -5763,6 +5705,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 
   .config-section,
   .history-btn,
+  .prompt-library-btn,
   .generate-config-panel .upload-thumb,
   .generate-config-panel .upload-thumb img,
   .generate-config-panel .upload-add,
@@ -6202,7 +6145,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-f
   );
 }
 
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .history-btn {
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .history-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-library-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-library-btn {
   color: var(--text-secondary) !important;
   background: var(--theme-panel-bg-soft) !important;
   border-color: var(--theme-panel-border) !important;
@@ -6212,20 +6157,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .history-bt
     background: var(--theme-control-hover-bg) !important;
     border-color: var(--theme-border-strong) !important;
     box-shadow: 0 10px 20px var(--theme-shadow-soft);
-  }
-}
-
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-library-btn {
-  color: var(--theme-title) !important;
-  background: linear-gradient(180deg, rgba(61, 49, 31, 0.96), rgba(46, 37, 24, 0.96)) !important;
-  border-color: rgba(214, 168, 84, 0.4) !important;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.18);
-
-  &:hover {
-    color: #ffd995 !important;
-    background: linear-gradient(180deg, rgba(78, 62, 38, 0.98), rgba(58, 46, 29, 0.98)) !important;
-    border-color: rgba(239, 199, 132, 0.56) !important;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
   }
 }
 
