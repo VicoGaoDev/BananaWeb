@@ -27,6 +27,7 @@ import {
   updateExternalApiSceneBindingStatus,
 } from "@/api/admin";
 import type {
+  ExternalApiCallMode,
   ExternalApiConfig,
   ExternalApiConfigPayload,
   ExternalApiConfigTestResult,
@@ -62,6 +63,9 @@ const DEFAULT_CUSTOM_SIZE_OPTIONS_JSON = JSON.stringify([
 const DEFAULT_RESOLUTION_MAPPING_JSON = JSON.stringify({}, null, 2);
 const DEFAULT_RESOLUTION_CREDIT_COSTS_JSON = JSON.stringify({}, null, 2);
 const DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES = 6;
+const DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON = JSON.stringify([200, 201, 202], null, 2);
+const DEFAULT_RESULT_SUCCESS_VALUES_JSON = JSON.stringify(["success", "succeeded", "completed"], null, 2);
+const DEFAULT_RESULT_FAILED_VALUES_JSON = JSON.stringify(["failed", "error", "cancelled"], null, 2);
 
 const configs = ref<ExternalApiConfig[]>([]);
 const sceneBindings = ref<ExternalApiSceneBinding[]>([]);
@@ -93,6 +97,7 @@ const tongyiKey = ref("");
 const configColumns = [
   { title: "名称", dataIndex: "name", width: 280 },
   { title: "分组", dataIndex: "group_name", width: 100 },
+  { title: "调用方式", dataIndex: "call_mode", width: 110 },
   { title: "请求格式", dataIndex: "request_format", width: 120 },
   { title: "请求地址", dataIndex: "request_url", ellipsis: true },
   { title: "状态", dataIndex: "status", width: 100 },
@@ -120,6 +125,21 @@ const form = reactive<ExternalApiConfigPayload>({
   payload_json: "{\n\n}",
   response_json: "{\n\n}",
   result_base64_field: "candidates.0.content.parts.0.inlineData.data",
+  call_mode: "sync",
+  submit_success_statuses_json: DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON,
+  poll_url: "",
+  poll_method: "GET",
+  poll_headers_json: "{\n\n}",
+  poll_payload_json: "{\n\n}",
+  task_id_field: "",
+  result_status_field: "",
+  result_success_values_json: DEFAULT_RESULT_SUCCESS_VALUES_JSON,
+  result_failed_values_json: DEFAULT_RESULT_FAILED_VALUES_JSON,
+  result_error_field: "",
+  poll_result_base64_field: "",
+  poll_result_url_field: "",
+  poll_interval_seconds: 5,
+  poll_timeout_seconds: 600,
   status: "enabled",
 });
 const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
@@ -165,6 +185,7 @@ const modalTitle = computed(() => {
   return "新增接口配置";
 });
 const sceneModalTitle = computed(() => (isSceneCopyMode.value ? "复制新增场景" : "新增场景"));
+const isAsyncConfigForm = computed(() => form.call_mode === "async");
 const groupOptions = computed(() => {
   const groups = Array.from(new Set(configs.value.map((item) => item.group_name || "未分组").filter(Boolean)));
   return groups.sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -213,6 +234,10 @@ function requestFormatLabel(requestFormat: ExternalApiConfig["request_format"]) 
   return requestFormat === "multipart" ? "Multipart Form" : "JSON";
 }
 
+function callModeLabel(callMode: ExternalApiCallMode) {
+  return callMode === "async" ? "异步" : "同步";
+}
+
 function matchesNameFilter(keyword: string, ...fields: Array<string | null | undefined>) {
   const normalized = keyword.trim().toLowerCase();
   if (!normalized) return true;
@@ -231,6 +256,21 @@ function resetForm() {
   form.payload_json = "{\n\n}";
   form.response_json = "{\n\n}";
   form.result_base64_field = "candidates.0.content.parts.0.inlineData.data";
+  form.call_mode = "sync";
+  form.submit_success_statuses_json = DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON;
+  form.poll_url = "";
+  form.poll_method = "GET";
+  form.poll_headers_json = "{\n\n}";
+  form.poll_payload_json = "{\n\n}";
+  form.task_id_field = "";
+  form.result_status_field = "";
+  form.result_success_values_json = DEFAULT_RESULT_SUCCESS_VALUES_JSON;
+  form.result_failed_values_json = DEFAULT_RESULT_FAILED_VALUES_JSON;
+  form.result_error_field = "";
+  form.poll_result_base64_field = "";
+  form.poll_result_url_field = "";
+  form.poll_interval_seconds = 5;
+  form.poll_timeout_seconds = 600;
   form.status = "enabled";
 }
 
@@ -246,6 +286,21 @@ function fillForm(item: ExternalApiConfig) {
   form.payload_json = item.payload_json;
   form.response_json = item.response_json || "{\n\n}";
   form.result_base64_field = item.result_base64_field || "";
+  form.call_mode = item.call_mode || "sync";
+  form.submit_success_statuses_json = item.submit_success_statuses_json || DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON;
+  form.poll_url = item.poll_url || "";
+  form.poll_method = item.poll_method || "GET";
+  form.poll_headers_json = item.poll_headers_json || "{\n\n}";
+  form.poll_payload_json = item.poll_payload_json || "{\n\n}";
+  form.task_id_field = item.task_id_field || "";
+  form.result_status_field = item.result_status_field || "";
+  form.result_success_values_json = item.result_success_values_json || DEFAULT_RESULT_SUCCESS_VALUES_JSON;
+  form.result_failed_values_json = item.result_failed_values_json || DEFAULT_RESULT_FAILED_VALUES_JSON;
+  form.result_error_field = item.result_error_field || "";
+  form.poll_result_base64_field = item.poll_result_base64_field || "";
+  form.poll_result_url_field = item.poll_result_url_field || "";
+  form.poll_interval_seconds = Number(item.poll_interval_seconds || 5);
+  form.poll_timeout_seconds = Number(item.poll_timeout_seconds || 600);
   form.status = item.status;
 }
 
@@ -524,6 +579,21 @@ function openCopy(item: ExternalApiConfig) {
   form.payload_json = item.payload_json;
   form.response_json = item.response_json || "{\n\n}";
   form.result_base64_field = item.result_base64_field || "";
+  form.call_mode = item.call_mode || "sync";
+  form.submit_success_statuses_json = item.submit_success_statuses_json || DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON;
+  form.poll_url = item.poll_url || "";
+  form.poll_method = item.poll_method || "GET";
+  form.poll_headers_json = item.poll_headers_json || "{\n\n}";
+  form.poll_payload_json = item.poll_payload_json || "{\n\n}";
+  form.task_id_field = item.task_id_field || "";
+  form.result_status_field = item.result_status_field || "";
+  form.result_success_values_json = item.result_success_values_json || DEFAULT_RESULT_SUCCESS_VALUES_JSON;
+  form.result_failed_values_json = item.result_failed_values_json || DEFAULT_RESULT_FAILED_VALUES_JSON;
+  form.result_error_field = item.result_error_field || "";
+  form.poll_result_base64_field = item.poll_result_base64_field || "";
+  form.poll_result_url_field = item.poll_result_url_field || "";
+  form.poll_interval_seconds = Number(item.poll_interval_seconds || 5);
+  form.poll_timeout_seconds = Number(item.poll_timeout_seconds || 600);
   form.status = item.status;
   modalOpen.value = true;
 }
@@ -554,7 +624,94 @@ function validateJsonFields() {
     return false;
   }
 
+  if (form.call_mode === "async") {
+    if (!form.poll_url.trim()) {
+      message.warning("异步接口必须填写轮询地址");
+      return false;
+    }
+    if (!form.task_id_field.trim()) {
+      message.warning("异步接口必须填写第三方任务 ID 字段路径");
+      return false;
+    }
+    if (!form.result_status_field.trim()) {
+      message.warning("异步接口必须填写结果状态字段路径");
+      return false;
+    }
+    if (!form.poll_result_base64_field.trim() && !form.poll_result_url_field.trim()) {
+      message.warning("异步接口至少需要填写轮询结果 Base64 路径或结果 URL 路径");
+      return false;
+    }
+    try {
+      const pollHeaders = JSON.parse(form.poll_headers_json);
+      if (!pollHeaders || Array.isArray(pollHeaders) || typeof pollHeaders !== "object") {
+        message.warning("轮询 Header JSON 必须是对象");
+        return false;
+      }
+    } catch {
+      message.warning("轮询 Header JSON 不是合法的 JSON");
+      return false;
+    }
+    try {
+      JSON.parse(form.poll_payload_json);
+    } catch {
+      message.warning("轮询请求 JSON 不是合法的 JSON");
+      return false;
+    }
+    if (!validateIntegerListJson(form.submit_success_statuses_json, "提交成功状态码 JSON")) return false;
+    if (!validateStringListJson(form.result_success_values_json, "成功状态值 JSON")) return false;
+    if (!validateStringListJson(form.result_failed_values_json, "失败状态值 JSON")) return false;
+    if (Number(form.poll_interval_seconds || 0) <= 0) {
+      message.warning("轮询间隔必须大于 0 秒");
+      return false;
+    }
+    if (Number(form.poll_timeout_seconds || 0) <= 0) {
+      message.warning("轮询超时必须大于 0 秒");
+      return false;
+    }
+  }
+
   return true;
+}
+
+function validateIntegerListJson(raw: string, label: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) {
+      message.warning(`${label}必须是 JSON 数组`);
+      return false;
+    }
+    for (const [index, item] of parsed.entries()) {
+      const value = Number(item);
+      if (!Number.isInteger(value) || value < 100 || value > 599) {
+        message.warning(`${label}第 ${index + 1} 项必须是合法 HTTP 状态码整数`);
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    message.warning(`${label}不是合法的 JSON`);
+    return false;
+  }
+}
+
+function validateStringListJson(raw: string, label: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) {
+      message.warning(`${label}必须是 JSON 数组`);
+      return false;
+    }
+    for (const [index, item] of parsed.entries()) {
+      if (!String(item ?? "").trim()) {
+        message.warning(`${label}第 ${index + 1} 项不能为空`);
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    message.warning(`${label}不是合法的 JSON`);
+    return false;
+  }
 }
 
 function buildPayload(): ExternalApiConfigPayload {
@@ -568,6 +725,21 @@ function buildPayload(): ExternalApiConfigPayload {
     payload_json: form.payload_json,
     response_json: form.response_json,
     result_base64_field: form.result_base64_field.trim(),
+    call_mode: form.call_mode,
+    submit_success_statuses_json: form.submit_success_statuses_json,
+    poll_url: form.poll_url.trim(),
+    poll_method: form.poll_method,
+    poll_headers_json: form.poll_headers_json,
+    poll_payload_json: form.poll_payload_json,
+    task_id_field: form.task_id_field.trim(),
+    result_status_field: form.result_status_field.trim(),
+    result_success_values_json: form.result_success_values_json,
+    result_failed_values_json: form.result_failed_values_json,
+    result_error_field: form.result_error_field.trim(),
+    poll_result_base64_field: form.poll_result_base64_field.trim(),
+    poll_result_url_field: form.poll_result_url_field.trim(),
+    poll_interval_seconds: Number(form.poll_interval_seconds || 5),
+    poll_timeout_seconds: Number(form.poll_timeout_seconds || 600),
     status: form.status,
   };
 }
@@ -986,6 +1158,11 @@ function copySecret(value: string, label: string) {
             <template v-if="column.dataIndex === 'group_name'">
               <a-tag class="api-tag api-tag-group">{{ record.group_name || "未分组" }}</a-tag>
             </template>
+            <template v-else-if="column.dataIndex === 'call_mode'">
+              <a-tag class="api-tag" :class="record.call_mode === 'async' ? 'api-tag-group' : 'api-tag-muted'">
+                {{ callModeLabel(record.call_mode) }}
+              </a-tag>
+            </template>
             <template v-else-if="column.dataIndex === 'request_format'">
               <a-tag class="api-tag" :class="record.request_format === 'multipart' ? 'api-tag-group' : 'api-tag-muted'">
                 {{ requestFormatLabel(record.request_format) }}
@@ -1237,11 +1414,15 @@ function copySecret(value: string, label: string) {
               <pre v-pre>{{ contents_parts }}</pre>
               <pre v-pre>{{ generation_config }}</pre>
               <pre v-pre>{{ reference_image_1 }}</pre>
+              <pre v-pre>{{ reference_image_1_url }}</pre>
               <pre v-pre>{{ reference_image_1_base64 }}</pre>
               <pre v-pre>{{ reference_image_1_mime_type }}</pre>
               <pre v-pre>{{ reference_image_1_data_url }}</pre>
               <pre v-pre>{{ reference_image_2 }}</pre>
+              <pre v-pre>{{ reference_image_2_url }}</pre>
               <pre v-pre>{{ reference_image_3 }}</pre>
+              <pre v-pre>{{ reference_image_3_url }}</pre>
+              <pre v-pre>{{ source_image_url }}</pre>
               <pre v-pre>{{ reference_image_count }}</pre>
               <div class="scene-desc">
                 图编辑场景会按“最大参考图张数”限制上传与请求回填数量。支持多少张，就会尝试回填多少个
@@ -1257,6 +1438,27 @@ function copySecret(value: string, label: string) {
                 <code>image</code>
                 列表。
               </div>
+              <div class="scene-desc" style="margin-top: 8px">
+                其中
+                <code v-pre>{{ reference_image_1 }}</code>
+                是内联对象，
+                <code v-pre>{{ reference_image_1_url }}</code>
+                是图片公网 URL，
+                <code v-pre>{{ reference_image_1_base64 }}</code>
+                是纯 base64，
+                <code v-pre>{{ reference_image_1_data_url }}</code>
+                是
+                <code>data:image/...;base64,...</code>
+                格式。若第三方接口要求传 URL，请使用
+                <code v-pre>{{ reference_image_1_url }}</code>
+                或
+                <code v-pre>{{ source_image_url }}</code>
+                ，不要使用
+                <code v-pre>{{ reference_image_1 }}</code>
+                /
+                <code v-pre>{{ reference_image_1_data_url }}</code>
+                。
+              </div>
               <div class="scene-desc" style="margin-top: 8px">例如：</div>
               <pre v-pre>{
   "input": {
@@ -1271,6 +1473,13 @@ function copySecret(value: string, label: string) {
       "b64_json": "{{ reference_image_1_base64 }}"
     }
   ]
+}</pre>
+              <pre v-pre>{
+  "images": [
+    "{{ reference_image_1_url }}?imageMogr2/format/webp",
+    "{{ reference_image_2_url }}?imageMogr2/format/webp"
+  ],
+  "source": "{{ source_image_url }}"
 }</pre>
               <div class="scene-desc">
                 宽高比、生图质量、自定义分辨率选项请在场景表单中用 JSON 数组维护，系统会把对应 value 传入
@@ -1344,7 +1553,13 @@ function copySecret(value: string, label: string) {
             <code v-pre>{{ reference_image_1 }}</code>
             到
             <code v-pre>{{ reference_image_N }}</code>
-            占位符。文生图场景可填 `0`。
+            占位符，以及对应的
+            <code v-pre>{{ reference_image_1_url }}</code>
+            /
+            <code v-pre>{{ reference_image_1_base64 }}</code>
+            /
+            <code v-pre>{{ reference_image_1_data_url }}</code>
+            变体。文生图场景可填 `0`。
           </div>
         </a-form-item>
 
@@ -1651,6 +1866,16 @@ function copySecret(value: string, label: string) {
           <a-input v-model:value="form.request_url" class="warm-input" placeholder="https://example.com/api" />
         </a-form-item>
 
+        <a-form-item label="调用方式" required>
+          <a-radio-group v-model:value="form.call_mode" class="warm-radio-group" button-style="solid">
+            <a-radio-button value="sync">同步</a-radio-button>
+            <a-radio-button value="async">异步</a-radio-button>
+          </a-radio-group>
+          <div class="scene-desc" style="margin-top: 6px">
+            默认保留现有同步生图接口路线；只有选择异步时，才会提交第三方 taskId 并由服务端轮询结果。
+          </div>
+        </a-form-item>
+
         <a-form-item label="请求格式" required>
           <a-radio-group v-model:value="form.request_format" class="warm-radio-group" button-style="solid">
             <a-radio-button value="json">JSON</a-radio-button>
@@ -1673,7 +1898,7 @@ function copySecret(value: string, label: string) {
           <a-textarea v-model:value="form.response_json" class="warm-textarea" :rows="10" />
         </a-form-item>
 
-        <a-form-item label="结果 Base64 字段路径">
+        <a-form-item v-if="form.call_mode === 'sync'" label="结果 Base64 字段路径">
           <a-input
             v-model:value="form.result_base64_field"
             class="warm-input"
@@ -1683,6 +1908,112 @@ function copySecret(value: string, label: string) {
             生图完成后会按此路径读取响应中的 base64，并保存为结果图；支持点号路径与数字索引。
           </div>
         </a-form-item>
+
+        <template v-if="isAsyncConfigForm">
+          <a-divider orientation="left">异步轮询配置</a-divider>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="提交成功状态码 JSON" required>
+                <a-textarea
+                  v-model:value="form.submit_success_statuses_json"
+                  class="warm-textarea"
+                  :rows="4"
+                  placeholder='[200, 201, 202]'
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="轮询方法" required>
+                <a-radio-group v-model:value="form.poll_method" class="warm-radio-group" button-style="solid">
+                  <a-radio-button value="GET">GET</a-radio-button>
+                  <a-radio-button value="POST">POST</a-radio-button>
+                </a-radio-group>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-form-item label="轮询地址" required>
+            <a-input v-model:value="form.poll_url" class="warm-input" placeholder="https://example.com/tasks/{{ provider_task_id }}" />
+          </a-form-item>
+
+          <a-form-item label="轮询 Header JSON" required>
+            <a-textarea v-model:value="form.poll_headers_json" class="warm-textarea" :rows="6" />
+          </a-form-item>
+
+          <a-form-item label="轮询请求 JSON">
+            <a-textarea v-model:value="form.poll_payload_json" class="warm-textarea" :rows="8" />
+            <div class="scene-desc" style="margin-top: 6px">
+              支持在轮询地址、Header JSON、轮询请求 JSON 中使用 <code v-pre>{{ provider_task_id }}</code> 占位符。
+            </div>
+          </a-form-item>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="第三方任务 ID 字段路径" required>
+                <a-input v-model:value="form.task_id_field" class="warm-input" placeholder="例如：data.task_id" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="结果状态字段路径" required>
+                <a-input v-model:value="form.result_status_field" class="warm-input" placeholder="例如：data.status" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="成功状态值 JSON" required>
+                <a-textarea
+                  v-model:value="form.result_success_values_json"
+                  class="warm-textarea"
+                  :rows="4"
+                  placeholder='["success", "completed"]'
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="失败状态值 JSON" required>
+                <a-textarea
+                  v-model:value="form.result_failed_values_json"
+                  class="warm-textarea"
+                  :rows="4"
+                  placeholder='["failed", "error", "cancelled"]'
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="轮询结果 Base64 字段路径">
+                <a-input v-model:value="form.poll_result_base64_field" class="warm-input" placeholder="例如：data.result.image_base64" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="轮询结果图片 URL 字段路径">
+                <a-input v-model:value="form.poll_result_url_field" class="warm-input" placeholder="例如：data.result.image_url" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-form-item label="结果错误信息字段路径">
+            <a-input v-model:value="form.result_error_field" class="warm-input" placeholder="例如：data.error.message" />
+          </a-form-item>
+
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="轮询间隔（秒）" required>
+                <a-input-number v-model:value="form.poll_interval_seconds" class="warm-input-number" :min="1" style="width: 100%" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="轮询超时（秒）" required>
+                <a-input-number v-model:value="form.poll_timeout_seconds" class="warm-input-number" :min="1" style="width: 100%" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </template>
 
         <a-form-item label="状态">
           <a-radio-group v-model:value="form.status" class="warm-radio-group" button-style="solid">

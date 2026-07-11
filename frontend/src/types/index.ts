@@ -1022,6 +1022,8 @@ export interface AnnouncementConfig {
 
 export type ExternalApiConfigStatus = "enabled" | "disabled";
 export type ExternalApiRequestFormat = "json" | "multipart";
+export type ExternalApiCallMode = "sync" | "async";
+export type ExternalApiPollMethod = "GET" | "POST";
 export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "inpaint";
 
 export interface SceneOptionItem {
@@ -1040,6 +1042,21 @@ export interface ExternalApiConfig {
   payload_json: string;
   response_json: string;
   result_base64_field: string;
+  call_mode: ExternalApiCallMode;
+  submit_success_statuses_json: string;
+  poll_url: string;
+  poll_method: ExternalApiPollMethod;
+  poll_headers_json: string;
+  poll_payload_json: string;
+  task_id_field: string;
+  result_status_field: string;
+  result_success_values_json: string;
+  result_failed_values_json: string;
+  result_error_field: string;
+  poll_result_base64_field: string;
+  poll_result_url_field: string;
+  poll_interval_seconds: number;
+  poll_timeout_seconds: number;
   status: ExternalApiConfigStatus;
   created_at: string;
   updated_at?: string;
@@ -1055,6 +1072,21 @@ export interface ExternalApiConfigPayload {
   payload_json: string;
   response_json: string;
   result_base64_field: string;
+  call_mode: ExternalApiCallMode;
+  submit_success_statuses_json: string;
+  poll_url: string;
+  poll_method: ExternalApiPollMethod;
+  poll_headers_json: string;
+  poll_payload_json: string;
+  task_id_field: string;
+  result_status_field: string;
+  result_success_values_json: string;
+  result_failed_values_json: string;
+  result_error_field: string;
+  poll_result_base64_field: string;
+  poll_result_url_field: string;
+  poll_interval_seconds: number;
+  poll_timeout_seconds: number;
   status: ExternalApiConfigStatus;
 }
 

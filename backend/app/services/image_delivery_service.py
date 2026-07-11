@@ -10,7 +10,7 @@ from app.config import settings
 from app.models.image import Image
 from app.models.task import Task
 from app.services.business_id_service import task_external_id
-from app.services.cos_service import CosRuntimeConfig, get_cos_config
+from app.services.cos_service import CosRuntimeConfig, build_cos_public_url, get_cos_config
 from app.services.task_service import is_task_generation_failure_credit_refunded
 
 
@@ -23,6 +23,27 @@ def get_optional_cos_config(db: Session) -> CosRuntimeConfig | None:
 
 def _normalize_url(value: str | None) -> str:
     return (value or "").strip()
+
+
+def normalize_external_image_url(
+    image_url: str | None,
+    *,
+    cos_config: CosRuntimeConfig | None = None,
+) -> str:
+    canonical_url = _normalize_url(image_url)
+    if not canonical_url:
+        return ""
+
+    parsed = urlparse(canonical_url)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return canonical_url
+    if canonical_url.startswith("data:"):
+        return canonical_url
+    if canonical_url.startswith("/uploads/") or canonical_url.startswith("uploads/"):
+        return canonical_url
+    if cos_config:
+        return build_cos_public_url(cos_config, canonical_url)
+    return canonical_url
 
 
 def _looks_like_cos_url(image_url: str, cos_config: CosRuntimeConfig | None) -> bool:
@@ -96,7 +117,7 @@ def serialize_asset_urls(
     *,
     cos_config: CosRuntimeConfig | None = None,
 ) -> dict[str, str]:
-    canonical_url = _normalize_url(image_url)
+    canonical_url = normalize_external_image_url(image_url, cos_config=cos_config)
     return {
         "image_url": canonical_url,
         "thumb_url": build_thumb_url(canonical_url, cos_config=cos_config),

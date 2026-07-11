@@ -30,14 +30,19 @@ from app.services.business_id_service import task_external_id, user_external_id
 from app.services.distributed_lock_service import acquire_redis_lock, release_redis_lock
 from app.services.cos_service import build_object_key, load_image_bytes, upload_bytes_to_cos
 from app.services.external_api_config_service import (
+    build_external_poll_request_kwargs,
     build_external_request_kwargs,
     build_secret_variables,
+    parse_http_statuses_json,
+    parse_string_list_json,
     render_config,
+    render_poll_config,
     resolve_scene_generation_configs,
     resolve_mapped_resolution,
     SCENE_INPAINT,
     should_use_multipart_request,
 )
+from app.services.image_delivery_service import get_optional_cos_config, serialize_asset_urls
 from app.services.task_service import refund_task_credit_for_generation_failure_if_needed
 from app.utils.datetime_utils import now_local
 
@@ -47,10 +52,16 @@ MAX_RESPONSE_PREVIEW_LENGTH = 1200
 QUEUE_UNAVAILABLE_ERROR = "任务队列暂不可用，请稍后重试"
 TASK_LOCK_UNAVAILABLE_ERROR = "任务锁服务不可用，请稍后重试"
 PROCESSING_TASK_TIMEOUT_ERROR = "任务处理超时，已自动关闭"
+ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
+ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT = 3
+ASYNC_POLL_RECOVERY_INTERVAL_SECONDS = 30
+ASYNC_POLL_RECOVERY_BATCH_SIZE = 100
 TASK_PROCESSING_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SYNC_GENERATION_MAX_WORKERS = max(int(settings.SYNC_GENERATION_MAX_WORKERS or 0), 1)
 _sync_generation_semaphore = threading.BoundedSemaphore(SYNC_GENERATION_MAX_WORKERS)
+_async_poll_recovery_lock = threading.Lock()
+_async_poll_recovery_started = False
 FALLBACK_HTTP_STATUSES = {502, 503, 504}
 
 
@@ -72,6 +83,17 @@ class ApiCallResult:
     error_message: str
     http_status_code: int | None
     attempts: list[ApiAttemptRecord]
+    deferred: bool = False
+
+
+@dataclass
+class AsyncSubmitResult:
+    provider_task_id: str | None
+    provider_status: str
+    error_message: str
+    http_status_code: int | None
+    duration_ms: int | None
+    response_preview: str
 
 
 def _clip_error_message(message: str) -> str:
@@ -316,6 +338,105 @@ def _read_value_by_path(payload: object, field_path: str) -> tuple[object | None
     return current, parent
 
 
+def _normalize_provider_status(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _build_async_request_context(provider_task_id: str, request_url: str) -> str:
+    normalized_task_id = str(provider_task_id or "").strip() or "-"
+    normalized_request_url = str(request_url or "").strip() or "-"
+    return f"第三方taskId={normalized_task_id}，轮询地址={normalized_request_url}"
+
+
+def _get_async_provider_started_at(task: Task):
+    return task.request_started_at or task.enqueued_at or task.created_at or task.updated_at
+
+
+def _is_async_provider_poll_timed_out(task: Task, poll_timeout_seconds: int, *, now_value=None) -> bool:
+    started_at = _get_async_provider_started_at(task)
+    if started_at is None:
+        return False
+    current_time = now_value or now_local()
+    return started_at <= current_time - timedelta(seconds=max(int(poll_timeout_seconds or 0), 1))
+
+
+def _parse_poll_retry_status(status_value: str) -> int:
+    match = re.fullmatch(r"poll_retry_(\d+)", (status_value or "").strip())
+    if not match:
+        return 0
+    return max(int(match.group(1)), 0)
+
+
+def _defer_async_poll_retry(
+    db,
+    task: Task,
+    *,
+    config: ExternalApiConfig,
+    error_message: str,
+    provider_task_id: str,
+    request_url: str,
+    response_preview: str = "",
+    http_status_code: int | None = None,
+) -> ApiCallResult:
+    retry_count = _parse_poll_retry_status(task.provider_status) + 1
+    request_context = _build_async_request_context(provider_task_id, request_url)
+    clipped_error = _clip_error_message(f"{error_message}（{request_context}）")
+    task.provider_error_message = clipped_error
+    task.provider_response_preview = response_preview or task.provider_response_preview or ""
+    task.last_polled_at = now_local()
+    task.poll_count = int(task.poll_count or 0) + 1
+
+    if retry_count <= ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT:
+        poll_interval_seconds = max(int(config.poll_interval_seconds or 0), 1)
+        task.provider_status = f"poll_retry_{retry_count}"
+        task.next_poll_at = now_local() + timedelta(seconds=poll_interval_seconds)
+        db.commit()
+        return ApiCallResult(result=None, error_message="", http_status_code=http_status_code, attempts=[], deferred=True)
+
+    task.provider_status = "poll_failed"
+    task.next_poll_at = None
+    db.commit()
+    return ApiCallResult(result=None, error_message=clipped_error, http_status_code=http_status_code, attempts=[])
+
+
+def _extract_configured_text_value(payload: dict, field_path: str) -> str:
+    if not field_path.strip():
+        return ""
+    value, _parent = _read_value_by_path(payload, field_path)
+    return str(value or "").strip()
+
+
+def _extract_async_result_data(
+    payload: dict,
+    *,
+    base64_field_path: str,
+    url_field_path: str,
+) -> tuple[tuple[bytes, str] | None, str]:
+    normalized_base64_field = (base64_field_path or "").strip()
+    normalized_url_field = (url_field_path or "").strip()
+
+    if normalized_base64_field:
+        result, error_message = _extract_configured_image_data(payload, normalized_base64_field)
+        if result:
+            return result, ""
+        if error_message and not normalized_url_field:
+            return None, error_message
+
+    if normalized_url_field:
+        image_url, _parent = _read_value_by_path(payload, normalized_url_field)
+        result, error_message = _extract_image_from_url_value(image_url)
+        if result:
+            return result, ""
+        if error_message:
+            return None, error_message
+
+    if normalized_base64_field:
+        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_base64_field} 或配置的图片 URL 字段中解析结果图")
+    if normalized_url_field:
+        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_url_field} 解析结果图")
+    return None, "轮询成功，但未配置结果图解析字段"
+
+
 def _extract_image_from_url_value(image_url: object) -> tuple[tuple[bytes, str] | None, str]:
     if not isinstance(image_url, str) or not image_url.strip():
         return None, ""
@@ -468,6 +589,7 @@ def _call_generation_api_once(
         config_name = config.name
         configured_field_path = (config.result_base64_field or "").strip()
         mapped_resolution = resolve_mapped_resolution(db, scene_key, aspect_ratio, image_size)
+        cos_config = get_optional_cos_config(db)
 
         parts: list[dict] = []
         render_variables = {
@@ -492,6 +614,7 @@ def _call_generation_api_once(
                 return None, "图编辑原图格式无效", None, None
             parts.append(source_inline_part)
             render_variables["source_image"] = source_inline_part
+            render_variables["source_image_url"] = serialize_asset_urls(source_image, cos_config=cos_config)["image_url"]
             render_variables["source_image_base64"] = source_payload["base64"]
             render_variables["source_image_mime_type"] = source_payload["mime_type"]
             render_variables["source_image_data_url"] = source_payload["data_url"]
@@ -530,6 +653,7 @@ def _call_generation_api_once(
                 parts.append(inline_part)
                 reference_count += 1
                 render_variables[f"reference_image_{index}"] = inline_part
+                render_variables[f"reference_image_{index}_url"] = serialize_asset_urls(ref_url, cos_config=cos_config)["image_url"]
                 render_variables[f"reference_image_{index}_base64"] = reference_payload["base64"]
                 render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
                 render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
@@ -609,6 +733,163 @@ def _call_generation_api_once(
         return None, _clip_error_message(f"生图接口调用异常: {exc}"), None, _measure_elapsed_ms(request_started_perf)
 
 
+def _submit_async_generation_api_once(
+    db,
+    *,
+    config: ExternalApiConfig,
+    scene_key: str,
+    prompt: str,
+    aspect_ratio: str,
+    image_size: str,
+    custom_size: str,
+    reference_images: list[str] | None = None,
+    mode: str = "generate",
+    source_image: str = "",
+    mask_image: str = "",
+) -> AsyncSubmitResult:
+    request_started_perf: float | None = None
+    try:
+        mapped_resolution = resolve_mapped_resolution(db, scene_key, aspect_ratio, image_size)
+        cos_config = get_optional_cos_config(db)
+
+        parts: list[dict] = []
+        render_variables = {
+            **build_secret_variables(db),
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "image_size": image_size,
+            "custom_size": custom_size,
+            "mapped_resolution": mapped_resolution,
+            "generation_config": {},
+            "mode": mode,
+            "reference_image_count": 0,
+        }
+        if mode == "inpaint":
+            source_payload = _build_reference_image_payload(source_image)
+            if not source_payload:
+                return AsyncSubmitResult(None, "", "图编辑原图不存在或无法读取", None, None, "")
+            source_inline_part = source_payload.get("inline_part")
+            if not isinstance(source_inline_part, dict):
+                return AsyncSubmitResult(None, "", "图编辑原图格式无效", None, None, "")
+            parts.append(source_inline_part)
+            render_variables["source_image"] = source_inline_part
+            render_variables["source_image_url"] = serialize_asset_urls(source_image, cos_config=cos_config)["image_url"]
+            render_variables["source_image_base64"] = source_payload["base64"]
+            render_variables["source_image_mime_type"] = source_payload["mime_type"]
+            render_variables["source_image_data_url"] = source_payload["data_url"]
+
+            mask_payload = _build_reference_image_payload(mask_image)
+            if not mask_payload:
+                return AsyncSubmitResult(None, "", "图编辑蒙版不存在或无法读取", None, None, "")
+            mask_inline_part = mask_payload.get("inline_part")
+            if not isinstance(mask_inline_part, dict):
+                return AsyncSubmitResult(None, "", "图编辑蒙版格式无效", None, None, "")
+            parts.append(mask_inline_part)
+            render_variables["mask_image"] = mask_inline_part
+            render_variables["mask_image_base64"] = mask_payload["base64"]
+            render_variables["mask_image_mime_type"] = mask_payload["mime_type"]
+            render_variables["mask_image_data_url"] = mask_payload["data_url"]
+            parts.append({
+                "text": (
+                    "请基于第1张原图进行局部重绘，第2张图是蒙版：白色区域需要重绘，"
+                    "黑色区域必须保持原样。严格保留未遮罩区域的主体、构图、光影与细节。"
+                    f"重绘要求：{prompt}"
+                )
+            })
+        else:
+            reference_count = 0
+            for index, ref_url in enumerate(reference_images or [], start=1):
+                reference_payload = _build_reference_image_payload(ref_url)
+                if not reference_payload:
+                    continue
+                inline_part = reference_payload["inline_part"]
+                if not isinstance(inline_part, dict):
+                    continue
+                parts.append(inline_part)
+                reference_count += 1
+                render_variables[f"reference_image_{index}"] = inline_part
+                render_variables[f"reference_image_{index}_url"] = serialize_asset_urls(ref_url, cos_config=cos_config)["image_url"]
+                render_variables[f"reference_image_{index}_base64"] = reference_payload["base64"]
+                render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
+                render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
+            render_variables["reference_image_count"] = reference_count
+            parts.append({"text": prompt})
+
+        generation_config = {"responseModalities": ["IMAGE"]}
+        if mode != "inpaint":
+            generation_config["imageConfig"] = {"aspectRatio": aspect_ratio}
+            if image_size:
+                generation_config["imageConfig"]["imageSize"] = image_size
+
+        render_variables["contents_parts"] = parts
+        render_variables["generation_config"] = generation_config
+        rendered = render_config(config, render_variables)
+        request_kwargs = build_external_request_kwargs(rendered)
+        db.commit()
+
+        request_started_perf = time.perf_counter()
+        with httpx.Client(timeout=settings.AI_TIMEOUT, trust_env=False) as client:
+            resp = client.post(rendered.request_url, **request_kwargs)
+        preview = (resp.text or "")[:MAX_RESPONSE_PREVIEW_LENGTH]
+        success_statuses = parse_http_statuses_json(config.submit_success_statuses_json) or [200, 201, 202]
+        if resp.status_code not in success_statuses:
+            return AsyncSubmitResult(
+                None,
+                "",
+                _clip_error_message(f"异步生图提交返回 HTTP {resp.status_code}: {preview or '(空响应)'}"),
+                resp.status_code,
+                _measure_elapsed_ms(request_started_perf),
+                preview,
+            )
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            return AsyncSubmitResult(
+                None,
+                "",
+                _clip_error_message(f"异步生图提交成功，但响应不是合法 JSON: {exc}"),
+                resp.status_code,
+                _measure_elapsed_ms(request_started_perf),
+                preview,
+            )
+        task_id_value, _parent = _read_value_by_path(payload, config.task_id_field or "")
+        provider_task_id = str(task_id_value or "").strip()
+        if not provider_task_id:
+            return AsyncSubmitResult(
+                None,
+                "",
+                _clip_error_message(f"异步生图提交成功，但未从 {config.task_id_field or '(未配置)'} 解析到 taskId；响应摘要：{_clip_response_preview(payload)}"),
+                resp.status_code,
+                _measure_elapsed_ms(request_started_perf),
+                _clip_response_preview(payload),
+            )
+        provider_status_value = ""
+        if (config.result_status_field or "").strip():
+            raw_status, _parent = _read_value_by_path(payload, config.result_status_field)
+            provider_status_value = _normalize_provider_status(raw_status)
+        return AsyncSubmitResult(
+            provider_task_id,
+            provider_status_value or "submitted",
+            "",
+            resp.status_code,
+            _measure_elapsed_ms(request_started_perf),
+            _clip_response_preview(payload),
+        )
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return AsyncSubmitResult(None, "", _clip_error_message(detail), None, _measure_elapsed_ms(request_started_perf), "")
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError) as exc:
+        log_message, log_args, user_message = _classify_generation_request_exception(
+            exc,
+            started_perf=request_started_perf,
+        )
+        logger.error(log_message, *log_args)
+        return AsyncSubmitResult(None, "", user_message, None, _measure_elapsed_ms(request_started_perf), "")
+    except Exception as exc:
+        logger.error("Async generation submit error: %s", exc, exc_info=True)
+        return AsyncSubmitResult(None, "", _clip_error_message(f"异步生图提交异常: {exc}"), None, _measure_elapsed_ms(request_started_perf), "")
+
+
 def _call_gemini_api(
     prompt: str,
     aspect_ratio: str,
@@ -676,6 +957,344 @@ def _call_gemini_api(
         )
     finally:
         db.close()
+
+
+def _poll_async_generation_once(
+    db,
+    task: Task,
+    *,
+    config: ExternalApiConfig,
+) -> ApiCallResult:
+    provider_task_id = (task.provider_task_id or "").strip()
+    if not provider_task_id:
+        return ApiCallResult(
+            result=None,
+            error_message="缺少第三方任务 ID，无法轮询结果",
+            http_status_code=None,
+            attempts=[],
+        )
+
+    poll_interval_seconds = max(int(config.poll_interval_seconds or 0), 1)
+    poll_timeout_seconds = max(int(config.poll_timeout_seconds or 0), 1)
+    success_values = {item.strip().lower() for item in parse_string_list_json(config.result_success_values_json) if item.strip()}
+    failed_values = {item.strip().lower() for item in parse_string_list_json(config.result_failed_values_json) if item.strip()}
+    if not success_values:
+        success_values = {"success", "succeeded", "completed"}
+    if not failed_values:
+        failed_values = {"failed", "error", "cancelled"}
+
+    current_poll_count = int(task.poll_count or 0)
+    if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
+        request_context = _build_async_request_context(provider_task_id, "")
+        task.provider_error_message = _clip_error_message(
+            f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
+        )
+        task.provider_status = task.provider_status or "timeout"
+        task.last_polled_at = now_local()
+        task.next_poll_at = None
+        db.commit()
+        return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
+
+    mapped_resolution = resolve_mapped_resolution(
+        db,
+        SCENE_INPAINT if (task.mode or "").lower() == "inpaint" else (task.model or ""),
+        task.size or "",
+        task.resolution or "",
+    )
+    poll_variables = {
+        **build_secret_variables(db),
+        "provider_task_id": provider_task_id,
+        "task_id": provider_task_id,
+        "prompt": task.prompt or "",
+        "mode": task.mode or "generate",
+        "aspect_ratio": task.size or "",
+        "image_size": task.resolution or "",
+        "custom_size": task.custom_size or "",
+        "mapped_resolution": mapped_resolution,
+    }
+    rendered = render_poll_config(config, poll_variables)
+    request_kwargs = build_external_poll_request_kwargs(rendered)
+    request_started_perf = time.perf_counter()
+    try:
+        with httpx.Client(timeout=settings.AI_TIMEOUT, trust_env=False) as client:
+            response = client.request(rendered.method, rendered.request_url, **request_kwargs)
+        preview = (response.text or "")[:MAX_RESPONSE_PREVIEW_LENGTH]
+        if response.status_code < 200 or response.status_code >= 300:
+            return _defer_async_poll_retry(
+                db,
+                task,
+                config=config,
+                error_message=f"异步生图轮询返回 HTTP {response.status_code}: {preview or '(空响应)'}",
+                provider_task_id=provider_task_id,
+                request_url=rendered.request_url,
+                response_preview=preview,
+                http_status_code=response.status_code,
+            )
+
+        try:
+            payload = response.json()
+        except Exception as exc:
+            return _defer_async_poll_retry(
+                db,
+                task,
+                config=config,
+                error_message=f"异步生图轮询响应不是合法 JSON: {exc}",
+                provider_task_id=provider_task_id,
+                request_url=rendered.request_url,
+                response_preview=preview,
+                http_status_code=response.status_code,
+            )
+
+        provider_status = _extract_configured_text_value(payload, config.result_status_field) or task.provider_status or "processing"
+        response_preview = _clip_response_preview(payload)
+        next_poll_count = current_poll_count + 1
+        normalized_status = provider_status.strip().lower()
+
+        if normalized_status in success_values:
+            result, error_message = _extract_async_result_data(
+                payload,
+                base64_field_path=config.poll_result_base64_field or "",
+                url_field_path=config.poll_result_url_field or "",
+            )
+            task.next_poll_at = None
+            task.provider_status = provider_status
+            task.provider_response_preview = response_preview
+            task.last_polled_at = now_local()
+            task.poll_count = next_poll_count
+            if result:
+                task.provider_error_message = ""
+                db.commit()
+                return ApiCallResult(result=result, error_message="", http_status_code=None, attempts=[])
+            request_context = _build_async_request_context(provider_task_id, rendered.request_url)
+            task.provider_error_message = _clip_error_message(
+                f"{error_message or '异步生图已完成，但结果图解析失败'}（{request_context}）"
+            )
+            db.commit()
+            return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
+
+        if normalized_status in failed_values:
+            request_context = _build_async_request_context(provider_task_id, rendered.request_url)
+            provider_error = _extract_configured_text_value(payload, config.result_error_field) or _clip_error_message(
+                f"异步生图任务失败，状态为 {provider_status or 'failed'}（{request_context}）"
+            )
+            if request_context not in provider_error:
+                provider_error = _clip_error_message(f"{provider_error}（{request_context}）")
+            task.provider_status = provider_status
+            task.provider_response_preview = response_preview
+            task.last_polled_at = now_local()
+            task.poll_count = next_poll_count
+            task.provider_error_message = provider_error
+            task.next_poll_at = None
+            db.commit()
+            return ApiCallResult(result=None, error_message=provider_error, http_status_code=None, attempts=[])
+
+        if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
+            request_context = _build_async_request_context(provider_task_id, rendered.request_url)
+            task.provider_error_message = _clip_error_message(
+                f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
+            )
+            task.provider_status = provider_status or "timeout"
+            task.provider_response_preview = response_preview
+            task.last_polled_at = now_local()
+            task.poll_count = next_poll_count
+            task.next_poll_at = None
+            db.commit()
+            return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
+
+        task.provider_status = provider_status
+        task.provider_response_preview = response_preview
+        task.provider_error_message = ""
+        task.last_polled_at = now_local()
+        task.poll_count = next_poll_count
+        task.next_poll_at = now_local() + timedelta(seconds=poll_interval_seconds)
+        db.commit()
+        return ApiCallResult(result=None, error_message="", http_status_code=None, attempts=[], deferred=True)
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError) as exc:
+        log_message, log_args, user_message = _classify_generation_request_exception(
+            exc,
+            started_perf=request_started_perf,
+        )
+        logger.error(log_message, *log_args)
+        return _defer_async_poll_retry(
+            db,
+            task,
+            config=config,
+            error_message=user_message,
+            provider_task_id=provider_task_id,
+            request_url=rendered.request_url,
+        )
+    except Exception as exc:
+        logger.exception("Async generation poll error: task_id=%s", task.id)
+        request_context = _build_async_request_context(provider_task_id, rendered.request_url)
+        error_message = _clip_error_message(f"异步生图轮询异常（{request_context}）: {exc}")
+        task.provider_error_message = error_message
+        task.provider_status = task.provider_status or "poll_failed"
+        task.last_polled_at = now_local()
+        task.poll_count = current_poll_count + 1
+        task.next_poll_at = None
+        db.commit()
+        return ApiCallResult(result=None, error_message=error_message, http_status_code=None, attempts=[])
+
+
+def _execute_task_generation(db, task: Task) -> tuple[ApiCallResult, list[ApiAttemptRecord]]:
+    ref_urls = _parse_reference_images(task)
+    task_mode = (task.mode or "generate").lower()
+    scene_key = SCENE_INPAINT if task_mode == "inpaint" else (task.model or "")
+    primary_config, backup_config = resolve_scene_generation_configs(db, scene_key)
+    existing_provider_task_id = (task.provider_task_id or "").strip()
+    attempts: list[ApiAttemptRecord] = []
+
+    if existing_provider_task_id:
+        if not task.provider_api_config_id:
+            return ApiCallResult(
+                result=None,
+                error_message="当前任务已保存第三方 taskId，但缺少对应接口配置",
+                http_status_code=None,
+                attempts=[],
+            ), attempts
+        configured = (
+            db.query(ExternalApiConfig)
+            .filter(
+                ExternalApiConfig.id == task.provider_api_config_id,
+                ExternalApiConfig.status == "enabled",
+            )
+            .first()
+        )
+        call_mode = (configured.call_mode or "sync").strip().lower() if configured else "sync"
+        if configured and call_mode == "async":
+            return _poll_async_generation_once(db, task, config=configured), attempts
+        return ApiCallResult(
+            result=None,
+            error_message="当前任务已保存第三方 taskId，但对应接口未启用异步轮询",
+            http_status_code=None,
+            attempts=[],
+        ), attempts
+
+    call_mode = (primary_config.call_mode or "sync").strip().lower() or "sync"
+    if call_mode != "async":
+        return _call_gemini_api(
+            prompt=task.prompt,
+            aspect_ratio=task.size,
+            image_size=task.resolution,
+            custom_size=task.custom_size or "",
+            model_key=task.model or "",
+            reference_images=ref_urls,
+            mode=task_mode,
+            source_image=task.source_image or "",
+            mask_image=task.mask_image or "",
+        ), attempts
+
+    configs_to_try: list[tuple[ExternalApiConfig, bool]] = [(primary_config, False)]
+    if backup_config is not None:
+        configs_to_try.append((backup_config, True))
+
+    last_error_message = "异步生图提交失败"
+    last_http_status: int | None = None
+    selected_config: ExternalApiConfig | None = None
+    for attempt_index, (config, is_fallback) in enumerate(configs_to_try, start=1):
+        current_call_mode = (config.call_mode or "sync").strip().lower() or "sync"
+        if current_call_mode != "async":
+            result, error_message, http_status_code, duration_ms = _call_generation_api_once(
+                db,
+                config=config,
+                scene_key=scene_key,
+                prompt=task.prompt,
+                aspect_ratio=task.size,
+                image_size=task.resolution,
+                custom_size=task.custom_size or "",
+                reference_images=ref_urls,
+                mode=task_mode,
+                source_image=task.source_image or "",
+                mask_image=task.mask_image or "",
+            )
+            attempts.append(ApiAttemptRecord(
+                api_config_id=config.id,
+                api_config_name=config.name or "",
+                attempt_index=attempt_index,
+                is_fallback=is_fallback,
+                status="success" if result else "failed",
+                http_status=http_status_code,
+                error_message="" if result else _clip_error_message(error_message),
+                duration_ms=duration_ms,
+            ))
+            if result:
+                return ApiCallResult(
+                    result=result,
+                    error_message="",
+                    http_status_code=None,
+                    attempts=attempts,
+                ), attempts
+
+            last_error_message = _clip_error_message(error_message or "生图失败")
+            last_http_status = http_status_code
+            if is_fallback or backup_config is None or not _should_use_fallback_api(http_status_code, last_error_message):
+                break
+            continue
+
+        submit_result = _submit_async_generation_api_once(
+            db,
+            config=config,
+            scene_key=scene_key,
+            prompt=task.prompt,
+            aspect_ratio=task.size,
+            image_size=task.resolution,
+            custom_size=task.custom_size or "",
+            reference_images=ref_urls,
+            mode=task_mode,
+            source_image=task.source_image or "",
+            mask_image=task.mask_image or "",
+        )
+        attempts.append(ApiAttemptRecord(
+            api_config_id=config.id,
+            api_config_name=config.name or "",
+            attempt_index=attempt_index,
+            is_fallback=is_fallback,
+            status="success" if submit_result.provider_task_id else "failed",
+            http_status=submit_result.http_status_code,
+            error_message="" if submit_result.provider_task_id else _clip_error_message(submit_result.error_message),
+            duration_ms=submit_result.duration_ms,
+        ))
+        if submit_result.provider_task_id:
+            task.provider_api_config_id = config.id
+            task.provider_task_id = submit_result.provider_task_id
+            task.provider_status = submit_result.provider_status or "submitted"
+            task.provider_error_message = ""
+            task.provider_response_preview = submit_result.response_preview
+            task.poll_count = 0
+            task.last_polled_at = None
+            task.next_poll_at = now_local()
+            db.commit()
+            selected_config = config
+            break
+
+        last_error_message = _clip_error_message(submit_result.error_message or "异步生图提交失败")
+        last_http_status = submit_result.http_status_code
+        if is_fallback or backup_config is None or not _should_use_fallback_api(submit_result.http_status_code, last_error_message):
+            break
+
+    if not selected_config:
+        return ApiCallResult(
+            result=None,
+            error_message=last_error_message,
+            http_status_code=last_http_status,
+            attempts=attempts,
+        ), attempts
+
+    delay_seconds = max(int(selected_config.poll_interval_seconds or 0), 1)
+    try:
+        _schedule_async_poll_task(task.id, delay_seconds=delay_seconds)
+    except Exception as exc:
+        logger.exception("Failed to schedule async generation poll; recovery scanner will retry: task_id=%s", task.id)
+        task.provider_error_message = _clip_error_message(f"异步轮询调度失败，等待恢复扫描: {exc}")
+        task.next_poll_at = now_local()
+        db.commit()
+    return ApiCallResult(
+        result=None,
+        error_message="",
+        http_status_code=None,
+        attempts=attempts,
+        deferred=True,
+    ), attempts
 
 
 MIME_TO_EXT = {
@@ -818,6 +1437,36 @@ def _resolve_task_status(images: list[Image]) -> str:
     return "failed"
 
 
+def _clear_task_provider_context(task: Task) -> None:
+    task.provider_api_config_id = None
+    task.provider_task_id = ""
+    task.provider_status = ""
+    task.provider_error_message = ""
+    task.provider_response_preview = ""
+    task.poll_count = 0
+    task.last_polled_at = None
+    task.next_poll_at = None
+
+
+def _clear_provider_context_if_more_images_pending(task: Task, images: list[Image]) -> None:
+    if any(image.status == "pending" for image in images):
+        _clear_task_provider_context(task)
+
+
+def _update_regenerate_log_new_image_url(db, image_id: int, image_url: str) -> None:
+    normalized_url = (image_url or "").strip()
+    if not normalized_url:
+        return
+    log = (
+        db.query(RegenerateLog)
+        .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")
+        .order_by(RegenerateLog.created_at.desc(), RegenerateLog.id.desc())
+        .first()
+    )
+    if log:
+        log.new_image_url = normalized_url
+
+
 def _rollback_session_safely(db) -> None:
     try:
         db.rollback()
@@ -837,6 +1486,35 @@ def _is_task_processing_timed_out(task: Task) -> bool:
     return last_progress_at <= now_local() - timedelta(seconds=timeout_seconds)
 
 
+def _get_async_provider_timeout_seconds(db, task: Task) -> int | None:
+    provider_task_id = (task.provider_task_id or "").strip()
+    if not provider_task_id or not task.provider_api_config_id:
+        return None
+
+    config = (
+        db.query(ExternalApiConfig)
+        .filter(ExternalApiConfig.id == task.provider_api_config_id)
+        .first()
+    )
+    if not config or (config.call_mode or "sync").strip().lower() != "async":
+        return None
+
+    return max(int(config.poll_timeout_seconds or 0), 1)
+
+
+def _is_async_provider_task_still_polling(db, task: Task) -> bool:
+    poll_timeout_seconds = _get_async_provider_timeout_seconds(db, task)
+    if poll_timeout_seconds is None:
+        return False
+
+    started_at = task.updated_at or task.request_started_at or task.enqueued_at or task.created_at
+    if started_at is None:
+        return False
+
+    allowed_seconds = poll_timeout_seconds + max(int(settings.AI_TIMEOUT or 0), ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS)
+    return started_at > now_local() - timedelta(seconds=allowed_seconds)
+
+
 def _expire_processing_task(
     db,
     task: Task,
@@ -844,6 +1522,8 @@ def _expire_processing_task(
     *,
     reason: str = PROCESSING_TASK_TIMEOUT_ERROR,
 ) -> bool:
+    if _is_async_provider_task_still_polling(db, task):
+        return False
     if not _is_task_processing_timed_out(task):
         return False
 
@@ -1038,8 +1718,6 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                 },
             )
             return
-        ref_urls = _parse_reference_images(task)
-        task_mode = (task.mode or "generate").lower()
         all_success = all(image.status == "success" for image in images if image.status != "pending")
 
         for image in pending_images:
@@ -1049,38 +1727,33 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             if _mark_task_request_started(task):
                 db.commit()
                 db.refresh(task)
-            api_prompt = task.prompt
-            api_aspect_ratio = task.size
-            api_image_size = task.resolution
-            api_custom_size = task.custom_size or ""
-            api_model_key = task.model or ""
-            api_source_image = task.source_image or ""
-            api_mask_image = task.mask_image or ""
-            # Release the checked-out DB connection while the external AI call is in flight.
             db.commit()
-            call_result = _call_gemini_api(
-                prompt=api_prompt,
-                aspect_ratio=api_aspect_ratio,
-                image_size=api_image_size,
-                custom_size=api_custom_size,
-                model_key=api_model_key,
-                reference_images=ref_urls,
-                mode=task_mode,
-                source_image=api_source_image,
-                mask_image=api_mask_image,
-            )
-            _mark_task_request_finished(task)
+            call_result, async_submit_attempts = _execute_task_generation(db, task)
+            if not call_result.deferred:
+                _mark_task_request_finished(task)
             _record_api_attempts(
                 db,
                 task=task,
                 image=image,
                 image_index=image_index_map.get(image.id, 1),
-                attempts=call_result.attempts,
+                attempts=async_submit_attempts or call_result.attempts,
             )
             db.commit()
 
+            if call_result.deferred:
+                logger.info(
+                    "Async generation submitted; polling scheduled",
+                    extra={
+                        "event": "task.worker.async_deferred",
+                        "task_id": task_external_id(task),
+                        "provider_task_id": task.provider_task_id,
+                    },
+                )
+                return
+
             if call_result.result:
                 img_bytes, mime = call_result.result
+                task.next_poll_at = None
                 image.preview_url = _save_preview_image(img_bytes, mime)
                 image.image_url = ""
                 image.image_format = _derive_image_format(mime)
@@ -1102,14 +1775,19 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                     all_success = image.status == "success" and all_success
                     db.commit()
             else:
+                task.next_poll_at = None
                 _mark_generation_failure(image, call_result.error_message)
                 task.error_message = image.error_message
                 all_success = False
                 db.commit()
 
+            _clear_provider_context_if_more_images_pending(task, images)
+            db.commit()
+
         task.status = "success" if all_success else "failed"
         if task.status == "success":
             task.error_message = ""
+            task.provider_error_message = ""
         refund_task_credit_for_generation_failure_if_needed(db, task)
         db.commit()
         logger.info(
@@ -1189,44 +1867,38 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         if _expire_processing_task(db, task, [image]):
             return
 
-        ref_urls = _parse_reference_images(task)
-        task_mode = (task.mode or "generate").lower()
         if _mark_task_request_started(task):
             db.commit()
             db.refresh(task)
 
-        api_prompt = task.prompt
-        api_aspect_ratio = task.size
-        api_image_size = task.resolution
-        api_custom_size = task.custom_size or ""
-        api_model_key = task.model or ""
-        api_source_image = task.source_image or ""
-        api_mask_image = task.mask_image or ""
-        # Release the checked-out DB connection while the external AI call is in flight.
         db.commit()
-        call_result = _call_gemini_api(
-            prompt=api_prompt,
-            aspect_ratio=api_aspect_ratio,
-            image_size=api_image_size,
-            custom_size=api_custom_size,
-            model_key=api_model_key,
-            reference_images=ref_urls,
-            mode=task_mode,
-            source_image=api_source_image,
-            mask_image=api_mask_image,
-        )
-        _mark_task_request_finished(task)
+        call_result, async_submit_attempts = _execute_task_generation(db, task)
+        if not call_result.deferred:
+            _mark_task_request_finished(task)
         _record_api_attempts(
             db,
             task=task,
             image=image,
             image_index=image_index_map.get(image.id, 1),
-            attempts=call_result.attempts,
+            attempts=async_submit_attempts or call_result.attempts,
         )
         db.commit()
 
+        if call_result.deferred:
+            logger.info(
+                "Async regeneration submitted; polling scheduled",
+                extra={
+                    "event": "image.worker.async_deferred",
+                    "task_id": task_external_id(task),
+                    "image_id": image.id,
+                    "provider_task_id": task.provider_task_id,
+                },
+            )
+            return
+
         if call_result.result:
             img_bytes, mime = call_result.result
+            task.next_poll_at = None
             image.preview_url = _save_preview_image(img_bytes, mime)
             image.image_url = ""
             image.image_format = _derive_image_format(mime)
@@ -1262,12 +1934,15 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
                     log.new_image_url = image.image_url
                 db.commit()
         else:
+            task.next_poll_at = None
             _mark_generation_failure(image, call_result.error_message)
             db.commit()
 
         db.refresh(task)
         task.status = _resolve_task_status(list(task.images))
         task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+        if task.status == "success":
+            task.provider_error_message = ""
         db.commit()
     except Exception as exc:
         _rollback_session_safely(db)
@@ -1277,6 +1952,137 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         db.close()
         if image_lock is not None:
             release_redis_lock(image_lock)
+
+
+def _resolve_async_poll_config(db, task: Task) -> ExternalApiConfig | None:
+    if not task.provider_api_config_id:
+        return None
+    config = (
+        db.query(ExternalApiConfig)
+        .filter(
+            ExternalApiConfig.id == task.provider_api_config_id,
+            ExternalApiConfig.status == "enabled",
+        )
+        .first()
+    )
+    if not config or (config.call_mode or "sync").strip().lower() != "async":
+        return None
+    return config
+
+
+def _first_pending_image(task: Task) -> Image | None:
+    pending_images = [image for image in task.images if image.status == "pending"]
+    if not pending_images:
+        return None
+    return sorted(pending_images, key=lambda image: image.id)[0]
+
+
+def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: ApiCallResult) -> None:
+    if call_result.result:
+        img_bytes, mime = call_result.result
+        task.next_poll_at = None
+        image.preview_url = _save_preview_image(img_bytes, mime)
+        image.image_url = ""
+        image.image_format = _derive_image_format(mime)
+        image.image_size_bytes = len(img_bytes)
+        image.status = "success"
+        image.error_message = ""
+        db.commit()
+        try:
+            local_preview_url = image.preview_url
+            image.image_url = _save_image_bytes(db, img_bytes, mime)
+            _update_regenerate_log_new_image_url(db, image.id, image.image_url)
+            image.preview_url = ""
+            db.commit()
+            _remove_local_preview(local_preview_url)
+        except Exception as exc:
+            logger.exception("Failed to persist async generated image to storage")
+            _mark_image_storage_fallback(image, f"图片已生成，但保存结果失败: {exc}")
+            _update_regenerate_log_new_image_url(db, image.id, image.image_url)
+            db.commit()
+    else:
+        task.next_poll_at = None
+        _mark_generation_failure(image, call_result.error_message)
+        task.error_message = image.error_message
+        db.commit()
+
+    _mark_task_request_finished(task)
+    db.refresh(task)
+    task.status = _resolve_task_status(list(task.images))
+    task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+    if task.status == "success":
+        task.provider_error_message = ""
+    refund_task_credit_for_generation_failure_if_needed(db, task)
+    db.commit()
+
+
+def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True):
+    poll_lock = None
+    if use_distributed_lock:
+        poll_lock = acquire_redis_lock(
+            f"banana:task:poll:{task_id}",
+            timeout_seconds=max(int(settings.AI_TIMEOUT or 0) + 60, 120),
+            blocking_timeout_seconds=0,
+        )
+        if poll_lock.status == "contended":
+            logger.info("Skip duplicate async poll delivery: task_id=%s", task_id)
+            return
+        if poll_lock.status == "unavailable":
+            logger.error("Async poll lock unavailable: task_id=%s", task_id)
+            raise RuntimeError(TASK_LOCK_UNAVAILABLE_ERROR)
+
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return
+        if task.status != "processing" or not (task.provider_task_id or "").strip():
+            return
+
+        config = _resolve_async_poll_config(db, task)
+        if not config:
+            task.provider_error_message = "异步轮询配置不存在或未启用"
+            image = _first_pending_image(task)
+            if image:
+                _mark_generation_failure(image, task.provider_error_message)
+            task.status = _resolve_task_status(list(task.images))
+            task.error_message = task.provider_error_message
+            _mark_task_request_finished(task)
+            refund_task_credit_for_generation_failure_if_needed(db, task)
+            db.commit()
+            return
+
+        now_value = now_local()
+        if task.next_poll_at and task.next_poll_at > now_value:
+            _schedule_async_poll_task(task.id, delay_seconds=max(int((task.next_poll_at - now_value).total_seconds()), 1))
+            return
+
+        image = _first_pending_image(task)
+        if not image:
+            task.status = _resolve_task_status(list(task.images))
+            _mark_task_request_finished(task)
+            db.commit()
+            return
+
+        call_result = _poll_async_generation_once(db, task, config=config)
+        if call_result.deferred:
+            delay_seconds = max(int(config.poll_interval_seconds or 0), 1)
+            if task.next_poll_at:
+                delay_seconds = max(int((task.next_poll_at - now_local()).total_seconds()), 1)
+            _schedule_async_poll_task(task.id, delay_seconds=delay_seconds)
+            return
+
+        _finish_task_after_async_poll(db, task, image, call_result)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        _rollback_session_safely(db)
+        logger.exception("Async poll task crashed: task_id=%s", task_id)
+        _recover_task_after_exception(task_id, str(exc))
+    finally:
+        db.close()
+        if poll_lock is not None:
+            release_redis_lock(poll_lock)
 
 
 # --- Celery tasks ---
@@ -1324,11 +2130,23 @@ if CELERY_AVAILABLE and celery_app:
             if str(exc) == TASK_LOCK_UNAVAILABLE_ERROR:
                 raise self.retry(exc=exc, countdown=2) from exc
             raise
+
+    @celery_app.task(bind=True, max_retries=2)
+    def poll_async_generation_task(self, task_id: int):
+        try:
+            _process_async_poll_task(task_id)
+        except RuntimeError as exc:
+            if str(exc) == TASK_LOCK_UNAVAILABLE_ERROR:
+                raise self.retry(exc=exc, countdown=2) from exc
+            raise
 else:
     def generate_images_task():
         raise RuntimeError("Celery not available")
 
     def regenerate_single_image_task():
+        raise RuntimeError("Celery not available")
+
+    def poll_async_generation_task():
         raise RuntimeError("Celery not available")
 
 
@@ -1359,6 +2177,112 @@ def regenerate_single_sync(image_id: int):
         args=(_process_single_image, image_id),
         daemon=True,
     ).start()
+
+
+def _run_sync_async_poll_worker(task_id: int) -> None:
+    _process_async_poll_task(task_id, use_distributed_lock=False)
+
+
+def _schedule_async_poll_task(task_id: int, *, delay_seconds: int) -> None:
+    normalized_delay = max(int(delay_seconds or 0), 0)
+    if CELERY_AVAILABLE and celery_app:
+        poll_async_generation_task.apply_async(args=[task_id], countdown=normalized_delay)
+        logger.info(
+            "Scheduled async generation poll via celery",
+            extra={
+                "event": "task.worker.async_poll_scheduled",
+                "task_id": task_id,
+                "dispatch_mode": "celery",
+                "delay_seconds": normalized_delay,
+            },
+        )
+        return
+
+    if not _sync_fallback_allowed():
+        raise RuntimeError(QUEUE_UNAVAILABLE_ERROR)
+
+    timer = threading.Timer(normalized_delay, _run_sync_async_poll_worker, args=(task_id,))
+    timer.daemon = True
+    timer.start()
+    logger.info(
+        "Scheduled async generation poll via timer",
+        extra={
+            "event": "task.worker.async_poll_scheduled",
+            "task_id": task_id,
+            "dispatch_mode": "sync",
+            "delay_seconds": normalized_delay,
+        },
+    )
+
+
+def _recover_due_async_poll_tasks_once() -> int:
+    recovery_lock = None
+    if CELERY_AVAILABLE and celery_app:
+        recovery_lock = acquire_redis_lock(
+            "banana:task:poll:recovery",
+            timeout_seconds=max(ASYNC_POLL_RECOVERY_INTERVAL_SECONDS - 1, 1),
+            blocking_timeout_seconds=0,
+        )
+        if recovery_lock.status == "contended":
+            return 0
+        if recovery_lock.status == "unavailable":
+            recovery_lock = None
+
+    db = SessionLocal()
+    try:
+        now_value = now_local()
+        tasks = (
+            db.query(Task)
+            .filter(
+                Task.status == "processing",
+                Task.provider_task_id != "",
+                Task.next_poll_at.is_not(None),
+                Task.next_poll_at <= now_value,
+                Task.is_deleted.is_(False),
+            )
+            .order_by(Task.next_poll_at.asc(), Task.id.asc())
+            .limit(ASYNC_POLL_RECOVERY_BATCH_SIZE)
+            .all()
+        )
+        recovered_count = 0
+        for task in tasks:
+            try:
+                _schedule_async_poll_task(task.id, delay_seconds=0)
+                recovered_count += 1
+            except Exception:
+                logger.exception("Failed to recover async poll schedule: task_id=%s", task.id)
+        return recovered_count
+    finally:
+        db.close()
+        if recovery_lock is not None:
+            release_redis_lock(recovery_lock)
+
+
+def _async_poll_recovery_loop() -> None:
+    while True:
+        try:
+            recovered_count = _recover_due_async_poll_tasks_once()
+            if recovered_count:
+                logger.info(
+                    "Recovered due async poll tasks",
+                    extra={
+                        "event": "task.worker.async_poll_recovered",
+                        "task_count": recovered_count,
+                    },
+                )
+        except Exception:
+            logger.exception("Async poll recovery scanner failed")
+        time.sleep(ASYNC_POLL_RECOVERY_INTERVAL_SECONDS)
+
+
+def _start_async_poll_recovery_scanner() -> None:
+    global _async_poll_recovery_started
+    with _async_poll_recovery_lock:
+        if _async_poll_recovery_started:
+            return
+        _async_poll_recovery_started = True
+    thread = threading.Thread(target=_async_poll_recovery_loop, daemon=True)
+    thread.start()
 
 
 def _sync_fallback_allowed() -> bool:
@@ -1405,3 +2329,6 @@ def dispatch_regenerate_task(image_id: int) -> str:
         return "queued"
     regenerate_single_sync(image_id)
     return "sync"
+
+
+_start_async_poll_recovery_scanner()

@@ -2,11 +2,13 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 StatusType = Literal["enabled", "disabled"]
 RequestFormatType = Literal["json", "multipart"]
+CallModeType = Literal["sync", "async"]
+HttpMethodType = Literal["GET", "POST"]
 SceneTypeType = Literal["generate", "image_edit", "prompt_reverse", "inpaint"]
 SceneKeyType = str
 
@@ -21,6 +23,49 @@ def _validate_json_text(value: str, field_name: str, *, expect_object: bool) -> 
     if expect_object and not isinstance(parsed, dict):
         raise ValueError(f"{field_name} 必须是 JSON 对象")
     return json.dumps(parsed, ensure_ascii=False, indent=2)
+
+
+def _validate_integer_list_json(value: str, field_name: str) -> str:
+    raw = (value or "").strip() or "[]"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 必须是合法 JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_name} 必须是 JSON 数组")
+
+    normalized: list[int] = []
+    for index, item in enumerate(parsed, start=1):
+        if isinstance(item, bool):
+            raise ValueError(f"{field_name} 第 {index} 项必须是整数")
+        try:
+            normalized_value = int(item)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} 第 {index} 项必须是整数") from exc
+        if normalized_value < 100 or normalized_value > 599:
+            raise ValueError(f"{field_name} 第 {index} 项必须是合法 HTTP 状态码")
+        normalized.append(normalized_value)
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
+
+
+def _validate_string_list_json(value: str, field_name: str) -> str:
+    raw = (value or "").strip() or "[]"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} 必须是合法 JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_name} 必须是 JSON 数组")
+
+    normalized: list[str] = []
+    for index, item in enumerate(parsed, start=1):
+        cleaned = str(item or "").strip()
+        if not cleaned:
+            raise ValueError(f"{field_name} 第 {index} 项不能为空")
+        normalized.append(cleaned)
+    return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
 def _validate_scene_options_json(value: str, field_name: str) -> str:
@@ -111,6 +156,21 @@ class ExternalApiConfigBase(BaseModel):
     payload_json: str
     response_json: str = "{}"
     result_base64_field: str = ""
+    call_mode: CallModeType = "sync"
+    submit_success_statuses_json: str = "[200, 201, 202]"
+    poll_url: str = ""
+    poll_method: HttpMethodType = "GET"
+    poll_headers_json: str = "{}"
+    poll_payload_json: str = "{}"
+    task_id_field: str = ""
+    result_status_field: str = ""
+    result_success_values_json: str = '["success", "succeeded", "completed"]'
+    result_failed_values_json: str = '["failed", "error", "cancelled"]'
+    result_error_field: str = ""
+    poll_result_base64_field: str = ""
+    poll_result_url_field: str = ""
+    poll_interval_seconds: int = 5
+    poll_timeout_seconds: int = 600
     status: StatusType = "enabled"
 
     @field_validator("name")
@@ -129,12 +189,28 @@ class ExternalApiConfigBase(BaseModel):
             raise ValueError("请求地址不能为空")
         return cleaned
 
+    @field_validator("call_mode")
+    @classmethod
+    def validate_call_mode(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"sync", "async"}:
+            raise ValueError("调用方式只能是 sync 或 async")
+        return cleaned
+
     @field_validator("request_format")
     @classmethod
     def validate_request_format(cls, value: str) -> str:
         cleaned = value.strip().lower()
         if cleaned not in {"json", "multipart"}:
             raise ValueError("请求格式只能是 json 或 multipart")
+        return cleaned
+
+    @field_validator("poll_method")
+    @classmethod
+    def validate_poll_method(cls, value: str) -> str:
+        cleaned = value.strip().upper()
+        if cleaned not in {"GET", "POST"}:
+            raise ValueError("轮询方法只能是 GET 或 POST")
         return cleaned
 
     @field_validator("description")
@@ -167,6 +243,50 @@ class ExternalApiConfigBase(BaseModel):
     def validate_result_base64_field(cls, value: str) -> str:
         return (value or "").strip()
 
+    @field_validator("poll_url", "task_id_field", "result_status_field", "result_error_field", "poll_result_base64_field", "poll_result_url_field")
+    @classmethod
+    def validate_optional_path_text(cls, value: str) -> str:
+        return (value or "").strip()
+
+    @field_validator("poll_headers_json")
+    @classmethod
+    def validate_poll_headers_json(cls, value: str) -> str:
+        return _validate_json_text(value, "轮询 Header JSON", expect_object=True)
+
+    @field_validator("poll_payload_json")
+    @classmethod
+    def validate_poll_payload_json(cls, value: str) -> str:
+        return _validate_json_text(value, "轮询请求 JSON", expect_object=False)
+
+    @field_validator("submit_success_statuses_json")
+    @classmethod
+    def validate_submit_success_statuses_json(cls, value: str) -> str:
+        return _validate_integer_list_json(value, "提交成功状态码 JSON")
+
+    @field_validator("result_success_values_json")
+    @classmethod
+    def validate_result_success_values_json(cls, value: str) -> str:
+        return _validate_string_list_json(value, "成功状态值 JSON")
+
+    @field_validator("result_failed_values_json")
+    @classmethod
+    def validate_result_failed_values_json(cls, value: str) -> str:
+        return _validate_string_list_json(value, "失败状态值 JSON")
+
+    @field_validator("poll_interval_seconds")
+    @classmethod
+    def validate_poll_interval_seconds(cls, value: int) -> int:
+        if int(value) <= 0:
+            raise ValueError("轮询间隔必须大于 0 秒")
+        return int(value)
+
+    @field_validator("poll_timeout_seconds")
+    @classmethod
+    def validate_poll_timeout_seconds(cls, value: int) -> int:
+        if int(value) <= 0:
+            raise ValueError("轮询超时必须大于 0 秒")
+        return int(value)
+
     @field_validator("status")
     @classmethod
     def validate_status(cls, value: str) -> str:
@@ -174,6 +294,20 @@ class ExternalApiConfigBase(BaseModel):
         if cleaned not in {"enabled", "disabled"}:
             raise ValueError("状态只能是 enabled 或 disabled")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_async_fields(self):
+        if self.call_mode != "async":
+            return self
+        if not self.poll_url.strip():
+            raise ValueError("异步接口必须填写轮询地址")
+        if not self.task_id_field.strip():
+            raise ValueError("异步接口必须填写第三方任务 ID 字段路径")
+        if not self.result_status_field.strip():
+            raise ValueError("异步接口必须填写结果状态字段路径")
+        if not (self.poll_result_base64_field.strip() or self.poll_result_url_field.strip()):
+            raise ValueError("异步接口至少需要填写轮询结果 Base64 路径或结果 URL 路径")
+        return self
 
 
 class ExternalApiConfigCreate(ExternalApiConfigBase):
@@ -204,6 +338,21 @@ class ExternalApiConfigOut(BaseModel):
     payload_json: str
     response_json: str
     result_base64_field: str
+    call_mode: CallModeType = "sync"
+    submit_success_statuses_json: str = "[200, 201, 202]"
+    poll_url: str = ""
+    poll_method: HttpMethodType = "GET"
+    poll_headers_json: str = "{}"
+    poll_payload_json: str = "{}"
+    task_id_field: str = ""
+    result_status_field: str = ""
+    result_success_values_json: str = "[]"
+    result_failed_values_json: str = "[]"
+    result_error_field: str = ""
+    poll_result_base64_field: str = ""
+    poll_result_url_field: str = ""
+    poll_interval_seconds: int = 5
+    poll_timeout_seconds: int = 600
     status: StatusType
     created_at: datetime
     updated_at: datetime | None = None
@@ -214,6 +363,13 @@ class ExternalApiConfigOut(BaseModel):
 class RenderedExternalApiConfig(BaseModel):
     request_url: str
     request_format: RequestFormatType = "json"
+    headers: dict[str, str]
+    payload: Any
+
+
+class RenderedPollExternalApiConfig(BaseModel):
+    request_url: str
+    method: HttpMethodType = "GET"
     headers: dict[str, str]
     payload: Any
 

@@ -31,6 +31,14 @@ def request_regenerate(
 
     image.task.status = "queued" if queued else "pending"
     image.task.error_message = ""
+    image.task.provider_api_config_id = None
+    image.task.provider_task_id = ""
+    image.task.provider_status = ""
+    image.task.provider_error_message = ""
+    image.task.provider_response_preview = ""
+    image.task.poll_count = 0
+    image.task.last_polled_at = None
+    image.task.next_poll_at = None
     image.status = "pending"
     image.error_message = ""
     image.image_url = ""

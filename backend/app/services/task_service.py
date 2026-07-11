@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from app.config import settings
 from app.models.task import Task
 from app.models.image import Image
+from app.models.external_api_config import ExternalApiConfig
 from app.models.user import User
 from app.models.credit_log import CreditLog
 from app.services.business_id_service import task_external_id, user_external_id
@@ -26,6 +27,7 @@ TASK_SUBMISSION_LOCK_TIMEOUT_SECONDS = 30
 TASK_SUBMISSION_LOCK_BLOCKING_TIMEOUT_SECONDS = 5
 TASK_SUBMISSION_LOCK_SLOTS_PER_USER = max(int(settings.MAX_ACTIVE_TASKS_PER_USER or 0), 1)
 PROCESSING_TASK_TIMEOUT_DESCRIPTION = "任务处理超时，已自动关闭"
+ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 task_logger = logging.getLogger("app.task")
 
 
@@ -204,6 +206,35 @@ def _acquire_task_submission_lock(user_id: int) -> RedisLockHandle:
     return RedisLockHandle(status="contended")
 
 
+def _get_async_provider_timeout_seconds(db: Session, task: Task) -> int | None:
+    provider_task_id = (task.provider_task_id or "").strip()
+    if not provider_task_id or not task.provider_api_config_id:
+        return None
+
+    config = (
+        db.query(ExternalApiConfig)
+        .filter(ExternalApiConfig.id == task.provider_api_config_id)
+        .first()
+    )
+    if not config or (config.call_mode or "sync").strip().lower() != "async":
+        return None
+
+    return max(int(config.poll_timeout_seconds or 0), 1)
+
+
+def _is_async_provider_task_still_polling(db: Session, task: Task, *, now_value) -> bool:
+    poll_timeout_seconds = _get_async_provider_timeout_seconds(db, task)
+    if poll_timeout_seconds is None:
+        return False
+
+    started_at = task.updated_at or task.request_started_at or task.enqueued_at or task.created_at
+    if started_at is None:
+        return False
+
+    allowed_seconds = poll_timeout_seconds + max(int(settings.AI_TIMEOUT or 0), ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS)
+    return started_at > now_value - timedelta(seconds=allowed_seconds)
+
+
 def _expire_stale_processing_tasks(
     db: Session,
     *,
@@ -214,7 +245,8 @@ def _expire_stale_processing_tasks(
     if timeout_seconds <= 0:
         return
 
-    cutoff = now_local() - timedelta(seconds=timeout_seconds)
+    now_value = now_local()
+    cutoff = now_value - timedelta(seconds=timeout_seconds)
     query = db.query(Task).filter(
         Task.status == "processing",
         Task.is_deleted.is_(False),
@@ -226,7 +258,11 @@ def _expire_stale_processing_tasks(
     if business_ids:
         query = query.filter(Task.business_id.in_(business_ids))
 
-    stale_tasks = query.all()
+    stale_tasks = [
+        task
+        for task in query.all()
+        if not _is_async_provider_task_still_polling(db, task, now_value=now_value)
+    ]
     if not stale_tasks:
         return
 
@@ -245,6 +281,7 @@ def _expire_stale_processing_tasks(
 
         task.status = "success" if has_success_image and all(image.status == "success" for image in task.images) else "failed"
         task.error_message = "" if task.status == "success" else PROCESSING_TASK_TIMEOUT_DESCRIPTION
+        refund_task_credit_for_generation_failure_if_needed(db, task)
 
     db.commit()
     task_logger.error(
