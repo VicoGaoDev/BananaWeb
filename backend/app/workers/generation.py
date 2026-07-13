@@ -1138,8 +1138,7 @@ def _poll_async_generation_once(
 
 def _execute_task_generation(db, task: Task) -> tuple[ApiCallResult, list[ApiAttemptRecord]]:
     ref_urls = _parse_reference_images(task)
-    task_mode = (task.mode or "generate").lower()
-    scene_key = SCENE_INPAINT if task_mode == "inpaint" else (task.model or "")
+    task_mode, scene_key = _resolve_task_mode_and_scene_key(task)
     primary_config, backup_config = resolve_scene_generation_configs(db, scene_key)
     existing_provider_task_id = (task.provider_task_id or "").strip()
     attempts: list[ApiAttemptRecord] = []
@@ -1187,114 +1186,14 @@ def _execute_task_generation(db, task: Task) -> tuple[ApiCallResult, list[ApiAtt
     configs_to_try: list[tuple[ExternalApiConfig, bool]] = [(primary_config, False)]
     if backup_config is not None:
         configs_to_try.append((backup_config, True))
-
-    last_error_message = "异步生图提交失败"
-    last_http_status: int | None = None
-    selected_config: ExternalApiConfig | None = None
-    for attempt_index, (config, is_fallback) in enumerate(configs_to_try, start=1):
-        current_call_mode = (config.call_mode or "sync").strip().lower() or "sync"
-        if current_call_mode != "async":
-            result, error_message, http_status_code, duration_ms = _call_generation_api_once(
-                db,
-                config=config,
-                scene_key=scene_key,
-                prompt=task.prompt,
-                aspect_ratio=task.size,
-                image_size=task.resolution,
-                custom_size=task.custom_size or "",
-                reference_images=ref_urls,
-                mode=task_mode,
-                source_image=task.source_image or "",
-                mask_image=task.mask_image or "",
-            )
-            attempts.append(ApiAttemptRecord(
-                api_config_id=config.id,
-                api_config_name=config.name or "",
-                attempt_index=attempt_index,
-                is_fallback=is_fallback,
-                status="success" if result else "failed",
-                http_status=http_status_code,
-                error_message="" if result else _clip_error_message(error_message),
-                duration_ms=duration_ms,
-            ))
-            if result:
-                return ApiCallResult(
-                    result=result,
-                    error_message="",
-                    http_status_code=None,
-                    attempts=attempts,
-                ), attempts
-
-            last_error_message = _clip_error_message(error_message or "生图失败")
-            last_http_status = http_status_code
-            if is_fallback or backup_config is None or not _should_use_fallback_api(http_status_code, last_error_message):
-                break
-            continue
-
-        submit_result = _submit_async_generation_api_once(
-            db,
-            config=config,
-            scene_key=scene_key,
-            prompt=task.prompt,
-            aspect_ratio=task.size,
-            image_size=task.resolution,
-            custom_size=task.custom_size or "",
-            reference_images=ref_urls,
-            mode=task_mode,
-            source_image=task.source_image or "",
-            mask_image=task.mask_image or "",
-        )
-        attempts.append(ApiAttemptRecord(
-            api_config_id=config.id,
-            api_config_name=config.name or "",
-            attempt_index=attempt_index,
-            is_fallback=is_fallback,
-            status="success" if submit_result.provider_task_id else "failed",
-            http_status=submit_result.http_status_code,
-            error_message="" if submit_result.provider_task_id else _clip_error_message(submit_result.error_message),
-            duration_ms=submit_result.duration_ms,
-        ))
-        if submit_result.provider_task_id:
-            task.provider_api_config_id = config.id
-            task.provider_task_id = submit_result.provider_task_id
-            task.provider_status = submit_result.provider_status or "submitted"
-            task.provider_error_message = ""
-            task.provider_response_preview = submit_result.response_preview
-            task.poll_count = 0
-            task.last_polled_at = None
-            task.next_poll_at = now_local()
-            db.commit()
-            selected_config = config
-            break
-
-        last_error_message = _clip_error_message(submit_result.error_message or "异步生图提交失败")
-        last_http_status = submit_result.http_status_code
-        if is_fallback or backup_config is None or not _should_use_fallback_api(submit_result.http_status_code, last_error_message):
-            break
-
-    if not selected_config:
-        return ApiCallResult(
-            result=None,
-            error_message=last_error_message,
-            http_status_code=last_http_status,
-            attempts=attempts,
-        ), attempts
-
-    delay_seconds = max(int(selected_config.poll_interval_seconds or 0), 1)
-    try:
-        _schedule_async_poll_task(task.id, delay_seconds=delay_seconds)
-    except Exception as exc:
-        logger.exception("Failed to schedule async generation poll; recovery scanner will retry: task_id=%s", task.id)
-        task.provider_error_message = _clip_error_message(f"异步轮询调度失败，等待恢复扫描: {exc}")
-        task.next_poll_at = now_local()
-        db.commit()
-    return ApiCallResult(
-        result=None,
-        error_message="",
-        http_status_code=None,
-        attempts=attempts,
-        deferred=True,
-    ), attempts
+    return _submit_generation_with_configs(
+        db,
+        task=task,
+        scene_key=scene_key,
+        task_mode=task_mode,
+        ref_urls=ref_urls,
+        configs_to_try=configs_to_try,
+    )
 
 
 MIME_TO_EXT = {
@@ -1418,6 +1317,133 @@ def _record_api_attempts(
         task.used_fallback_api = True
 
 
+def _resolve_task_mode_and_scene_key(task: Task) -> tuple[str, str]:
+    task_mode = (task.mode or "generate").lower()
+    scene_key = SCENE_INPAINT if task_mode == "inpaint" else (task.model or "")
+    return task_mode, scene_key
+
+
+def _submit_generation_with_configs(
+    db,
+    *,
+    task: Task,
+    scene_key: str,
+    task_mode: str,
+    ref_urls: list[str],
+    configs_to_try: list[tuple[ExternalApiConfig, bool]],
+) -> tuple[ApiCallResult, list[ApiAttemptRecord]]:
+    attempts: list[ApiAttemptRecord] = []
+    last_error_message = "生图失败"
+    last_http_status: int | None = None
+    selected_config: ExternalApiConfig | None = None
+
+    for attempt_index, (config, is_fallback) in enumerate(configs_to_try, start=1):
+        current_call_mode = (config.call_mode or "sync").strip().lower() or "sync"
+        has_more_configs = attempt_index < len(configs_to_try)
+        if current_call_mode != "async":
+            result, error_message, http_status_code, duration_ms = _call_generation_api_once(
+                db,
+                config=config,
+                scene_key=scene_key,
+                prompt=task.prompt,
+                aspect_ratio=task.size,
+                image_size=task.resolution,
+                custom_size=task.custom_size or "",
+                reference_images=ref_urls,
+                mode=task_mode,
+                source_image=task.source_image or "",
+                mask_image=task.mask_image or "",
+            )
+            attempts.append(ApiAttemptRecord(
+                api_config_id=config.id,
+                api_config_name=config.name or "",
+                attempt_index=attempt_index,
+                is_fallback=is_fallback,
+                status="success" if result else "failed",
+                http_status=http_status_code,
+                error_message="" if result else _clip_error_message(error_message),
+                duration_ms=duration_ms,
+            ))
+            if result:
+                return ApiCallResult(
+                    result=result,
+                    error_message="",
+                    http_status_code=None,
+                    attempts=attempts,
+                ), attempts
+
+            last_error_message = _clip_error_message(error_message or "生图失败")
+            last_http_status = http_status_code
+            if is_fallback or not has_more_configs or not _should_use_fallback_api(http_status_code, last_error_message):
+                break
+            continue
+
+        submit_result = _submit_async_generation_api_once(
+            db,
+            config=config,
+            scene_key=scene_key,
+            prompt=task.prompt,
+            aspect_ratio=task.size,
+            image_size=task.resolution,
+            custom_size=task.custom_size or "",
+            reference_images=ref_urls,
+            mode=task_mode,
+            source_image=task.source_image or "",
+            mask_image=task.mask_image or "",
+        )
+        attempts.append(ApiAttemptRecord(
+            api_config_id=config.id,
+            api_config_name=config.name or "",
+            attempt_index=attempt_index,
+            is_fallback=is_fallback,
+            status="success" if submit_result.provider_task_id else "failed",
+            http_status=submit_result.http_status_code,
+            error_message="" if submit_result.provider_task_id else _clip_error_message(submit_result.error_message),
+            duration_ms=submit_result.duration_ms,
+        ))
+        if submit_result.provider_task_id:
+            task.provider_api_config_id = config.id
+            task.provider_task_id = submit_result.provider_task_id
+            task.provider_status = submit_result.provider_status or "submitted"
+            task.provider_error_message = ""
+            task.provider_response_preview = submit_result.response_preview
+            task.poll_count = 0
+            task.last_polled_at = None
+            task.next_poll_at = now_local()
+            db.commit()
+            selected_config = config
+            break
+
+        last_error_message = _clip_error_message(submit_result.error_message or "异步生图提交失败")
+        last_http_status = submit_result.http_status_code
+        if is_fallback or not has_more_configs or not _should_use_fallback_api(submit_result.http_status_code, last_error_message):
+            break
+
+    if not selected_config:
+        return ApiCallResult(
+            result=None,
+            error_message=last_error_message,
+            http_status_code=last_http_status,
+            attempts=attempts,
+        ), attempts
+
+    delay_seconds = max(int(selected_config.poll_interval_seconds or 0), 1)
+    try:
+        _schedule_async_poll_task(task.id, delay_seconds=delay_seconds)
+    except Exception as exc:
+        logger.exception("Failed to schedule async generation poll; recovery scanner will retry: task_id=%s", task.id)
+        task.provider_error_message = _clip_error_message(f"异步轮询调度失败，等待恢复扫描: {exc}")
+        task.next_poll_at = now_local()
+        db.commit()
+    return ApiCallResult(
+        result=None,
+        error_message="",
+        http_status_code=None,
+        attempts=attempts,
+        deferred=True,
+    ), attempts
+
+
 def _parse_reference_images(task: Task) -> list[str]:
     """Parse reference_images JSON string from task."""
     if not task.reference_images:
@@ -1451,6 +1477,36 @@ def _clear_task_provider_context(task: Task) -> None:
 def _clear_provider_context_if_more_images_pending(task: Task, images: list[Image]) -> None:
     if any(image.status == "pending" for image in images):
         _clear_task_provider_context(task)
+
+
+def _next_attempt_index_for_image(db, image: Image) -> int:
+    row = (
+        db.query(TaskApiAttempt.attempt_index)
+        .filter(TaskApiAttempt.image_id == image.id)
+        .order_by(TaskApiAttempt.attempt_index.desc(), TaskApiAttempt.id.desc())
+        .first()
+    )
+    if not row or row[0] is None:
+        return 1
+    return int(row[0]) + 1
+
+
+def _rebase_attempt_indices(attempts: list[ApiAttemptRecord], start_index: int) -> list[ApiAttemptRecord]:
+    rebased: list[ApiAttemptRecord] = []
+    for attempt in attempts:
+        rebased.append(
+            ApiAttemptRecord(
+                api_config_id=attempt.api_config_id,
+                api_config_name=attempt.api_config_name,
+                attempt_index=start_index + max(int(attempt.attempt_index or 1), 1) - 1,
+                is_fallback=attempt.is_fallback,
+                status=attempt.status,
+                http_status=attempt.http_status,
+                error_message=attempt.error_message,
+                duration_ms=attempt.duration_ms,
+            )
+        )
+    return rebased
 
 
 def _update_regenerate_log_new_image_url(db, image_id: int, image_url: str) -> None:
@@ -1977,6 +2033,13 @@ def _first_pending_image(task: Task) -> Image | None:
     return sorted(pending_images, key=lambda image: image.id)[0]
 
 
+def _is_async_poll_failed_status(config: ExternalApiConfig, provider_status: str) -> bool:
+    failed_values = {item.strip().lower() for item in parse_string_list_json(config.result_failed_values_json) if item.strip()}
+    if not failed_values:
+        failed_values = {"failed", "error", "cancelled"}
+    return (provider_status or "").strip().lower() in failed_values
+
+
 def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: ApiCallResult) -> None:
     if call_result.result:
         img_bytes, mime = call_result.result
@@ -2014,6 +2077,66 @@ def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: Api
         task.provider_error_message = ""
     refund_task_credit_for_generation_failure_if_needed(db, task)
     db.commit()
+
+
+def _retry_async_poll_with_fallback(
+    db,
+    *,
+    task: Task,
+    image: Image,
+    config: ExternalApiConfig,
+    call_result: ApiCallResult,
+) -> tuple[ApiCallResult | None, list[ApiAttemptRecord]]:
+    if call_result.deferred or call_result.result:
+        return None, []
+    if not _is_async_poll_failed_status(config, task.provider_status or ""):
+        return None, []
+    if not _should_use_fallback_api(call_result.http_status_code, call_result.error_message):
+        return None, []
+
+    task_mode, scene_key = _resolve_task_mode_and_scene_key(task)
+    primary_config, backup_config = resolve_scene_generation_configs(db, scene_key)
+    if backup_config is None or primary_config.id != config.id or backup_config.id == config.id:
+        return None, []
+
+    next_attempt_index = _next_attempt_index_for_image(db, image)
+    attempts = [
+        ApiAttemptRecord(
+            api_config_id=config.id,
+            api_config_name=config.name or "",
+            attempt_index=next_attempt_index,
+            is_fallback=False,
+            status="failed",
+            http_status=call_result.http_status_code,
+            error_message=_clip_error_message(call_result.error_message),
+            duration_ms=None,
+        )
+    ]
+
+    logger.warning(
+        "Async poll failed on primary config; retrying with fallback submit: task_id=%s, primary_config_id=%s, fallback_config_id=%s",
+        task.id,
+        config.id,
+        backup_config.id,
+    )
+    _clear_task_provider_context(task)
+    task.error_message = ""
+    db.commit()
+
+    fallback_result, fallback_attempts = _submit_generation_with_configs(
+        db,
+        task=task,
+        scene_key=scene_key,
+        task_mode=task_mode,
+        ref_urls=_parse_reference_images(task),
+        configs_to_try=[(backup_config, True)],
+    )
+    attempts.extend(_rebase_attempt_indices(fallback_attempts, next_attempt_index + 1))
+
+    if not fallback_result.deferred and not fallback_result.result and fallback_result.error_message:
+        task.provider_error_message = _clip_error_message(fallback_result.error_message)
+        db.commit()
+    return fallback_result, attempts
 
 
 def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True):
@@ -2070,6 +2193,43 @@ def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True)
             if task.next_poll_at:
                 delay_seconds = max(int((task.next_poll_at - now_local()).total_seconds()), 1)
             _schedule_async_poll_task(task.id, delay_seconds=delay_seconds)
+            return
+
+        fallback_result, fallback_attempts = _retry_async_poll_with_fallback(
+            db,
+            task=task,
+            image=image,
+            config=config,
+            call_result=call_result,
+        )
+        if fallback_result is not None:
+            image_index = next(
+                (
+                    index
+                    for index, current in enumerate(sorted(task.images, key=lambda item: item.id), start=1)
+                    if current.id == image.id
+                ),
+                1,
+            )
+            _record_api_attempts(
+                db,
+                task=task,
+                image=image,
+                image_index=image_index,
+                attempts=fallback_attempts,
+            )
+            db.commit()
+            if fallback_result.deferred:
+                logger.info(
+                    "Async poll switched to fallback submit",
+                    extra={
+                        "event": "task.worker.async_fallback_resubmitted",
+                        "task_id": task.id,
+                        "provider_task_id": task.provider_task_id,
+                    },
+                )
+                return
+            _finish_task_after_async_poll(db, task, image, fallback_result)
             return
 
         _finish_task_after_async_poll(db, task, image, call_result)
