@@ -34,6 +34,7 @@ def list_history(
         user.id,
         page,
         page_size,
+        current_user=user,
         respect_pins=respect_pins,
         include_prompt_reverse=include_prompt_reverse,
         mode=mode,

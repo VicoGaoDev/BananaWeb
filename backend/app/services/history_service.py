@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, lazyload, selectinload
 from app.models.credit_log import CreditLog
 from app.models.history_pin import HistoryPin
 from app.models.image import Image
@@ -22,6 +22,7 @@ from app.services.task_type_service import (
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
     get_task_scene_type_map,
+    get_task_scene_type_subset,
     resolve_task_type_for_task,
 )
 from app.services.image_delivery_service import (
@@ -314,6 +315,7 @@ def get_user_history(
     user_id: int,
     page: int = 1,
     page_size: int = 20,
+    current_user: User | None = None,
     respect_pins: bool = True,
     include_prompt_reverse: bool = True,
     mode: str | None = None,
@@ -327,8 +329,13 @@ def get_user_history(
     board_scope: str | None = None,
 ):
     cos_config = get_optional_cos_config(db)
-    scene_type_map = get_task_scene_type_map(db)
-    current_user = db.query(User).filter(User.id == user_id).first()
+    scene_type_map: dict[str, str] = {}
+    if mode in {TASK_TYPE_TEXT_GENERATE, TASK_TYPE_IMAGE_EDIT}:
+        scene_type_map = get_task_scene_type_map(db)
+    current_user = current_user if current_user and current_user.id == user_id else db.query(User).filter(User.id == user_id).first()
+    current_user_external_id = user_external_id(current_user)
+    current_username = current_user.username if current_user else ""
+    current_avatar_url = (current_user.avatar_url or "") if current_user else ""
     history_pins = (
         db.query(HistoryPin)
         .filter(HistoryPin.user_id == user_id)
@@ -341,7 +348,12 @@ def get_user_history(
     image_query = (
         db.query(Image)
         .join(Task, Image.task_id == Task.id)
-        .options(selectinload(Image.task).selectinload(Task.images))
+        .options(
+            selectinload(Image.task).options(
+                selectinload(Task.images),
+                lazyload(Task.api_attempts),
+            )
+        )
         .filter(Task.user_id == user_id)
         .filter(Task.is_deleted.is_(False))
         .filter(Task.canvas_id.is_(None))
@@ -444,30 +456,63 @@ def get_user_history(
             if prompt_reverse_query is not None
             else []
         )
+    task_ids = list({int(image.task_id) for image in images if image.task_id})
+    refunded_task_ids = _get_refunded_task_ids(db, task_ids)
+    if not scene_type_map:
+        scene_type_map = get_task_scene_type_subset(
+            db,
+            {
+                (image.task.model or "").strip()
+                for image in images
+                if image.task and (image.task.model or "").strip()
+            },
+        )
+    task_shared_payloads: dict[int, dict] = {}
     items = []
     for image in images:
         task = image.task
-        task_credit_cost = int(task.credit_cost or 0)
-        credit_refunded = False
-        if task.status == "failed" and task_credit_cost > 0:
-            credit_refunded = is_task_generation_failure_credit_refunded(db, task.id)
+        task_id = int(task.id)
+        shared_payload = task_shared_payloads.get(task_id)
+        if shared_payload is None:
+            task_credit_cost = int(task.credit_cost or 0)
+            source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
+            mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
+            reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
+            shared_payload = {
+                "display_id": task_external_id(task),
+                "canvas_project_id": _get_task_canvas_project_id(task),
+                "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
+                "source": task.source or "web",
+                "mode": task.mode or "generate",
+                "prompt": task.prompt or "",
+                "reference_images": [asset["image_url"] for asset in reference_assets],
+                "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
+                "source_image": source_asset["image_url"],
+                "source_image_thumb": source_asset["thumb_url"],
+                "mask_image": mask_asset["image_url"],
+                "mask_image_thumb": mask_asset["thumb_url"],
+                "task_credit_cost": task_credit_cost,
+                "credit_refunded": bool(
+                    task.status == "failed"
+                    and task_credit_cost > 0
+                    and task_id in refunded_task_ids
+                ),
+                "visible_images": _serialize_history_images(task.images, cos_config=cos_config),
+            }
+            task_shared_payloads[task_id] = shared_payload
         image_payload = serialize_image(image, cos_config=cos_config)
-        source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
-        mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
-        reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
-        visible_images = _serialize_history_images(task.images, cos_config=cos_config)
         is_pinned, pinned_at = _serialize_history_pin(history_pin_map.get(_build_history_pin_key("task", image_id=image.id)))
         items.append({
             "history_id": None,
             "item_type": "task",
-            "display_id": task_external_id(task),
-            "task_id": task_external_id(task),
+            "display_id": shared_payload["display_id"],
+            "task_id": shared_payload["display_id"],
             "canvas_id": task.canvas_id,
-            "canvas_project_id": _get_task_canvas_project_id(task),
+            "canvas_project_id": shared_payload["canvas_project_id"],
             "image_id": image.id,
-            "user_id": user_external_id(current_user),
-            "username": current_user.username if current_user else "",
-            "avatar_url": (current_user.avatar_url or "") if current_user else "",
+            "user_id": current_user_external_id,
+            "username": current_username,
+            "avatar_url": current_avatar_url,
             "is_pinned": is_pinned,
             "pinned_at": pinned_at,
             "image_url": image_payload["image_url"],
@@ -478,26 +523,26 @@ def get_user_history(
             "image_size_bytes": image_payload["image_size_bytes"],
             "task_is_deleted": False,
             "is_soft_deleted": False,
-            "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
+            "task_type": shared_payload["task_type"],
             "model": task.model or "",
-            "source": task.source or "web",
-            "mode": task.mode or "generate",
-            "prompt": task.prompt or "",
-            "reference_images": [asset["image_url"] for asset in reference_assets],
-            "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
-            "source_image": source_asset["image_url"],
-            "source_image_thumb": source_asset["thumb_url"],
-            "mask_image": mask_asset["image_url"],
-            "mask_image_thumb": mask_asset["thumb_url"],
+            "source": shared_payload["source"],
+            "mode": shared_payload["mode"],
+            "prompt": shared_payload["prompt"],
+            "reference_images": shared_payload["reference_images"],
+            "reference_image_thumbs": shared_payload["reference_image_thumbs"],
+            "source_image": shared_payload["source_image"],
+            "source_image_thumb": shared_payload["source_image_thumb"],
+            "mask_image": shared_payload["mask_image"],
+            "mask_image_thumb": shared_payload["mask_image_thumb"],
             "num_images": task.num_images,
             "size": task.size,
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
-            "credit_cost": task_credit_cost,
-            "credit_refunded": credit_refunded,
+            "credit_cost": shared_payload["task_credit_cost"],
+            "credit_refunded": shared_payload["credit_refunded"],
             "created_at": task.created_at,
             "error_message": task.error_message or "",
-            "images": visible_images,
+            "images": shared_payload["visible_images"],
         })
 
     for row in prompt_reverse_rows:
@@ -509,9 +554,9 @@ def get_user_history(
             "display_id": f"PR-{row.id}",
             "task_id": None,
             "image_id": -row.id,
-            "user_id": user_external_id(current_user),
-            "username": current_user.username if current_user else "",
-            "avatar_url": (current_user.avatar_url or "") if current_user else "",
+            "user_id": current_user_external_id,
+            "username": current_username,
+            "avatar_url": current_avatar_url,
             "is_pinned": is_pinned,
             "pinned_at": pinned_at,
             "image_url": "",

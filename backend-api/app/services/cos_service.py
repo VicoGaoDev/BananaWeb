@@ -39,6 +39,7 @@ class CosRuntimeConfig:
     secret_key: str
     bucket: str
     region: str
+    upload_domain: str
     public_base_url: str
     app_id: str
 
@@ -47,6 +48,22 @@ def _normalize_cos_base_url(value: str, bucket: str, region: str) -> str:
     if value.strip():
         return value.strip().rstrip("/")
     return f"https://{bucket}.cos.{region}.myqcloud.com"
+
+
+def _normalize_cos_upload_domain(value: str, bucket: str, region: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return f"{bucket}.cos.{region}.myqcloud.com"
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    return (parsed.netloc or parsed.path).strip().rstrip("/")
+
+
+def _extract_domain_from_url(value: str, fallback: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return fallback
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    return (parsed.netloc or parsed.path).strip().rstrip("/") or fallback
 
 
 def _extract_app_id(bucket: str) -> str:
@@ -76,6 +93,7 @@ def get_cos_config(db: Session) -> CosRuntimeConfig:
         secret_key=secret_key,
         bucket=bucket,
         region=region,
+        upload_domain=_normalize_cos_upload_domain(record.cos_upload_domain or "", bucket, region),
         public_base_url=_normalize_cos_base_url(record.cos_public_base_url or "", bucket, region),
         app_id=_extract_app_id(bucket),
     )
@@ -178,6 +196,7 @@ def create_upload_credential(
         "bucket": config.bucket,
         "region": config.region,
         "key": key,
+        "upload_domain": _extract_domain_from_url(config.public_base_url, config.upload_domain),
         "url": build_cos_public_url(config, key),
         "tmp_secret_id": tmp_secret_id,
         "tmp_secret_key": tmp_secret_key,
@@ -206,6 +225,8 @@ def upload_bytes_to_cos(
             Region=config.region,
             SecretId=config.secret_id,
             SecretKey=config.secret_key,
+            Domain=config.upload_domain,
+            Scheme="https",
         )
     )
     try:

@@ -142,6 +142,7 @@ def set_cos_config(
     record.cos_secret_key = body.cos_secret_key
     record.cos_bucket = body.cos_bucket
     record.cos_region = body.cos_region
+    record.cos_upload_domain = body.cos_upload_domain
     record.cos_public_base_url = body.cos_public_base_url
     db.commit()
     db.refresh(record)
@@ -159,6 +160,7 @@ def delete_cos_config(
         record.cos_secret_key = ""
         record.cos_bucket = ""
         record.cos_region = ""
+        record.cos_upload_domain = ""
         record.cos_public_base_url = ""
         db.commit()
     return {"detail": "已删除"}

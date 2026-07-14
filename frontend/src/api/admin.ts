@@ -366,6 +366,7 @@ export function setCosConfig(payload: {
   cos_secret_key?: string;
   cos_bucket?: string;
   cos_region?: string;
+  cos_upload_domain?: string;
   cos_public_base_url?: string;
 }): Promise<CosConfig> {
   return client.put("/admin/cos-config", payload);

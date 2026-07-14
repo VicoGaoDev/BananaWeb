@@ -92,6 +92,22 @@ function getUploadCredential(file: File, purpose: UploadPurpose): Promise<Upload
   });
 }
 
+function createCosClient(credential: UploadCredential) {
+  return new COS({
+    Domain: credential.upload_domain || undefined,
+    Protocol: "https:",
+    getAuthorization(_, callback) {
+      callback({
+        TmpSecretId: credential.tmp_secret_id,
+        TmpSecretKey: credential.tmp_secret_key,
+        SecurityToken: credential.session_token,
+        StartTime: credential.start_time || Math.floor(Date.now() / 1000),
+        ExpiredTime: credential.expired_time,
+      });
+    },
+  });
+}
+
 export function uploadReferenceImage(
   file: File,
   purpose: UploadPurpose = "ref",
@@ -101,17 +117,7 @@ export function uploadReferenceImage(
     try {
       const uploadFile = await prepareUploadFile(file);
       const credential = await getUploadCredential(uploadFile, purpose);
-      const cos = new COS({
-        getAuthorization(_, callback) {
-          callback({
-            TmpSecretId: credential.tmp_secret_id,
-            TmpSecretKey: credential.tmp_secret_key,
-            SecurityToken: credential.session_token,
-            StartTime: credential.start_time || Math.floor(Date.now() / 1000),
-            ExpiredTime: credential.expired_time,
-          });
-        },
-      });
+      const cos = createCosClient(credential);
 
       cos.putObject(
         {

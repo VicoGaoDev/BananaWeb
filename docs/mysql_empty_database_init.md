@@ -236,7 +236,7 @@
 - `tongyi_key`: 通义相关密钥。
 - `contact_qr_image`: 联系二维码图片地址。
 - `cos_secret_id` / `cos_secret_key`: 腾讯云 COS 凭证。
-- `cos_bucket` / `cos_region` / `cos_public_base_url`: COS 存储配置。
+- `cos_bucket` / `cos_region` / `cos_upload_domain` / `cos_public_base_url`: COS 存储配置。
 - `announcement_enabled` / `announcement_content` / `announcement_updated_at`: 公告配置。
 - `updated_at`: 配置最后更新时间。
 
@@ -434,6 +434,7 @@ CREATE TABLE api_keys (
   cos_secret_key VARCHAR(255) NOT NULL,
   cos_bucket VARCHAR(255) NOT NULL,
   cos_region VARCHAR(100) NOT NULL,
+  cos_upload_domain VARCHAR(500) NOT NULL,
   cos_public_base_url VARCHAR(500) NOT NULL,
   announcement_enabled INT NOT NULL,
   announcement_content VARCHAR(5000) NOT NULL,

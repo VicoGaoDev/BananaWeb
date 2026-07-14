@@ -87,23 +87,29 @@ async function prepareUploadFile(file: File): Promise<File> {
   }
 }
 
+function createCosClient(credential: UploadCredential) {
+  return new COS({
+    Domain: credential.upload_domain || undefined,
+    Protocol: "https:",
+    getAuthorization(_, callback) {
+      callback({
+        TmpSecretId: credential.tmp_secret_id,
+        TmpSecretKey: credential.tmp_secret_key,
+        SecurityToken: credential.session_token,
+        StartTime: credential.start_time || Math.floor(Date.now() / 1000),
+        ExpiredTime: credential.expired_time,
+      });
+    },
+  });
+}
+
 function uploadWithCredential(
   file: File,
   credential: UploadCredential,
   onProgress?: (percent: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const cos = new COS({
-      getAuthorization(_, callback) {
-        callback({
-          TmpSecretId: credential.tmp_secret_id,
-          TmpSecretKey: credential.tmp_secret_key,
-          SecurityToken: credential.session_token,
-          StartTime: credential.start_time || Math.floor(Date.now() / 1000),
-          ExpiredTime: credential.expired_time,
-        });
-      },
-    });
+    const cos = createCosClient(credential);
 
     cos.putObject(
       {

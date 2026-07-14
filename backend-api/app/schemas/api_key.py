@@ -45,6 +45,7 @@ class CosConfigOut(BaseModel):
     cos_secret_key: str = ""
     cos_bucket: str = ""
     cos_region: str = ""
+    cos_upload_domain: str = ""
     cos_public_base_url: str = ""
     updated_at: datetime | None = None
 
@@ -56,4 +57,5 @@ class CosConfigUpdate(BaseModel):
     cos_secret_key: str = ""
     cos_bucket: str = ""
     cos_region: str = ""
+    cos_upload_domain: str = ""
     cos_public_base_url: str = ""

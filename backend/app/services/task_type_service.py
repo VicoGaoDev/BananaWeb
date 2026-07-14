@@ -22,15 +22,48 @@ def list_task_type_values() -> tuple[str, str, str, str]:
     )
 
 
-def get_task_scene_type_map(db: Session, *, enabled_only: bool = False) -> dict[str, str]:
-    query = db.query(ExternalApiSceneBinding).filter(ExternalApiSceneBinding.is_deleted.is_(False))
+def _query_scene_type_pairs(
+    db: Session,
+    *,
+    enabled_only: bool = False,
+    scene_keys: set[str] | None = None,
+) -> list[tuple[str, str]]:
+    query = db.query(
+        ExternalApiSceneBinding.scene_key,
+        ExternalApiSceneBinding.scene_type,
+    ).filter(ExternalApiSceneBinding.is_deleted.is_(False))
     if enabled_only:
         query = query.filter(ExternalApiSceneBinding.status == "enabled")
-    rows = query.all()
+    if scene_keys is not None:
+        normalized_keys = {key.strip() for key in scene_keys if key and key.strip()}
+        if not normalized_keys:
+            return []
+        query = query.filter(ExternalApiSceneBinding.scene_key.in_(normalized_keys))
+    return [(scene_key or "", scene_type or "") for scene_key, scene_type in query.all()]
+
+
+def get_task_scene_type_map(db: Session, *, enabled_only: bool = False) -> dict[str, str]:
     return {
-        (row.scene_key or "").strip(): (row.scene_type or "").strip()
-        for row in rows
-        if (row.scene_key or "").strip()
+        scene_key.strip(): scene_type.strip()
+        for scene_key, scene_type in _query_scene_type_pairs(db, enabled_only=enabled_only)
+        if scene_key.strip()
+    }
+
+
+def get_task_scene_type_subset(
+    db: Session,
+    scene_keys: set[str],
+    *,
+    enabled_only: bool = False,
+) -> dict[str, str]:
+    return {
+        scene_key.strip(): scene_type.strip()
+        for scene_key, scene_type in _query_scene_type_pairs(
+            db,
+            enabled_only=enabled_only,
+            scene_keys=scene_keys,
+        )
+        if scene_key.strip()
     }
 
 

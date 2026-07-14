@@ -13,6 +13,7 @@ class ApiKey(Base):
     cos_secret_key = Column(String(255), nullable=False, default="")
     cos_bucket = Column(String(255), nullable=False, default="")
     cos_region = Column(String(100), nullable=False, default="")
+    cos_upload_domain = Column(String(500), nullable=False, default="")
     cos_public_base_url = Column(String(500), nullable=False, default="")
     announcement_enabled = Column(Integer, nullable=False, default=0)
     announcement_content = Column(String(5000), nullable=False, default="")

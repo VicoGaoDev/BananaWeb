@@ -223,6 +223,8 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_bucket VARCHAR(255) DEFAULT ''"))
             if "cos_region" not in api_key_columns:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_region VARCHAR(100) DEFAULT ''"))
+            if "cos_upload_domain" not in api_key_columns:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_upload_domain VARCHAR(500) DEFAULT ''"))
             if "cos_public_base_url" not in api_key_columns:
                 conn.execute(text("ALTER TABLE api_keys ADD COLUMN cos_public_base_url VARCHAR(500) DEFAULT ''"))
             if "announcement_enabled" not in api_key_columns:

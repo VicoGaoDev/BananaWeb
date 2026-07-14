@@ -1012,6 +1012,7 @@ export interface CosConfig {
   cos_secret_id: string;
   cos_secret_key: string;
   cos_bucket: string;
+  cos_upload_domain: string;
   cos_region: string;
   cos_public_base_url: string;
   updated_at?: string | null;
@@ -1211,6 +1212,7 @@ export interface UploadCredential {
   bucket: string;
   region: string;
   key: string;
+  upload_domain: string;
   url: string;
   tmp_secret_id: string;
   tmp_secret_key: string;

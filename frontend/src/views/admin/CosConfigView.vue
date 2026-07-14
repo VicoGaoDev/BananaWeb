@@ -15,6 +15,7 @@ const cosSecretId = ref("");
 const cosSecretKey = ref("");
 const cosBucket = ref("");
 const cosRegion = ref("");
+const cosUploadDomain = ref("");
 const cosPublicBaseUrl = ref("");
 const hasConfig = ref(false);
 const loading = ref(false);
@@ -45,9 +46,15 @@ onMounted(async () => {
       cosSecretKey.value = res.cos_secret_key || "";
       cosBucket.value = res.cos_bucket || "";
       cosRegion.value = res.cos_region || "";
+      cosUploadDomain.value = res.cos_upload_domain || "";
       cosPublicBaseUrl.value = res.cos_public_base_url || "";
       hasConfig.value = Boolean(
-        res.cos_secret_id || res.cos_secret_key || res.cos_bucket || res.cos_region || res.cos_public_base_url,
+        res.cos_secret_id
+        || res.cos_secret_key
+        || res.cos_bucket
+        || res.cos_region
+        || res.cos_upload_domain
+        || res.cos_public_base_url,
       );
     }
   } catch (err: any) {
@@ -63,6 +70,7 @@ async function handleSave() {
     && !cosSecretKey.value.trim()
     && !cosBucket.value.trim()
     && !cosRegion.value.trim()
+    && !cosUploadDomain.value.trim()
     && !cosPublicBaseUrl.value.trim()
   ) {
     message.warning("请至少配置一项内容");
@@ -75,6 +83,7 @@ async function handleSave() {
       cos_secret_key: cosSecretKey.value.trim(),
       cos_bucket: cosBucket.value.trim(),
       cos_region: cosRegion.value.trim(),
+      cos_upload_domain: cosUploadDomain.value.trim(),
       cos_public_base_url: cosPublicBaseUrl.value.trim(),
     });
     hasConfig.value = true;
@@ -100,6 +109,7 @@ function handleDelete() {
         cosSecretKey.value = "";
         cosBucket.value = "";
         cosRegion.value = "";
+        cosUploadDomain.value = "";
         cosPublicBaseUrl.value = "";
         hasConfig.value = false;
         cosSecretIdVisible.value = false;
@@ -148,6 +158,19 @@ function copyText(value: string) {
           </div>
 
           <div>
+            <div class="field-label">上传域名（可选）</div>
+            <a-input
+              v-model:value="cosUploadDomain"
+              size="large"
+              placeholder="仅后端服务上传使用；留空则默认使用 Bucket 标准域名"
+              class="plain-input"
+            />
+            <div class="field-hint">
+              该域名只用于后端服务调用 COS SDK 上传/删除文件。前端浏览器直传会走下方“访问域名”。
+            </div>
+          </div>
+
+          <div>
             <div class="field-label">访问域名（可选）</div>
             <a-input
               v-model:value="cosPublicBaseUrl"
@@ -155,6 +178,9 @@ function copyText(value: string) {
               placeholder="留空则默认使用 COS 公网域名，也可填写 CDN 域名"
               class="plain-input"
             />
+            <div class="field-hint">
+              浏览器直传 COS 与最终落库返回给前端的 URL 都会使用这个域名。
+            </div>
           </div>
 
           <div>
@@ -266,6 +292,13 @@ function copyText(value: string) {
     border-color: var(--theme-control-border);
     background: var(--theme-control-bg);
   }
+}
+
+.field-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 
 .secret-row {
