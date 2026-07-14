@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { CopyOutlined, DownloadOutlined, LoadingOutlined, PictureOutlined, ReloadOutlined } from "@ant-design/icons-vue";
+import {
+  CloseOutlined,
+  CopyOutlined,
+  DownloadOutlined,
+  LoadingOutlined,
+  PictureOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons-vue";
 import dayjs from "dayjs";
-import { getDisplayImageUrl, getPreviewImageSrc, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import { getPreviewImageSrc, getPreviewImageUrl } from "@/api/images";
 import { withBaseUrl } from "@/lib/assets";
 import { getTaskImageFailureMessage } from "@/lib/generationErrors";
 import type { ImageResult, TaskApiAttempt, UserHistoryCard } from "@/types";
+
+const SIDE_NAV_WIDTH = 76;
+const SIDE_NAV_BREAKPOINT = 960;
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -32,6 +42,7 @@ const emit = defineEmits<{
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
+const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateTaskCardAsset = withBaseUrl("generate-task-card.svg");
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
@@ -56,6 +67,60 @@ const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponen
 `)}`;
 
 const modelLabelMap = computed(() => new Map(props.modelOptions.map((item) => [item.value, item.label])));
+const reserveSideNav = computed(() => {
+  if (typeof document === "undefined") return false;
+  if (viewportWidth.value <= SIDE_NAV_BREAKPOINT) return false;
+  return !!document.querySelector(".app-layout-desktop-side-nav .canvas-side-nav");
+});
+const panelStyle = computed(() => (
+  reserveSideNav.value
+    ? { left: `${SIDE_NAV_WIDTH}px` }
+    : { left: "0px" }
+));
+
+function updateViewportWidth() {
+  if (typeof window === "undefined") return;
+  viewportWidth.value = window.innerWidth;
+}
+
+function closeDialog() {
+  emit("update:open", false);
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.open) return;
+  if (event.key === "Escape") {
+    closeDialog();
+  }
+}
+
+watch(
+  () => props.open,
+  (open) => {
+    previewVisible.value = false;
+    previewSrc.value = "";
+    if (typeof document === "undefined") return;
+    document.body.style.overflow = open ? "hidden" : "";
+  },
+);
+
+onMounted(() => {
+  updateViewportWidth();
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", updateViewportWidth);
+    window.addEventListener("keydown", handleKeydown);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", updateViewportWidth);
+    window.removeEventListener("keydown", handleKeydown);
+  }
+  if (typeof document !== "undefined") {
+    document.body.style.overflow = "";
+  }
+});
 
 function formatTime(t: string) {
   return t ? dayjs(t).format("YYYY-MM-DD HH:mm:ss") : "-";
@@ -153,7 +218,7 @@ function isHistoryItemExpired(item: Pick<UserHistoryCard, "created_at" | "status
 }
 
 function getNestedImageSrc(image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url" | "status">) {
-  const displayUrl = getDisplayImageUrl(image);
+  const displayUrl = getPreviewImageUrl(image);
   if (displayUrl) return displayUrl;
   return image.status === "failed" ? failedResultAsset : "";
 }
@@ -214,210 +279,293 @@ function handleDownload(item: UserHistoryCard) {
 </script>
 
 <template>
-  <a-modal
-    :open="open"
-    :title="title"
-    :footer="null"
-    :width="1040"
-    centered
-    @update:open="emit('update:open', $event)"
-  >
-    <div v-if="loading" class="detail-loading">
-      <a-spin
-        :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
-      />
-      <span>正在加载任务详情...</span>
-    </div>
-    <template v-else-if="item">
-      <div :key="item.display_id || item.task_id || item.history_id || item.image_id || item.created_at" class="detail-layout">
-        <div class="detail-left">
-          <div class="detail-section">
-            <div v-if="item.mode === 'promptReverse'" class="detail-label">反推原图</div>
-            <div v-if="item.mode === 'promptReverse' && item.source_image" class="detail-thumb-row">
-              <div
-                class="detail-thumb detail-thumb-large"
-                @click="!isHistoryItemExpired(item) && openPreview(getPreviewImageSrc(item.source_image))"
-              >
-                <img
-                  :src="isHistoryItemExpired(item) ? expiredResultAsset : resolveImageUrl(item.source_image_thumb || item.source_image)"
-                  alt="提示词反推原图"
-                  loading="lazy"
-                  @error="handleDetailImageError"
-                />
-              </div>
-            </div>
-            <div v-else class="detail-result-grid">
-              <div
-                v-for="img in item.images"
-                :key="img.id"
-                class="detail-result-card"
-                :class="{
-                  single: item.images.length === 1,
-                  pending: !getDetailImageSrc(item, img) && img.status !== 'failed',
-                  failed: img.status === 'failed',
-                }"
-                :style="{ '--detail-pending-bg-image': `url('${generateTaskCardAsset}')` }"
-                @click="getDetailPreviewSrc(item, img) && openPreview(getDetailPreviewSrc(item, img))"
-              >
-                <img
-                  v-if="getDetailImageSrc(item, img) || img.status === 'failed'"
-                  :src="getDetailImageSrc(item, img) || failedResultAsset"
-                  :alt="img.status === 'failed' ? '生成失败' : '结果图'"
-                  :class="{ 'failed-result-image': img.status === 'failed' }"
-                  loading="lazy"
-                  @error="handleDetailImageError"
-                />
-                <div v-if="img.status === 'failed'" class="detail-failure-message">
-                  {{ getDetailFailureMessage(item, img) }}
-                </div>
-                <div v-else class="result-card-placeholder">
-                  <a-spin
-                    :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+  <Teleport to="body">
+    <div
+      v-if="open"
+      class="history-task-detail-overlay"
+      :class="{ 'is-side-nav-offset': reserveSideNav }"
+      :style="panelStyle"
+    >
+      <div class="history-task-detail-panel">
+        <div class="history-task-detail-header">
+          <div class="history-task-detail-title">{{ title }}</div>
+          <button type="button" class="history-task-detail-close" aria-label="关闭" @click="closeDialog">
+            <CloseOutlined />
+          </button>
         </div>
 
-        <div class="detail-right">
-          <div v-if="item.task_is_deleted || item.is_soft_deleted" class="detail-section">
-            <div class="detail-alert-list">
-              <div v-if="item.task_is_deleted" class="detail-alert detail-alert-danger">
-                该任务已被用户软删除，仅在后台历史记录中保留展示。
-              </div>
-              <div v-if="item.is_soft_deleted" class="detail-alert detail-alert-warning">
-                该任务存在已软删图片，当前详情默认仅展示未删除图片。
-              </div>
-            </div>
+        <div class="history-task-detail-body">
+          <div v-if="loading" class="detail-loading">
+            <a-spin
+              :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
+            />
+            <span>正在加载任务详情...</span>
           </div>
-
-          <div class="detail-section">
-            <div class="detail-meta">
-              <span v-for="meta in detailMetaList(item)" :key="meta">{{ meta }}</span>
-            </div>
-            <div v-if="getCanvasAccessUrl(item)" class="detail-canvas-link-row">
-              <span class="detail-canvas-link-label">Canvas 访问地址：</span>
-              <a
-                class="detail-canvas-link"
-                :href="getCanvasAccessUrl(item)"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {{ getCanvasAccessUrl(item) }}
-              </a>
-            </div>
-          </div>
-
-          <div v-if="item.api_attempts?.length" class="detail-section">
-            <div class="detail-label">接口调用记录</div>
-            <div class="detail-attempt-list">
-              <div v-for="attempt in item.api_attempts" :key="`${attempt.id || 'attempt'}-${attempt.image_id || 0}-${attempt.attempt_index}`" class="detail-attempt-card">
-                <div class="detail-attempt-header">
-                  <span class="detail-attempt-title">{{ attemptTargetLabel(attempt) }}</span>
-                  <a-space size="small">
-                    <a-tag class="api-tag" :class="attempt.is_fallback ? 'api-tag-group' : 'api-tag-muted'">
-                      {{ attemptRoleLabel(attempt) }}
-                    </a-tag>
-                    <a-tag class="api-tag" :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'">
-                      {{ attemptStatusLabel(attempt.status) }}
-                    </a-tag>
-                  </a-space>
+          <template v-else-if="item">
+            <div :key="item.display_id || item.task_id || item.history_id || item.image_id || item.created_at" class="detail-layout">
+              <div class="detail-left">
+                <div class="detail-section">
+                  <div v-if="item.mode === 'promptReverse'" class="detail-label">反推原图</div>
+                  <div v-if="item.mode === 'promptReverse' && item.source_image" class="detail-thumb-row">
+                    <div
+                      class="detail-thumb detail-thumb-large"
+                      @click="!isHistoryItemExpired(item) && openPreview(getPreviewImageSrc(item.source_image))"
+                    >
+                      <img
+                        :src="isHistoryItemExpired(item) ? expiredResultAsset : getPreviewImageSrc(item.source_image_thumb || item.source_image)"
+                        alt="提示词反推原图"
+                        loading="lazy"
+                        @error="handleDetailImageError"
+                      />
+                    </div>
+                  </div>
+                  <div v-else class="detail-result-grid" :class="{ 'is-single': item.images.length === 1 }">
+                    <div
+                      v-for="img in item.images"
+                      :key="img.id"
+                      class="detail-result-card"
+                      :class="{
+                        single: item.images.length === 1,
+                        pending: !getDetailImageSrc(item, img) && img.status !== 'failed',
+                        failed: img.status === 'failed',
+                      }"
+                      :style="{ '--detail-pending-bg-image': `url('${generateTaskCardAsset}')` }"
+                      @click="getDetailPreviewSrc(item, img) && openPreview(getDetailPreviewSrc(item, img))"
+                    >
+                      <img
+                        v-if="getDetailImageSrc(item, img) || img.status === 'failed'"
+                        :src="getDetailImageSrc(item, img) || failedResultAsset"
+                        :alt="img.status === 'failed' ? '生成失败' : '结果图'"
+                        :class="{ 'failed-result-image': img.status === 'failed' }"
+                        loading="lazy"
+                        @error="handleDetailImageError"
+                      />
+                      <div v-if="img.status === 'failed'" class="detail-failure-message">
+                        {{ getDetailFailureMessage(item, img) }}
+                      </div>
+                      <div v-else-if="!getDetailImageSrc(item, img)" class="result-card-placeholder">
+                        <a-spin
+                          :indicator="h(LoadingOutlined, { style: { fontSize: '28px', color: '#7c8db5' } })"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div class="detail-attempt-meta">
-                  <span>第 {{ attempt.attempt_index }} 次尝试</span>
-                  <span>接口：{{ attempt.api_config_name || "-" }}</span>
-                  <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
-                  <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
+              </div>
+
+              <div class="detail-right">
+                <div v-if="item.task_is_deleted || item.is_soft_deleted" class="detail-section">
+                  <div class="detail-alert-list">
+                    <div v-if="item.task_is_deleted" class="detail-alert detail-alert-danger">
+                      该任务已被用户软删除，仅在后台历史记录中保留展示。
+                    </div>
+                    <div v-if="item.is_soft_deleted" class="detail-alert detail-alert-warning">
+                      该任务存在已软删图片，当前详情默认仅展示未删除图片。
+                    </div>
+                  </div>
                 </div>
-                <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
+
+                <div class="detail-section">
+                  <div class="detail-meta">
+                    <span v-for="meta in detailMetaList(item)" :key="meta">{{ meta }}</span>
+                  </div>
+                  <div v-if="getCanvasAccessUrl(item)" class="detail-canvas-link-row">
+                    <span class="detail-canvas-link-label">Canvas 访问地址：</span>
+                    <a
+                      class="detail-canvas-link"
+                      :href="getCanvasAccessUrl(item)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ getCanvasAccessUrl(item) }}
+                    </a>
+                  </div>
+                </div>
+
+                <div v-if="item.api_attempts?.length" class="detail-section">
+                  <div class="detail-label">接口调用记录</div>
+                  <div class="detail-attempt-list">
+                    <div v-for="attempt in item.api_attempts" :key="`${attempt.id || 'attempt'}-${attempt.image_id || 0}-${attempt.attempt_index}`" class="detail-attempt-card">
+                      <div class="detail-attempt-header">
+                        <span class="detail-attempt-title">{{ attemptTargetLabel(attempt) }}</span>
+                        <a-space size="small">
+                          <a-tag class="api-tag" :class="attempt.is_fallback ? 'api-tag-group' : 'api-tag-muted'">
+                            {{ attemptRoleLabel(attempt) }}
+                          </a-tag>
+                          <a-tag class="api-tag" :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'">
+                            {{ attemptStatusLabel(attempt.status) }}
+                          </a-tag>
+                        </a-space>
+                      </div>
+                      <div class="detail-attempt-meta">
+                        <span>第 {{ attempt.attempt_index }} 次尝试</span>
+                        <span>接口：{{ attempt.api_config_name || "-" }}</span>
+                        <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
+                        <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
+                      </div>
+                      <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="item.mode === 'inpaint' && item.source_image" class="detail-section">
+                  <div class="detail-label">局部重绘原图</div>
+                  <div class="detail-thumb-row">
+                    <div class="detail-thumb" @click="!isHistoryItemExpired(item) && openPreview(getPreviewImageSrc(item.source_image))">
+                      <img
+                        :src="isHistoryItemExpired(item) ? expiredResultAsset : getPreviewImageSrc(item.source_image_thumb || item.source_image)"
+                        alt="局部重绘原图"
+                        loading="lazy"
+                        @error="handleDetailImageError"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="item.reference_images.length" class="detail-section">
+                  <div class="detail-label">
+                    <PictureOutlined />
+                    <span>参考图</span>
+                  </div>
+                  <div class="detail-thumb-row">
+                    <div
+                      v-for="(ref, index) in item.reference_images"
+                      :key="index"
+                      class="detail-thumb"
+                      @click="openPreview(getPreviewImageSrc(ref))"
+                    >
+                      <img
+                        :src="getPreviewImageSrc(item.reference_image_thumbs[index] || ref)"
+                        alt="参考图"
+                        loading="lazy"
+                        @error="handleDetailImageError"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="detail-section">
+                  <div class="detail-label-row">
+                    <div class="detail-label">提示词</div>
+                    <a-button type="text" class="detail-copy-btn" @click="copyPrompt(item.prompt)">
+                      <template #icon><CopyOutlined /></template>
+                      复制提示词
+                    </a-button>
+                  </div>
+                  <div class="detail-prompt">{{ item.prompt || "-" }}</div>
+                  <div v-if="showErrorMessage && item.error_message" class="detail-error-block">
+                    <div class="detail-error-label">错误信息</div>
+                    <div class="detail-error-message">{{ item.error_message }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="showActions" class="detail-floating-actions">
+                <a-tooltip title="重新编辑">
+                  <a-button type="text" class="ghost-icon-btn detail-action-btn" @click="handleReedit(item)">
+                    <template #icon><ReloadOutlined /></template>
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="下载原图">
+                  <a-button
+                    type="text"
+                    class="ghost-icon-btn detail-action-btn"
+                    :disabled="isHistoryItemExpired(item) || !item.image_url || typeof item.image_id !== 'number'"
+                    @click="handleDownload(item)"
+                  >
+                    <template #icon><DownloadOutlined /></template>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
-          </div>
-
-          <div v-if="item.mode === 'inpaint' && item.source_image" class="detail-section">
-            <div class="detail-label">局部重绘原图</div>
-            <div class="detail-thumb-row">
-              <div class="detail-thumb" @click="!isHistoryItemExpired(item) && openPreview(getPreviewImageSrc(item.source_image))">
-                <img
-                  :src="isHistoryItemExpired(item) ? expiredResultAsset : resolveImageUrl(item.source_image_thumb || item.source_image)"
-                  alt="局部重绘原图"
-                  loading="lazy"
-                  @error="handleDetailImageError"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div v-if="item.reference_images.length" class="detail-section">
-            <div class="detail-label">
-              <PictureOutlined />
-              <span>参考图</span>
-            </div>
-            <div class="detail-thumb-row">
-              <div
-                v-for="(ref, index) in item.reference_images"
-                :key="index"
-                class="detail-thumb"
-                @click="openPreview(getPreviewImageSrc(ref))"
-              >
-                <img
-                  :src="resolveImageUrl(item.reference_image_thumbs[index] || ref)"
-                  alt="参考图"
-                  loading="lazy"
-                  @error="handleDetailImageError"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-section">
-            <div class="detail-label-row">
-              <div class="detail-label">提示词</div>
-              <a-button type="text" class="detail-copy-btn" @click="copyPrompt(item.prompt)">
-                <template #icon><CopyOutlined /></template>
-                复制提示词
-              </a-button>
-            </div>
-            <div class="detail-prompt">{{ item.prompt || "-" }}</div>
-            <div v-if="showErrorMessage && item.error_message" class="detail-error-block">
-              <div class="detail-error-label">错误信息</div>
-              <div class="detail-error-message">{{ item.error_message }}</div>
-            </div>
-          </div>
-        </div>
-        <div v-if="showActions" class="detail-floating-actions">
-          <a-tooltip title="重新编辑">
-            <a-button type="text" class="ghost-icon-btn detail-action-btn" @click="handleReedit(item)">
-              <template #icon><ReloadOutlined /></template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip title="下载">
-            <a-button
-              type="text"
-              class="ghost-icon-btn detail-action-btn"
-              :disabled="isHistoryItemExpired(item) || !item.image_url || typeof item.image_id !== 'number'"
-              @click="handleDownload(item)"
-            >
-              <template #icon><DownloadOutlined /></template>
-            </a-button>
-          </a-tooltip>
+          </template>
         </div>
       </div>
-    </template>
-
-    <div v-if="previewVisible" style="display: none">
-      <a-image
-        :src="previewSrc"
-        :preview="{ visible: previewVisible, onVisibleChange: (v: boolean) => (previewVisible = v) }"
-      />
     </div>
-  </a-modal>
+  </Teleport>
+
+  <div v-if="previewVisible" style="display: none">
+    <a-image
+      :src="previewSrc"
+      :preview="{ visible: previewVisible, onVisibleChange: (v: boolean) => (previewVisible = v) }"
+    />
+  </div>
 </template>
 
 <style scoped lang="scss">
+.history-task-detail-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-panel-bg, #fffaf2);
+}
+
+.history-task-detail-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.history-task-detail-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--theme-panel-border);
+  background: var(--theme-modal-header-bg, #fff8ec);
+}
+
+.history-task-detail-title {
+  color: var(--theme-title);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.history-task-detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
+    color: var(--theme-title);
+    background: rgba(var(--theme-surface-strong-rgb), 0.72);
+  }
+}
+
+.history-task-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px 24px;
+  overflow: hidden;
+}
+
 .detail-loading {
-  min-height: 280px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -491,20 +639,46 @@ function handleDownload(item: UserHistoryCard) {
 .detail-layout {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.55fr);
+  gap: 0;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   animation: history-detail-slide-in var(--motion-duration-reveal-slower) var(--motion-ease-enter) both;
 }
 
 .detail-left,
 .detail-right {
   min-width: 0;
+  min-height: 0;
+}
+
+.detail-left {
+  display: flex;
+  flex-direction: column;
+  padding-right: 20px;
+}
+
+.detail-left > .detail-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
 }
 
 .detail-right {
   display: flex;
   flex-direction: column;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-left: 20px;
+  padding-right: 4px;
+  padding-bottom: 44px;
+  border-left: 1px solid var(--theme-panel-border);
+  scrollbar-width: thin;
 }
 
 .detail-alert-list {
@@ -606,7 +780,7 @@ function handleDownload(item: UserHistoryCard) {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 210px;
+  max-height: 280px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -667,29 +841,42 @@ function handleDownload(item: UserHistoryCard) {
 }
 
 .detail-thumb-large {
-  width: min(100%, 520px);
+  width: 100%;
   height: auto;
+  max-height: 100%;
   aspect-ratio: 1 / 1;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+
+  &:hover {
+    transform: none;
+    box-shadow: none;
+  }
 }
 
 .detail-result-grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
+  align-content: stretch;
+
+  &.is-single {
+    grid-template-columns: 1fr;
+  }
 }
 
 .detail-result-card {
-  height: clamp(220px, 36vh, 340px);
-  border-radius: 20px;
+  min-height: 0;
+  height: 100%;
+  border-radius: 0;
   overflow: hidden;
-  border: 1px solid var(--theme-panel-border);
-  background: var(--theme-panel-bg-soft);
+  border: 0;
+  background: transparent;
   position: relative;
   cursor: pointer;
-  transition:
-    transform var(--motion-duration-base) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-base) var(--motion-ease-soft),
-    border-color var(--motion-duration-base) var(--motion-ease-soft);
 
   img,
   .result-card-placeholder {
@@ -719,12 +906,6 @@ function handleDownload(item: UserHistoryCard) {
     pointer-events: none;
   }
 
-  &:not(.pending):hover {
-    transform: translateY(-3px);
-    border-color: var(--theme-border-strong);
-    box-shadow: 0 16px 28px var(--theme-shadow-medium);
-  }
-
   &.failed img {
     object-fit: contain;
     padding: 18px;
@@ -732,7 +913,7 @@ function handleDownload(item: UserHistoryCard) {
   }
 
   &.single {
-    height: clamp(440px, 72vh, 680px);
+    height: 100%;
   }
 }
 
@@ -807,9 +988,26 @@ function handleDownload(item: UserHistoryCard) {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .detail-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(240px, 42vh) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .detail-left {
+    padding-right: 0;
+    padding-bottom: 16px;
+  }
+
+  .detail-right {
+    max-height: none;
+    overflow: auto;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 16px;
+    border-left: 0;
+    border-top: 1px solid var(--theme-panel-border);
   }
 
   .detail-floating-actions {

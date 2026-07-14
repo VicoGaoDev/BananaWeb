@@ -34,7 +34,7 @@ import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory } from "@/api/history";
 import { createTask, getTasks } from "@/api/tasks";
 import { createTemplateFromTaskImage, listTemplateTags, type TemplatePayload } from "@/api/templates";
-import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageSrc, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageSrc, resolveImageUrl } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
 import { getUserAssetStats, uploadUserAssetFile } from "@/api/userAssets";
 import {
@@ -52,6 +52,7 @@ import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.v
 import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
 import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
+import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
 import { withBaseUrl } from "@/lib/assets";
 import {
@@ -181,8 +182,11 @@ interface GeneratedTaskItem {
   resolution: string;
   customSize: string;
   referenceImages: string[];
+  referenceImageThumbs: string[];
   sourceImage?: string;
+  sourceImageThumb?: string;
   maskImage?: string;
+  maskImageThumb?: string;
   createdAt: string;
   status: GeneratedTaskStatus;
   errorMessage?: string;
@@ -248,6 +252,9 @@ const repaintCanvasRef = ref<{
 
 const previewVisible = ref(false);
 const previewCurrent = ref("");
+const detailOpen = ref(false);
+const detailItem = ref<UserHistoryCard | null>(null);
+const detailTaskLocalId = ref<string | null>(null);
 const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<{
   taskId: string;
@@ -385,6 +392,12 @@ const templateModelOptions = computed(() => {
 });
 const NEW_MODEL_KEYS = new Set(["banana2_lite", "banana2_lite_edit"]);
 const generationModels = computed(() => (isImageEditMode.value ? imageEditModels.value : textGenerateModels.value));
+const detailModelOptions = computed(() => (
+  taskScenes.value.map((scene) => ({
+    label: scene.scene_label,
+    value: scene.scene_key,
+  }))
+));
 function isNewModel(model?: Pick<GenerationModelOption, "model_key" | "model_label"> | null) {
   if (!model) return false;
   return NEW_MODEL_KEYS.has(model.model_key) || /lite/i.test(model.model_label);
@@ -537,19 +550,6 @@ function parseAspectRatio(value?: string) {
   return null;
 }
 
-function getTaskAspectRatio(task: GeneratedTaskItem) {
-  return parseAspectRatio(task.customSize) || parseAspectRatio(task.size) || "1 / 1";
-}
-
-function getTaskAspectRatioValue(task: GeneratedTaskItem) {
-  const ratio = getTaskAspectRatio(task);
-  const [widthText, heightText] = ratio.split("/").map((item) => item.trim());
-  const width = Number(widthText);
-  const height = Number(heightText);
-  if (!width || !height) return 1;
-  return width / height;
-}
-
 function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskItem {
   return {
     localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -598,25 +598,18 @@ watch(preferredResultColumnCount, (count) => {
   writeStoredGridColumnCount(GENERATE_RESULT_COLUMN_COUNT_KEY, count);
 });
 
-const resultColumns = computed(() => {
-  const columns = Array.from({ length: resultColumnCount.value }, () => [] as typeof resultItems.value);
-  const columnHeights = Array.from({ length: resultColumnCount.value }, () => 0);
-  const fixedRowItems = resultColumnCount.value * 2;
-
-  resultItems.value.forEach((item, itemIndex) => {
-    let columnIndex = 0;
-    if (itemIndex < fixedRowItems) {
-      columnIndex = itemIndex % resultColumnCount.value;
-    } else {
-      columnIndex = columnHeights.reduce((bestIndex, height, index, list) => (
-        height < list[bestIndex] ? index : bestIndex
-      ), 0);
-    }
-
-    columns[columnIndex].push(item);
-    columnHeights[columnIndex] += 1 / getTaskAspectRatioValue(item.task);
-  });
-  return columns;
+watch(generatedTasks, (tasks) => {
+  if (!detailOpen.value || !detailTaskLocalId.value) return;
+  const latest = tasks.find((task) => (
+    task.localId === detailTaskLocalId.value
+    || (!!detailItem.value?.task_id && task.taskId === detailItem.value.task_id)
+  ));
+  if (!latest) return;
+  const focusedImageId = detailItem.value?.image_id;
+  const focusedImage = typeof focusedImageId === "number"
+    ? latest.images.find((image) => image.id === focusedImageId)
+    : undefined;
+  detailItem.value = convertGeneratedTaskToHistoryCard(latest, focusedImage);
 });
 
 function syncViewportWidth() {
@@ -671,6 +664,16 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
     resolution: data.resolution || task.resolution,
     customSize: data.custom_size || task.customSize,
     numImages: data.num_images || task.numImages,
+    referenceImages: Array.isArray(data.reference_images) && data.reference_images.length
+      ? data.reference_images
+      : task.referenceImages,
+    referenceImageThumbs: Array.isArray(data.reference_image_thumbs) && data.reference_image_thumbs.length
+      ? data.reference_image_thumbs
+      : task.referenceImageThumbs,
+    sourceImage: data.source_image || task.sourceImage,
+    sourceImageThumb: data.source_image_thumb || task.sourceImageThumb,
+    maskImage: data.mask_image || task.maskImage,
+    maskImageThumb: data.mask_image_thumb || task.maskImageThumb,
     images: data.images.length ? data.images : task.images,
   }));
   if (previousStatus !== data.status && (data.status === "success" || data.status === "failed")) {
@@ -716,8 +719,13 @@ function convertHistoryCardToGeneratedTask(item: UserHistoryCard): GeneratedTask
     resolution: item.resolution || "2K",
     customSize: item.custom_size || "",
     referenceImages: Array.isArray(item.reference_images) ? item.reference_images : [],
+    referenceImageThumbs: Array.isArray(item.reference_image_thumbs) && item.reference_image_thumbs.length
+      ? item.reference_image_thumbs
+      : (Array.isArray(item.reference_images) ? item.reference_images : []),
     sourceImage: item.source_image || undefined,
+    sourceImageThumb: item.source_image_thumb || item.source_image || undefined,
     maskImage: item.mask_image || undefined,
+    maskImageThumb: item.mask_image_thumb || item.mask_image || undefined,
     createdAt: item.created_at,
     status: item.status as GeneratedTaskStatus,
     errorMessage: item.error_message || item.images.find((image) => image.status === "failed" && image.error_message)?.error_message || "",
@@ -1602,8 +1610,11 @@ async function handleGenerate() {
       resolution: payload.resolution,
       customSize: payload.custom_size || "",
       referenceImages: payload.reference_images ? [...payload.reference_images] : [],
+      referenceImageThumbs: payload.reference_images ? [...payload.reference_images] : [],
       sourceImage: payload.source_image,
+      sourceImageThumb: payload.source_image,
       maskImage: payload.mask_image,
+      maskImageThumb: payload.mask_image,
     });
     void loadGlobalActiveGenerationStatus();
   } catch (err: any) {
@@ -1724,8 +1735,11 @@ async function handleRegenerate(task: GeneratedTaskItem) {
       resolution: task.resolution,
       customSize: task.customSize,
       referenceImages: [...task.referenceImages],
+      referenceImageThumbs: task.referenceImageThumbs.length ? [...task.referenceImageThumbs] : [...task.referenceImages],
       sourceImage: task.sourceImage,
+      sourceImageThumb: task.sourceImageThumb || task.sourceImage,
       maskImage: task.maskImage,
+      maskImageThumb: task.maskImageThumb || task.maskImage,
     });
     message.success("已发起新的生图任务");
   } catch (err: any) {
@@ -1741,6 +1755,102 @@ async function handleRegenerate(task: GeneratedTaskItem) {
 function handlePreview(url: string) {
   previewCurrent.value = url;
   previewVisible.value = true;
+}
+
+function convertGeneratedTaskToHistoryCard(task: GeneratedTaskItem, focusedImage?: ImageResult): UserHistoryCard {
+  const primaryImage = focusedImage
+    || task.images.find((image) => image.status === "success")
+    || task.images[0];
+  const taskType = task.mode === "inpaint"
+    ? "inpaint"
+    : task.referenceImages.length
+      ? "image_edit"
+      : "text_generate";
+  const mode = task.mode === "inpaint" ? "inpaint" : "generate";
+  const status = task.status === "submitting" ? "pending" : task.status;
+
+  return {
+    item_type: "task",
+    display_id: task.taskId || task.localId,
+    task_id: task.taskId,
+    image_id: typeof primaryImage?.id === "number" && primaryImage.id > 0 ? primaryImage.id : null,
+    is_pinned: false,
+    image_url: primaryImage?.image_url || "",
+    preview_url: primaryImage?.preview_url,
+    thumb_url: primaryImage?.thumb_url,
+    status,
+    image_format: primaryImage?.image_format,
+    image_size_bytes: primaryImage?.image_size_bytes,
+    task_type: taskType,
+    model: task.model || "",
+    source: "web",
+    mode,
+    prompt: task.prompt || "",
+    reference_images: [...task.referenceImages],
+    reference_image_thumbs: task.referenceImageThumbs.length
+      ? [...task.referenceImageThumbs]
+      : [...task.referenceImages],
+    source_image: task.sourceImage || "",
+    source_image_thumb: task.sourceImageThumb || task.sourceImage || "",
+    mask_image: task.maskImage || "",
+    mask_image_thumb: task.maskImageThumb || task.maskImage || "",
+    num_images: task.numImages,
+    size: task.size || "",
+    resolution: task.resolution || "",
+    custom_size: task.customSize || "",
+    credit_cost: 0,
+    credit_refunded: Boolean(task.creditRefunded),
+    created_at: task.createdAt,
+    error_message: task.errorMessage || "",
+    images: task.images.length ? task.images : [],
+  };
+}
+
+function openGeneratedTaskDetail(task: GeneratedTaskItem, focusedImage?: ImageResult) {
+  detailTaskLocalId.value = task.localId;
+  detailItem.value = convertGeneratedTaskToHistoryCard(task, focusedImage);
+  detailOpen.value = true;
+}
+
+function handleDetailReedit(item: UserHistoryCard) {
+  const task = generatedTasks.value.find((entry) => (
+    entry.localId === detailTaskLocalId.value
+    || (!!item.task_id && entry.taskId === item.task_id)
+  ));
+  detailOpen.value = false;
+  if (task) {
+    handleReeditTask(task);
+    return;
+  }
+  handleReeditTask({
+    localId: detailTaskLocalId.value || `detail-${item.task_id || "unknown"}`,
+    taskId: item.task_id || null,
+    mode: item.mode === "inpaint" ? "inpaint" : (item.reference_images.length ? "imageEdit" : "textGenerate"),
+    prompt: item.prompt || "",
+    model: item.model || undefined,
+    numImages: Math.max(1, Number(item.num_images || 1)),
+    size: item.size || "1:1",
+    resolution: item.resolution || "2K",
+    customSize: item.custom_size || "",
+    referenceImages: [...(item.reference_images || [])],
+    referenceImageThumbs: item.reference_image_thumbs?.length
+      ? [...item.reference_image_thumbs]
+      : [...(item.reference_images || [])],
+    sourceImage: item.source_image || undefined,
+    sourceImageThumb: item.source_image_thumb || item.source_image || undefined,
+    maskImage: item.mask_image || undefined,
+    maskImageThumb: item.mask_image_thumb || item.mask_image || undefined,
+    createdAt: item.created_at,
+    status: item.status,
+    errorMessage: item.error_message || "",
+    creditRefunded: Boolean(item.credit_refunded),
+    images: item.images || [],
+  });
+}
+
+function handleDetailDownload(item: UserHistoryCard) {
+  if (typeof item.image_id !== "number" || !item.image_url) return;
+  handleDownload(item.image_id, item.image_url, item.preview_url);
 }
 
 function openFeedbackDialogForGeneratedTask(task: GeneratedTaskItem) {
@@ -1761,20 +1871,10 @@ function getResultDisplayUrl(img: ImageResult) {
   return getDisplayImageUrl(img);
 }
 
-function getResultPreviewUrl(img: ImageResult) {
-  return getPreviewImageUrl(img);
-}
-
 function getGeneratedResultDisplayUrl(task: GeneratedTaskItem, img: ImageResult) {
   if (img.status !== "success") return getResultDisplayUrl(img);
   if (isGeneratedTaskExpired(task)) return expiredResultAsset;
   return getResultDisplayUrl(img);
-}
-
-function getGeneratedResultPreviewUrl(task: GeneratedTaskItem, img: ImageResult) {
-  if (img.status !== "success") return getResultPreviewUrl(img);
-  if (isGeneratedTaskExpired(task)) return "";
-  return getResultPreviewUrl(img);
 }
 
 function canEditGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
@@ -1850,6 +1950,11 @@ async function openPromptLibrary() {
 async function removeGeneratedTask(task: GeneratedTaskItem) {
   if (!task.taskId) {
     generatedTasks.value = generatedTasks.value.filter((item) => item.localId !== task.localId);
+    if (detailTaskLocalId.value === task.localId) {
+      detailOpen.value = false;
+      detailItem.value = null;
+      detailTaskLocalId.value = null;
+    }
     stopAllTaskPolling();
     if (activePollingTaskIds.value.length) startTaskPolling();
     message.success("已移除当前任务卡片");
@@ -1859,6 +1964,14 @@ async function removeGeneratedTask(task: GeneratedTaskItem) {
   try {
     await deleteHistoryTask(task.taskId);
     generatedTasks.value = generatedTasks.value.filter((item) => item.taskId !== task.taskId);
+    if (
+      detailTaskLocalId.value === task.localId
+      || (detailItem.value?.task_id && detailItem.value.task_id === task.taskId)
+    ) {
+      detailOpen.value = false;
+      detailItem.value = null;
+      detailTaskLocalId.value = null;
+    }
     stopAllTaskPolling();
     if (activePollingTaskIds.value.length) startTaskPolling();
     await loadRecentGeneratedTasks();
@@ -3072,25 +3185,22 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
         <div class="result-body">
           <template v-if="resultItems.length">
-            <div class="result-list" :style="resultListStyle">
-              <TransitionGroup
-                v-for="(column, columnIndex) in resultColumns"
-                :key="`result-column-${columnIndex}`"
-                name="generate-result"
-                tag="div"
-                class="result-column"
+            <TransitionGroup
+              name="generate-result"
+              tag="div"
+              class="result-list"
+              :style="resultListStyle"
+            >
+              <div
+                v-for="(item, index) in resultItems"
+                :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
+                class="result-card"
+                :style="{
+                  '--generate-result-delay': `${Math.min(index, 9) * 45}ms`,
+                  '--result-pending-bg-image': `url('${generateEmptyStateAsset}')`,
+                }"
+                :class="{ pending: item.image.status === 'pending' }"
               >
-                <div
-                  v-for="(item, index) in column"
-                  :key="`${item.taskLocalId}-${item.image.id}-${item.index}`"
-                  class="result-card"
-                  :style="{
-                    '--generate-result-delay': `${Math.min(columnIndex + index, 9) * 45}ms`,
-                    '--result-aspect-ratio': getTaskAspectRatio(item.task),
-                    '--result-pending-bg-image': `url('${generateEmptyStateAsset}')`,
-                  }"
-                  :class="{ pending: item.image.status === 'pending' }"
-                >
                   <div
                     v-if="item.taskId || item.image.status !== 'pending'"
                     class="result-top-actions"
@@ -3134,15 +3244,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     :class="{
                       pending: item.image.status === 'pending',
                       failed: isGeneratedResultFailed(item.task, item.image),
-                      clickable: !!getGeneratedResultPreviewUrl(item.task, item.image),
+                      clickable: true,
                     }"
-                    @click="getGeneratedResultPreviewUrl(item.task, item.image) && handlePreview(getGeneratedResultPreviewUrl(item.task, item.image))"
+                    @click="openGeneratedTaskDetail(item.task, item.image)"
                   >
                     <template v-if="item.image.status === 'success' && getGeneratedResultDisplayUrl(item.task, item.image)">
                       <img :src="getGeneratedResultDisplayUrl(item.task, item.image)" alt="生成结果" loading="lazy" />
                       <div class="result-actions">
-                        <a-tooltip v-if="getGeneratedResultPreviewUrl(item.task, item.image)" title="查看原图">
-                          <a-button shape="circle" class="icon-chip" @click.stop="handlePreview(getGeneratedResultPreviewUrl(item.task, item.image))">
+                        <a-tooltip title="查看详情">
+                          <a-button shape="circle" class="icon-chip" @click.stop="openGeneratedTaskDetail(item.task, item.image)">
                             <template #icon><EyeOutlined /></template>
                           </a-button>
                         </a-tooltip>
@@ -3206,8 +3316,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </template>
                   </div>
                 </div>
-              </TransitionGroup>
-            </div>
+            </TransitionGroup>
 
             <div class="result-list-footnote">
               当前仅展示最近 40 个生图任务。若需查看更早记录、完整参数或全部结果，请前往
@@ -3244,6 +3353,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
         }"
       />
     </div>
+    <HistoryDetailDialog
+      v-model:open="detailOpen"
+      :item="detailItem"
+      :model-options="detailModelOptions"
+      show-actions
+      @reedit="handleDetailReedit"
+      @download="handleDetailDownload"
+    />
     <a-modal
       v-model:open="boardRenameDialogOpen"
       title="重命名分类"
@@ -5032,14 +5149,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .result-list {
   display: grid;
   align-items: start;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.result-column {
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: repeat(var(--generate-grid-columns, 4), minmax(0, 1fr));
   gap: 16px;
+  margin-top: 12px;
 }
 
 .result-body {
@@ -5101,12 +5213,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-frame {
   position: relative;
-  aspect-ratio: var(--result-aspect-ratio, 1 / 1);
+  aspect-ratio: 1 / 1;
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
   border: 1px dashed var(--theme-panel-border);
-  background: var(--theme-panel-bg-soft);
+  background:
+    radial-gradient(circle at 50% 45%, rgba(var(--theme-surface-strong-rgb), 0.98) 0%, rgba(var(--theme-page-base-rgb), 0.98) 58%, rgba(var(--theme-page-base-rgb), 0.96) 100%),
+    linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong));
   box-shadow: 0 12px 24px var(--theme-shadow-soft);
   transition:
     transform var(--motion-duration-hover) var(--motion-ease-enter),
@@ -5117,7 +5231,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     width: 100%;
     height: 100%;
     display: block;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
+    box-sizing: border-box;
+    background: transparent;
     transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 
