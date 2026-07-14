@@ -188,6 +188,10 @@ def _task_submission_lock_name(user_id: int, slot_index: int) -> str:
 
 
 def _acquire_task_submission_lock(user_id: int) -> RedisLockHandle:
+    if settings.allow_sync_generation_fallback:
+        # In sync fallback mode, skip Redis probing and rely on in-process controls.
+        return RedisLockHandle(status="acquired")
+
     saw_unavailable = False
     for slot_index in range(TASK_SUBMISSION_LOCK_SLOTS_PER_USER):
         handle = acquire_redis_lock(

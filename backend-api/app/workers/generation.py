@@ -43,7 +43,7 @@ from app.services.external_api_config_service import (
     should_use_multipart_request,
 )
 from app.services.image_delivery_service import get_optional_cos_config, serialize_asset_urls
-from app.services.task_service import refund_task_credit_for_generation_failure_if_needed
+from app.services.task_service import expire_stale_submitted_tasks, refund_task_credit_for_generation_failure_if_needed
 from app.utils.datetime_utils import now_local
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT = 3
 ASYNC_POLL_RECOVERY_INTERVAL_SECONDS = 30
 ASYNC_POLL_RECOVERY_BATCH_SIZE = 100
+SUBMITTED_TASK_RECOVERY_BATCH_SIZE = 100
 TASK_PROCESSING_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SYNC_GENERATION_MAX_WORKERS = max(int(settings.SYNC_GENERATION_MAX_WORKERS or 0), 1)
@@ -2418,9 +2419,26 @@ def _recover_due_async_poll_tasks_once() -> int:
             release_redis_lock(recovery_lock)
 
 
+def _expire_stale_submitted_tasks_once() -> int:
+    db = SessionLocal()
+    try:
+        return expire_stale_submitted_tasks(db, limit=SUBMITTED_TASK_RECOVERY_BATCH_SIZE)
+    finally:
+        db.close()
+
+
 def _async_poll_recovery_loop() -> None:
     while True:
         try:
+            expired_count = _expire_stale_submitted_tasks_once()
+            if expired_count:
+                logger.info(
+                    "Expired stale submitted tasks",
+                    extra={
+                        "event": "task.worker.submitted_expired",
+                        "task_count": expired_count,
+                    },
+                )
             recovered_count = _recover_due_async_poll_tasks_once()
             if recovered_count:
                 logger.info(

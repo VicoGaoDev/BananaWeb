@@ -1,6 +1,7 @@
 from datetime import timedelta
 import logging
 import json
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.config import settings
@@ -28,6 +29,7 @@ TASK_SUBMISSION_LOCK_TIMEOUT_SECONDS = 30
 TASK_SUBMISSION_LOCK_BLOCKING_TIMEOUT_SECONDS = 5
 TASK_SUBMISSION_LOCK_SLOTS_PER_USER = max(int(settings.MAX_ACTIVE_TASKS_PER_USER or 0), 1)
 PROCESSING_TASK_TIMEOUT_DESCRIPTION = "任务处理超时，已自动关闭"
+SUBMITTED_TASK_TIMEOUT_DESCRIPTION = "任务排队超时，已自动关闭"
 ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 task_logger = logging.getLogger("app.task")
 
@@ -202,6 +204,10 @@ def _task_submission_lock_name(user_id: int, slot_index: int) -> str:
 
 
 def _acquire_task_submission_lock(user_id: int) -> RedisLockHandle:
+    if settings.allow_sync_generation_fallback:
+        # In sync fallback mode, skip Redis probing and rely on in-process controls.
+        return RedisLockHandle(status="acquired")
+
     saw_unavailable = False
     for slot_index in range(TASK_SUBMISSION_LOCK_SLOTS_PER_USER):
         handle = acquire_redis_lock(
@@ -307,6 +313,71 @@ def _expire_stale_processing_tasks(
             "timeout_seconds": timeout_seconds,
         },
     )
+
+
+def expire_stale_submitted_tasks(
+    db: Session,
+    *,
+    user_id: int | None = None,
+    business_ids: list[str] | None = None,
+    limit: int | None = None,
+) -> int:
+    timeout_seconds = max(int(settings.PROCESSING_TASK_TIMEOUT_SECONDS or 0), 0)
+    if timeout_seconds <= 0:
+        return 0
+
+    now_value = now_local()
+    cutoff = now_value - timedelta(seconds=timeout_seconds)
+    query = db.query(Task).filter(
+        Task.status.in_(("pending", "queued")),
+        Task.is_deleted.is_(False),
+        or_(
+            and_(Task.enqueued_at.is_not(None), Task.enqueued_at <= cutoff),
+            and_(Task.enqueued_at.is_(None), Task.created_at.is_not(None), Task.created_at <= cutoff),
+        ),
+    )
+    if user_id is not None:
+        query = query.filter(Task.user_id == user_id)
+    if business_ids:
+        query = query.filter(Task.business_id.in_(business_ids))
+
+    query = query.order_by(Task.enqueued_at.asc(), Task.created_at.asc(), Task.id.asc())
+    if limit is not None and limit > 0:
+        query = query.limit(int(limit))
+
+    stale_tasks = query.all()
+    if not stale_tasks:
+        return 0
+
+    for task in stale_tasks:
+        has_success_image = False
+        for image in task.images:
+            if image.status == "success":
+                has_success_image = True
+                continue
+            image.status = "failed"
+            image.error_message = SUBMITTED_TASK_TIMEOUT_DESCRIPTION
+            image.image_url = ""
+            image.preview_url = ""
+            image.image_format = ""
+            image.image_size_bytes = 0
+
+        task.status = "success" if has_success_image and all(image.status == "success" for image in task.images) else "failed"
+        task.error_message = "" if task.status == "success" else SUBMITTED_TASK_TIMEOUT_DESCRIPTION
+        task.next_poll_at = None
+        refund_task_credit_for_generation_failure_if_needed(db, task)
+
+    db.commit()
+    task_logger.error(
+        "stale submitted tasks expired",
+        extra={
+            "event": "task.submitted.expired",
+            "task_ids": [task_external_id(task) for task in stale_tasks],
+            "task_count": len(stale_tasks),
+            "timeout_seconds": timeout_seconds,
+        },
+    )
+    return len(stale_tasks)
 
 
 def create_tasks(
@@ -494,6 +565,7 @@ def ensure_task_submission_capacity(db: Session, user_id: int, new_task_count: i
     if normalized_new_task_count <= 0:
         return 0
 
+    expire_stale_submitted_tasks(db, user_id=user_id)
     _expire_stale_processing_tasks(db, user_id=user_id)
 
     per_user_limit = max(int(settings.MAX_ACTIVE_TASKS_PER_USER or 0), 0)
@@ -664,6 +736,7 @@ def mark_tasks_enqueue_failed(
 def get_task_detail(db: Session, task_id: str, user_id: int | None = None) -> Task:
     normalized_task_id = normalize_business_id(task_id)
     if normalized_task_id:
+        expire_stale_submitted_tasks(db, user_id=user_id, business_ids=[normalized_task_id])
         _expire_stale_processing_tasks(db, user_id=user_id, business_ids=[normalized_task_id])
     query = db.query(Task).filter(Task.business_id == normalized_task_id)
     if user_id is not None:
@@ -692,6 +765,7 @@ def get_task_details(db: Session, task_ids: list[str], user_id: int | None = Non
     if not normalized_ids:
         return []
 
+    expire_stale_submitted_tasks(db, user_id=user_id, business_ids=normalized_ids)
     _expire_stale_processing_tasks(db, user_id=user_id, business_ids=normalized_ids)
 
     query = db.query(Task).filter(Task.business_id.in_(normalized_ids))
