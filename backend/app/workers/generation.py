@@ -2040,35 +2040,7 @@ def _is_async_poll_failed_status(config: ExternalApiConfig, provider_status: str
     return (provider_status or "").strip().lower() in failed_values
 
 
-def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: ApiCallResult) -> None:
-    if call_result.result:
-        img_bytes, mime = call_result.result
-        task.next_poll_at = None
-        image.preview_url = _save_preview_image(img_bytes, mime)
-        image.image_url = ""
-        image.image_format = _derive_image_format(mime)
-        image.image_size_bytes = len(img_bytes)
-        image.status = "success"
-        image.error_message = ""
-        db.commit()
-        try:
-            local_preview_url = image.preview_url
-            image.image_url = _save_image_bytes(db, img_bytes, mime)
-            _update_regenerate_log_new_image_url(db, image.id, image.image_url)
-            image.preview_url = ""
-            db.commit()
-            _remove_local_preview(local_preview_url)
-        except Exception as exc:
-            logger.exception("Failed to persist async generated image to storage")
-            _mark_image_storage_fallback(image, f"图片已生成，但保存结果失败: {exc}")
-            _update_regenerate_log_new_image_url(db, image.id, image.image_url)
-            db.commit()
-    else:
-        task.next_poll_at = None
-        _mark_generation_failure(image, call_result.error_message)
-        task.error_message = image.error_message
-        db.commit()
-
+def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
     db.refresh(task)
     _mark_task_request_finished(task)
     task.status = _resolve_task_status(list(task.images))
@@ -2077,6 +2049,72 @@ def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: Api
         task.provider_error_message = ""
     refund_task_credit_for_generation_failure_if_needed(db, task)
     db.commit()
+
+
+def _lock_async_result_entities(db, task_id: int, image_id: int) -> tuple[Task | None, Image | None]:
+    locked_task = db.query(Task).filter(Task.id == task_id).first()
+    if not locked_task:
+        return None, None
+    locked_image = (
+        db.query(Image)
+        .filter(Image.id == image_id)
+        .with_for_update()
+        .first()
+    )
+    return locked_task, locked_image
+
+
+def _finish_task_after_async_poll(db, task: Task, image: Image, call_result: ApiCallResult) -> None:
+    locked_task, locked_image = _lock_async_result_entities(db, task.id, image.id)
+    if not locked_task or not locked_image:
+        return
+
+    if call_result.result:
+        img_bytes, mime = call_result.result
+        locked_task.next_poll_at = None
+        if (locked_image.image_url or "").strip():
+            logger.info(
+                "Skip duplicate async result upload because image already has remote URL: task_id=%s image_id=%s",
+                locked_task.id,
+                locked_image.id,
+            )
+            _finalize_task_after_async_result(db, locked_task, locked_image)
+            return
+        if locked_image.status == "success" and (locked_image.preview_url or "").strip():
+            logger.info(
+                "Skip duplicate async result upload because preview already staged: task_id=%s image_id=%s",
+                locked_task.id,
+                locked_image.id,
+            )
+            _finalize_task_after_async_result(db, locked_task, locked_image)
+            return
+
+        locked_image.preview_url = _save_preview_image(img_bytes, mime)
+        locked_image.image_url = ""
+        locked_image.image_format = _derive_image_format(mime)
+        locked_image.image_size_bytes = len(img_bytes)
+        locked_image.status = "success"
+        locked_image.error_message = ""
+        db.commit()
+        try:
+            local_preview_url = locked_image.preview_url
+            locked_image.image_url = _save_image_bytes(db, img_bytes, mime)
+            _update_regenerate_log_new_image_url(db, locked_image.id, locked_image.image_url)
+            locked_image.preview_url = ""
+            db.commit()
+            _remove_local_preview(local_preview_url)
+        except Exception as exc:
+            logger.exception("Failed to persist async generated image to storage")
+            _mark_image_storage_fallback(locked_image, f"图片已生成，但保存结果失败: {exc}")
+            _update_regenerate_log_new_image_url(db, locked_image.id, locked_image.image_url)
+            db.commit()
+    else:
+        locked_task.next_poll_at = None
+        _mark_generation_failure(locked_image, call_result.error_message)
+        locked_task.error_message = locked_image.error_message
+        db.commit()
+
+    _finalize_task_after_async_result(db, locked_task, locked_image)
 
 
 def _retry_async_poll_with_fallback(
