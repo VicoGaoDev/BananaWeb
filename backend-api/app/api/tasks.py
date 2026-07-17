@@ -83,15 +83,15 @@ def _resolve_api_task_model(model: str, reference_images: list[str]) -> str:
     task_model = (model or "").strip()
     if not task_model:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="model 不能为空")
-    is_edit = bool(reference_images)
-    if _model_requires_reference_images(task_model) and not is_edit:
+    has_reference_images = bool(reference_images)
+    if _model_requires_reference_images(task_model) and not has_reference_images:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="图编辑须传入 reference_images",
         )
-    allowed = API_EDIT_MODELS if is_edit else API_GENERATE_MODELS
+    allowed = API_EDIT_MODELS if has_reference_images else API_GENERATE_MODELS
     if task_model not in allowed:
-        kind = "图编辑" if is_edit else "文生图"
+        kind = "图编辑" if has_reference_images else "文生图"
         options = "、".join(sorted(allowed))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,11 +175,12 @@ def create(
     )
     reference_images, task_model, resolved_resolution = _validate_api_generation_request(body)
     require_scene_config(db, task_model)
+    persisted_reference_images = _persist_reference_images_for_async(db, reference_images)
     task_create_kwargs = _build_api_task_create_kwargs(
         body,
         task_model=task_model,
         resolved_resolution=resolved_resolution,
-        reference_images=[],
+        reference_images=persisted_reference_images,
     )
     tasks = create_tasks(
         db,
@@ -187,14 +188,10 @@ def create(
         **task_create_kwargs,
     )
 
-    from app.workers.generation import _process_task, register_task_inline_images
+    from app.workers.generation import _process_task
 
     try:
         for task in tasks:
-            register_task_inline_images(
-                task.id,
-                reference_images=reference_images,
-            )
             _process_task(task.id, use_distributed_lock=False)
     except Exception as exc:
         task_logger.exception(
