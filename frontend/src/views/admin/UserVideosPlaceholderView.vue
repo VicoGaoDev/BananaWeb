@@ -133,11 +133,13 @@ async function fetchVideoTaskPage(targetPage: number) {
 function syncDetail(list: AdminVideoTaskResult[]) {
   if (!detailItem.value) return;
   const refreshedDetail = list.find((item) => item.id === detailItem.value?.id);
-  if (refreshedDetail) detailItem.value = refreshedDetail;
+  if (!refreshedDetail) return;
+  if (detailItem.value.status === "success" && refreshedDetail.status === "success") return;
+  detailItem.value = refreshedDetail;
 }
 
 async function loadVideoTasks(silent = false) {
-  loading.value = true;
+  if (!silent) loading.value = true;
   try {
     const targetPages = Math.max(1, page.value);
     const results = await Promise.all(
@@ -151,7 +153,7 @@ async function loadVideoTasks(silent = false) {
   } catch {
     if (!silent) message.error("获取用户视频失败");
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 

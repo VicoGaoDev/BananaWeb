@@ -250,7 +250,9 @@ function syncSelection(list: UserHistoryCard[]) {
 function syncDetail(list: UserHistoryCard[]) {
   if (!detailItem.value) return;
   const refreshedDetail = list.find((item) => item.image_id === detailItem.value?.image_id);
-  if (refreshedDetail) detailItem.value = refreshedDetail;
+  if (!refreshedDetail) return;
+  if (detailItem.value.status === "success" && refreshedDetail.status === "success") return;
+  detailItem.value = refreshedDetail;
 }
 
 async function fetchHistoryPage(targetPage: number) {
@@ -261,7 +263,7 @@ async function fetchHistoryPage(targetPage: number) {
 }
 
 async function loadHistory(silent = false) {
-  loading.value = true;
+  if (!silent) loading.value = true;
   try {
     const targetPages = Math.max(1, page.value);
     const results = await Promise.all(
@@ -276,7 +278,7 @@ async function loadHistory(silent = false) {
   } catch {
     if (!silent) message.error("获取历史记录失败");
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 

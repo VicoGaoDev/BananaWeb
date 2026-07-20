@@ -615,6 +615,7 @@ watch(generatedTasks, (tasks) => {
     || (!!detailItem.value?.task_id && task.taskId === detailItem.value.task_id)
   ));
   if (!latest) return;
+  if (detailItem.value?.status === "success" && latest.status === "success") return;
   const focusedImageId = detailItem.value?.image_id;
   const focusedImage = typeof focusedImageId === "number"
     ? latest.images.find((image) => image.id === focusedImageId)

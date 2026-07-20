@@ -808,6 +808,7 @@ watch(videoTasks, (tasks) => {
   if (!detailOpen.value || !detailTask.value) return;
   const latest = tasks.find((item) => item.id === detailTask.value?.id);
   if (latest) {
+    if (detailTask.value.status === "success" && latest.status === "success") return;
     detailTask.value = latest;
   }
 });
