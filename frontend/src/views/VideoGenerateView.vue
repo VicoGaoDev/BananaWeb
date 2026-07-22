@@ -81,6 +81,7 @@ const detailTask = ref<VideoTaskResult | null>(null);
 const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<VideoTaskResult | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const referencePickerOpening = ref(false);
 const referenceDragActive = ref(false);
 const viewportWidth = ref(typeof window === "undefined" ? 1200 : window.innerWidth);
 const preferredResultColumnCount = ref<ResultColumnOption>(DEFAULT_RESULT_COLUMN_COUNT);
@@ -148,6 +149,7 @@ const referenceUrls = computed(() => (
     .map((item) => item.remoteUrl)
 ));
 const uploading = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
+let filePickerRecoveryTimer: number | null = null;
 const promptPlaceholder = computed(() => (
   generateMode.value === "imageToVideo"
     ? "描述参考画面的主体动作、镜头运动、转场方式和最终视频氛围..."
@@ -208,7 +210,38 @@ function triggerUpload() {
     message.warning(`当前最多上传 ${maxReferenceImages.value} 张参考图`);
     return;
   }
+  referencePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   fileInput.value?.click();
+}
+
+function clearReferencePickerOpening() {
+  referencePickerOpening.value = false;
+}
+
+function clearFilePickerRecoveryTimer() {
+  if (filePickerRecoveryTimer != null) {
+    window.clearTimeout(filePickerRecoveryTimer);
+    filePickerRecoveryTimer = null;
+  }
+}
+
+function scheduleFilePickerRecovery(delay = 8000) {
+  clearFilePickerRecoveryTimer();
+  filePickerRecoveryTimer = window.setTimeout(() => {
+    clearReferencePickerOpening();
+    filePickerRecoveryTimer = null;
+  }, delay);
+}
+
+function handleFilePickerFocusReturn() {
+  scheduleFilePickerRecovery(400);
+}
+
+function handleDocumentVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    handleFilePickerFocusReturn();
+  }
 }
 
 function addLibraryAssetToReference(asset: UserAsset) {
@@ -381,6 +414,8 @@ async function processReferenceFiles(files: File[]) {
 async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);
+  clearReferencePickerOpening();
+  clearFilePickerRecoveryTimer();
   input.value = "";
   if (!files.length) return;
   await processReferenceFiles(files);
@@ -825,6 +860,8 @@ onMounted(() => {
   updateViewportWidth();
   if (typeof window !== "undefined") {
     window.addEventListener("resize", updateViewportWidth);
+    window.addEventListener("focus", handleFilePickerFocusReturn);
+    document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   }
   void loadSceneConfigs().then(() => {
     applyIncomingVideoDraft();
@@ -835,7 +872,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("resize", updateViewportWidth);
+    window.removeEventListener("focus", handleFilePickerFocusReturn);
+    document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
   }
+  clearFilePickerRecoveryTimer();
   stopTaskPolling();
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
 });
@@ -962,7 +1002,7 @@ onBeforeUnmount(() => {
                         class="upload-add"
                         @click="triggerUpload"
                       >
-                        <a-spin v-if="uploading" />
+                        <a-spin v-if="uploading || referencePickerOpening" />
                         <template v-else>
                           <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
                           <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>

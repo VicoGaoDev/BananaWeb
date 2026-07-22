@@ -1205,14 +1205,13 @@ function handleGenerateVideo(item: UserHistoryCard) {
   left: 14px;
   right: 14px;
   bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(255, 245, 244, 0.96);
-  color: #cf3f36;
-  font-size: 13px;
+  z-index: 4;
+  padding: 0;
+  color: #b42318;
+  font-size: 14px;
   line-height: 1.55;
-  font-weight: 600;
-  box-shadow: 0 10px 24px rgba(207, 63, 54, 0.12);
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(255, 248, 247, 0.95);
   pointer-events: none;
 }
 

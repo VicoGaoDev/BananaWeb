@@ -223,14 +223,17 @@ const referenceUploadBlockRef = ref<HTMLElement | null>(null);
 const referenceDragActive = ref(false);
 const referenceDragCounter = ref(0);
 let unbindReferenceDragHandlers: (() => void) | null = null;
+const referencePickerOpening = ref(false);
 const sourceImageUrl = ref("");
 const sourcePreviewUrl = ref("");
 const repaintMaskUrl = ref("");
 const sourceUploading = ref(false);
 const sourceInput = ref<HTMLInputElement | null>(null);
+const sourcePickerOpening = ref(false);
 const reverseImageUrl = ref("");
 const reverseUploading = ref(false);
 const reverseInput = ref<HTMLInputElement | null>(null);
+const reversePickerOpening = ref(false);
 const reverseLoading = ref(false);
 const reversePromptResult = ref("");
 const brushSize = ref(28);
@@ -369,6 +372,7 @@ const referenceUrls = computed(() => (
 const uploading = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
 const hasPendingReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
 const hasFailedReferenceUploads = computed(() => referenceItems.value.some((item) => item.status === "failed"));
+let filePickerRecoveryTimer: number | null = null;
 const sourceDisplayUrl = computed(() => getPreviewImageSrc(sourcePreviewUrl.value || sourceImageUrl.value));
 const isTextGenerateMode = computed(() => generateMode.value === "textGenerate");
 const isImageEditMode = computed(() => generateMode.value === "imageEdit");
@@ -1080,10 +1084,56 @@ function triggerUpload() {
     loginModalVisible.value = true;
     return;
   }
+  referencePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
+    clearReferencePickerOpening();
     loginModalVisible.value = true;
   });
   fileInput.value?.click();
+}
+
+function clearReferencePickerOpening() {
+  referencePickerOpening.value = false;
+}
+
+function clearSourcePickerOpening() {
+  sourcePickerOpening.value = false;
+}
+
+function clearReversePickerOpening() {
+  reversePickerOpening.value = false;
+}
+
+function clearAllPickerOpeningStates() {
+  clearReferencePickerOpening();
+  clearSourcePickerOpening();
+  clearReversePickerOpening();
+}
+
+function clearFilePickerRecoveryTimer() {
+  if (filePickerRecoveryTimer != null) {
+    window.clearTimeout(filePickerRecoveryTimer);
+    filePickerRecoveryTimer = null;
+  }
+}
+
+function scheduleFilePickerRecovery(delay = 8000) {
+  clearFilePickerRecoveryTimer();
+  filePickerRecoveryTimer = window.setTimeout(() => {
+    clearAllPickerOpeningStates();
+    filePickerRecoveryTimer = null;
+  }, delay);
+}
+
+function handleFilePickerFocusReturn() {
+  scheduleFilePickerRecovery(400);
+}
+
+function handleDocumentVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    handleFilePickerFocusReturn();
+  }
 }
 
 function revokeObjectUrl(url?: string) {
@@ -1344,6 +1394,8 @@ watch(referenceUploadBlockRef, (element) => {
 async function handleFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files || []);
+  clearReferencePickerOpening();
+  clearFilePickerRecoveryTimer();
   if (!files.length) return;
 
   try {
@@ -1364,7 +1416,10 @@ function triggerSourceUpload() {
     loginModalVisible.value = true;
     return;
   }
+  sourcePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
+    clearSourcePickerOpening();
     loginModalVisible.value = true;
   });
   sourceInput.value?.click();
@@ -1373,6 +1428,8 @@ function triggerSourceUpload() {
 async function handleSourceFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
+  clearSourcePickerOpening();
+  clearFilePickerRecoveryTimer();
   if (!file) return;
 
   if (isImageUploadTooLarge(file)) {
@@ -1415,7 +1472,10 @@ function triggerReverseUpload() {
     loginModalVisible.value = true;
     return;
   }
+  reversePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
+    clearReversePickerOpening();
     loginModalVisible.value = true;
   });
   reverseInput.value?.click();
@@ -1424,6 +1484,8 @@ function triggerReverseUpload() {
 async function handleReverseFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
+  clearReversePickerOpening();
+  clearFilePickerRecoveryTimer();
   if (!file) return;
 
   if (isImageUploadTooLarge(file)) {
@@ -2293,6 +2355,8 @@ async function notifyCompletedUnreadFeedbacks() {
 onMounted(async () => {
   syncViewportWidth();
   window.addEventListener("resize", syncViewportWidth);
+  window.addEventListener("focus", handleFilePickerFocusReturn);
+  document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
   await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus(), notifyCompletedUnreadFeedbacks()]);
   applyDraft(
@@ -2318,6 +2382,9 @@ onBeforeUnmount(() => {
   stopAllTaskPolling();
   stopGlobalActiveStatusPolling();
   window.removeEventListener("resize", syncViewportWidth);
+  window.removeEventListener("focus", handleFilePickerFocusReturn);
+  document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
+  clearFilePickerRecoveryTimer();
   unbindReferenceDragHandlers?.();
   unbindReferenceDragHandlers = null;
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
@@ -2900,7 +2967,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     @click="triggerUpload"
                   >
                     <a-spin
-                      v-if="uploading"
+                      v-if="uploading || referencePickerOpening"
                       :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                     />
                     <template v-else>
@@ -3029,7 +3096,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   @click="triggerReverseUpload"
                 >
                   <a-spin
-                    v-if="reverseUploading"
+                    v-if="reverseUploading || reversePickerOpening"
                     :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                   />
                   <template v-else>
@@ -3129,7 +3196,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   @click="triggerSourceUpload"
                 >
                   <a-spin
-                    v-if="sourceUploading"
+                    v-if="sourceUploading || sourcePickerOpening"
                     :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                   />
                   <template v-else>
