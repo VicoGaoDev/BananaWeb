@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   AppstoreOutlined,
   PictureOutlined,
@@ -23,6 +23,32 @@ const canvasModelSourceImage = "/homepage/canvas-model-source.png";
 const canvasJeansImage = "/homepage/canvas-jeans.png";
 const canvasJacketImage = "/homepage/canvas-jacket.png";
 const canvasResultImage = "/homepage/canvas-result.png";
+const canvasResultVideo = "/homepage/canvas-result-video.mp4";
+const canvasFlowViewBox = { width: 1000, height: 760 };
+
+type CanvasNodeKey = "note" | "source" | "result" | "video" | "jeans" | "jacket";
+type CanvasPoint = { x: number; y: number };
+type CanvasRect = { left: number; top: number; width: number; height: number };
+
+const canvasShellRef = ref<HTMLElement | null>(null);
+const canvasSvgRef = ref<SVGSVGElement | null>(null);
+const canvasNodeRefs = {
+  note: ref<HTMLElement | null>(null),
+  source: ref<HTMLElement | null>(null),
+  result: ref<HTMLElement | null>(null),
+  video: ref<HTMLElement | null>(null),
+  jeans: ref<HTMLElement | null>(null),
+  jacket: ref<HTMLElement | null>(null),
+} satisfies Record<CanvasNodeKey, ReturnType<typeof ref<HTMLElement | null>>>;
+const canvasFlowPaths = ref({
+  note: "",
+  source: "",
+  video: "",
+  jeans: "",
+  jacket: "",
+});
+let canvasResizeObserver: ResizeObserver | null = null;
+let canvasFlowFrame = 0;
 
 const capabilityCards = [
   {
@@ -123,6 +149,106 @@ async function openDetail(id: number) {
   }
 }
 
+function toCanvasRect(element: HTMLElement, svgRect: DOMRect): CanvasRect {
+  const rect = element.getBoundingClientRect();
+  const scaleX = canvasFlowViewBox.width / svgRect.width;
+  const scaleY = canvasFlowViewBox.height / svgRect.height;
+
+  return {
+    left: (rect.left - svgRect.left) * scaleX,
+    top: (rect.top - svgRect.top) * scaleY,
+    width: rect.width * scaleX,
+    height: rect.height * scaleY,
+  };
+}
+
+function getEdgePoint(from: CanvasRect, to: CanvasRect): CanvasPoint {
+  const fromCenter = {
+    x: from.left + from.width / 2,
+    y: from.top + from.height / 2,
+  };
+  const toCenter = {
+    x: to.left + to.width / 2,
+    y: to.top + to.height / 2,
+  };
+  const dx = toCenter.x - fromCenter.x;
+  const dy = toCenter.y - fromCenter.y;
+  const halfWidth = from.width / 2;
+  const halfHeight = from.height / 2;
+
+  if (Math.abs(dx) / halfWidth > Math.abs(dy) / halfHeight) {
+    return {
+      x: fromCenter.x + (dx > 0 ? halfWidth : -halfWidth),
+      y: fromCenter.y + (dy / Math.max(Math.abs(dx), 1)) * halfWidth,
+    };
+  }
+
+  return {
+    x: fromCenter.x + (dx / Math.max(Math.abs(dy), 1)) * halfHeight,
+    y: fromCenter.y + (dy > 0 ? halfHeight : -halfHeight),
+  };
+}
+
+function buildLinePath(from: CanvasRect, to: CanvasRect) {
+  const start = getEdgePoint(from, to);
+  const end = getEdgePoint(to, from);
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function buildCurvePath(from: CanvasRect, to: CanvasRect) {
+  const start = getEdgePoint(from, to);
+  const end = getEdgePoint(to, from);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const controlOffset = Math.abs(dx) > Math.abs(dy) ? dx * 0.46 : dy * 0.46;
+  const controlA = Math.abs(dx) > Math.abs(dy)
+    ? { x: start.x + controlOffset, y: start.y }
+    : { x: start.x, y: start.y + controlOffset };
+  const controlB = Math.abs(dx) > Math.abs(dy)
+    ? { x: end.x - controlOffset, y: end.y }
+    : { x: end.x, y: end.y - controlOffset };
+
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} C ${controlA.x.toFixed(1)} ${controlA.y.toFixed(1)}, ${controlB.x.toFixed(1)} ${controlB.y.toFixed(1)}, ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function buildVerticalThenDiagonalPath(from: CanvasRect, to: CanvasRect) {
+  const start = getEdgePoint(from, to);
+  const end = getEdgePoint(to, from);
+  const bendY = start.y + (end.y - start.y) * 0.72;
+
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${start.x.toFixed(1)} ${bendY.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function updateCanvasFlowPaths() {
+  const svg = canvasSvgRef.value;
+  const entries = Object.entries(canvasNodeRefs) as Array<[CanvasNodeKey, ReturnType<typeof ref<HTMLElement | null>>]>;
+
+  if (!svg || entries.some(([, nodeRef]) => !nodeRef.value)) return;
+
+  const svgRect = svg.getBoundingClientRect();
+  if (!svgRect.width || !svgRect.height) return;
+
+  const rects = Object.fromEntries(
+    entries.map(([key, nodeRef]) => [key, toCanvasRect(nodeRef.value as HTMLElement, svgRect)])
+  ) as Record<CanvasNodeKey, CanvasRect>;
+
+  canvasFlowPaths.value = {
+    note: buildLinePath(rects.note, rects.result),
+    source: buildCurvePath(rects.source, rects.result),
+    video: buildLinePath(rects.result, rects.video),
+    jeans: buildVerticalThenDiagonalPath(rects.jeans, rects.result),
+    jacket: buildCurvePath(rects.jacket, rects.result),
+  };
+}
+
+function scheduleCanvasFlowUpdate() {
+  if (canvasFlowFrame) cancelAnimationFrame(canvasFlowFrame);
+  canvasFlowFrame = requestAnimationFrame(() => {
+    canvasFlowFrame = 0;
+    updateCanvasFlowPaths();
+  });
+}
+
 function useTemplate() {
   if (!detail.value) return;
   localStorage.setItem(
@@ -144,6 +270,23 @@ function useTemplate() {
 onMounted(() => {
   loadModels();
   loadShowcase();
+  nextTick(() => {
+    updateCanvasFlowPaths();
+    canvasResizeObserver = new ResizeObserver(scheduleCanvasFlowUpdate);
+    const observedNodes = [
+      canvasShellRef.value,
+      ...Object.values(canvasNodeRefs).map((nodeRef) => nodeRef.value),
+    ].filter(Boolean) as HTMLElement[];
+
+    observedNodes.forEach((node) => canvasResizeObserver?.observe(node));
+    window.addEventListener("resize", scheduleCanvasFlowUpdate);
+  });
+});
+
+onBeforeUnmount(() => {
+  canvasResizeObserver?.disconnect();
+  window.removeEventListener("resize", scheduleCanvasFlowUpdate);
+  if (canvasFlowFrame) cancelAnimationFrame(canvasFlowFrame);
 });
 </script>
 
@@ -205,47 +348,74 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="canvas-demo-shell">
+      <div ref="canvasShellRef" class="canvas-demo-shell">
         <div class="canvas-grid-bg" />
-        <svg class="canvas-flow-svg" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
-          <path class="flow-path flow-path-left-top" d="M 250 120 C 355 130, 340 270, 448 300" />
-          <path class="flow-path flow-path-left-bottom" d="M 250 400 C 365 390, 350 330, 448 300" />
-          <path class="flow-path flow-path-right-top" d="M 746 190 C 690 205, 640 255, 552 300" />
-          <path class="flow-path flow-path-right-bottom" d="M 746 470 C 690 430, 640 350, 552 300" />
+        <svg ref="canvasSvgRef" class="canvas-flow-svg" viewBox="0 0 1000 760" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker
+              id="canvas-flow-arrow"
+              viewBox="0 0 10 10"
+              refX="8.5"
+              refY="5"
+              markerWidth="10"
+              markerHeight="10"
+              markerUnits="userSpaceOnUse"
+              orient="auto"
+            >
+              <path class="flow-arrow-head" d="M 0 0 L 10 5 L 0 10 z" />
+            </marker>
+          </defs>
+          <path class="flow-path flow-path-note" :d="canvasFlowPaths.note" />
+          <path class="flow-path flow-path-source" :d="canvasFlowPaths.source" />
+          <path class="flow-path flow-path-video" :d="canvasFlowPaths.video" />
+          <path class="flow-path flow-path-jeans" :d="canvasFlowPaths.jeans" />
+          <path class="flow-path flow-path-jacket" :d="canvasFlowPaths.jacket" />
         </svg>
 
-        <div class="canvas-pulse canvas-pulse-center" />
-        <div class="canvas-pulse canvas-pulse-left" />
-        <div class="canvas-pulse canvas-pulse-right-top" />
-        <div class="canvas-pulse canvas-pulse-right-bottom" />
-
-        <article class="canvas-note-card canvas-card canvas-card-note">
+        <article :ref="canvasNodeRefs.note" class="canvas-note-card canvas-card canvas-card-note">
           <p>将模特的上衣和裤子改为提供的白色上衣和牛仔裤，模特的姿势保持不变</p>
           <span class="canvas-mini-tag">改图指令</span>
         </article>
 
-        <article class="canvas-media-card canvas-card canvas-card-source">
+        <article :ref="canvasNodeRefs.source" class="canvas-media-card canvas-card canvas-card-source">
           <span class="canvas-card-label">上传</span>
           <div class="fashion-frame fashion-frame-source">
             <img class="canvas-photo canvas-photo-model" :src="canvasModelSourceImage" alt="上传的模特参考图" />
           </div>
         </article>
 
-        <article class="canvas-media-card canvas-card canvas-card-result">
+        <article :ref="canvasNodeRefs.result" class="canvas-media-card canvas-card canvas-card-result">
           <div class="canvas-result-badge">改图 1</div>
           <div class="fashion-frame fashion-frame-result">
             <img class="canvas-photo canvas-photo-model" :src="canvasResultImage" alt="改图结果图" />
           </div>
         </article>
 
-        <article class="canvas-garment-card canvas-card canvas-card-jeans">
+        <article :ref="canvasNodeRefs.video" class="canvas-video-card canvas-card">
+          <div class="canvas-result-badge canvas-video-badge">生视频</div>
+          <span class="canvas-card-label">视频结果</span>
+          <div class="fashion-frame fashion-frame-video">
+            <video
+              class="canvas-video-player"
+              :src="canvasResultVideo"
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              aria-label="图片生成视频结果预览"
+            />
+          </div>
+        </article>
+
+        <article :ref="canvasNodeRefs.jeans" class="canvas-garment-card canvas-card canvas-card-jeans">
           <span class="canvas-card-label">上传</span>
           <div class="garment-shape garment-jeans">
             <img class="canvas-photo canvas-photo-garment" :src="canvasJeansImage" alt="上传的裤子参考图" />
           </div>
         </article>
 
-        <article class="canvas-garment-card canvas-card canvas-card-jacket">
+        <article :ref="canvasNodeRefs.jacket" class="canvas-garment-card canvas-card canvas-card-jacket">
           <span class="canvas-card-label">上传</span>
           <div class="garment-shape garment-jacket">
             <img class="canvas-photo canvas-photo-garment" :src="canvasJacketImage" alt="上传的衣服参考图" />
@@ -697,14 +867,17 @@ onMounted(() => {
 
 .canvas-showcase {
   display: grid;
-  grid-template-columns: minmax(0, 0.86fr) minmax(630px, 1.38fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(560px, 1.22fr);
   gap: 24px;
   align-items: start;
 }
 
 .canvas-demo-shell {
   position: relative;
-  min-height: 560px;
+  width: 100%;
+  max-width: 880px;
+  justify-self: end;
+  min-height: 720px;
   overflow: hidden;
   background:
     radial-gradient(circle at center, rgba(255, 224, 151, 0.18), transparent 34%),
@@ -725,7 +898,8 @@ onMounted(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 1;
+  z-index: 3;
+  pointer-events: none;
 }
 
 .flow-path {
@@ -735,6 +909,11 @@ onMounted(() => {
   stroke-linecap: round;
   stroke-dasharray: 10 10;
   animation: canvas-flow-dash 10s linear infinite;
+  marker-end: url(#canvas-flow-arrow);
+}
+
+.flow-arrow-head {
+  fill: rgba(243, 176, 37, 0.9);
 }
 
 .canvas-card {
@@ -750,8 +929,8 @@ onMounted(() => {
 .canvas-card-note {
   top: 26px;
   left: 26px;
-  width: 250px;
-  padding: 24px;
+  width: 236px;
+  padding: 22px;
 
   p {
     margin: 0 0 18px;
@@ -781,18 +960,24 @@ onMounted(() => {
 }
 
 .canvas-card-source {
-  left: 26px;
-  bottom: 26px;
-  width: 238px;
+  left: 34px;
+  top: 274px;
+  width: 184px;
 }
 
 .canvas-card-result {
   left: 50%;
-  top: 86px;
-  width: 260px;
+  top: 26px;
+  width: 184px;
   transform: translateX(-50%);
-  padding: 14px;
-  animation: canvas-result-float 5.6s ease-in-out infinite;
+  padding: 34px 14px 14px;
+}
+
+.canvas-video-card {
+  right: 34px;
+  top: 26px;
+  width: 184px;
+  padding: 34px 14px 14px;
 }
 
 .canvas-result-badge {
@@ -801,16 +986,22 @@ onMounted(() => {
   top: 40px;
 }
 
+.canvas-video-badge {
+  left: auto;
+  right: -32px;
+  top: 26px;
+}
+
 .canvas-card-jeans {
-  top: 34px;
-  right: 26px;
-  width: 214px;
+  top: 422px;
+  left: 396px;
+  width: 160px;
 }
 
 .canvas-card-jacket {
-  right: 26px;
-  bottom: 62px;
-  width: 214px;
+  right: 34px;
+  top: 406px;
+  width: 160px;
 }
 
 .fashion-frame,
@@ -822,16 +1013,37 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.fashion-frame {
-  height: 400px;
+.canvas-media-card,
+.canvas-video-card {
+  padding: 34px 14px 14px;
 }
 
-.canvas-card-source .fashion-frame {
-  height: 290px;
+.canvas-media-card .canvas-card-label,
+.canvas-video-card .canvas-card-label {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 3;
+}
+
+.fashion-frame-result,
+.canvas-card-source .fashion-frame,
+.fashion-frame-video {
+  aspect-ratio: 574 / 1024;
+  height: auto;
+}
+
+.fashion-frame-video {
+  background: #17120b;
+}
+
+.fashion-frame-video::before {
+  display: none;
 }
 
 .garment-shape {
-  height: 204px;
+  aspect-ratio: 1 / 1;
+  height: auto;
 }
 
 .canvas-photo {
@@ -843,14 +1055,23 @@ onMounted(() => {
 }
 
 .canvas-photo-model {
-  object-fit: cover;
-  object-position: center top;
+  object-fit: contain;
+  object-position: center;
 }
 
 .canvas-photo-garment {
   object-fit: contain;
   object-position: center;
-  padding: 8px;
+  padding: 0;
+}
+
+.canvas-video-player {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .fashion-frame::before,
@@ -860,37 +1081,6 @@ onMounted(() => {
   inset: auto 0 0 0;
   height: 26%;
   background: linear-gradient(180deg, rgba(210, 201, 190, 0), rgba(213, 205, 196, 0.72));
-}
-
-.canvas-pulse {
-  position: absolute;
-  z-index: 1;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #ffae1f;
-  box-shadow: 0 0 0 10px rgba(255, 174, 31, 0.12);
-  animation: canvas-node-pulse 2.8s ease-in-out infinite;
-}
-
-.canvas-pulse-center {
-  left: calc(50% - 8px);
-  top: calc(50% - 10px);
-}
-
-.canvas-pulse-left {
-  left: 246px;
-  top: 292px;
-}
-
-.canvas-pulse-right-top {
-  right: 248px;
-  top: 286px;
-}
-
-.canvas-pulse-right-bottom {
-  right: 248px;
-  top: 356px;
 }
 
 .cta-band {
@@ -981,9 +1171,8 @@ onMounted(() => {
       stroke: var(--theme-accent) !important;
     }
 
-    .canvas-pulse {
-      background: var(--theme-accent) !important;
-      box-shadow: 0 0 0 10px rgba(var(--theme-accent-rgb), 0.14);
+    .flow-arrow-head {
+      fill: var(--theme-accent) !important;
     }
 
     .showcase-skeleton-media,
@@ -1055,18 +1244,6 @@ onMounted(() => {
   }
 }
 
-@keyframes canvas-node-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.9;
-  }
-  50% {
-    transform: scale(1.14);
-    opacity: 1;
-  }
-}
-
 @media (max-width: 1180px) {
   .canvas-showcase {
     grid-template-columns: 1fr;
@@ -1083,7 +1260,7 @@ onMounted(() => {
 
 @media (max-width: 960px) {
   .canvas-demo-shell {
-    min-height: 760px;
+    min-height: 860px;
   }
 
   .canvas-card-note {
@@ -1091,17 +1268,37 @@ onMounted(() => {
   }
 
   .canvas-card-source {
-    width: 210px;
+    left: 28px;
+    top: 486px;
+    width: 176px;
   }
 
   .canvas-card-result {
-    width: 228px;
+    top: 140px;
+    width: 176px;
+  }
+
+  .canvas-video-card {
+    right: 28px;
+    top: 140px;
+    width: 176px;
   }
 
   .canvas-card-jeans,
   .canvas-card-jacket {
-    width: 188px;
+    width: 156px;
   }
+
+  .canvas-card-jeans {
+    top: 490px;
+    left: 252px;
+  }
+
+  .canvas-card-jacket {
+    top: 490px;
+    left: 424px;
+  }
+
 }
 
 @media (max-width: 820px) {
@@ -1111,7 +1308,17 @@ onMounted(() => {
   }
 
   .canvas-demo-shell {
-    min-height: 940px;
+    min-height: 1180px;
+  }
+
+  .canvas-flow-svg {
+    z-index: 1;
+  }
+
+  .flow-path {
+    stroke-width: 2;
+    stroke-dasharray: 7 9;
+    opacity: 0.78;
   }
 
   .canvas-card-note {
@@ -1122,48 +1329,35 @@ onMounted(() => {
   }
 
   .canvas-card-result {
-    top: 188px;
+    top: 180px;
     left: 50%;
-    width: 228px;
+    width: 180px;
+  }
+
+  .canvas-video-card {
+    top: 560px;
+    bottom: auto;
+    width: 180px;
   }
 
   .canvas-card-source {
     left: 20px;
-    top: 470px;
-    bottom: auto;
+    top: 810px;
+    width: 180px;
   }
 
   .canvas-card-jeans {
-    right: 20px;
-    top: 470px;
+    left: 20px;
+    top: 810px;
   }
 
   .canvas-card-jacket {
     right: 20px;
-    bottom: 24px;
+    top: 810px;
   }
 
   .canvas-flow-svg {
     opacity: 0.84;
-  }
-
-  .canvas-pulse-left {
-    left: 230px;
-    top: 582px;
-  }
-
-  .canvas-pulse-right-top {
-    right: 208px;
-    top: 582px;
-  }
-
-  .canvas-pulse-right-bottom {
-    right: 208px;
-    top: 770px;
-  }
-
-  .canvas-pulse-center {
-    top: 402px;
   }
 }
 
@@ -1180,7 +1374,7 @@ onMounted(() => {
   }
 
   .canvas-demo-shell {
-    min-height: 1080px;
+    min-height: 1260px;
     border-radius: 24px;
   }
 
@@ -1189,11 +1383,19 @@ onMounted(() => {
   }
 
   .canvas-card-result {
-    width: 214px;
-    top: 212px;
+    width: 168px;
+    top: 190px;
   }
 
-  .canvas-card-source,
+  .canvas-video-card {
+    top: 536px;
+    width: 168px;
+  }
+
+  .canvas-card-source {
+    width: 168px;
+  }
+
   .canvas-card-jeans,
   .canvas-card-jacket {
     width: calc(50% - 28px);
@@ -1201,42 +1403,23 @@ onMounted(() => {
 
   .canvas-card-source {
     left: 16px;
-    top: 520px;
+    top: 880px;
   }
 
   .canvas-card-jeans {
-    right: 16px;
-    top: 520px;
+    left: 16px;
+    top: 880px;
   }
 
   .canvas-card-jacket {
     right: 16px;
-    bottom: 16px;
+    top: 880px;
   }
 
   .canvas-card-note {
     left: 16px;
     right: 16px;
     top: 16px;
-  }
-
-  .canvas-pulse-left {
-    left: 184px;
-    top: 636px;
-  }
-
-  .canvas-pulse-right-top {
-    right: 170px;
-    top: 636px;
-  }
-
-  .canvas-pulse-right-bottom {
-    right: 170px;
-    top: 882px;
-  }
-
-  .canvas-pulse-center {
-    top: 440px;
   }
 
   .showcase-empty {
