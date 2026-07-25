@@ -20,13 +20,12 @@ import {
   BarChartOutlined,
   LoadingOutlined,
   ExclamationCircleFilled,
-  RedoOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
   DownOutlined,
-  UndoOutlined,
   MessageOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   UnorderedListOutlined,
   VideoCameraOutlined,
 } from "@ant-design/icons-vue";
@@ -153,6 +152,7 @@ const numImages = ref(1);
 const resolution = ref("2K");
 const size = ref("");
 const customSize = ref("");
+const aspectRatioAutoDetectEnabled = ref(readStoredAspectRatioAutoDetectEnabled());
 const selectedNumImages = computed({
   get: () => String(numImages.value),
   set: (value: string) => {
@@ -237,7 +237,8 @@ const reversePickerOpening = ref(false);
 const reverseLoading = ref(false);
 const reversePromptResult = ref("");
 const brushSize = ref(28);
-const repaintTool = ref<"paint" | "erase">("paint");
+const repaintTool = ref<"paint" | "erase" | "rect" | "circle" | "text">("paint");
+const repaintLineColor = ref<string>("#c38d36");
 const hasRepaintMask = ref(false);
 const canUndoMask = ref(false);
 const canRedoMask = ref(false);
@@ -314,6 +315,7 @@ const sceneConfigLoading = ref(true);
 const submittingGenerate = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
+const ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY = "generateAspectRatioAutoDetectEnabled";
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
   { label: "1K", value: "1K" },
@@ -335,6 +337,12 @@ const DEFAULT_ASPECT_RATIO_OPTIONS: SceneOptionItem[] = [
   { label: "▮  9:16", value: "9:16" },
   { label: "▬  16:9", value: "16:9" },
 ];
+const REPAINT_COLOR_OPTIONS = [
+  { label: "金棕", value: "#c38d36" },
+  { label: "紫色", value: "#746bff" },
+  { label: "青绿", value: "#2fa39b" },
+  { label: "玫红", value: "#d95f8d" },
+] as const;
 
 function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption {
   return {
@@ -552,6 +560,113 @@ function parseAspectRatio(value?: string) {
   }
 
   return null;
+}
+
+function normalizeHexColor(color: string) {
+  const value = String(color || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value;
+  if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+    return `#${value.slice(1).split("").map((char) => `${char}${char}`).join("")}`;
+  }
+  return REPAINT_COLOR_OPTIONS[0].value;
+}
+
+function hexToRgba(color: string, alpha: number) {
+  const normalized = normalizeHexColor(color);
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function readStoredAspectRatioAutoDetectEnabled() {
+  if (typeof window === "undefined") return false;
+  const storedValue = localStorage.getItem(ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY);
+  if (storedValue == null) return true;
+  return storedValue === "1";
+}
+
+function writeStoredAspectRatioAutoDetectEnabled(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY, enabled ? "1" : "0");
+}
+
+function parseAspectRatioPair(value?: string) {
+  if (!value) return null;
+  const normalized = value.trim();
+  const ratioMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/);
+  if (ratioMatch) {
+    const width = Number(ratioMatch[1]);
+    const height = Number(ratioMatch[2]);
+    if (width > 0 && height > 0) return { width, height };
+  }
+
+  const sizeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)$/);
+  if (sizeMatch) {
+    const width = Number(sizeMatch[1]);
+    const height = Number(sizeMatch[2]);
+    if (width > 0 && height > 0) return { width, height };
+  }
+
+  return null;
+}
+
+function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        return;
+      }
+      reject(new Error("无法读取图片尺寸"));
+    };
+    image.onerror = () => reject(new Error("图片加载失败"));
+    image.src = src;
+  });
+}
+
+async function readImageDimensionsFromFile(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await loadImageDimensions(objectUrl);
+  } finally {
+    revokeObjectUrl(objectUrl);
+  }
+}
+
+function getClosestAspectRatioValue(width: number, height: number, options: SceneOptionItem[]) {
+  if (width <= 0 || height <= 0 || !options.length) return "";
+  const targetRatio = width / height;
+  let matchedValue = "";
+  let bestDiff = Number.POSITIVE_INFINITY;
+  options.forEach((item) => {
+    const parsed = parseAspectRatioPair(item.value);
+    if (!parsed) return;
+    const candidateRatio = parsed.width / parsed.height;
+    const diff = Math.abs(Math.log(targetRatio / candidateRatio));
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      matchedValue = item.value;
+    }
+  });
+  return matchedValue;
+}
+
+async function maybeAutoDetectAspectRatioFromFirstReference(source: File | string) {
+  if (!aspectRatioAutoDetectEnabled.value || hideAspectRatio.value || !sizeOptions.value.length) return;
+  try {
+    const dimensions = typeof source === "string"
+      ? await loadImageDimensions(resolveImageUrl(source))
+      : await readImageDimensionsFromFile(source);
+    const matchedValue = getClosestAspectRatioValue(dimensions.width, dimensions.height, sizeOptions.value);
+    if (matchedValue && sizeOptions.value.some((item) => item.value === matchedValue)) {
+      size.value = matchedValue;
+    }
+  } catch {
+    // Ignore dimension read failures and keep the current aspect ratio.
+  }
 }
 
 function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskItem {
@@ -1169,6 +1284,7 @@ function updateReferenceItem(id: string, patch: Partial<UploadPreviewItem>) {
 
 function addLibraryAssetToReference(asset: UserAsset) {
   const limit = maxReferenceImages.value;
+  const shouldAutoDetect = referenceItems.value.length === 0;
   if (referenceItems.value.some((item) => item.remoteUrl === asset.image_url)) {
     message.info("这张素材已在参考图中");
     return false;
@@ -1183,11 +1299,15 @@ function addLibraryAssetToReference(asset: UserAsset) {
     remoteUrl: asset.image_url,
     status: "success",
   });
+  if (shouldAutoDetect) {
+    void maybeAutoDetectAspectRatioFromFirstReference(asset.image_url);
+  }
   return true;
 }
 
 function addLibraryAssetsToReference(assets: UserAsset[]) {
   const limit = maxReferenceImages.value;
+  const shouldAutoDetect = referenceItems.value.length === 0;
   if (limit <= 0) {
     message.warning("当前模型不支持参考图");
     return false;
@@ -1220,6 +1340,9 @@ function addLibraryAssetsToReference(assets: UserAsset[]) {
       status: "success",
     });
   });
+  if (shouldAutoDetect && uniqueAssets[0]) {
+    void maybeAutoDetectAspectRatioFromFirstReference(uniqueAssets[0].image_url);
+  }
   if (uniqueAssets.length < assets.length) {
     message.success(`已添加 ${uniqueAssets.length} 张参考图，其余素材已在参考图中`);
   }
@@ -1269,6 +1392,7 @@ async function uploadReferenceFiles(files: File[]) {
   let uploadedCount = 0;
   let failedCount = 0;
   let oversizedCount = 0;
+  let shouldAutoDetectFirstReference = referenceItems.value.length === 0;
 
   for (const file of referenceLimitedFiles) {
     if (isImageUploadTooLarge(file)) {
@@ -1296,6 +1420,10 @@ async function uploadReferenceFiles(files: File[]) {
         status: "success",
       });
       uploadedCount += 1;
+      if (shouldAutoDetectFirstReference) {
+        shouldAutoDetectFirstReference = false;
+        void maybeAutoDetectAspectRatioFromFirstReference(file);
+      }
     } catch (err: any) {
       updateReferenceItem(item.id, { status: "failed" });
       failedCount += 1;
@@ -1332,6 +1460,25 @@ async function processReferenceDropFiles(files: File[]) {
   if (!(await ensureAuthenticated())) return;
   if (!files.length) return;
   await uploadReferenceFiles(files);
+}
+
+function getClipboardImageFiles(event: ClipboardEvent) {
+  const clipboardItems = Array.from(event.clipboardData?.items || []);
+  const itemFiles = clipboardItems
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => !!file && isReferenceImageFile(file));
+  if (itemFiles.length) return itemFiles;
+  return Array.from(event.clipboardData?.files || []).filter((file) => isReferenceImageFile(file));
+}
+
+async function handleReferencePaste(event: ClipboardEvent) {
+  if (generateMode.value !== "imageEdit") return;
+  const files = getClipboardImageFiles(event);
+  if (!files.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await processReferenceDropFiles(files);
 }
 
 function bindReferenceDragHandlers(element: HTMLElement) {
@@ -1541,6 +1688,17 @@ function handleMaskChange(value: boolean) {
   hasRepaintMask.value = value;
   canUndoMask.value = repaintCanvasRef.value?.canUndo() ?? false;
   canRedoMask.value = repaintCanvasRef.value?.canRedo() ?? false;
+}
+
+function getRepaintBrushPreviewStyle() {
+  const size = Math.max(10, Math.min(brushSize.value, 34));
+  return {
+    width: `${size}px`,
+    height: `${size}px`,
+    background: hexToRgba(repaintLineColor.value, 0.45),
+    borderColor: hexToRgba(repaintLineColor.value, 0.9),
+    boxShadow: `0 0 0 6px ${hexToRgba(repaintLineColor.value, 0.12)}, 0 4px 10px rgba(0, 0, 0, 0.16)`,
+  };
 }
 
 const creditCost = computed(() => (
@@ -2083,6 +2241,10 @@ function canEditGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
   return img.status === "success" && !isGeneratedTaskExpired(task) && !!(img.image_url || img.preview_url);
 }
 
+function canInpaintGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
+  return canEditGeneratedImage(task, img) && !!(img.image_url || img.preview_url || img.thumb_url);
+}
+
 function canGenerateVideoFromGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
   return canEditGeneratedImage(task, img) && !!(img.image_url || img.preview_url || img.thumb_url);
 }
@@ -2098,6 +2260,31 @@ function handleGenerateVideoFromGeneratedImage(task: GeneratedTaskItem, img: Ima
     return;
   }
   router.push("/video-generate");
+}
+
+function handleInpaintGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
+  const sourceImage = img.image_url || img.preview_url || img.thumb_url || "";
+  if (!sourceImage) {
+    message.warning("当前结果图暂不可用于局部重绘");
+    return;
+  }
+  generateMode.value = "inpaint";
+  repaintPrompt.value = task.prompt || "";
+  prompt.value = "";
+  size.value = task.size || sizeOptions.value[0]?.value || "1:1";
+  resolution.value = task.resolution || "2K";
+  customSize.value = task.customSize || "";
+  numImages.value = 1;
+  syncReferenceItems([]);
+  revokeObjectUrl(sourcePreviewUrl.value);
+  sourcePreviewUrl.value = "";
+  sourceImageUrl.value = sourceImage;
+  repaintMaskUrl.value = "";
+  hasRepaintMask.value = false;
+  canUndoMask.value = false;
+  canRedoMask.value = false;
+  repaintCanvasRef.value?.clearMask();
+  message.success("已带入局部重绘");
 }
 
 async function ensureTemplateTagsLoaded() {
@@ -2356,6 +2543,7 @@ onMounted(async () => {
   syncViewportWidth();
   window.addEventListener("resize", syncViewportWidth);
   window.addEventListener("focus", handleFilePickerFocusReturn);
+  window.addEventListener("paste", handleReferencePaste);
   document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
   await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus(), notifyCompletedUnreadFeedbacks()]);
@@ -2383,6 +2571,7 @@ onBeforeUnmount(() => {
   stopGlobalActiveStatusPolling();
   window.removeEventListener("resize", syncViewportWidth);
   window.removeEventListener("focus", handleFilePickerFocusReturn);
+  window.removeEventListener("paste", handleReferencePaste);
   document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
   clearFilePickerRecoveryTimer();
   unbindReferenceDragHandlers?.();
@@ -2407,6 +2596,10 @@ watch(sizeOptions, (options) => {
     size.value = options[0].value;
   }
 }, { immediate: true });
+
+watch(aspectRatioAutoDetectEnabled, (enabled) => {
+  writeStoredAspectRatioAutoDetectEnabled(enabled);
+});
 
 watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
   if (shouldHide || !options.length) return;
@@ -2725,6 +2918,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   />
                 </div>
               </div>
+              <div v-if="!hideAspectRatio" class="settings-row config-section">
+                <div class="aspect-ratio-auto-row">
+                  <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <div class="aspect-ratio-auto-text">
+                    <span class="aspect-ratio-auto-label">比例自动识别</span>
+                    <a-tooltip
+                      title="开启后，上传第一张参考图或从素材库添加第一张参考图时，会自动选择最匹配的宽高比。"
+                      placement="top"
+                      :get-popup-container="getBodyPopupContainer"
+                    >
+                      <button type="button" class="aspect-ratio-auto-help" aria-label="比例自动识别说明">
+                        <QuestionCircleOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
+                </div>
+              </div>
               </template>
 
               </div>
@@ -2922,7 +3132,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 <div class="panel-head">
                   <h3>参考图</h3>
                   <div class="panel-head-actions">
-                    <span class="panel-hint">(最多 {{ maxReferenceImages }} 张，支持拖拽上传)</span>
+                    <span class="panel-hint">(最多 {{ maxReferenceImages }} 张，支持拖拽、粘贴上传)</span>
                     <a-button type="text" size="small" class="asset-library-btn" @click.stop="openAssetPicker">素材库</a-button>
                   </div>
                 </div>
@@ -3028,6 +3238,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     panel-title="选择图片数量"
                     placeholder="选择图片数量"
                   />
+                </div>
+              </div>
+              <div v-if="!hideAspectRatio" class="settings-row config-section">
+                <div class="aspect-ratio-auto-row">
+                  <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <div class="aspect-ratio-auto-text">
+                    <span class="aspect-ratio-auto-label">比例自动识别</span>
+                    <a-tooltip
+                      title="开启后，上传第一张参考图或从素材库添加第一张参考图时，会自动选择最匹配的宽高比。"
+                      placement="top"
+                      :get-popup-container="getBodyPopupContainer"
+                    >
+                      <button type="button" class="aspect-ratio-auto-help" aria-label="比例自动识别说明">
+                        <QuestionCircleOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
                 </div>
               </div>
               </template>
@@ -3229,60 +3456,123 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       :mask-url="resolveImageUrl(repaintMaskUrl)"
                       :brush-size="brushSize"
                       :tool="repaintTool"
+                      :line-color="repaintLineColor"
                       @mask-change="handleMaskChange"
                     />
                   </div>
 
                   <div class="repaint-toolbar">
-                    <button
-                      type="button"
-                      class="tool-btn"
-                      :class="{ active: repaintTool === 'paint' }"
-                      @click="repaintTool = 'paint'"
-                    >
-                      <EditOutlined />
-                    </button>
-                    <button
-                      type="button"
-                      class="tool-btn"
-                      :class="{ active: repaintTool === 'erase' }"
-                      @click="repaintTool = 'erase'"
-                    >
-                      <ClearOutlined />
-                    </button>
+                    <a-tooltip title="画笔">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :class="{ active: repaintTool === 'paint' }"
+                        @click="repaintTool = 'paint'"
+                      >
+                        <EditOutlined />
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="擦除">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :class="{ active: repaintTool === 'erase' }"
+                        @click="repaintTool = 'erase'"
+                      >
+                        <ClearOutlined />
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="矩形">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :class="{ active: repaintTool === 'rect' }"
+                        @click="repaintTool = 'rect'"
+                      >
+                        <svg viewBox="0 0 24 24" class="shape-tool-icon" aria-hidden="true">
+                          <rect x="5" y="6" width="14" height="12" rx="2.5" />
+                        </svg>
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="圆形">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :class="{ active: repaintTool === 'circle' }"
+                        @click="repaintTool = 'circle'"
+                      >
+                        <svg viewBox="0 0 24 24" class="shape-tool-icon" aria-hidden="true">
+                          <circle cx="12" cy="12" r="6.5" />
+                        </svg>
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="文字">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :class="{ active: repaintTool === 'text' }"
+                        @click="repaintTool = 'text'"
+                      >
+                        <FontSizeOutlined />
+                      </button>
+                    </a-tooltip>
                     <div class="toolbar-divider" />
                     <div class="toolbar-slider">
                       <a-slider v-model:value="brushSize" :min="12" :max="60" class="brush-slider" />
                     </div>
-                    <div class="brush-preview" :style="{ width: `${Math.max(10, Math.min(brushSize, 34))}px`, height: `${Math.max(10, Math.min(brushSize, 34))}px` }" />
+                    <div class="brush-preview" :style="getRepaintBrushPreviewStyle()" />
+                    <div class="repaint-color-group">
+                      <a-tooltip v-for="color in REPAINT_COLOR_OPTIONS" :key="color.value" :title="color.label">
+                        <button
+                          type="button"
+                          class="repaint-color-chip"
+                          :class="{ active: repaintLineColor === color.value }"
+                          :style="{ '--repaint-color': color.value }"
+                          @click="repaintLineColor = color.value"
+                        >
+                          <span class="repaint-color-chip-swatch" />
+                        </button>
+                      </a-tooltip>
+                    </div>
                     <div class="toolbar-divider" />
-                    <button
-                      type="button"
-                      class="tool-btn"
-                      @click="clearRepaintMask"
-                    >
-                      <ReloadOutlined />
-                    </button>
-                    <button
-                      type="button"
-                      class="tool-btn"
-                      :disabled="!canUndoMask"
-                      @click="undoRepaintMask"
-                    >
-                      <UndoOutlined />
-                    </button>
-                    <button
-                      type="button"
-                      class="tool-btn"
-                      :disabled="!canRedoMask"
-                      @click="redoRepaintMask"
-                    >
-                      <RedoOutlined />
-                    </button>
+                    <a-tooltip title="清空选区">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        @click="clearRepaintMask"
+                      >
+                        <ReloadOutlined />
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="后退">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :disabled="!canUndoMask"
+                        @click="undoRepaintMask"
+                      >
+                        <svg viewBox="0 0 24 24" class="tool-btn-icon" aria-hidden="true">
+                          <path d="M10 7 5 12l5 5" />
+                          <path d="M6 12h7a6 6 0 0 1 6 6" />
+                        </svg>
+                      </button>
+                    </a-tooltip>
+                    <a-tooltip title="前进">
+                      <button
+                        type="button"
+                        class="tool-btn"
+                        :disabled="!canRedoMask"
+                        @click="redoRepaintMask"
+                      >
+                        <svg viewBox="0 0 24 24" class="tool-btn-icon" aria-hidden="true">
+                          <path d="m14 7 5 5-5 5" />
+                          <path d="M18 12h-7a6 6 0 0 0-6 6" />
+                        </svg>
+                      </button>
+                    </a-tooltip>
                   </div>
-
                   <div class="mask-tip">
-                    请直接在图片上涂抹需要重绘的区域，当前蒙层为 50% 透明度，提交时仅对白色蒙版区域进行重绘。
+                    支持画笔、擦除、矩形、圆形和文字选区，可切换圈选线条颜色；选择文字工具后点击图片即可原地输入。
                   </div>
                 </template>
               </div>
@@ -3489,6 +3779,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         <a-tooltip v-if="canEditGeneratedImage(item.task, item.image)" title="结果图编辑">
                           <a-button shape="circle" class="icon-chip" @click.stop="handleEditImageTask(item.task, item.image)">
                             <template #icon><EditOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
+                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="局部重绘">
+                          <a-button
+                            shape="circle"
+                            class="icon-chip result-inpaint-trigger"
+                            @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
+                          >
+                            <template #icon><HighlightOutlined /></template>
                           </a-button>
                         </a-tooltip>
                         <a-tooltip title="重新生成">
@@ -4227,6 +4526,83 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+.aspect-ratio-auto-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch) {
+  background: var(--theme-control-bg) !important;
+  border: none !important;
+  box-shadow: inset 0 0 0 1px var(--theme-control-border) !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-small .ant-switch-handle) {
+  top: 2px;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-small .ant-switch-handle::before) {
+  background: var(--theme-accent) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch:hover:not(.ant-switch-disabled)) {
+  background: var(--theme-control-hover-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--theme-border-strong) !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked) {
+  background: var(--theme-accent) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked .ant-switch-handle::before) {
+  background: #ffffff !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled)) {
+  background: var(--theme-accent) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.aspect-ratio-auto-label {
+  color: var(--theme-title);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.aspect-ratio-auto-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.aspect-ratio-auto-help:hover,
+.aspect-ratio-auto-help:focus-visible {
+  color: var(--theme-accent);
+  background: rgba(var(--theme-accent-rgb), 0.08);
 }
 
 .config-skeleton-shell {
@@ -5022,21 +5398,22 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .repaint-toolbar {
   margin-top: 14px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(46, 46, 52, 0.96), rgba(34, 34, 38, 0.96));
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
 }
 
 .tool-btn {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.9);
   display: inline-flex;
@@ -5074,6 +5451,28 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.tool-btn-icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex-shrink: 0;
+}
+
+.shape-tool-icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex-shrink: 0;
+}
+
 .toolbar-divider {
   width: 1px;
   height: 30px;
@@ -5098,6 +5497,53 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   box-shadow:
     0 0 0 6px rgba(255, 255, 255, 0.06),
     0 4px 10px rgba(0, 0, 0, 0.16);
+}
+
+.repaint-color-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repaint-color-chip {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  &.active {
+    border-color: rgba(255, 255, 255, 0.38);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+.repaint-color-chip-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--repaint-color);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 4px 10px rgba(0, 0, 0, 0.18);
 }
 
 .brush-slider {
@@ -5526,6 +5972,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   inset: auto 12px 12px auto;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 24px);
   gap: 8px;
   opacity: 0;
   transform: translateY(6px);
@@ -5649,6 +6098,21 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   &:focus {
     background: rgba(143, 94, 30, 0.82) !important;
     color: #fffaf0 !important;
+  }
+}
+
+.result-inpaint-trigger.icon-chip {
+  background: rgba(96, 74, 34, 0.68) !important;
+  border-color: rgba(255, 226, 170, 0.22) !important;
+  color: #fff2d4 !important;
+  box-shadow: 0 10px 22px rgba(53, 34, 13, 0.24);
+
+  &:hover,
+  &:focus {
+    background: rgba(122, 92, 40, 0.86) !important;
+    border-color: rgba(255, 232, 188, 0.3) !important;
+    color: #fffaf0 !important;
+    box-shadow: 0 14px 26px rgba(53, 34, 13, 0.3);
   }
 }
 
@@ -5777,6 +6241,21 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-tem
   background: rgba(168, 112, 38, 0.86) !important;
   border-color: rgba(255, 226, 170, 0.34) !important;
   color: #fffaf0 !important;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-inpaint-trigger.icon-chip {
+  background: rgba(120, 88, 34, 0.76) !important;
+  border-color: rgba(255, 224, 166, 0.24) !important;
+  color: #fff1cc !important;
+  box-shadow: 0 12px 24px rgba(48, 30, 9, 0.3);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-inpaint-trigger.icon-chip:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-inpaint-trigger.icon-chip:focus {
+  background: rgba(148, 108, 40, 0.9) !important;
+  border-color: rgba(255, 231, 182, 0.34) !important;
+  color: #fffaf0 !important;
+  box-shadow: 0 16px 28px rgba(48, 30, 9, 0.36);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-more-trigger-failed.icon-chip {
@@ -6189,6 +6668,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     white-space: normal;
   }
 
+  .aspect-ratio-auto-row {
+    gap: 8px;
+  }
+
   .generate-config-panel .upload-thumb,
   .generate-config-panel .upload-add {
     width: 65px;
@@ -6480,6 +6963,20 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .field-bloc
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-panel-head h3,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-empty .empty-title {
   color: var(--theme-title) !important;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .aspect-ratio-auto-label {
+  color: var(--theme-title);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .aspect-ratio-auto-help {
+  color: var(--text-muted);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .aspect-ratio-auto-help:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .aspect-ratio-auto-help:focus-visible {
+  color: var(--theme-accent-text-hover);
+  background: var(--theme-control-hover-bg);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-canvas-entry-btn {
