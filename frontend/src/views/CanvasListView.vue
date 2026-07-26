@@ -44,9 +44,44 @@ const isAdminCanvasView = computed(() => props.adminCanvases);
 const shouldHighlightExampleSection = computed(
   () => !isAdminCanvasView.value && canvases.value.length === 0 && exampleProjects.value.length > 0
 );
+const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff8ee"/>
+      <stop offset="100%" stop-color="#ffe6c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="960" rx="56" fill="url(#bg)"/>
+  <rect x="74" y="74" width="812" height="812" rx="42" fill="none" stroke="#efc784" stroke-dasharray="18 16" stroke-width="10"/>
+  <g fill="none" stroke="#d08a24" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="282" y="248" width="396" height="286" rx="28" stroke-width="18"/>
+    <path d="M326 490l110-108 92 88 72-66 76 86" stroke-width="18"/>
+    <circle cx="400" cy="330" r="34" fill="#ffd585" stroke-width="12"/>
+  </g>
+  <text x="480" y="654" text-anchor="middle" font-size="54" font-weight="700" fill="#8c5a16">原图已过期</text>
+  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器只保留原图15天</text>
+  <text x="480" y="776" text-anchor="middle" font-size="34" fill="#a9742e">请在有效期内查看或下载</text>
+</svg>
+`)}`;
 
 function getCanvasPreviewSrc(url?: string) {
   return appendImageTransform(withApiBaseUrl(url || ""), "imageMogr2/format/webp");
+}
+
+function handleCanvasPreviewError(event: Event) {
+  const image = event.target as HTMLImageElement;
+  if (image.dataset.expiredFallback === "true") return;
+  image.dataset.expiredFallback = "true";
+  image.classList.add("canvas-list-preview-expired");
+  image.src = expiredResultAsset;
+}
+
+function handleCanvasPreviewLoad(event: Event) {
+  const image = event.target as HTMLImageElement;
+  if (image.currentSrc === expiredResultAsset) return;
+  delete image.dataset.expiredFallback;
+  image.classList.remove("canvas-list-preview-expired");
 }
 
 const filteredCanvases = computed(() => {
@@ -336,10 +371,28 @@ onMounted(async () => {
             </div>
             <div class="canvas-list-preview" :class="{ empty: !canvas.preview_urls.length }">
               <template v-if="canvas.preview_urls.length">
-                <img class="canvas-list-preview-main" :src="getCanvasPreviewSrc(canvas.preview_urls[0])" alt="" />
+                <img
+                  class="canvas-list-preview-main"
+                  :src="getCanvasPreviewSrc(canvas.preview_urls[0])"
+                  alt=""
+                  @error="handleCanvasPreviewError"
+                  @load="handleCanvasPreviewLoad"
+                />
                 <div class="canvas-list-preview-side">
-                  <img v-if="canvas.preview_urls[1]" :src="getCanvasPreviewSrc(canvas.preview_urls[1])" alt="" />
-                  <img v-if="canvas.preview_urls[2]" :src="getCanvasPreviewSrc(canvas.preview_urls[2])" alt="" />
+                  <img
+                    v-if="canvas.preview_urls[1]"
+                    :src="getCanvasPreviewSrc(canvas.preview_urls[1])"
+                    alt=""
+                    @error="handleCanvasPreviewError"
+                    @load="handleCanvasPreviewLoad"
+                  />
+                  <img
+                    v-if="canvas.preview_urls[2]"
+                    :src="getCanvasPreviewSrc(canvas.preview_urls[2])"
+                    alt=""
+                    @error="handleCanvasPreviewError"
+                    @load="handleCanvasPreviewLoad"
+                  />
                 </div>
               </template>
               <template v-else>
@@ -401,10 +454,28 @@ onMounted(async () => {
             <div class="canvas-list-example-badge">示例</div>
             <div class="canvas-list-preview" :class="{ empty: !example.preview_urls.length }">
               <template v-if="example.preview_urls.length">
-                <img class="canvas-list-preview-main" :src="getCanvasPreviewSrc(example.cover_url || example.preview_urls[0])" alt="" />
+                <img
+                  class="canvas-list-preview-main"
+                  :src="getCanvasPreviewSrc(example.cover_url || example.preview_urls[0])"
+                  alt=""
+                  @error="handleCanvasPreviewError"
+                  @load="handleCanvasPreviewLoad"
+                />
                 <div class="canvas-list-preview-side">
-                  <img v-if="example.preview_urls[1]" :src="getCanvasPreviewSrc(example.preview_urls[1])" alt="" />
-                  <img v-if="example.preview_urls[2]" :src="getCanvasPreviewSrc(example.preview_urls[2])" alt="" />
+                  <img
+                    v-if="example.preview_urls[1]"
+                    :src="getCanvasPreviewSrc(example.preview_urls[1])"
+                    alt=""
+                    @error="handleCanvasPreviewError"
+                    @load="handleCanvasPreviewLoad"
+                  />
+                  <img
+                    v-if="example.preview_urls[2]"
+                    :src="getCanvasPreviewSrc(example.preview_urls[2])"
+                    alt=""
+                    @error="handleCanvasPreviewError"
+                    @load="handleCanvasPreviewLoad"
+                  />
                 </div>
               </template>
               <template v-else>
@@ -752,6 +823,12 @@ onMounted(async () => {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.canvas-list-preview img.canvas-list-preview-expired {
+  object-fit: contain;
+  padding: 10px;
+  background: #fff8ee;
 }
 
 .canvas-list-preview-side {
