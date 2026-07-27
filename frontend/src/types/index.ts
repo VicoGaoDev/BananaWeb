@@ -616,6 +616,30 @@ export interface SystemMessageCreatePayload {
   recipient_user_ids: string[];
 }
 
+export type UpdateLogTagType = "notice" | "feature" | "optimization" | "bugfix" | "other";
+
+export interface UpdateLogItem {
+  log_id: string;
+  title: string;
+  content: string;
+  tag_type: UpdateLogTagType;
+  effective_at: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface UpdateLogListResponse {
+  total: number;
+  items: UpdateLogItem[];
+}
+
+export interface UpdateLogPayload {
+  title: string;
+  content: string;
+  tag_type: UpdateLogTagType;
+  effective_at?: string | null;
+}
+
 export interface AdminUser {
   id: string;
   username: string;
@@ -808,7 +832,8 @@ export interface AdminStats {
   active_users: number;
 }
 
-export type VideoTaskModeFilter = "text_to_video" | "image_to_video";
+export type VideoGenerationMode = "text_to_video" | "image_to_video" | "first_last_frame";
+export type VideoTaskModeFilter = VideoGenerationMode;
 export type VideoSceneAvailabilityMode = "text_to_video" | "image_to_video" | "both";
 
 export interface VideoStats {
@@ -988,7 +1013,7 @@ export interface AdminErrorTaskItem {
   user_id: string;
   username: string;
   avatar_url: string;
-  task_type: TaskType | "text_to_video" | "image_to_video";
+  task_type: TaskType | VideoGenerationMode;
   model: string;
   source: TaskSource;
   mode: TaskMode;
@@ -1350,6 +1375,7 @@ export interface VideoExternalApiSceneBinding {
   hide_duration: boolean;
   hide_resolution: boolean;
   availability_mode: VideoSceneAvailabilityMode;
+  availability_modes: VideoGenerationMode[];
   max_reference_images: number;
   status: ExternalApiConfigStatus;
   is_builtin: boolean;
@@ -1380,6 +1406,7 @@ export interface VideoExternalApiSceneBindingCreatePayload {
   hide_duration: boolean;
   hide_resolution: boolean;
   availability_mode: VideoSceneAvailabilityMode;
+  availability_modes: VideoGenerationMode[];
   max_reference_images: number;
   api_config_id: number | null;
   backup_api_config_id: number | null;
@@ -1405,6 +1432,7 @@ export interface VideoExternalApiSceneBindingMetaPayload {
   hide_duration: boolean;
   hide_resolution: boolean;
   availability_mode: VideoSceneAvailabilityMode;
+  availability_modes: VideoGenerationMode[];
   max_reference_images: number;
   credit_billing_mode: "fixed" | "per_second";
   credit_cost: number;
@@ -1434,6 +1462,7 @@ export interface VideoGenerationModelOption {
   hide_duration: boolean;
   hide_resolution: boolean;
   availability_mode: VideoSceneAvailabilityMode;
+  availability_modes: VideoGenerationMode[];
   max_reference_images: number;
   credit_billing_mode: "fixed" | "per_second";
   credit_cost: number;
@@ -1455,6 +1484,7 @@ export interface VideoTaskSceneConfig {
   hide_duration: boolean;
   hide_resolution: boolean;
   availability_mode: VideoSceneAvailabilityMode;
+  availability_modes: VideoGenerationMode[];
   max_reference_images: number;
   credit_billing_mode: "fixed" | "per_second";
   credit_cost: number;
@@ -1493,6 +1523,7 @@ export interface VideoTaskResult {
   id: string;
   model: string;
   source: TaskSource;
+  generation_mode: VideoGenerationMode;
   prompt: string;
   duration_seconds: number;
   aspect_ratio: string;

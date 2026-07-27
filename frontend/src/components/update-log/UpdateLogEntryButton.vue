@@ -1,0 +1,94 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+import dayjs from "dayjs";
+import { BellOutlined } from "@ant-design/icons-vue";
+import { getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
+import { getMyUnreadSystemMessageCount } from "@/api/systemMessages";
+import { listUpdateLogs } from "@/api/updateLogs";
+import NotificationCenterDialog from "@/components/update-log/NotificationCenterDialog.vue";
+import { useAuthStore } from "@/stores/auth";
+
+const auth = useAuthStore();
+const dialogOpen = ref(false);
+const hasNoticeHighlight = ref(false);
+
+async function loadHighlightState() {
+  try {
+    const tasks: Promise<any>[] = [listUpdateLogs(1, 1)];
+    if (auth.isLoggedIn) {
+      tasks.push(getMyCompletedUnreadFeedbackCount(), getMyUnreadSystemMessageCount());
+    }
+    const [updateLogRes, feedbackUnreadRes, systemUnreadRes] = await Promise.all(tasks);
+    const latest = updateLogRes.items[0];
+    const cutoff = dayjs().subtract(7, "day");
+    const hasRecentUpdate = !!latest?.effective_at
+      && (dayjs(latest.effective_at).isAfter(cutoff) || dayjs(latest.effective_at).isSame(cutoff));
+    const hasUnreadFeedback = Number(feedbackUnreadRes?.count || 0) > 0;
+    const hasUnreadSystemMessage = Number(systemUnreadRes?.count || 0) > 0;
+    hasNoticeHighlight.value = hasRecentUpdate || hasUnreadFeedback || hasUnreadSystemMessage;
+  } catch {
+    hasNoticeHighlight.value = false;
+  }
+}
+
+function openDialog() {
+  dialogOpen.value = true;
+}
+
+onMounted(() => {
+  void loadHighlightState();
+});
+</script>
+
+<template>
+  <a-tooltip title="通知中心">
+    <button
+      type="button"
+      class="update-log-entry-btn"
+      :class="{ 'is-recent': hasNoticeHighlight }"
+      aria-label="打开通知中心"
+      @click="openDialog"
+    >
+      <BellOutlined />
+    </button>
+  </a-tooltip>
+
+  <NotificationCenterDialog v-model:open="dialogOpen" />
+</template>
+
+<style scoped lang="scss">
+.update-log-entry-btn {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theme-accent-text);
+  font-size: 24px;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    color var(--motion-duration-hover) var(--motion-ease-soft),
+    opacity var(--motion-duration-hover) var(--motion-ease-soft);
+}
+
+.update-log-entry-btn:hover {
+  transform: translateY(-1px);
+  color: var(--theme-accent-text-hover);
+  opacity: 0.9;
+}
+
+.update-log-entry-btn.is-recent {
+  color: #ff7f27;
+}
+
+.update-log-entry-btn.is-recent:hover {
+  color: #ff7f27;
+  opacity: 0.92;
+}
+</style>

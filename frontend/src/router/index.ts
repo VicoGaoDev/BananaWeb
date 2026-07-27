@@ -246,6 +246,12 @@ const router = createRouter({
           component: () => import("@/views/admin/SystemMessageManageView.vue"),
         },
         {
+          path: "admin/update-logs",
+          name: "AdminUpdateLogManage",
+          meta: { requiresAdmin: true },
+          component: () => import("@/views/admin/UpdateLogManageView.vue"),
+        },
+        {
           path: "admin/api-key",
           redirect: "/admin/general-settings",
         },

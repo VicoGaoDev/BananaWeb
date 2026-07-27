@@ -88,6 +88,7 @@ class AnalyticsRecord:
 
 VIDEO_TASK_TYPE_TEXT_TO_VIDEO = "text_to_video"
 VIDEO_TASK_TYPE_IMAGE_TO_VIDEO = "image_to_video"
+VIDEO_TASK_TYPE_FIRST_LAST_FRAME = "first_last_frame"
 ERROR_ANALYTICS_TASK_KIND_IMAGE = "image"
 ERROR_ANALYTICS_TASK_KIND_VIDEO = "video"
 
@@ -1457,6 +1458,13 @@ def get_analytics_breakdown(
 
 
 def _video_task_type_for_task(task: VideoTask) -> str:
+    generation_mode = (getattr(task, "generation_mode", "") or "").strip()
+    if generation_mode in {
+        VIDEO_TASK_TYPE_TEXT_TO_VIDEO,
+        VIDEO_TASK_TYPE_IMAGE_TO_VIDEO,
+        VIDEO_TASK_TYPE_FIRST_LAST_FRAME,
+    }:
+        return generation_mode
     reference_images = (task.reference_images or "").strip()
     if reference_images and reference_images != "[]":
         return VIDEO_TASK_TYPE_IMAGE_TO_VIDEO
@@ -1560,9 +1568,24 @@ def _video_task_query(
     if not include_unsafe_tasks:
         query = query.filter(build_exclude_content_safety_failed_task_clause(VideoTask.status, VideoTask.error_message))
     if mode == VIDEO_TASK_TYPE_TEXT_TO_VIDEO:
-        query = query.filter((VideoTask.reference_images == "") | (VideoTask.reference_images == "[]"))
+        query = query.filter(
+            (VideoTask.generation_mode == VIDEO_TASK_TYPE_TEXT_TO_VIDEO)
+            | (
+                ((VideoTask.generation_mode == "") | (VideoTask.generation_mode.is_(None)))
+                & ((VideoTask.reference_images == "") | (VideoTask.reference_images == "[]"))
+            )
+        )
     elif mode == VIDEO_TASK_TYPE_IMAGE_TO_VIDEO:
-        query = query.filter(VideoTask.reference_images.is_not(None), VideoTask.reference_images.notin_(["", "[]"]))
+        query = query.filter(
+            (VideoTask.generation_mode == VIDEO_TASK_TYPE_IMAGE_TO_VIDEO)
+            | (
+                ((VideoTask.generation_mode == "") | (VideoTask.generation_mode.is_(None)))
+                & VideoTask.reference_images.is_not(None)
+                & VideoTask.reference_images.notin_(["", "[]"])
+            )
+        )
+    elif mode == VIDEO_TASK_TYPE_FIRST_LAST_FRAME:
+        query = query.filter(VideoTask.generation_mode == VIDEO_TASK_TYPE_FIRST_LAST_FRAME)
     return query
 
 

@@ -17,6 +17,7 @@ import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
 import UserSuggestionDialog from "@/components/feedback/UserSuggestionDialog.vue";
+import NotificationCenterDialog from "@/components/update-log/NotificationCenterDialog.vue";
 import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
 import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import {
@@ -63,10 +64,14 @@ import {
   MessageOutlined,
   GiftOutlined,
   AccountBookOutlined,
+  BellOutlined,
   BulbOutlined,
   CheckOutlined,
   ClockCircleOutlined,
   AppstoreOutlined,
+  FontSizeOutlined,
+  SearchOutlined,
+  HighlightOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -146,9 +151,10 @@ const routeOrder = new Map<string, number>([
   ["/admin/feedbacks", 29],
   ["/admin/feedbacks/:feedbackId", 30],
   ["/admin/system-messages", 31],
-  ["/admin/cos-config", 32],
-  ["/admin/external-api-configs", 33],
-  ["/admin/video-api-configs", 34],
+  ["/admin/update-logs", 32],
+  ["/admin/cos-config", 33],
+  ["/admin/external-api-configs", 34],
+  ["/admin/video-api-configs", 35],
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
@@ -174,6 +180,15 @@ type PrimaryMenuItem = {
   badgeText?: string;
 };
 
+type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
+
+const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
+  { key: "textGenerate", label: "文生图", icon: FontSizeOutlined },
+  { key: "imageEdit", label: "图编辑", icon: PictureOutlined },
+  { key: "inpaint", label: "局部重绘", icon: HighlightOutlined },
+  { key: "promptReverse", label: "提示词反推", icon: SearchOutlined },
+];
+
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
   { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), icon: BulbOutlined },
   { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: ThunderboltFilled },
@@ -193,6 +208,7 @@ const ADMIN_TEMPLATE_MENU_KEY = "admin-template";
 const ADMIN_USER_DATA_MENU_KEY = "admin-user-data";
 const ADMIN_ANALYTICS_MENU_KEY = "admin-analytics";
 const ADMIN_THIRD_PARTY_MENU_KEY = "admin-third-party";
+const ADMIN_NOTICE_MENU_KEY = "admin-notice";
 
 const adminMenuItems = computed(() =>
   [
@@ -211,6 +227,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
     { key: "/admin/feedbacks", label: "用户反馈", icon: MessageOutlined, superAdminOnly: false },
     { key: "/admin/system-messages", label: "系统邮件", icon: MailOutlined, superAdminOnly: false },
+    { key: "/admin/update-logs", label: "更新日志", icon: BellOutlined, superAdminOnly: false },
     { key: "/admin/cos-config", label: "COS 配置", icon: CloudUploadOutlined, superAdminOnly: true },
     { key: "/admin/external-api-configs", label: "生图接口", icon: KeyOutlined, superAdminOnly: true },
     { key: "/admin/video-api-configs", label: "视频接口", icon: VideoCameraOutlined, superAdminOnly: true },
@@ -261,11 +278,17 @@ const isAdminThirdPartyRoute = computed(() =>
   || route.path.startsWith("/admin/external-api-configs")
   || route.path.startsWith("/admin/video-api-configs")
 );
+const isAdminNoticeRoute = computed(() =>
+  route.path.startsWith("/admin/feedbacks")
+  || route.path.startsWith("/admin/system-messages")
+  || route.path.startsWith("/admin/update-logs")
+);
 const adminMenuOpenKeys = ref<string[]>([
   ...(isAdminTemplateRoute.value ? [ADMIN_TEMPLATE_MENU_KEY] : []),
   ...(isAdminUserDataRoute.value ? [ADMIN_USER_DATA_MENU_KEY] : []),
   ...(isAdminAnalyticsRoute.value ? [ADMIN_ANALYTICS_MENU_KEY] : []),
   ...(isAdminThirdPartyRoute.value ? [ADMIN_THIRD_PARTY_MENU_KEY] : []),
+  ...(isAdminNoticeRoute.value ? [ADMIN_NOTICE_MENU_KEY] : []),
 ]);
 
 watch(isAdminTemplateRoute, (active) => {
@@ -288,11 +311,16 @@ watch(isAdminThirdPartyRoute, (active) => {
     adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_THIRD_PARTY_MENU_KEY];
   }
 });
+watch(isAdminNoticeRoute, (active) => {
+  if (active && !adminMenuOpenKeys.value.includes(ADMIN_NOTICE_MENU_KEY)) {
+    adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_NOTICE_MENU_KEY];
+  }
+});
 const adminMenuBusinessItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/redeem-keys", "/admin/revenue"].includes(item.key))
 );
 const adminMenuNoticeItems = computed(() =>
-  adminMenuItems.value.filter((item) => ["/admin/feedbacks", "/admin/system-messages"].includes(item.key))
+  adminMenuItems.value.filter((item) => ["/admin/feedbacks", "/admin/system-messages", "/admin/update-logs"].includes(item.key))
 );
 const adminMenuConfigItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/cos-config", "/admin/external-api-configs", "/admin/video-api-configs"].includes(item.key))
@@ -311,13 +339,14 @@ const userMenuItems = computed(() => [
   { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "my-feedback", label: "我的反馈", icon: MessageOutlined, danger: false },
   { key: "system-messages", label: "系统消息", icon: MailOutlined, danger: false },
+  { key: "update-logs", label: "更新日志", icon: BellOutlined, danger: false },
   { key: "logout", label: "退出登录", icon: LogoutOutlined, danger: true },
 ]);
 const userMenuAccountItems = computed(() =>
   userMenuItems.value.filter((item) => ["profile", "credits", "promo-codes", "api-keys", "settings"].includes(item.key))
 );
 const userMenuNoticeItems = computed(() =>
-  userMenuItems.value.filter((item) => ["my-feedback", "system-messages"].includes(item.key))
+  userMenuItems.value.filter((item) => ["my-feedback", "system-messages", "update-logs"].includes(item.key))
 );
 const userMenuDangerItems = computed(() => userMenuItems.value.filter((item) => item.danger));
 
@@ -351,6 +380,15 @@ const selectedKeys = computed(() => {
     p.startsWith("/system-messages")
   ) return [];
   return ["generate"];
+});
+
+const activeGenerateEntryMode = computed<GenerateEntryMode>(() => {
+  if (route.path !== "/generate") return "imageEdit";
+  const mode = Array.isArray(route.query.mode) ? route.query.mode[0] : route.query.mode;
+  if (mode === "textGenerate" || mode === "imageEdit" || mode === "inpaint" || mode === "promptReverse") {
+    return mode;
+  }
+  return "imageEdit";
 });
 
 const adminSelectedKeys = computed(() => {
@@ -400,6 +438,20 @@ function handleMenuClick({ key }: { key: string }) {
   }
 }
 
+function openGenerateEntry(mode: GenerateEntryMode) {
+  mobileDrawerOpen.value = false;
+  router.push({
+    path: "/generate",
+    query: { mode },
+  });
+}
+
+function handleGenerateEntryMenu({ key }: { key: string }) {
+  if (key === "textGenerate" || key === "imageEdit" || key === "inpaint" || key === "promptReverse") {
+    openGenerateEntry(key);
+  }
+}
+
 function handleAdminMenu({ key }: { key: string }) {
   if (!key.startsWith("/")) return;
   mobileDrawerOpen.value = false;
@@ -415,6 +467,10 @@ function handleUserMenu({ key }: { key: string }) {
   if (key === "profile") router.push("/profile");
   else if (key === "system-messages") router.push("/system-messages");
   else if (key === "my-feedback") router.push("/feedbacks");
+  else if (key === "update-logs") {
+    notificationCenterDefaultTab.value = "update-logs";
+    notificationCenterDialogOpen.value = true;
+  }
   else if (key === "settings") router.push("/settings");
   else if (key === "credits") router.push("/credit-logs");
   else if (key === "promo-codes") router.push("/promo-codes");
@@ -527,6 +583,8 @@ function stopSystemMessagePolling() {
 }
 
 const loginModalVisible = ref(false);
+const notificationCenterDialogOpen = ref(false);
+const notificationCenterDefaultTab = ref<"feedback" | "system-messages" | "update-logs">("update-logs");
 provide("loginModalVisible", loginModalVisible);
 const authTab = ref<"login" | "register">("login");
 const loginForm = reactive({ account: "", password: "" });
@@ -1436,22 +1494,26 @@ watch(
                     {{ item.label }}
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item
-                    v-for="item in adminMenuNoticeItems"
-                    :key="item.key"
-                    :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
-                  >
-                    <template #icon><component :is="item.icon" /></template>
-                    <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
-                      <span>{{ item.label }}</span>
-                      <a-badge
-                        v-if="hasAdminUnresolvedFeedback"
-                        :count="adminUnresolvedFeedbackCount"
-                        :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
-                      />
-                    </span>
-                    <template v-else>{{ item.label }}</template>
-                  </a-menu-item>
+                  <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY" popup-class-name="warm-dropdown">
+                    <template #icon><BellOutlined /></template>
+                    <template #title>通知中心</template>
+                    <a-menu-item
+                      v-for="item in adminMenuNoticeItems"
+                      :key="item.key"
+                      :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
+                    >
+                      <template #icon><component :is="item.icon" /></template>
+                      <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
+                        <span>{{ item.label }}</span>
+                        <a-badge
+                          v-if="hasAdminUnresolvedFeedback"
+                          :count="adminUnresolvedFeedbackCount"
+                          :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
+                        />
+                      </span>
+                      <template v-else>{{ item.label }}</template>
+                    </a-menu-item>
+                  </a-sub-menu>
                   <template v-if="adminMenuBaseItems.length">
                     <a-menu-divider />
                     <a-menu-item
@@ -1534,30 +1596,35 @@ watch(
                     <span style="margin-left: 8px">{{ item.label }}</span>
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item
-                    v-for="item in userMenuNoticeItems"
-                    :key="item.key"
-                    class="user-feedback-dropdown-item"
-                  >
-                    <component :is="item.icon" />
-                    <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
-                      <span>{{ item.label }}</span>
-                      <a-badge
-                        v-if="hasUserUnreadFeedback"
-                        dot
-                        :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
-                      />
-                    </span>
-                    <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
-                      <span>{{ item.label }}</span>
-                      <a-badge
-                        v-if="hasUserUnreadSystemMessage"
-                        dot
-                        :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
-                      />
-                    </span>
-                    <span v-else style="margin-left: 8px">{{ item.label }}</span>
-                  </a-menu-item>
+                  <a-sub-menu key="user-notice-submenu" popup-class-name="warm-dropdown">
+                    <template #icon><BellOutlined /></template>
+                    <template #title>通知中心</template>
+                    <a-menu-item
+                      v-for="item in userMenuNoticeItems"
+                      :key="item.key"
+                      class="user-feedback-dropdown-item"
+                    >
+                      <template #icon><component :is="item.icon" /></template>
+                      <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
+                        <span>{{ item.label }}</span>
+                        <a-badge
+                          v-if="hasUserUnreadFeedback"
+                          dot
+                          :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
+                        />
+                      </span>
+                      <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
+                        <span>{{ item.label }}</span>
+                        <a-badge
+                          v-if="hasUserUnreadSystemMessage"
+                          dot
+                          :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
+                        />
+                      </span>
+                      <span v-else-if="item.key === 'update-logs'">{{ item.label }}</span>
+                      <span v-else>{{ item.label }}</span>
+                    </a-menu-item>
+                  </a-sub-menu>
                   <a-menu-divider />
                   <a-menu-item
                     v-for="item in userMenuDangerItems"
@@ -1594,19 +1661,49 @@ watch(
         <span class="canvas-side-brand-name">80AI</span>
       </div>
       <nav class="canvas-side-nav-menu">
-        <button
-          v-for="item in primaryMenuItems"
-          :key="item.key"
-          type="button"
-          class="canvas-side-nav-item"
-          :class="{ active: selectedKeys.includes(item.key) }"
-          @click="handleMenuClick({ key: item.key })"
-        >
-          <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
-          <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
-          <span>{{ item.label }}</span>
-          <span v-if="item.badgeText" class="nav-menu-new-badge">{{ item.badgeText }}</span>
-        </button>
+        <template v-for="item in primaryMenuItems" :key="item.key">
+          <a-dropdown
+            v-if="item.key === 'generate'"
+            :trigger="['hover']"
+            placement="rightTop"
+            :auto-adjust-overflow="false"
+            :align="{ offset: [16, 0], overflow: { adjustX: false, adjustY: false } }"
+            :get-popup-container="getDropdownPopupContainer"
+            overlay-class-name="warm-dropdown"
+          >
+            <button
+              type="button"
+              class="canvas-side-nav-item"
+              :class="{ active: selectedKeys.includes(item.key) }"
+              @click="handleMenuClick({ key: item.key })"
+            >
+              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              <span>{{ item.label }}</span>
+              <span v-if="item.badgeText" class="nav-menu-new-badge">{{ item.badgeText }}</span>
+            </button>
+            <template #overlay>
+              <a-menu :selected-keys="[activeGenerateEntryMode]" @click="handleGenerateEntryMenu">
+                <a-menu-item v-for="subItem in generateEntryMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+          <button
+            v-else
+            type="button"
+            class="canvas-side-nav-item"
+            :class="{ active: selectedKeys.includes(item.key) }"
+            @click="handleMenuClick({ key: item.key })"
+          >
+            <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+            <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+            <span>{{ item.label }}</span>
+            <span v-if="item.badgeText" class="nav-menu-new-badge">{{ item.badgeText }}</span>
+          </button>
+        </template>
       </nav>
 
       <div class="canvas-side-nav-actions">
@@ -1629,7 +1726,7 @@ watch(
           :trigger="['hover']"
           placement="rightBottom"
           :auto-adjust-overflow="false"
-          :align="{ offset: [8, 0], overflow: { adjustX: false, adjustY: false } }"
+          :align="{ offset: [12, 0], overflow: { adjustX: false, adjustY: false } }"
           :get-popup-container="getDropdownPopupContainer"
           overlay-class-name="warm-dropdown"
         >
@@ -1681,22 +1778,26 @@ watch(
                 {{ item.label }}
               </a-menu-item>
               <a-menu-divider />
-              <a-menu-item
-                v-for="item in adminMenuNoticeItems"
-                :key="item.key"
-                :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
-              >
-                <template #icon><component :is="item.icon" /></template>
-                <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
-                  <span>{{ item.label }}</span>
-                  <a-badge
-                    v-if="hasAdminUnresolvedFeedback"
-                    :count="adminUnresolvedFeedbackCount"
-                    :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
-                  />
-                </span>
-                <template v-else>{{ item.label }}</template>
-              </a-menu-item>
+              <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY" popup-class-name="warm-dropdown">
+                <template #icon><BellOutlined /></template>
+                <template #title>通知中心</template>
+                <a-menu-item
+                  v-for="item in adminMenuNoticeItems"
+                  :key="item.key"
+                  :class="{ 'admin-feedback-dropdown-item': item.key === '/admin/feedbacks' }"
+                >
+                  <template #icon><component :is="item.icon" /></template>
+                  <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
+                    <span>{{ item.label }}</span>
+                    <a-badge
+                      v-if="hasAdminUnresolvedFeedback"
+                      :count="adminUnresolvedFeedbackCount"
+                      :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
+                    />
+                  </span>
+                  <template v-else>{{ item.label }}</template>
+                </a-menu-item>
+              </a-sub-menu>
               <template v-if="adminMenuBaseItems.length">
                 <a-menu-divider />
                 <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
@@ -1720,7 +1821,7 @@ watch(
           :trigger="['hover']"
           placement="rightBottom"
           :auto-adjust-overflow="false"
-          :align="{ offset: [8, 0], overflow: { adjustX: false, adjustY: false } }"
+          :align="{ offset: [12, 0], overflow: { adjustX: false, adjustY: false } }"
           :get-popup-container="getDropdownPopupContainer"
           overlay-class-name="warm-dropdown"
         >
@@ -1751,18 +1852,23 @@ watch(
                 <span style="margin-left: 8px">{{ item.label }}</span>
               </a-menu-item>
               <a-menu-divider />
-              <a-menu-item v-for="item in userMenuNoticeItems" :key="item.key" class="user-feedback-dropdown-item">
-                <component :is="item.icon" />
-                <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
-                  <span>{{ item.label }}</span>
-                  <a-badge v-if="hasUserUnreadFeedback" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
-                </span>
-                <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
-                  <span>{{ item.label }}</span>
-                  <a-badge v-if="hasUserUnreadSystemMessage" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
-                </span>
-                <span v-else style="margin-left: 8px">{{ item.label }}</span>
-              </a-menu-item>
+              <a-sub-menu key="canvas-user-notice-submenu" popup-class-name="warm-dropdown">
+                <template #icon><BellOutlined /></template>
+                <template #title>通知中心</template>
+                <a-menu-item v-for="item in userMenuNoticeItems" :key="item.key" class="user-feedback-dropdown-item">
+                  <template #icon><component :is="item.icon" /></template>
+                  <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
+                    <span>{{ item.label }}</span>
+                    <a-badge v-if="hasUserUnreadFeedback" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
+                  </span>
+                  <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
+                    <span>{{ item.label }}</span>
+                    <a-badge v-if="hasUserUnreadSystemMessage" dot :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }" />
+                  </span>
+                  <span v-else-if="item.key === 'update-logs'">{{ item.label }}</span>
+                  <span v-else>{{ item.label }}</span>
+                </a-menu-item>
+              </a-sub-menu>
               <a-menu-divider />
               <a-menu-item v-for="item in userMenuDangerItems" :key="item.key" danger>
                 <component :is="item.icon" />
@@ -1929,18 +2035,22 @@ watch(
               {{ item.label }}
             </a-menu-item>
             <a-menu-divider />
-            <a-menu-item v-for="item in adminMenuNoticeItems" :key="item.key">
-              <template #icon><component :is="item.icon" /></template>
-              <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
-                <span>{{ item.label }}</span>
-                <a-badge
-                  v-if="hasAdminUnresolvedFeedback"
-                  :count="adminUnresolvedFeedbackCount"
-                  :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
-                />
-              </span>
-              <template v-else>{{ item.label }}</template>
-            </a-menu-item>
+            <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY">
+              <template #icon><BellOutlined /></template>
+              <template #title>通知中心</template>
+              <a-menu-item v-for="item in adminMenuNoticeItems" :key="item.key">
+                <template #icon><component :is="item.icon" /></template>
+                <span v-if="item.key === '/admin/feedbacks'" class="admin-menu-feedback-label">
+                  <span>{{ item.label }}</span>
+                  <a-badge
+                    v-if="hasAdminUnresolvedFeedback"
+                    :count="adminUnresolvedFeedbackCount"
+                    :number-style="{ backgroundColor: '#ff4d4f', color: '#fff' }"
+                  />
+                </span>
+                <template v-else>{{ item.label }}</template>
+              </a-menu-item>
+            </a-sub-menu>
             <template v-if="adminMenuBaseItems.length">
               <a-menu-divider />
               <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
@@ -1966,29 +2076,34 @@ watch(
                 <span>{{ item.label }}</span>
               </a-menu-item>
               <a-menu-divider />
-              <a-menu-item
-                v-for="item in userMenuNoticeItems"
-                :key="item.key"
-              >
-                <component :is="item.icon" />
-                <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
-                  <span>{{ item.label }}</span>
-                  <a-badge
-                    v-if="hasUserUnreadFeedback"
-                    dot
-                    :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
-                  />
-                </span>
-                <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
-                  <span>{{ item.label }}</span>
-                  <a-badge
-                    v-if="hasUserUnreadSystemMessage"
-                    dot
-                    :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
-                  />
-                </span>
-                <span v-else>{{ item.label }}</span>
-              </a-menu-item>
+              <a-sub-menu key="mobile-user-notice-submenu">
+                <template #icon><BellOutlined /></template>
+                <template #title>通知中心</template>
+                <a-menu-item
+                  v-for="item in userMenuNoticeItems"
+                  :key="item.key"
+                >
+                  <template #icon><component :is="item.icon" /></template>
+                  <span v-if="item.key === 'my-feedback'" class="user-menu-feedback-label">
+                    <span>{{ item.label }}</span>
+                    <a-badge
+                      v-if="hasUserUnreadFeedback"
+                      dot
+                      :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
+                    />
+                  </span>
+                  <span v-else-if="item.key === 'system-messages'" class="user-menu-feedback-label">
+                    <span>{{ item.label }}</span>
+                    <a-badge
+                      v-if="hasUserUnreadSystemMessage"
+                      dot
+                      :dot-style="{ width: '10px', height: '10px', minWidth: '10px' }"
+                    />
+                  </span>
+                  <span v-else-if="item.key === 'update-logs'">{{ item.label }}</span>
+                  <span v-else>{{ item.label }}</span>
+                </a-menu-item>
+              </a-sub-menu>
               <a-menu-divider />
               <a-menu-item
                 v-for="item in userMenuDangerItems"
@@ -2032,6 +2147,10 @@ watch(
     </div>
 
     <UserSuggestionDialog v-model:open="suggestionDialogOpen" />
+    <NotificationCenterDialog
+      v-model:open="notificationCenterDialogOpen"
+      :default-tab="notificationCenterDefaultTab"
+    />
 
     <a-modal
       v-model:open="creditsContactVisible"
@@ -3277,7 +3396,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 }
 
 .user-menu-feedback-label {
-  margin-left: 8px;
   width: 100%;
   display: inline-flex;
   align-items: center;

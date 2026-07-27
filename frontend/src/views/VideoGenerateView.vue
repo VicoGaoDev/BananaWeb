@@ -23,6 +23,7 @@ import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
+import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { getMe } from "@/api/auth";
 import {
   isImageUploadTooLarge,
@@ -35,7 +36,7 @@ import { createVideoTask, deleteVideoTask, getVideoTasks } from "@/api/videoTask
 import { useAuthStore } from "@/stores/auth";
 import type { SceneOptionItem, UserAsset, UserPrompt, VideoTaskResult, VideoTaskSceneConfig } from "@/types";
 
-type VideoGenerateMode = "textGenerate" | "imageToVideo";
+type VideoGenerateMode = "textGenerate" | "imageToVideo" | "firstLastFrame";
 type UploadItemStatus = "uploading" | "success" | "failed";
 
 interface UploadPreviewItem {
@@ -59,6 +60,7 @@ const VIDEO_TASK_COUNT_MARKS: Record<number, string> = {
 const RESULT_COLUMN_OPTIONS = [2, 3] as const;
 type ResultColumnOption = typeof RESULT_COLUMN_OPTIONS[number];
 const DEFAULT_RESULT_COLUMN_COUNT: ResultColumnOption = 2;
+const FIRST_LAST_FRAME_SLOTS = [0, 1] as const;
 const loading = ref(false);
 const submitting = ref(false);
 const taskPollingInFlight = ref(false);
@@ -74,7 +76,9 @@ const videoTasks = ref<VideoTaskResult[]>([]);
 const failureRefundRemainingCount = ref<number | null>(null);
 const taskPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const referenceItems = ref<UploadPreviewItem[]>([]);
+const firstLastFrameItems = ref<[UploadPreviewItem | null, UploadPreviewItem | null]>([null, null]);
 const assetPickerOpen = ref(false);
+const assetPickerFrameSlot = ref<0 | 1 | null>(null);
 const promptLibraryVisible = ref(false);
 const detailOpen = ref(false);
 const detailTask = ref<VideoTaskResult | null>(null);
@@ -83,16 +87,21 @@ const feedbackTarget = ref<VideoTaskResult | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const referencePickerOpening = ref(false);
 const referenceDragActive = ref(false);
+const frameDragActive = ref<0 | 1 | null>(null);
 const viewportWidth = ref(typeof window === "undefined" ? 1200 : window.innerWidth);
 const preferredResultColumnCount = ref<ResultColumnOption>(DEFAULT_RESULT_COLUMN_COUNT);
 const playingVideoTaskIds = ref<Set<string>>(new Set());
 const videoPlayerRefs = new Map<string, HTMLVideoElement>();
 
 function isSceneAvailableForGenerateMode(scene: VideoTaskSceneConfig, mode: VideoGenerateMode) {
-  const availabilityMode = scene.availability_mode || "both";
-  if (availabilityMode === "both") return true;
-  if (mode === "textGenerate") return availabilityMode === "text_to_video";
-  return availabilityMode === "image_to_video";
+  const availabilityModes = scene.availability_modes?.length
+    ? scene.availability_modes
+    : (
+      scene.availability_mode === "text_to_video"
+        ? ["text_to_video"]
+        : (scene.availability_mode === "image_to_video" ? ["image_to_video"] : ["text_to_video", "image_to_video"])
+    );
+  return availabilityModes.includes(getGenerationModeValue(mode));
 }
 
 const selectedScene = computed(
@@ -139,27 +148,34 @@ const activeTaskIds = computed(() => (
     .map((task) => task.id)
 ));
 const maxReferenceImages = computed(() => {
+  if (generateMode.value === "firstLastFrame") return 2;
   if (generateMode.value !== "imageToVideo") return 0;
   if (!selectedScene.value) return DEFAULT_MAX_VIDEO_REFERENCE_IMAGES;
   return Math.max(0, Number(selectedScene.value.max_reference_images || 0));
 });
 const referenceUrls = computed(() => (
-  referenceItems.value
+  getCurrentReferenceItems()
     .filter((item) => item.status === "success" && item.remoteUrl)
     .map((item) => item.remoteUrl)
 ));
-const uploading = computed(() => referenceItems.value.some((item) => item.status === "uploading"));
+const uploading = computed(() => getCurrentReferenceItems().some((item) => item.status === "uploading"));
 let filePickerRecoveryTimer: number | null = null;
 const promptPlaceholder = computed(() => (
-  generateMode.value === "imageToVideo"
+  generateMode.value === "firstLastFrame"
+    ? "描述首帧到尾帧之间的主体动作、镜头运动和画面变化..."
+    : generateMode.value === "imageToVideo"
     ? "描述参考画面的主体动作、镜头运动、转场方式和最终视频氛围..."
     : "描述您想要生成的视频内容、镜头运动、主体动作和场景氛围..."
 ));
 const emptyStateTitle = computed(() => (
-  generateMode.value === "imageToVideo" ? "还没有图生视频任务" : "还没有文生视频任务"
+  generateMode.value === "firstLastFrame"
+    ? "还没有首尾帧任务"
+    : (generateMode.value === "imageToVideo" ? "还没有图生视频任务" : "还没有文生视频任务")
 ));
 const emptyStateDescription = computed(() => (
-  generateMode.value === "imageToVideo"
+  generateMode.value === "firstLastFrame"
+    ? "上传首帧和尾帧并提交任务后，右侧会显示排队、生成和结果状态。"
+    : generateMode.value === "imageToVideo"
     ? "在左侧切换到图生视频并提交任务后，右侧会显示排队、生成和结果状态。"
     : "在左侧输入提示词并提交任务后，右侧会显示排队、生成和结果状态。"
 ));
@@ -182,6 +198,25 @@ function formatRequestError(err: any) {
   return err?.response?.data?.detail || err?.message || "请求失败，请稍后重试";
 }
 
+function getGenerationModeValue(mode: VideoGenerateMode): VideoTaskResult["generation_mode"] {
+  if (mode === "firstLastFrame") return "first_last_frame";
+  if (mode === "imageToVideo") return "image_to_video";
+  return "text_to_video";
+}
+
+function getGenerateModeFromTask(task: Pick<VideoTaskResult, "generation_mode" | "reference_images">): VideoGenerateMode {
+  if (task.generation_mode === "first_last_frame") return "firstLastFrame";
+  if (task.generation_mode === "image_to_video") return "imageToVideo";
+  if (task.generation_mode === "text_to_video") return "textGenerate";
+  return task.reference_images?.length ? "imageToVideo" : "textGenerate";
+}
+
+function getCurrentReferenceItems() {
+  return generateMode.value === "firstLastFrame"
+    ? firstLastFrameItems.value.filter((item): item is UploadPreviewItem => !!item)
+    : referenceItems.value;
+}
+
 function updateViewportWidth() {
   if (typeof window === "undefined") return;
   viewportWidth.value = window.innerWidth;
@@ -196,20 +231,42 @@ function getReferencePreviewUrl(item: UploadPreviewItem) {
   return item.remoteUrl || item.localUrl;
 }
 
-function updateReferenceItem(id: string, patch: Partial<UploadPreviewItem>) {
-  const index = referenceItems.value.findIndex((item) => item.id === id);
-  if (index === -1) return;
-  referenceItems.value[index] = {
-    ...referenceItems.value[index],
-    ...patch,
-  };
+function getFrameReferencePreviewUrl(slot: 0 | 1) {
+  const item = firstLastFrameItems.value[slot];
+  return item ? getReferencePreviewUrl(item) : "";
 }
 
-function triggerUpload() {
-  if (referenceItems.value.length >= maxReferenceImages.value) {
+function getFrameReferenceStatus(slot: 0 | 1) {
+  return firstLastFrameItems.value[slot]?.status || "success";
+}
+
+function updateReferenceItem(id: string, patch: Partial<UploadPreviewItem>) {
+  const index = referenceItems.value.findIndex((item) => item.id === id);
+  if (index !== -1) {
+    referenceItems.value[index] = {
+      ...referenceItems.value[index],
+      ...patch,
+    };
+    return;
+  }
+  const frameIndex = firstLastFrameItems.value.findIndex((item) => item?.id === id);
+  if (frameIndex === -1) return;
+  const current = firstLastFrameItems.value[frameIndex];
+  if (!current) return;
+  const next = [...firstLastFrameItems.value] as [UploadPreviewItem | null, UploadPreviewItem | null];
+  next[frameIndex] = {
+    ...current,
+    ...patch,
+  };
+  firstLastFrameItems.value = next;
+}
+
+function triggerUpload(frameSlot: 0 | 1 | null = null) {
+  if (frameSlot === null && referenceItems.value.length >= maxReferenceImages.value) {
     message.warning(`当前最多上传 ${maxReferenceImages.value} 张参考图`);
     return;
   }
+  assetPickerFrameSlot.value = frameSlot;
   referencePickerOpening.value = true;
   scheduleFilePickerRecovery();
   fileInput.value?.click();
@@ -244,7 +301,20 @@ function handleDocumentVisibilityChange() {
   }
 }
 
+function setFrameReferenceItem(slot: 0 | 1, item: UploadPreviewItem | null) {
+  const current = firstLastFrameItems.value[slot];
+  if (current?.objectUrl && current.objectUrl !== item?.objectUrl) {
+    revokeObjectUrl(current.objectUrl);
+  }
+  const next = [...firstLastFrameItems.value] as [UploadPreviewItem | null, UploadPreviewItem | null];
+  next[slot] = item;
+  firstLastFrameItems.value = next;
+}
+
 function addLibraryAssetToReference(asset: UserAsset) {
+  if (generateMode.value === "firstLastFrame" && assetPickerFrameSlot.value !== null) {
+    return addLibraryAssetToFrameSlot(asset, assetPickerFrameSlot.value);
+  }
   if (referenceItems.value.some((item) => item.remoteUrl === asset.image_url)) {
     message.info("这张素材已在参考图中");
     return false;
@@ -262,7 +332,37 @@ function addLibraryAssetToReference(asset: UserAsset) {
   return true;
 }
 
+function addLibraryAssetToFrameSlot(asset: UserAsset, slot: 0 | 1) {
+  const duplicatedSlot = firstLastFrameItems.value.findIndex((item, index) => index !== slot && item?.remoteUrl === asset.image_url);
+  if (duplicatedSlot !== -1) {
+    message.info("首帧和尾帧不能使用同一张图片");
+    return false;
+  }
+  setFrameReferenceItem(slot, {
+    id: `frame-asset-${asset.id}-${Date.now()}`,
+    localUrl: asset.thumb_url || asset.image_url,
+    remoteUrl: asset.image_url,
+    status: "success",
+  });
+  return true;
+}
+
 function addLibraryAssetsToReference(assets: UserAsset[]) {
+  if (generateMode.value === "firstLastFrame") {
+    const startSlot = assetPickerFrameSlot.value ?? 0;
+    const availableSlots = [0, 1].slice(startSlot).filter((slot) => !firstLastFrameItems.value[slot]) as Array<0 | 1>;
+    if (!availableSlots.length) {
+      message.warning("首帧和尾帧均已选择图片");
+      return false;
+    }
+    let added = 0;
+    for (const asset of assets) {
+      const slot = availableSlots.shift();
+      if (slot === undefined) break;
+      if (addLibraryAssetToFrameSlot(asset, slot)) added += 1;
+    }
+    return added > 0;
+  }
   const limit = maxReferenceImages.value;
   if (limit <= 0) {
     message.warning("当前场景不支持参考图");
@@ -305,21 +405,30 @@ function addLibraryAssetsToReference(assets: UserAsset[]) {
 async function handlePickUserAsset(asset: UserAsset) {
   if (addLibraryAssetToReference(asset)) {
     assetPickerOpen.value = false;
+    assetPickerFrameSlot.value = null;
   }
 }
 
 async function handlePickUserAssets(assets: UserAsset[]) {
   if (addLibraryAssetsToReference(assets)) {
     assetPickerOpen.value = false;
+    assetPickerFrameSlot.value = null;
   }
 }
 
 function openAssetPicker() {
+  assetPickerFrameSlot.value = null;
   if (!auth.isLoggedIn) {
     message.warning("请先登录后使用素材库");
     return;
   }
   assetPickerOpen.value = true;
+}
+
+function openFrameAssetPicker(slot: 0 | 1) {
+  assetPickerFrameSlot.value = slot;
+  openAssetPicker();
+  assetPickerFrameSlot.value = slot;
 }
 
 function openPromptLibrary() {
@@ -370,7 +479,39 @@ async function handlePlayVideo(taskId: string) {
   }
 }
 
-async function processReferenceFiles(files: File[]) {
+async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = null) {
+  if (frameSlot !== null) {
+    const file = files[0];
+    if (!file) return;
+    if (files.length > 1) {
+      message.warning("首帧和尾帧每次只能上传 1 张图片");
+    }
+    if (isImageUploadTooLarge(file)) {
+      message.warning(`单张参考图不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    const item: UploadPreviewItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      localUrl: objectUrl,
+      remoteUrl: "",
+      status: "uploading",
+      objectUrl,
+    };
+    setFrameReferenceItem(frameSlot, item);
+    try {
+      const uploaded = await uploadReferenceImage(file, "ref");
+      updateReferenceItem(item.id, {
+        remoteUrl: uploaded.url,
+        status: "success",
+      });
+    } catch (err: any) {
+      updateReferenceItem(item.id, { status: "failed" });
+      message.error(err?.message || "参考图上传失败");
+    }
+    return;
+  }
+
   const remainingSlots = Math.max(0, maxReferenceImages.value - referenceItems.value.length);
   if (!remainingSlots) {
     message.warning(`当前最多上传 ${maxReferenceImages.value} 张参考图`);
@@ -414,17 +555,23 @@ async function processReferenceFiles(files: File[]) {
 async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);
+  const frameSlot = assetPickerFrameSlot.value;
+  assetPickerFrameSlot.value = null;
   clearReferencePickerOpening();
   clearFilePickerRecoveryTimer();
   input.value = "";
   if (!files.length) return;
-  await processReferenceFiles(files);
+  await processReferenceFiles(files, frameSlot);
 }
 
 function removeReference(index: number) {
   const item = referenceItems.value[index];
   if (item) revokeObjectUrl(item.objectUrl);
   referenceItems.value.splice(index, 1);
+}
+
+function removeFrameReference(slot: 0 | 1) {
+  setFrameReferenceItem(slot, null);
 }
 
 function handleReferenceDragOver(event: DragEvent) {
@@ -446,6 +593,26 @@ async function handleReferenceDrop(event: DragEvent) {
   const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith("image/"));
   if (!files.length) return;
   await processReferenceFiles(files);
+}
+
+function handleFrameDragOver(event: DragEvent, slot: 0 | 1) {
+  event.preventDefault();
+  frameDragActive.value = slot;
+}
+
+function handleFrameDragLeave(event: DragEvent, slot: 0 | 1) {
+  event.preventDefault();
+  const nextTarget = event.relatedTarget as Node | null;
+  if (nextTarget && (event.currentTarget as HTMLElement | null)?.contains(nextTarget)) return;
+  if (frameDragActive.value === slot) frameDragActive.value = null;
+}
+
+async function handleFrameDrop(event: DragEvent, slot: 0 | 1) {
+  event.preventDefault();
+  frameDragActive.value = null;
+  const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith("image/"));
+  if (!files.length) return;
+  await processReferenceFiles(files, slot);
 }
 
 function ensureSceneDefaults() {
@@ -522,6 +689,7 @@ function buildVideoTaskPlaceholder(task: VideoTaskResult): VideoTaskResult {
     id: task.id,
     model: task.model,
     source: task.source || "web",
+    generation_mode: task.generation_mode || "text_to_video",
     prompt: task.prompt,
     duration_seconds: task.duration_seconds,
     aspect_ratio: task.aspect_ratio,
@@ -542,9 +710,10 @@ function buildVideoTaskPlaceholder(task: VideoTaskResult): VideoTaskResult {
   };
 }
 
-async function submitVideoTaskFromPayload(task: Pick<VideoTaskResult, "model" | "prompt" | "duration_seconds" | "aspect_ratio" | "resolution" | "reference_images" | "source" | "credit_cost">) {
+async function submitVideoTaskFromPayload(task: Pick<VideoTaskResult, "model" | "generation_mode" | "prompt" | "duration_seconds" | "aspect_ratio" | "resolution" | "reference_images" | "source" | "credit_cost">) {
   const response = await createVideoTask({
     model: task.model,
+    generation_mode: task.generation_mode,
     prompt: task.prompt.trim(),
     duration_seconds: Number(task.duration_seconds || 0),
     aspect_ratio: task.aspect_ratio || "",
@@ -567,6 +736,17 @@ async function submitVideoTaskFromPayload(task: Pick<VideoTaskResult, "model" | 
 }
 
 function replaceReferenceItems(urls: string[]) {
+  if (generateMode.value === "firstLastFrame") {
+    firstLastFrameItems.value.forEach((item) => revokeObjectUrl(item?.objectUrl));
+    const restored = urls.slice(0, 2).map((url, index) => ({
+      id: `restored-frame-${index}-${Date.now()}`,
+      localUrl: url,
+      remoteUrl: url,
+      status: "success" as const,
+    }));
+    firstLastFrameItems.value = [restored[0] || null, restored[1] || null];
+    return;
+  }
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
   referenceItems.value = urls.map((url, index) => ({
     id: `restored-${index}-${Date.now()}`,
@@ -592,7 +772,7 @@ function promptSwitchToTextGenerate(messageText: string) {
 function applyIncomingVideoDraft() {
   const draft = consumeVideoGenerateDraft();
   if (!draft) return;
-  generateMode.value = draft.mode === "textGenerate" ? "textGenerate" : "imageToVideo";
+  generateMode.value = draft.mode;
   prompt.value = draft.prompt || "";
   selectedModel.value = draft.model || "";
   selectedAspectRatio.value = draft.aspect_ratio || "";
@@ -603,6 +783,8 @@ function applyIncomingVideoDraft() {
   replaceReferenceItems(
     draft.mode === "imageToVideo"
       ? draft.reference_images.slice(0, Math.max(1, maxReferenceImages.value || DEFAULT_MAX_VIDEO_REFERENCE_IMAGES))
+      : draft.mode === "firstLastFrame"
+        ? draft.reference_images.slice(0, 2)
       : [],
   );
   message.success("已回填到视频生成页，可继续编辑后提交");
@@ -669,15 +851,22 @@ async function handleSubmit() {
       return;
     }
   }
+  if (generateMode.value === "firstLastFrame") {
+    if (referenceUrls.value.length !== 2) {
+      message.warning("首尾帧视频必须上传首帧和尾帧两张图片");
+      return;
+    }
+  }
 
   const taskCount = Math.min(Math.max(Number(selectedTaskCount.value || 1), 1), 4);
   const payload = {
     model: selectedModel.value,
+    generation_mode: getGenerationModeValue(generateMode.value),
     prompt: prompt.value.trim(),
     duration_seconds: Number(selectedDuration.value || 0),
     aspect_ratio: hideAspectRatio.value ? "" : selectedAspectRatio.value,
     resolution: hideResolution.value ? "" : selectedResolution.value,
-    reference_images: generateMode.value === "imageToVideo" ? [...referenceUrls.value] : [],
+    reference_images: generateMode.value === "textGenerate" ? [] : [...referenceUrls.value],
     source: "web" as const,
     credit_cost: selectedCreditCost.value,
   };
@@ -724,7 +913,10 @@ function getSceneOptionSubtitle(scene: VideoTaskSceneConfig) {
 }
 
 function getVideoTaskModeLabel(task: VideoTaskResult) {
-  return task.reference_images?.length ? "图生视频" : "文生视频";
+  const mode = getGenerateModeFromTask(task);
+  if (mode === "firstLastFrame") return "首尾帧";
+  if (mode === "imageToVideo") return "图生视频";
+  return "文生视频";
 }
 
 function getVideoTaskSpecLabel(task: VideoTaskResult) {
@@ -737,7 +929,7 @@ function getVideoTaskSpecLabel(task: VideoTaskResult) {
 
 function handleRecreateTask(task: VideoTaskResult) {
   const restoredReferenceImages = [...(task.reference_images || [])];
-  generateMode.value = restoredReferenceImages.length ? "imageToVideo" : "textGenerate";
+  generateMode.value = getGenerateModeFromTask(task);
   selectedModel.value = task.model || "";
   prompt.value = task.prompt || "";
   selectedAspectRatio.value = task.aspect_ratio || "";
@@ -824,6 +1016,10 @@ watch(selectedScene, () => {
   ensureSceneDefaults();
 });
 
+watch(generateMode, () => {
+  ensureSceneDefaults();
+});
+
 watch(videoTasks, (tasks) => {
   if (!detailOpen.value || !detailTask.value) return;
   const latest = tasks.find((item) => item.id === detailTask.value?.id);
@@ -878,6 +1074,7 @@ onBeforeUnmount(() => {
   clearFilePickerRecoveryTimer();
   stopTaskPolling();
   referenceItems.value.forEach((item) => revokeObjectUrl(item.objectUrl));
+  firstLastFrameItems.value.forEach((item) => revokeObjectUrl(item?.objectUrl));
 });
 </script>
 
@@ -911,6 +1108,17 @@ onBeforeUnmount(() => {
                     <span>图生视频</span>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  class="mode-switch-btn"
+                  :class="{ active: generateMode === 'firstLastFrame' }"
+                  @click="generateMode = 'firstLastFrame'"
+                >
+                  <span class="generate-tab-label">
+                    <PictureOutlined />
+                    <span>首尾帧</span>
+                  </span>
+                </button>
               </div>
             </div>
           </div>
@@ -931,7 +1139,7 @@ onBeforeUnmount(() => {
                           class="flat-select"
                           option-label-prop="label"
                           popup-class-name="video-generate-dropdown"
-                          :placeholder="generateMode === 'imageToVideo' ? '请选择图生视频模型' : '请选择文生视频模型'"
+                          :placeholder="generateMode === 'firstLastFrame' ? '请选择首尾帧模型' : (generateMode === 'imageToVideo' ? '请选择图生视频模型' : '请选择文生视频模型')"
                         >
                           <a-select-option
                             v-for="scene in filteredTaskScenes"
@@ -1000,13 +1208,76 @@ onBeforeUnmount(() => {
                       <div
                         v-if="referenceItems.length < maxReferenceImages"
                         class="upload-add"
-                        @click="triggerUpload"
+                        @click="triggerUpload()"
                       >
                         <a-spin v-if="uploading || referencePickerOpening" />
                         <template v-else>
                           <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
                           <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
                         </template>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="generateMode === 'firstLastFrame'"
+                    class="field-block ref-upload-block config-section"
+                  >
+                    <div class="panel-head">
+                      <h3>首尾帧</h3>
+                      <div class="panel-head-actions">
+                        <span class="panel-hint">首帧和尾帧各 1 张，支持拖拽上传</span>
+                      </div>
+                    </div>
+
+                    <input
+                      ref="fileInput"
+                      class="native-file-input"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      @change="handleFileChange"
+                    />
+
+                    <div class="frame-upload-grid">
+                      <div
+                        v-for="slot in FIRST_LAST_FRAME_SLOTS"
+                        :key="slot"
+                        class="frame-upload-card"
+                        :class="{ 'is-reference-drag-over': frameDragActive === slot }"
+                        @dragover="handleFrameDragOver($event, slot)"
+                        @dragleave="handleFrameDragLeave($event, slot)"
+                        @drop="handleFrameDrop($event, slot)"
+                      >
+                        <div v-if="firstLastFrameItems[slot]" class="upload-thumb frame-upload-thumb">
+                          <img :src="getFrameReferencePreviewUrl(slot)" :alt="slot === 0 ? '首帧' : '尾帧'" />
+                          <div v-if="getFrameReferenceStatus(slot) !== 'success'" class="upload-thumb-mask" :class="{ error: getFrameReferenceStatus(slot) === 'failed' }">
+                            <a-spin v-if="getFrameReferenceStatus(slot) === 'uploading'" />
+                            <span v-else>上传失败</span>
+                          </div>
+                          <button
+                            type="button"
+                            class="thumb-remove"
+                            :aria-label="slot === 0 ? '删除首帧' : '删除尾帧'"
+                            @click.stop="removeFrameReference(slot)"
+                          >
+                            <CloseOutlined />
+                          </button>
+                        </div>
+                        <div
+                          v-else
+                          class="upload-add frame-upload-add"
+                          @click="triggerUpload(slot)"
+                        >
+                          <a-spin v-if="uploading || referencePickerOpening" />
+                          <template v-else>
+                            <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
+                            <span>{{ frameDragActive === slot ? "松开上传" : `上传${slot === 0 ? "首帧" : "尾帧"}` }}</span>
+                          </template>
+                        </div>
+                        <a-button type="text" class="asset-library-btn frame-asset-btn" @click.stop="openFrameAssetPicker(slot)">
+                          素材库
+                        </a-button>
                       </div>
                     </div>
                   </div>
@@ -1100,6 +1371,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="result-head-meta">
+            <UpdateLogEntryButton />
             <a-select
               v-model:value="preferredResultColumnCount"
               class="result-column-select"
@@ -1726,6 +1998,48 @@ onBeforeUnmount(() => {
 
 .upload-add-icon {
   color: var(--theme-accent);
+}
+
+.frame-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.frame-upload-card {
+  position: relative;
+}
+
+.frame-upload-thumb,
+.frame-upload-add {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+.frame-upload-card.is-reference-drag-over .frame-upload-thumb,
+.frame-upload-card.is-reference-drag-over .frame-upload-add {
+  background: color-mix(in srgb, var(--theme-accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 28%, transparent);
+}
+
+.frame-asset-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  width: auto;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+}
+
+.frame-upload-card:hover .frame-asset-btn,
+.frame-upload-card:focus-within .frame-asset-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .prompt-library-btn,
@@ -2402,6 +2716,10 @@ onBeforeUnmount(() => {
 
   .video-task-list {
     grid-template-columns: 1fr !important;
+  }
+
+  .frame-upload-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

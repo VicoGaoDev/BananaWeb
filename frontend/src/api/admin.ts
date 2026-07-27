@@ -261,7 +261,7 @@ export function getAdminVideoTasks(
   filters: {
     source?: "web" | "app" | "api";
     model?: string;
-    mode?: "text_to_video" | "image_to_video";
+    mode?: "text_to_video" | "image_to_video" | "first_last_frame";
     prompt?: string;
     status?: "pending" | "queued" | "processing" | "success" | "failed";
     user_id?: string;

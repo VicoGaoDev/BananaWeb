@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.feedback import Feedback
 from app.models.system_message import SystemMessage
 from app.models.task import Task
+from app.models.update_log import UpdateLog
 from app.models.user import User
 from app.utils.business_id import normalize_business_id
 
@@ -32,6 +33,12 @@ def system_message_external_id(message: SystemMessage | None) -> str:
     if not message:
         return ""
     return (message.business_id or "").strip() or str(message.id)
+
+
+def update_log_external_id(item: UpdateLog | None) -> str:
+    if not item:
+        return ""
+    return (item.business_id or "").strip() or str(item.id)
 
 
 def get_user_by_business_id(db: Session, business_id: str) -> User | None:
@@ -81,4 +88,11 @@ def get_system_message_by_business_id(db: Session, business_id: str) -> SystemMe
     if not normalized:
         return None
     return db.query(SystemMessage).filter(SystemMessage.business_id == normalized).first()
+
+
+def get_update_log_by_business_id(db: Session, business_id: str) -> UpdateLog | None:
+    normalized = normalize_business_id(business_id)
+    if not normalized:
+        return None
+    return db.query(UpdateLog).filter(UpdateLog.business_id == normalized).first()
 

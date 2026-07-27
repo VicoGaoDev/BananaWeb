@@ -2,7 +2,7 @@
 import { ref, computed, defineComponent, h, inject, nextTick, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
 import { message, Modal, notification } from "ant-design-vue";
 import dayjs from "dayjs";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
 import {
   FontSizeOutlined,
@@ -53,6 +53,7 @@ import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
+import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { withBaseUrl } from "@/lib/assets";
 import {
   formatGenerationErrorMessage,
@@ -77,6 +78,7 @@ import type { BoardKey, GenerationModelOption, ImageResult, SceneOptionItem, Tas
 
 const auth = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 const COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY = "user-completed-unread-feedback";
@@ -410,6 +412,21 @@ const detailModelOptions = computed(() => (
     value: scene.scene_key,
   }))
 ));
+
+function normalizeRouteGenerateMode(value: unknown): GenerateMode {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (normalized === "textGenerate" || normalized === "imageEdit" || normalized === "inpaint" || normalized === "promptReverse") {
+    return normalized;
+  }
+  return "imageEdit";
+}
+
+function applyRouteGenerateMode() {
+  const nextMode = normalizeRouteGenerateMode(route.query.mode);
+  if (generateMode.value !== nextMode) {
+    generateMode.value = nextMode;
+  }
+}
 function isNewModel(model?: Pick<GenerationModelOption, "model_key" | "model_label"> | null) {
   if (!model) return false;
   return NEW_MODEL_KEYS.has(model.model_key) || /lite/i.test(model.model_label);
@@ -2557,6 +2574,7 @@ onMounted(async () => {
     "已套用创意模版参数，可继续编辑后生成",
     TEMPLATE_DRAFT_KEY
   );
+  applyRouteGenerateMode();
 });
 
 onActivated(async () => {
@@ -2589,6 +2607,13 @@ watch(generationModels, (models) => {
     selectedModel.value = models[0].model_key;
   }
 }, { immediate: true });
+
+watch(
+  () => route.query.mode,
+  () => {
+    applyRouteGenerateMode();
+  },
+);
 
 watch(sizeOptions, (options) => {
   if (hideAspectRatio.value || !options.length) return;
@@ -3678,6 +3703,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </button>
           </div>
           <div class="result-head-meta">
+            <UpdateLogEntryButton />
             <a-select
               v-model:value="preferredResultColumnCount"
               placeholder="每行列数"

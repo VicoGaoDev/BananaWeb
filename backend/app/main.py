@@ -118,6 +118,7 @@ def _run_startup_schema_sync():
     _ensure_template_required_columns()
     _ensure_feedback_schema()
     _ensure_system_message_schema()
+    _ensure_update_log_schema()
     _ensure_history_pin_schema()
     _ensure_user_asset_schema()
     _ensure_user_board_schema()
@@ -1602,6 +1603,13 @@ def _ensure_video_scene_binding_schema():
                         "ADD COLUMN availability_mode VARCHAR(20) NOT NULL DEFAULT 'both'"
                     )
                 )
+            if "availability_modes_json" not in video_scene_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE video_external_api_scene_bindings "
+                        "ADD COLUMN availability_modes_json TEXT"
+                    )
+                )
             conn.execute(
                 text(
                     "UPDATE video_external_api_scene_bindings "
@@ -1637,6 +1645,16 @@ def _ensure_video_scene_binding_schema():
                     "WHERE availability_mode IS NULL OR availability_mode = ''"
                 )
             )
+            conn.execute(
+                text(
+                    "UPDATE video_external_api_scene_bindings "
+                    "SET availability_modes_json = CASE "
+                    "WHEN availability_mode = 'text_to_video' THEN '[\"text_to_video\"]' "
+                    "WHEN availability_mode = 'image_to_video' THEN '[\"image_to_video\"]' "
+                    "ELSE '[\"text_to_video\", \"image_to_video\"]' END "
+                    "WHERE availability_modes_json IS NULL OR availability_modes_json = ''"
+                )
+            )
         return
     from app.models.video_external_api_scene_binding import VideoExternalApiSceneBinding
 
@@ -1651,10 +1669,21 @@ def _ensure_video_task_schema():
     if "video_tasks" in table_names:
         video_task_columns = {col["name"] for col in inspector.get_columns("video_tasks")}
         with engine.begin() as conn:
+            if "generation_mode" not in video_task_columns:
+                conn.execute(text("ALTER TABLE video_tasks ADD COLUMN generation_mode VARCHAR(30) NOT NULL DEFAULT ''"))
             if "aspect_ratio" not in video_task_columns:
                 conn.execute(text("ALTER TABLE video_tasks ADD COLUMN aspect_ratio VARCHAR(20) NOT NULL DEFAULT ''"))
             if "reference_images" not in video_task_columns:
                 conn.execute(text("ALTER TABLE video_tasks ADD COLUMN reference_images TEXT"))
+            conn.execute(
+                text(
+                    "UPDATE video_tasks "
+                    "SET generation_mode = CASE "
+                    "WHEN reference_images IS NULL OR reference_images = '' OR reference_images = '[]' THEN 'text_to_video' "
+                    "ELSE 'image_to_video' END "
+                    "WHERE generation_mode IS NULL OR generation_mode = ''"
+                )
+            )
         return
     from app.models.video_task import VideoTask
 
@@ -1886,6 +1915,69 @@ def _ensure_system_message_schema():
                     """
                 )
             )
+
+
+def _ensure_update_log_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "update_logs" not in table_names:
+        from app.models.update_log import UpdateLog
+
+        UpdateLog.__table__.create(bind=engine)
+        inspector = inspect(engine)
+
+    update_log_columns = {col["name"] for col in inspector.get_columns("update_logs")}
+    update_log_indexes = {index["name"] for index in inspector.get_indexes("update_logs")}
+
+    with engine.begin() as conn:
+        if "business_id" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN business_id VARCHAR(32) NULL"))
+        if "title" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''"))
+        if "content" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN content TEXT"))
+        if "tag_type" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN tag_type VARCHAR(20) NOT NULL DEFAULT 'other'"))
+        if "effective_at" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN effective_at DATETIME NULL"))
+        if "created_at" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in update_log_columns:
+            conn.execute(text("ALTER TABLE update_logs ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+
+        conn.execute(text("UPDATE update_logs SET title = '' WHERE title IS NULL"))
+        conn.execute(text("UPDATE update_logs SET content = '' WHERE content IS NULL"))
+        conn.execute(text("UPDATE update_logs SET tag_type = 'other' WHERE tag_type IS NULL OR tag_type = ''"))
+        conn.execute(text("UPDATE update_logs SET effective_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE effective_at IS NULL"))
+
+        if "ix_update_logs_title" not in update_log_indexes:
+            conn.execute(text("CREATE INDEX ix_update_logs_title ON update_logs (title)"))
+        if "ix_update_logs_tag_type" not in update_log_indexes:
+            conn.execute(text("CREATE INDEX ix_update_logs_tag_type ON update_logs (tag_type)"))
+        if "ix_update_logs_effective_at" not in update_log_indexes:
+            conn.execute(text("CREATE INDEX ix_update_logs_effective_at ON update_logs (effective_at)"))
+        if "idx_update_logs_effective_at_id" not in update_log_indexes:
+            conn.execute(text("CREATE INDEX idx_update_logs_effective_at_id ON update_logs (effective_at, id)"))
+
+    from app.database import SessionLocal
+    from app.models.update_log import UpdateLog
+
+    db = SessionLocal()
+    try:
+        changed = False
+        rows = db.query(UpdateLog).filter((UpdateLog.business_id.is_(None)) | (UpdateLog.business_id == "")).all()
+        for row in rows:
+            row.business_id = generate_business_id()
+            changed = True
+        if changed:
+            db.commit()
+    finally:
+        db.close()
+
+    refreshed_indexes = {index["name"] for index in inspect(engine).get_indexes("update_logs")}
+    with engine.begin() as conn:
+        if "ix_update_logs_business_id" not in refreshed_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX ix_update_logs_business_id ON update_logs (business_id)"))
 
 
 def _ensure_history_pin_schema():
@@ -2426,7 +2518,7 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, video_external_api_config, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts  # noqa: E402
+from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, external_api_config, video_external_api_config, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts, update_logs  # noqa: E402
 app.include_router(auth.router)
 app.include_router(user_api_keys.router)
 app.include_router(templates.router)
@@ -2445,6 +2537,8 @@ app.include_router(payment.router)
 app.include_router(feedback.router)
 app.include_router(system_messages.router)
 app.include_router(system_messages.admin_router)
+app.include_router(update_logs.router)
+app.include_router(update_logs.admin_router)
 app.include_router(admin.router)
 app.include_router(example_canvases.admin_router)
 app.include_router(upload.router)
