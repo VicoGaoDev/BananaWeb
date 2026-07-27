@@ -253,6 +253,9 @@ function sourceLabel(source: TaskSource) {
 }
 
 function modeLabel(task: AdminVideoTaskResult) {
+  if (task.generation_mode === "first_last_frame") return "首尾帧";
+  if (task.generation_mode === "image_to_video") return "图生视频";
+  if (task.generation_mode === "text_to_video") return "文生视频";
   return task.reference_images?.length ? "图生视频" : "文生视频";
 }
 
@@ -378,8 +381,11 @@ function handleDownloadVideo(task: Pick<VideoTaskResult, "id" | "videos">) {
 }
 
 function handleDetailReedit(task: VideoTaskResult) {
+  const mode = task.generation_mode === "first_last_frame"
+    ? "firstLastFrame"
+    : (task.generation_mode === "image_to_video" || task.reference_images?.length ? "imageToVideo" : "textGenerate");
   const saved = saveVideoGenerateDraft({
-    mode: task.reference_images?.length ? "imageToVideo" : "textGenerate",
+    mode,
     prompt: task.prompt || "",
     reference_images: (task.reference_images || []).map((item) => withApiBaseUrl(item)),
     model: task.model || "",

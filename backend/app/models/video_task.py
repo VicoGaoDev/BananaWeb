@@ -13,6 +13,7 @@ class VideoTask(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     model = Column(String(50), nullable=False, default="")
     source = Column(String(20), nullable=False, default="web", server_default="web")
+    generation_mode = Column(String(30), nullable=False, default="", server_default="")
     prompt = Column(Text, nullable=False, default="")
     duration_seconds = Column(Integer, nullable=False, default=5, server_default="5")
     aspect_ratio = Column(String(20), nullable=False, default="")

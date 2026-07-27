@@ -21,6 +21,7 @@ class VideoExternalApiSceneBinding(Base):
     display_name = Column(String(100), nullable=False, default="", server_default="")
     subtitle = Column(String(255), nullable=False, default="", server_default="")
     availability_mode = Column(String(20), nullable=False, default="both", server_default="both")
+    availability_modes_json = Column(Text, nullable=False, default="[]")
     max_reference_images = Column(Integer, nullable=False, default=1, server_default="1")
     credit_billing_mode = Column(String(20), nullable=False, default="fixed", server_default="fixed")
     credit_cost = Column(Integer, nullable=False, default=0, server_default="0")

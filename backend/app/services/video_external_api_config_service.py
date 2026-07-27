@@ -50,6 +50,12 @@ PER_SECOND_VIDEO_CREDIT_BILLING_MODE = "per_second"
 VIDEO_SCENE_AVAILABILITY_TEXT = "text_to_video"
 VIDEO_SCENE_AVAILABILITY_IMAGE = "image_to_video"
 VIDEO_SCENE_AVAILABILITY_BOTH = "both"
+VIDEO_SCENE_AVAILABILITY_FIRST_LAST = "first_last_frame"
+VIDEO_SCENE_GENERATION_MODES = (
+    VIDEO_SCENE_AVAILABILITY_TEXT,
+    VIDEO_SCENE_AVAILABILITY_IMAGE,
+    VIDEO_SCENE_AVAILABILITY_FIRST_LAST,
+)
 
 
 def _enforce_async_call_mode(config: VideoExternalApiConfig) -> VideoExternalApiConfig:
@@ -134,13 +140,69 @@ def normalize_video_scene_availability_mode(raw: str | None) -> str:
     return VIDEO_SCENE_AVAILABILITY_BOTH
 
 
-def is_video_scene_available_for_task_mode(availability_mode: str | None, *, has_reference_images: bool) -> bool:
-    normalized = normalize_video_scene_availability_mode(availability_mode)
-    if normalized == VIDEO_SCENE_AVAILABILITY_BOTH:
-        return True
-    if has_reference_images:
-        return normalized == VIDEO_SCENE_AVAILABILITY_IMAGE
-    return normalized == VIDEO_SCENE_AVAILABILITY_TEXT
+def normalize_video_generation_mode(raw: str | None, *, has_reference_images: bool = False) -> str:
+    normalized = (raw or "").strip().lower()
+    if normalized in VIDEO_SCENE_GENERATION_MODES:
+        return normalized
+    return VIDEO_SCENE_AVAILABILITY_IMAGE if has_reference_images else VIDEO_SCENE_AVAILABILITY_TEXT
+
+
+def normalize_video_scene_availability_modes(raw: str | None, legacy_mode: str | None = None) -> list[str]:
+    candidate = (raw or "").strip()
+    parsed: object = None
+    if candidate:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            parsed = None
+    normalized: list[str] = []
+    if isinstance(parsed, list):
+        for item in parsed:
+            mode = str(item or "").strip().lower()
+            if mode in VIDEO_SCENE_GENERATION_MODES and mode not in normalized:
+                normalized.append(mode)
+    if normalized:
+        return normalized
+
+    legacy = normalize_video_scene_availability_mode(legacy_mode)
+    if legacy == VIDEO_SCENE_AVAILABILITY_TEXT:
+        return [VIDEO_SCENE_AVAILABILITY_TEXT]
+    if legacy == VIDEO_SCENE_AVAILABILITY_IMAGE:
+        return [VIDEO_SCENE_AVAILABILITY_IMAGE]
+    return [VIDEO_SCENE_AVAILABILITY_TEXT, VIDEO_SCENE_AVAILABILITY_IMAGE]
+
+
+def video_scene_availability_modes_json(modes: list[str] | tuple[str, ...] | None) -> str:
+    normalized: list[str] = []
+    for item in modes or []:
+        mode = str(item or "").strip().lower()
+        if mode in VIDEO_SCENE_GENERATION_MODES and mode not in normalized:
+            normalized.append(mode)
+    if not normalized:
+        normalized = [VIDEO_SCENE_AVAILABILITY_TEXT, VIDEO_SCENE_AVAILABILITY_IMAGE]
+    return json.dumps(normalized, ensure_ascii=False)
+
+
+def legacy_availability_mode_from_modes(modes: list[str] | tuple[str, ...] | None) -> str:
+    normalized = normalize_video_scene_availability_modes(video_scene_availability_modes_json(list(modes or [])))
+    has_text = VIDEO_SCENE_AVAILABILITY_TEXT in normalized
+    has_image = VIDEO_SCENE_AVAILABILITY_IMAGE in normalized
+    if has_text and has_image:
+        return VIDEO_SCENE_AVAILABILITY_BOTH
+    if has_text:
+        return VIDEO_SCENE_AVAILABILITY_TEXT
+    return VIDEO_SCENE_AVAILABILITY_IMAGE
+
+
+def is_video_scene_available_for_task_mode(
+    availability_mode: str | None,
+    *,
+    has_reference_images: bool = False,
+    generation_mode: str | None = None,
+    availability_modes_json: str | None = None,
+) -> bool:
+    task_mode = normalize_video_generation_mode(generation_mode, has_reference_images=has_reference_images)
+    return task_mode in normalize_video_scene_availability_modes(availability_modes_json, availability_mode)
 
 
 def _serialize_scene_binding(
@@ -148,6 +210,10 @@ def _serialize_scene_binding(
     primary_config: VideoExternalApiConfig | None,
     backup_config: VideoExternalApiConfig | None,
 ) -> VideoExternalApiSceneBindingOut:
+    availability_modes = normalize_video_scene_availability_modes(
+        binding.availability_modes_json,
+        binding.availability_mode,
+    )
     return VideoExternalApiSceneBindingOut(
         scene_key=binding.scene_key,
         scene_label=binding.scene_label,
@@ -159,6 +225,7 @@ def _serialize_scene_binding(
         hide_duration=bool(binding.hide_duration),
         hide_resolution=bool(binding.hide_resolution),
         availability_mode=normalize_video_scene_availability_mode(binding.availability_mode),
+        availability_modes=availability_modes,
         max_reference_images=max(0, int(binding.max_reference_images or 0)),
         status=(binding.status or "enabled"),
         is_builtin=False,
@@ -314,8 +381,9 @@ def create_video_scene_binding(db: Session, body: VideoExternalApiSceneBindingCr
         api_config_id=body.api_config_id,
         backup_api_config_id=body.backup_api_config_id,
     )
-    binding = VideoExternalApiSceneBinding(**body.model_dump())
-    binding.availability_mode = normalize_video_scene_availability_mode(body.availability_mode)
+    binding = VideoExternalApiSceneBinding(**body.model_dump(exclude={"availability_modes"}))
+    binding.availability_modes_json = video_scene_availability_modes_json(body.availability_modes)
+    binding.availability_mode = legacy_availability_mode_from_modes(body.availability_modes)
     db.add(binding)
     db.commit()
     db.refresh(binding)
@@ -359,7 +427,8 @@ def update_video_scene_binding_meta(
     binding.hide_aspect_ratio = body.hide_aspect_ratio
     binding.hide_duration = body.hide_duration
     binding.hide_resolution = body.hide_resolution
-    binding.availability_mode = normalize_video_scene_availability_mode(body.availability_mode)
+    binding.availability_modes_json = video_scene_availability_modes_json(body.availability_modes)
+    binding.availability_mode = legacy_availability_mode_from_modes(body.availability_modes)
     binding.max_reference_images = max(0, int(body.max_reference_images or 0))
     binding.credit_billing_mode = _normalize_credit_billing_mode(body.credit_billing_mode)
     binding.credit_cost = body.credit_cost
@@ -421,6 +490,7 @@ def list_public_video_task_scene_configs(db: Session) -> list[VideoTaskSceneConf
             hide_duration=bool(item.hide_duration),
             hide_resolution=bool(item.hide_resolution),
             availability_mode=normalize_video_scene_availability_mode(item.availability_mode),
+            availability_modes=normalize_video_scene_availability_modes(item.availability_modes_json, item.availability_mode),
             max_reference_images=max(0, int(item.max_reference_images or 0)),
             credit_billing_mode=_normalize_credit_billing_mode(item.credit_billing_mode),
             credit_cost=int(item.credit_cost or 0),
@@ -447,6 +517,7 @@ def list_video_generation_models(db: Session) -> list[VideoGenerationModelOption
             hide_duration=bool(item.hide_duration),
             hide_resolution=bool(item.hide_resolution),
             availability_mode=normalize_video_scene_availability_mode(item.availability_mode),
+            availability_modes=item.availability_modes,
             max_reference_images=max(0, int(item.max_reference_images or 0)),
             credit_billing_mode=_normalize_credit_billing_mode(item.credit_billing_mode),
             credit_cost=int(item.credit_cost or 0),

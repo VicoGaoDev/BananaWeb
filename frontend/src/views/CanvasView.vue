@@ -342,10 +342,18 @@ const imageEditModels = computed(() => {
   return models.length ? models : textGenerateModels.value;
 });
 const videoTextGenerateModels = computed(() => (
-  videoTaskScenes.value.filter((item) => (item.availability_mode || "both") !== "image_to_video")
+  videoTaskScenes.value.filter((item) => (
+    item.availability_modes?.length
+      ? item.availability_modes.includes("text_to_video")
+      : (item.availability_mode || "both") !== "image_to_video"
+  ))
 ));
 const videoImageGenerateModels = computed(() => (
-  videoTaskScenes.value.filter((item) => (item.availability_mode || "both") !== "text_to_video")
+  videoTaskScenes.value.filter((item) => (
+    item.availability_modes?.length
+      ? item.availability_modes.includes("image_to_video")
+      : (item.availability_mode || "both") !== "text_to_video"
+  ))
 ));
 const generationModels = computed<Array<TaskSceneConfig | VideoTaskSceneConfig>>(() => {
   if (isImageTaskKind.value) {

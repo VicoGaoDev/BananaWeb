@@ -30,10 +30,10 @@ import type {
   VideoExternalApiSceneBinding,
   VideoExternalApiSceneBindingCreatePayload,
   VideoExternalApiSceneBindingMetaPayload,
+  VideoGenerationMode,
 } from "@/types";
 
 type VideoCreditBillingMode = VideoExternalApiSceneBinding["credit_billing_mode"];
-type VideoSceneAvailabilityMode = VideoExternalApiSceneBinding["availability_mode"];
 
 const DEFAULT_DURATION_OPTIONS_JSON = JSON.stringify([
   { label: "5 秒", value: "5" },
@@ -55,7 +55,7 @@ const DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON = JSON.stringify([200, 201, 202], nul
 const DEFAULT_RESULT_SUCCESS_VALUES_JSON = JSON.stringify(["success", "succeeded", "completed"], null, 2);
 const DEFAULT_RESULT_FAILED_VALUES_JSON = JSON.stringify(["failed", "error", "cancelled"], null, 2);
 const DEFAULT_CREDIT_BILLING_MODE: VideoCreditBillingMode = "fixed";
-const DEFAULT_AVAILABILITY_MODE: VideoSceneAvailabilityMode = "both";
+const DEFAULT_AVAILABILITY_MODES: VideoGenerationMode[] = ["text_to_video", "image_to_video"];
 const DEFAULT_PER_SECOND_CREDIT_COST = 1;
 
 const configs = ref<VideoExternalApiConfig[]>([]);
@@ -139,7 +139,8 @@ const sceneForm = reactive<VideoExternalApiSceneBindingCreatePayload>({
   hide_aspect_ratio: false,
   hide_duration: false,
   hide_resolution: false,
-  availability_mode: DEFAULT_AVAILABILITY_MODE,
+  availability_mode: "both",
+  availability_modes: [...DEFAULT_AVAILABILITY_MODES],
   max_reference_images: 1,
   api_config_id: null,
   backup_api_config_id: null,
@@ -164,7 +165,8 @@ const sceneMetaForm = reactive<VideoExternalApiSceneBindingMetaPayload>({
   hide_aspect_ratio: false,
   hide_duration: false,
   hide_resolution: false,
-  availability_mode: DEFAULT_AVAILABILITY_MODE,
+  availability_mode: "both",
+  availability_modes: [...DEFAULT_AVAILABILITY_MODES],
   max_reference_images: 1,
   credit_billing_mode: DEFAULT_CREDIT_BILLING_MODE,
   credit_cost: 10,
@@ -216,10 +218,33 @@ function creditBillingModeLabel(mode: VideoCreditBillingMode) {
   return mode === "per_second" ? "按秒计费" : "固定计费";
 }
 
-function availabilityModeLabel(mode: VideoSceneAvailabilityMode | null | undefined) {
-  if (mode === "text_to_video") return "仅文生视频";
-  if (mode === "image_to_video") return "仅图生视频";
-  return "文生/图生均可";
+function normalizeAvailabilityModes(
+  modes: VideoGenerationMode[] | null | undefined,
+  legacyMode?: VideoExternalApiSceneBinding["availability_mode"] | null,
+): VideoGenerationMode[] {
+  const normalized = (modes || []).filter((item, index, arr) => arr.indexOf(item) === index);
+  if (normalized.length) return normalized;
+  if (legacyMode === "text_to_video") return ["text_to_video"] as VideoGenerationMode[];
+  if (legacyMode === "image_to_video") return ["image_to_video"] as VideoGenerationMode[];
+  return [...DEFAULT_AVAILABILITY_MODES];
+}
+
+function legacyAvailabilityModeFromModes(modes: VideoGenerationMode[]): VideoExternalApiSceneBinding["availability_mode"] {
+  const hasText = modes.includes("text_to_video");
+  const hasImage = modes.includes("image_to_video");
+  if (hasText && hasImage) return "both";
+  if (hasText) return "text_to_video";
+  return "image_to_video";
+}
+
+function availabilityModeItemLabel(mode: VideoGenerationMode) {
+  if (mode === "text_to_video") return "文生视频";
+  if (mode === "image_to_video") return "图生视频";
+  return "首尾帧";
+}
+
+function availabilityModesLabel(modes: VideoGenerationMode[] | null | undefined, legacyMode?: VideoExternalApiSceneBinding["availability_mode"] | null) {
+  return normalizeAvailabilityModes(modes, legacyMode).map(availabilityModeItemLabel).join(" / ");
 }
 
 function isFixedCreditBillingMode(mode: VideoCreditBillingMode | null | undefined) {
@@ -341,7 +366,8 @@ function resetSceneForm() {
   sceneForm.hide_aspect_ratio = false;
   sceneForm.hide_duration = false;
   sceneForm.hide_resolution = false;
-  sceneForm.availability_mode = DEFAULT_AVAILABILITY_MODE;
+  sceneForm.availability_mode = "both";
+  sceneForm.availability_modes = [...DEFAULT_AVAILABILITY_MODES];
   sceneForm.max_reference_images = 1;
   sceneForm.api_config_id = null;
   sceneForm.backup_api_config_id = null;
@@ -387,7 +413,8 @@ function fillSceneMetaForm(record: VideoExternalApiSceneBinding) {
   sceneMetaForm.hide_aspect_ratio = !!record.hide_aspect_ratio;
   sceneMetaForm.hide_duration = !!record.hide_duration;
   sceneMetaForm.hide_resolution = !!record.hide_resolution;
-  sceneMetaForm.availability_mode = record.availability_mode || DEFAULT_AVAILABILITY_MODE;
+  sceneMetaForm.availability_modes = normalizeAvailabilityModes(record.availability_modes, record.availability_mode);
+  sceneMetaForm.availability_mode = legacyAvailabilityModeFromModes(sceneMetaForm.availability_modes);
   sceneMetaForm.max_reference_images = Number(record.max_reference_images || 0);
   sceneMetaForm.credit_billing_mode = record.credit_billing_mode || DEFAULT_CREDIT_BILLING_MODE;
   sceneMetaForm.credit_cost = Number(record.credit_cost || 0);
@@ -474,7 +501,8 @@ function openCopyScene(record: VideoExternalApiSceneBinding) {
   sceneForm.hide_aspect_ratio = !!record.hide_aspect_ratio;
   sceneForm.hide_duration = !!record.hide_duration;
   sceneForm.hide_resolution = !!record.hide_resolution;
-  sceneForm.availability_mode = record.availability_mode || DEFAULT_AVAILABILITY_MODE;
+  sceneForm.availability_modes = normalizeAvailabilityModes(record.availability_modes, record.availability_mode);
+  sceneForm.availability_mode = legacyAvailabilityModeFromModes(sceneForm.availability_modes);
   sceneForm.max_reference_images = Number(record.max_reference_images || 0);
   sceneForm.api_config_id = record.api_config_id ?? null;
   sceneForm.backup_api_config_id = record.backup_api_config_id ?? null;
@@ -871,6 +899,10 @@ async function handleCreateScene() {
     message.warning("请输入场景名称");
     return;
   }
+  if (!sceneForm.availability_modes.length) {
+    message.warning("请至少选择一个可用范围");
+    return;
+  }
   if (!validateSceneOptionsJson(sceneForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneForm.duration_options_json, "秒数选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneForm.resolution_options_json, "分辨率选项 JSON")) return;
@@ -887,7 +919,8 @@ async function handleCreateScene() {
       hide_aspect_ratio: !!sceneForm.hide_aspect_ratio,
       hide_duration: !!sceneForm.hide_duration,
       hide_resolution: !!sceneForm.hide_resolution,
-      availability_mode: sceneForm.availability_mode,
+      availability_mode: legacyAvailabilityModeFromModes(sceneForm.availability_modes),
+      availability_modes: [...sceneForm.availability_modes],
       max_reference_images: Number(sceneForm.max_reference_images || 0),
       api_config_id: sceneForm.api_config_id ?? null,
       backup_api_config_id: sceneForm.backup_api_config_id ?? null,
@@ -924,6 +957,10 @@ async function handleSaveSceneMeta() {
     message.warning("请输入场景名称");
     return;
   }
+  if (!sceneMetaForm.availability_modes.length) {
+    message.warning("请至少选择一个可用范围");
+    return;
+  }
   if (!validateSceneOptionsJson(sceneMetaForm.aspect_ratio_options_json, "宽高比选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneMetaForm.duration_options_json, "秒数选项 JSON")) return;
   if (!validateSceneOptionsJson(sceneMetaForm.resolution_options_json, "分辨率选项 JSON")) return;
@@ -940,7 +977,8 @@ async function handleSaveSceneMeta() {
       hide_aspect_ratio: !!sceneMetaForm.hide_aspect_ratio,
       hide_duration: !!sceneMetaForm.hide_duration,
       hide_resolution: !!sceneMetaForm.hide_resolution,
-      availability_mode: sceneMetaForm.availability_mode,
+      availability_mode: legacyAvailabilityModeFromModes(sceneMetaForm.availability_modes),
+      availability_modes: [...sceneMetaForm.availability_modes],
       max_reference_images: Number(sceneMetaForm.max_reference_images || 0),
       credit_billing_mode: sceneMetaForm.credit_billing_mode,
       credit_cost: Number(sceneMetaForm.credit_cost || 0),
@@ -1114,7 +1152,7 @@ onMounted(load);
                   {{ record.status === "enabled" ? "启用" : "停用" }}
                 </a-tag>
                 <a-tag class="api-tag api-tag-group">
-                  {{ availabilityModeLabel(record.availability_mode) }}
+                  {{ availabilityModesLabel(record.availability_modes, record.availability_mode) }}
                 </a-tag>
               </a-space>
             </template>
@@ -1272,6 +1310,11 @@ onMounted(load);
               <pre v-pre>{{ reference_image_1_mime_type }}</pre>
               <pre v-pre>{{ reference_image_1_data_url }}</pre>
               <pre v-pre>{{ reference_image_count }}</pre>
+              <div class="scene-desc" style="margin-top: 8px">首尾帧模式可使用别名：</div>
+              <pre v-pre>{{ first_frame_image_url }}</pre>
+              <pre v-pre>{{ last_frame_image_url }}</pre>
+              <pre v-pre>{{ first_frame_image_data_url }}</pre>
+              <pre v-pre>{{ last_frame_image_data_url }}</pre>
               <div class="scene-desc" style="margin-top: 8px">
                 每个视频场景可单独配置最大参考图张数。前端会按场景限制上传数量，并回填
                 <code v-pre>{{ reference_image_1 }}</code>
@@ -1351,10 +1394,10 @@ onMounted(load);
           <a-input v-model:value="sceneForm.scene_description" class="warm-input" placeholder="例如：高质量文生视频模型" />
         </a-form-item>
         <a-form-item label="可用范围">
-          <a-select v-model:value="sceneForm.availability_mode" class="warm-select">
-            <a-select-option value="text_to_video">仅文生视频可用</a-select-option>
-            <a-select-option value="image_to_video">仅图生视频可用</a-select-option>
-            <a-select-option value="both">文生视频 / 图生视频均可用</a-select-option>
+          <a-select v-model:value="sceneForm.availability_modes" class="warm-select" mode="multiple" placeholder="请选择可用范围">
+            <a-select-option value="text_to_video">文生视频</a-select-option>
+            <a-select-option value="image_to_video">图生视频</a-select-option>
+            <a-select-option value="first_last_frame">首尾帧</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="默认绑定接口">
@@ -1473,10 +1516,10 @@ onMounted(load);
           </a-col>
         </a-row>
         <a-form-item label="可用范围">
-          <a-select v-model:value="sceneMetaForm.availability_mode" class="warm-select">
-            <a-select-option value="text_to_video">仅文生视频可用</a-select-option>
-            <a-select-option value="image_to_video">仅图生视频可用</a-select-option>
-            <a-select-option value="both">文生视频 / 图生视频均可用</a-select-option>
+          <a-select v-model:value="sceneMetaForm.availability_modes" class="warm-select" mode="multiple" placeholder="请选择可用范围">
+            <a-select-option value="text_to_video">文生视频</a-select-option>
+            <a-select-option value="image_to_video">图生视频</a-select-option>
+            <a-select-option value="first_last_frame">首尾帧</a-select-option>
           </a-select>
         </a-form-item>
         <a-row :gutter="16">

@@ -22,10 +22,13 @@ from app.services.failure_refund_service import (
 from app.services.image_delivery_service import normalize_external_image_url
 from app.services.user_credit_service import apply_user_credit_delta, get_user_credit_account
 from app.services.video_external_api_config_service import (
+    VIDEO_SCENE_AVAILABILITY_FIRST_LAST,
+    VIDEO_SCENE_AVAILABILITY_IMAGE,
+    VIDEO_SCENE_AVAILABILITY_TEXT,
     get_video_scene_credit_cost,
     get_video_scene_max_reference_images,
     is_video_scene_available_for_task_mode,
-    normalize_video_scene_availability_mode,
+    normalize_video_generation_mode,
 )
 from app.utils.business_id import normalize_business_id
 from app.utils.datetime_utils import now_local
@@ -100,6 +103,11 @@ def serialize_video_task(
     public_error_message: bool = False,
 ) -> dict:
     db = Session.object_session(task)
+    reference_images = _parse_reference_images(task.reference_images)
+    generation_mode = normalize_video_generation_mode(
+        getattr(task, "generation_mode", ""),
+        has_reference_images=bool(reference_images),
+    )
     resolved_credit_refunded = bool(credit_refunded)
     if credit_refunded is None and db is not None and task.status == "failed":
         resolved_credit_refunded = is_video_task_credit_refunded(db, task)
@@ -112,11 +120,12 @@ def serialize_video_task(
         "id": task.business_id,
         "model": task.model or "",
         "source": task.source or "web",
+        "generation_mode": generation_mode,
         "prompt": task.prompt or "",
         "duration_seconds": int(task.duration_seconds or 0),
         "aspect_ratio": task.aspect_ratio or "",
         "resolution": task.resolution or "",
-        "reference_images": _parse_reference_images(task.reference_images),
+        "reference_images": reference_images,
         "credit_cost": int(task.credit_cost or 0),
         "credit_refunded": resolved_credit_refunded,
         "failure_refund_remaining_count": failure_refund_remaining_count,
@@ -225,6 +234,7 @@ def refund_video_task_credit_for_failure_if_needed(db: Session, task: VideoTask)
 
 
 def _validate_video_task_create_payload(
+    generation_mode: str,
     prompt: str,
     duration_seconds: int,
     aspect_ratio: str,
@@ -232,7 +242,8 @@ def _validate_video_task_create_payload(
     reference_images: list[str] | None = None,
     *,
     max_reference_images: int = VIDEO_TASK_MAX_REFERENCE_IMAGES,
-) -> tuple[str, int, str, str, list[str]]:
+) -> tuple[str, str, int, str, str, list[str]]:
+    normalized_generation_mode = normalize_video_generation_mode(generation_mode, has_reference_images=bool(reference_images))
     normalized_prompt = (prompt or "").strip()
     if not normalized_prompt:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词不能为空")
@@ -251,22 +262,38 @@ def _validate_video_task_create_payload(
         normalized_url = normalize_external_image_url(item)
         if normalized_url and normalized_url not in normalized_reference_images:
             normalized_reference_images.append(normalized_url)
-    allowed_reference_images = max(0, min(int(max_reference_images or 0), VIDEO_TASK_MAX_REFERENCE_IMAGES))
-    if len(normalized_reference_images) > allowed_reference_images:
+    if normalized_generation_mode == VIDEO_SCENE_AVAILABILITY_TEXT:
+        if normalized_reference_images:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文生视频不支持上传参考图")
+    elif normalized_generation_mode == VIDEO_SCENE_AVAILABILITY_FIRST_LAST:
+        if len(normalized_reference_images) != 2:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="首尾帧视频必须上传首帧和尾帧两张图片")
+    else:
+        allowed_reference_images = max(0, min(int(max_reference_images or 0), VIDEO_TASK_MAX_REFERENCE_IMAGES))
         if allowed_reference_images <= 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前场景不支持上传参考图")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"参考图最多支持 {allowed_reference_images} 张",
-        )
-    return normalized_prompt, normalized_duration, normalized_aspect_ratio, normalized_resolution, normalized_reference_images
+        if not normalized_reference_images:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图生视频必须上传参考图")
+        if len(normalized_reference_images) > allowed_reference_images:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"参考图最多支持 {allowed_reference_images} 张",
+            )
+    return (
+        normalized_generation_mode,
+        normalized_prompt,
+        normalized_duration,
+        normalized_aspect_ratio,
+        normalized_resolution,
+        normalized_reference_images,
+    )
 
 
-def _validate_video_scene_mode_access(db: Session, scene_key: str, *, reference_images: list[str]) -> None:
+def _validate_video_scene_mode_access(db: Session, scene_key: str, *, generation_mode: str) -> None:
     from app.models.video_external_api_scene_binding import VideoExternalApiSceneBinding
 
     binding = (
-        db.query(VideoExternalApiSceneBinding.availability_mode)
+        db.query(VideoExternalApiSceneBinding.availability_mode, VideoExternalApiSceneBinding.availability_modes_json)
         .filter(
             VideoExternalApiSceneBinding.scene_key == (scene_key or "").strip().lower(),
             VideoExternalApiSceneBinding.is_deleted.is_(False),
@@ -275,13 +302,20 @@ def _validate_video_scene_mode_access(db: Session, scene_key: str, *, reference_
     )
     if not binding:
         return
-    availability_mode = normalize_video_scene_availability_mode(binding[0] if isinstance(binding, tuple) else binding.availability_mode)
-    has_reference_images = bool(reference_images)
-    if is_video_scene_available_for_task_mode(availability_mode, has_reference_images=has_reference_images):
+    availability_mode = binding[0] if isinstance(binding, tuple) else binding.availability_mode
+    availability_modes_json = binding[1] if isinstance(binding, tuple) else binding.availability_modes_json
+    if is_video_scene_available_for_task_mode(
+        availability_mode,
+        generation_mode=generation_mode,
+        availability_modes_json=availability_modes_json,
+    ):
         return
-    if has_reference_images:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前视频场景仅支持文生视频")
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前视频场景仅支持图生视频")
+    mode_label = {
+        VIDEO_SCENE_AVAILABILITY_TEXT: "文生视频",
+        VIDEO_SCENE_AVAILABILITY_IMAGE: "图生视频",
+        VIDEO_SCENE_AVAILABILITY_FIRST_LAST: "首尾帧",
+    }.get(generation_mode, "当前模式")
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"当前视频场景不支持{mode_label}")
 
 
 def _ensure_video_task_submission_capacity(db: Session, user_id: int) -> None:
@@ -325,6 +359,7 @@ def create_video_task(
     user_id: int,
     model: str,
     source: str,
+    generation_mode: str,
     prompt: str,
     duration_seconds: int,
     aspect_ratio: str,
@@ -335,7 +370,8 @@ def create_video_task(
     if not normalized_model:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请选择视频模型")
     max_reference_images = get_video_scene_max_reference_images(db, normalized_model)
-    normalized_prompt, normalized_duration, normalized_aspect_ratio, normalized_resolution, normalized_reference_images = _validate_video_task_create_payload(
+    normalized_generation_mode, normalized_prompt, normalized_duration, normalized_aspect_ratio, normalized_resolution, normalized_reference_images = _validate_video_task_create_payload(
+        generation_mode,
         prompt,
         duration_seconds,
         aspect_ratio,
@@ -346,7 +382,7 @@ def create_video_task(
     _validate_video_scene_mode_access(
         db,
         normalized_model,
-        reference_images=normalized_reference_images,
+        generation_mode=normalized_generation_mode,
     )
     user = db.query(User).filter(User.id == user_id).with_for_update().first()
     if not user:
@@ -376,6 +412,7 @@ def create_video_task(
         user_id=user_id,
         model=normalized_model,
         source=(source or "web").strip().lower() or "web",
+        generation_mode=normalized_generation_mode,
         prompt=normalized_prompt,
         duration_seconds=normalized_duration,
         aspect_ratio=normalized_aspect_ratio,
@@ -557,10 +594,25 @@ def list_admin_video_tasks(
         query = query.filter(VideoTask.model == model)
     if not include_unsafe_tasks:
         query = query.filter(build_exclude_content_safety_failed_task_clause(VideoTask.status, VideoTask.error_message))
-    if mode == "text_to_video":
-        query = query.filter((VideoTask.reference_images == "") | (VideoTask.reference_images == "[]"))
-    elif mode == "image_to_video":
-        query = query.filter(VideoTask.reference_images.is_not(None), VideoTask.reference_images.notin_(["", "[]"]))
+    if mode == VIDEO_SCENE_AVAILABILITY_TEXT:
+        query = query.filter(
+            (VideoTask.generation_mode == VIDEO_SCENE_AVAILABILITY_TEXT)
+            | (
+                ((VideoTask.generation_mode == "") | (VideoTask.generation_mode.is_(None)))
+                & ((VideoTask.reference_images == "") | (VideoTask.reference_images == "[]"))
+            )
+        )
+    elif mode == VIDEO_SCENE_AVAILABILITY_IMAGE:
+        query = query.filter(
+            (VideoTask.generation_mode == VIDEO_SCENE_AVAILABILITY_IMAGE)
+            | (
+                ((VideoTask.generation_mode == "") | (VideoTask.generation_mode.is_(None)))
+                & VideoTask.reference_images.is_not(None)
+                & VideoTask.reference_images.notin_(["", "[]"])
+            )
+        )
+    elif mode == VIDEO_SCENE_AVAILABILITY_FIRST_LAST:
+        query = query.filter(VideoTask.generation_mode == VIDEO_SCENE_AVAILABILITY_FIRST_LAST)
     if prompt:
         query = query.filter(VideoTask.prompt.ilike(f"%{prompt.strip()}%"))
     if status:

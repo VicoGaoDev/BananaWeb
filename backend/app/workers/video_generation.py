@@ -129,6 +129,18 @@ def _parse_reference_images(task: VideoTask) -> list[str]:
         return []
     return [str(item or "").strip() for item in parsed if str(item or "").strip()]
 
+
+def _add_frame_alias_variables(render_variables: dict[str, object], index: int, reference_payload: dict[str, object]) -> None:
+    if index not in (1, 2):
+        return
+    prefix = "first_frame" if index == 1 else "last_frame"
+    inline_part = reference_payload["inline_part"]
+    render_variables[f"{prefix}_image"] = inline_part
+    render_variables[f"{prefix}_image_base64"] = reference_payload["base64"]
+    render_variables[f"{prefix}_image_mime_type"] = reference_payload["mime_type"]
+    render_variables[f"{prefix}_image_data_url"] = reference_payload["data_url"]
+
+
 def _infer_video_format(video_url: str, mime_type: str) -> str:
     if mime_type:
         return mime_type.split("/")[-1].lower()
@@ -170,6 +182,7 @@ def _call_sync_video_generation_api_once(db, *, config, task: VideoTask) -> tupl
             "aspect_ratio": task.aspect_ratio or "",
             "resolution": task.resolution or "",
             "mapped_resolution": mapped_resolution,
+            "generation_mode": task.generation_mode or "",
             "reference_image_count": 0,
         }
         reference_count = 0
@@ -177,6 +190,8 @@ def _call_sync_video_generation_api_once(db, *, config, task: VideoTask) -> tupl
             reference_count += 1
             index = reference_count
             render_variables[f"reference_image_{index}_url"] = serialize_asset_urls(ref_url, cos_config=cos_config)["image_url"]
+            if index in (1, 2):
+                render_variables[f"{'first_frame' if index == 1 else 'last_frame'}_image_url"] = render_variables[f"reference_image_{index}_url"]
             reference_payload = _build_reference_image_payload(ref_url)
             if not reference_payload:
                 continue
@@ -187,6 +202,7 @@ def _call_sync_video_generation_api_once(db, *, config, task: VideoTask) -> tupl
             render_variables[f"reference_image_{index}_base64"] = reference_payload["base64"]
             render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
             render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
+            _add_frame_alias_variables(render_variables, index, reference_payload)
         render_variables["reference_image_count"] = reference_count
         rendered = render_config(config, render_variables)
         request_kwargs = build_external_request_kwargs(rendered)
@@ -235,6 +251,7 @@ def _poll_async_video_result(db, *, task: VideoTask, config) -> tuple[dict | Non
                 "aspect_ratio": task.aspect_ratio or "",
                 "resolution": task.resolution or "",
                 "mapped_resolution": mapped_resolution,
+                "generation_mode": task.generation_mode or "",
             },
         )
         request_kwargs = build_external_poll_request_kwargs(rendered)
@@ -290,6 +307,7 @@ def _submit_async_video_generation_api_once(db, *, config, task: VideoTask) -> t
             "aspect_ratio": task.aspect_ratio or "",
             "resolution": task.resolution or "",
             "mapped_resolution": mapped_resolution,
+            "generation_mode": task.generation_mode or "",
             "reference_image_count": 0,
         }
         reference_count = 0
@@ -297,6 +315,8 @@ def _submit_async_video_generation_api_once(db, *, config, task: VideoTask) -> t
             reference_count += 1
             index = reference_count
             render_variables[f"reference_image_{index}_url"] = serialize_asset_urls(ref_url, cos_config=cos_config)["image_url"]
+            if index in (1, 2):
+                render_variables[f"{'first_frame' if index == 1 else 'last_frame'}_image_url"] = render_variables[f"reference_image_{index}_url"]
             reference_payload = _build_reference_image_payload(ref_url)
             if not reference_payload:
                 continue
@@ -307,6 +327,7 @@ def _submit_async_video_generation_api_once(db, *, config, task: VideoTask) -> t
             render_variables[f"reference_image_{index}_base64"] = reference_payload["base64"]
             render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
             render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
+            _add_frame_alias_variables(render_variables, index, reference_payload)
         render_variables["reference_image_count"] = reference_count
         rendered = render_config(config, render_variables)
         request_kwargs = build_external_request_kwargs(rendered)

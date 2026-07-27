@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class VideoTaskCreate(BaseModel):
     model: str = ""
     source: Literal["web", "app", "api"] = "web"
+    generation_mode: str = ""
     prompt: str
     duration_seconds: int = 5
     aspect_ratio: str = ""
@@ -46,6 +47,7 @@ class VideoTaskOut(BaseModel):
     id: str
     model: str
     source: Literal["web", "app", "api"] = "web"
+    generation_mode: Literal["text_to_video", "image_to_video", "first_last_frame"] = "text_to_video"
     prompt: str
     duration_seconds: int
     aspect_ratio: str = ""

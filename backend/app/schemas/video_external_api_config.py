@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.external_api_config import (
     _validate_integer_list_json,
@@ -19,6 +19,7 @@ CallModeType = Literal["async"]
 HttpMethodType = Literal["GET", "POST"]
 VideoCreditBillingModeType = Literal["fixed", "per_second"]
 VideoSceneAvailabilityModeType = Literal["text_to_video", "image_to_video", "both"]
+VideoGenerationModeType = Literal["text_to_video", "image_to_video", "first_last_frame"]
 
 
 def _validate_resolution_mapping_json(value: str, field_name: str) -> str:
@@ -192,6 +193,7 @@ class VideoExternalApiSceneBindingBase(BaseModel):
     display_name: str = ""
     subtitle: str = ""
     availability_mode: VideoSceneAvailabilityModeType = "both"
+    availability_modes: list[VideoGenerationModeType] = Field(default_factory=lambda: ["text_to_video", "image_to_video"])
     max_reference_images: int = 1
     credit_billing_mode: VideoCreditBillingModeType = "fixed"
     credit_cost: int = 0
@@ -230,6 +232,17 @@ class VideoExternalApiSceneBindingBase(BaseModel):
         if int(value) < 0:
             raise ValueError("数值不能小于 0")
         return int(value)
+
+    @field_validator("availability_modes")
+    @classmethod
+    def validate_availability_modes(cls, value: list[VideoGenerationModeType]) -> list[VideoGenerationModeType]:
+        normalized: list[VideoGenerationModeType] = []
+        for item in value or []:
+            if item not in normalized:
+                normalized.append(item)
+        if not normalized:
+            raise ValueError("可用范围至少选择一项")
+        return normalized
 
     @field_validator("aspect_ratio_options_json")
     @classmethod
@@ -288,6 +301,7 @@ class VideoExternalApiSceneBindingMetaUpdate(BaseModel):
     hide_duration: bool = False
     hide_resolution: bool = False
     availability_mode: VideoSceneAvailabilityModeType = "both"
+    availability_modes: list[VideoGenerationModeType] = Field(default_factory=lambda: ["text_to_video", "image_to_video"])
     max_reference_images: int = 1
     credit_billing_mode: VideoCreditBillingModeType = "fixed"
     credit_cost: int = 0
@@ -309,6 +323,17 @@ class VideoExternalApiSceneBindingMetaUpdate(BaseModel):
         if int(value) < 0:
             raise ValueError("数值不能小于 0")
         return int(value)
+
+    @field_validator("availability_modes")
+    @classmethod
+    def validate_meta_availability_modes(cls, value: list[VideoGenerationModeType]) -> list[VideoGenerationModeType]:
+        normalized: list[VideoGenerationModeType] = []
+        for item in value or []:
+            if item not in normalized:
+                normalized.append(item)
+        if not normalized:
+            raise ValueError("可用范围至少选择一项")
+        return normalized
 
     @field_validator("aspect_ratio_options_json")
     @classmethod
@@ -351,6 +376,7 @@ class VideoExternalApiSceneBindingOut(BaseModel):
     hide_duration: bool
     hide_resolution: bool
     availability_mode: VideoSceneAvailabilityModeType
+    availability_modes: list[VideoGenerationModeType]
     max_reference_images: int
     status: StatusType
     is_builtin: bool = False
@@ -383,6 +409,7 @@ class VideoGenerationModelOptionOut(BaseModel):
     hide_duration: bool
     hide_resolution: bool
     availability_mode: VideoSceneAvailabilityModeType
+    availability_modes: list[VideoGenerationModeType]
     max_reference_images: int
     credit_billing_mode: VideoCreditBillingModeType
     credit_cost: int
@@ -404,6 +431,7 @@ class VideoTaskSceneConfigOut(BaseModel):
     hide_duration: bool
     hide_resolution: bool
     availability_mode: VideoSceneAvailabilityModeType
+    availability_modes: list[VideoGenerationModeType]
     max_reference_images: int
     credit_billing_mode: VideoCreditBillingModeType
     credit_cost: int

@@ -1181,6 +1181,7 @@ def create_canvas_video_tasks(
         user_id=user_id,
         model=model,
         source=source,
+        generation_mode="image_to_video" if reference_images else "text_to_video",
         prompt=prompt,
         duration_seconds=duration_seconds,
         aspect_ratio=aspect_ratio,

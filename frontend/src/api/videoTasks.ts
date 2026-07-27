@@ -8,6 +8,7 @@ export interface CreateVideoTaskResponse {
 export function createVideoTask(data: {
   model: string;
   source?: "web" | "app" | "api";
+  generation_mode: "text_to_video" | "image_to_video" | "first_last_frame";
   prompt: string;
   duration_seconds: number;
   aspect_ratio: string;

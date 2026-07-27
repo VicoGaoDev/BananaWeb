@@ -154,6 +154,9 @@ function sourceLabel(source: VideoTaskResult["source"]) {
 }
 
 function modeLabel(item: VideoTaskResult) {
+  if (item.generation_mode === "first_last_frame") return "首尾帧";
+  if (item.generation_mode === "image_to_video") return "图生视频";
+  if (item.generation_mode === "text_to_video") return "文生视频";
   return item.reference_images?.length ? "图生视频" : "文生视频";
 }
 

@@ -705,6 +705,7 @@ function statusColor(value: string) {
 }
 
 function videoModeLabel(value: string) {
+  if (value === "first_last_frame") return "首尾帧";
   if (value === "image_to_video") return "图生视频";
   if (value === "text_to_video") return "文生视频";
   return value;
@@ -818,6 +819,7 @@ watch(filterSignature, async () => {
         <a-select v-model:value="filters.mode" placeholder="全部类型" allow-clear class="analytics-filter-select">
           <a-select-option value="text_to_video">文生视频</a-select-option>
           <a-select-option value="image_to_video">图生视频</a-select-option>
+          <a-select-option value="first_last_frame">首尾帧</a-select-option>
         </a-select>
 
         <a-select v-model:value="filters.model" placeholder="全部模型" allow-clear class="analytics-filter-select analytics-filter-model">
@@ -1049,7 +1051,7 @@ watch(filterSignature, async () => {
               </div>
             </template>
             <template v-else-if="column.dataIndex === 'mode'">
-              {{ videoModeLabel(record.reference_images?.length ? 'image_to_video' : 'text_to_video') }}
+              {{ videoModeLabel(record.generation_mode || (record.reference_images?.length ? 'image_to_video' : 'text_to_video')) }}
             </template>
             <template v-else-if="column.dataIndex === 'source'">
               {{ sourceLabel(record.source) }}

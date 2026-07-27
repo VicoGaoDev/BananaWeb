@@ -1,7 +1,7 @@
 export const VIDEO_GENERATE_DRAFT_KEY = "videoGenerateDraft";
 
 export interface VideoGenerateDraftPayload {
-  mode: "textGenerate" | "imageToVideo";
+  mode: "textGenerate" | "imageToVideo" | "firstLastFrame";
   prompt?: string;
   reference_images: string[];
   model?: string;
@@ -11,7 +11,7 @@ export interface VideoGenerateDraftPayload {
 }
 
 export function saveVideoGenerateDraft(payload: {
-  mode?: "textGenerate" | "imageToVideo";
+  mode?: "textGenerate" | "imageToVideo" | "firstLastFrame";
   prompt?: string;
   reference_images?: string[];
   model?: string;
@@ -22,13 +22,17 @@ export function saveVideoGenerateDraft(payload: {
   const referenceImages = Array.isArray(payload.reference_images)
     ? payload.reference_images.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
-  const explicitMode = payload.mode === "textGenerate" ? "textGenerate" : "imageToVideo";
-  const mode = referenceImages.length ? "imageToVideo" : explicitMode;
+  const explicitMode = payload.mode === "textGenerate" || payload.mode === "firstLastFrame" ? payload.mode : "imageToVideo";
+  const mode = explicitMode === "firstLastFrame" && referenceImages.length >= 2
+    ? "firstLastFrame"
+    : (referenceImages.length ? "imageToVideo" : explicitMode);
   const durationSeconds = Number(payload.duration_seconds || 0);
   const draft: VideoGenerateDraftPayload = {
     mode,
     prompt: String(payload.prompt || "").trim(),
-    reference_images: mode === "imageToVideo" ? referenceImages.slice(0, 1) : [],
+    reference_images: mode === "firstLastFrame"
+      ? referenceImages.slice(0, 2)
+      : (mode === "imageToVideo" ? referenceImages.slice(0, 1) : []),
     model: String(payload.model || "").trim(),
     aspect_ratio: String(payload.aspect_ratio || "").trim(),
     duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined,
@@ -59,8 +63,8 @@ export function consumeVideoGenerateDraft(): VideoGenerateDraftPayload | null {
     const referenceImages = Array.isArray(draft.reference_images)
       ? draft.reference_images.map((item) => String(item || "").trim()).filter(Boolean)
       : [];
-    const mode = draft.mode === "textGenerate" ? "textGenerate" : "imageToVideo";
-    if (mode === "imageToVideo" && !referenceImages.length) {
+    const mode = draft.mode === "textGenerate" || draft.mode === "firstLastFrame" ? draft.mode : "imageToVideo";
+    if ((mode === "imageToVideo" && !referenceImages.length) || (mode === "firstLastFrame" && referenceImages.length < 2)) {
       localStorage.removeItem(VIDEO_GENERATE_DRAFT_KEY);
       return null;
     }
@@ -69,7 +73,9 @@ export function consumeVideoGenerateDraft(): VideoGenerateDraftPayload | null {
     return {
       mode,
       prompt: String(draft.prompt || "").trim(),
-      reference_images: mode === "imageToVideo" ? referenceImages.slice(0, 1) : [],
+      reference_images: mode === "firstLastFrame"
+        ? referenceImages.slice(0, 2)
+        : (mode === "imageToVideo" ? referenceImages.slice(0, 1) : []),
       model: String(draft.model || "").trim(),
       aspect_ratio: String(draft.aspect_ratio || "").trim(),
       duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined,

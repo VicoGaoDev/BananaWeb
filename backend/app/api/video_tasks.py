@@ -44,6 +44,7 @@ def submit_video_task(
         user_id=user.id,
         model=task_model,
         source=body.source,
+        generation_mode=body.generation_mode,
         prompt=body.prompt,
         duration_seconds=body.duration_seconds,
         aspect_ratio=body.aspect_ratio,
