@@ -28,6 +28,10 @@ import {
   QuestionCircleOutlined,
   UnorderedListOutlined,
   VideoCameraOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  FilterOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -82,7 +86,7 @@ import {
   readStoredBoardKey,
   writeStoredBoardKey,
 } from "@/lib/boardPreference";
-import type { BoardKey, GenerationModelOption, ImageResult, SceneOptionItem, TaskResult, TaskSceneConfig, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
+import type { BoardKey, GenerationModelOption, ImageResult, SceneOptionItem, TaskResult, TaskSceneConfig, TaskSource, TaskType, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -108,8 +112,20 @@ function showInsufficientCreditsPurchase(detail?: string) {
 }
 
 type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
-const MAX_RECENT_GENERATED_TASKS = 40;
+type GeneratedTaskStatusFilter = "pending" | "processing" | "success" | "failed";
+type GeneratedTaskDatePreset = "today" | "yesterday" | "week" | "custom";
+type ResultCardAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "16:9" | "9:16";
+const GENERATED_TASK_HISTORY_PAGE_SIZE = 40;
 const MAX_ACTIVE_GENERATION_IMAGES = 12;
+const RESULT_CARD_ASPECT_OPTIONS: Array<{ label: string; value: ResultCardAspectRatio }> = [
+  { label: "1:1", value: "1:1" },
+  { label: "2:3", value: "2:3" },
+  { label: "3:2", value: "3:2" },
+  { label: "3:4", value: "3:4" },
+  { label: "4:3", value: "4:3" },
+  { label: "16:9", value: "16:9" },
+  { label: "9:16", value: "9:16" },
+];
 const GENERATION_IMAGE_COUNT_OPTIONS: SceneOptionItem[] = Array.from(
   { length: MAX_ACTIVE_GENERATION_IMAGES },
   (_, index) => {
@@ -131,6 +147,7 @@ const DEFAULT_SCENE_COSTS: Record<string, number> = {
 };
 
 const generateMode = ref<GenerateMode>("imageEdit");
+const isConfigPanelCollapsed = ref(false);
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card.svg");
 const canvasNavIcon = withBaseUrl("nav-canvas.svg");
@@ -202,11 +219,29 @@ interface GeneratedTaskItem {
 
 const generatedTasks = ref<GeneratedTaskItem[]>([]);
 const failureRefundRemainingCount = ref<number | null>(null);
+const generatedTaskHistoryPage = ref(0);
+const generatedTaskHistoryTotal = ref(0);
+const generatedTasksLoading = ref(false);
+const generatedTasksLoadingMore = ref(false);
+const resultBodyRef = ref<HTMLElement | null>(null);
+const generatedTaskLoadMoreAnchor = ref<HTMLElement | null>(null);
+const resultViewOptionsOpen = ref(false);
+const generatedTaskFilterOpen = ref(false);
+const generatedTaskTypeFilter = ref<TaskType | undefined>(undefined);
+const generatedTaskSourceFilter = ref<TaskSource | undefined>(undefined);
+const generatedTaskModelFilter = ref<string | undefined>(undefined);
+const generatedTaskStatusFilter = ref<GeneratedTaskStatusFilter | undefined>(undefined);
+const generatedTaskPromptFilter = ref("");
+const generatedTaskDateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+const generatedTaskDatePreset = ref<GeneratedTaskDatePreset | null>(null);
 
 const taskPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const taskPollingInFlight = ref(false);
 const activeStatusPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const activeStatusRefreshInFlight = ref(false);
+let generatedTaskLoadMoreObserver: IntersectionObserver | null = null;
+let generatedTaskLoadRequestId = 0;
+let generatedTaskFilterDebounceTimer: number | null = null;
 const remoteActiveGenerationImageCount = ref(0);
 const remoteActiveTaskIds = ref<Set<string>>(new Set());
 const templateDialogOpen = ref(false);
@@ -280,6 +315,7 @@ const viewportWidth = ref(typeof window === "undefined" ? 1200 : window.innerWid
 const RESULT_COLUMN_OPTIONS = [3, 4, 5, 6, 7, 8] as const;
 type ResultColumnOption = typeof RESULT_COLUMN_OPTIONS[number];
 const DEFAULT_RESULT_COLUMN_COUNT: ResultColumnOption = 3;
+const GENERATE_RESULT_CARD_ASPECT_RATIO_SESSION_KEY = "generateResultCardAspectRatio";
 
 const preferredResultColumnCount = ref<ResultColumnOption>(
   readStoredGridColumnCount(
@@ -288,6 +324,7 @@ const preferredResultColumnCount = ref<ResultColumnOption>(
     DEFAULT_RESULT_COLUMN_COUNT,
   ),
 );
+const resultCardAspectRatio = ref<ResultCardAspectRatio>(readStoredResultCardAspectRatio());
 const boards = ref<UserBoardSummary[]>([]);
 const boardsLoading = ref(false);
 const selectedBoardKey = ref<BoardKey>(DEFAULT_BOARD_KEY);
@@ -380,7 +417,7 @@ const resultEmptyTitle = computed(() => (
 const resultEmptyDesc = computed(() => (
   generateMode.value === "promptReverse"
     ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
-    : "在左侧设置提示词和参数后发起任务，右侧会展示最近 40 个生图任务结果"
+    : "在左侧设置提示词和参数后发起任务，右侧会按当前分类分页展示生图任务结果"
 ));
 const referenceUrls = computed(() => (
   referenceItems.value
@@ -420,6 +457,21 @@ const detailModelOptions = computed(() => (
     value: scene.scene_key,
   }))
 ));
+const generatedTaskFilterModelOptions = computed(() => {
+  const optionMap = new Map<string, string>();
+  detailModelOptions.value.forEach((item) => optionMap.set(item.value, item.label));
+  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+});
+const generatedTaskActiveFilterCount = computed(() => {
+  let count = 0;
+  if (generatedTaskTypeFilter.value) count += 1;
+  if (generatedTaskSourceFilter.value) count += 1;
+  if (generatedTaskModelFilter.value) count += 1;
+  if (generatedTaskStatusFilter.value) count += 1;
+  if (generatedTaskPromptFilter.value.trim()) count += 1;
+  if (generatedTaskDateRangeFilter.value) count += 1;
+  return count;
+});
 
 function normalizeRouteGenerateMode(value: unknown): GenerateMode {
   const normalized = Array.isArray(value) ? value[0] : value;
@@ -616,6 +668,21 @@ function writeStoredAspectRatioAutoDetectEnabled(enabled: boolean) {
   localStorage.setItem(ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY, enabled ? "1" : "0");
 }
 
+function isResultCardAspectRatio(value: string | null): value is ResultCardAspectRatio {
+  return RESULT_CARD_ASPECT_OPTIONS.some((item) => item.value === value);
+}
+
+function readStoredResultCardAspectRatio(): ResultCardAspectRatio {
+  if (typeof window === "undefined") return "1:1";
+  const storedValue = sessionStorage.getItem(GENERATE_RESULT_CARD_ASPECT_RATIO_SESSION_KEY);
+  return isResultCardAspectRatio(storedValue) ? storedValue : "1:1";
+}
+
+function writeStoredResultCardAspectRatio(value: ResultCardAspectRatio) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(GENERATE_RESULT_CARD_ASPECT_RATIO_SESSION_KEY, value);
+}
+
 function parseAspectRatioPair(value?: string) {
   if (!value) return null;
   const normalized = value.trim();
@@ -709,10 +776,6 @@ function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskI
   };
 }
 
-function limitGeneratedTasks(tasks: GeneratedTaskItem[]) {
-  return tasks.slice(0, MAX_RECENT_GENERATED_TASKS);
-}
-
 function isGeneratedTaskExpired(task: Pick<GeneratedTaskItem, "createdAt" | "status">) {
   if (task.status !== "success") return false;
   if (!task.createdAt) return false;
@@ -727,6 +790,12 @@ const resultItems = computed(() => (
     image: img,
     index,
   })))
+));
+
+const hasMoreGeneratedTasks = computed(() => (
+  auth.isLoggedIn
+  && generatedTaskHistoryPage.value > 0
+  && generatedTaskHistoryPage.value * GENERATED_TASK_HISTORY_PAGE_SIZE < generatedTaskHistoryTotal.value
 ));
 
 function getResultItemKey(item: {
@@ -748,10 +817,15 @@ const resultColumnCount = computed(() => {
 
 const resultListStyle = computed(() => ({
   gridTemplateColumns: `repeat(${resultColumnCount.value}, minmax(0, 1fr))`,
+  "--generate-result-card-aspect": resultCardAspectRatio.value.replace(":", " / "),
 }));
 
 watch(preferredResultColumnCount, (count) => {
   writeStoredGridColumnCount(GENERATE_RESULT_COLUMN_COUNT_KEY, count);
+});
+
+watch(resultCardAspectRatio, (value) => {
+  writeStoredResultCardAspectRatio(value);
 });
 
 watch(generatedTasks, (tasks) => {
@@ -980,6 +1054,104 @@ function getSelectedBoardHistoryFilter() {
   return { board_id: selectedBoardId.value ?? undefined };
 }
 
+function getGeneratedTaskHistoryFilter() {
+  return {
+    ...getSelectedBoardHistoryFilter(),
+    mode: generatedTaskTypeFilter.value,
+    source: generatedTaskSourceFilter.value,
+    model: generatedTaskModelFilter.value,
+    status: generatedTaskStatusFilter.value,
+    prompt: generatedTaskPromptFilter.value,
+    start_date: generatedTaskDateRangeFilter.value?.[0].startOf("day").toISOString(),
+    end_date: generatedTaskDateRangeFilter.value?.[1].endOf("day").toISOString(),
+  };
+}
+
+function reloadGeneratedTasksForFilters() {
+  if (!auth.isLoggedIn) return;
+  generatedTasks.value = [];
+  stopAllTaskPolling();
+  void loadRecentGeneratedTasks();
+}
+
+function scheduleGeneratedTaskFilterReload() {
+  if (generatedTaskFilterDebounceTimer) {
+    window.clearTimeout(generatedTaskFilterDebounceTimer);
+    generatedTaskFilterDebounceTimer = null;
+  }
+  generatedTaskFilterDebounceTimer = window.setTimeout(() => {
+    generatedTaskFilterDebounceTimer = null;
+    reloadGeneratedTasksForFilters();
+  }, 320);
+}
+
+function setGeneratedTaskDatePreset(preset: GeneratedTaskDatePreset) {
+  generatedTaskDatePreset.value = preset;
+  const now = dayjs();
+  if (preset === "today") {
+    generatedTaskDateRangeFilter.value = [now, now];
+    return;
+  }
+  if (preset === "yesterday") {
+    const yesterday = now.subtract(1, "day");
+    generatedTaskDateRangeFilter.value = [yesterday, yesterday];
+    return;
+  }
+  if (preset === "week") {
+    generatedTaskDateRangeFilter.value = [now.subtract(6, "day"), now];
+  }
+}
+
+function handleGeneratedTaskCustomDateChange(value: [dayjs.Dayjs, dayjs.Dayjs] | null) {
+  generatedTaskDatePreset.value = value ? "custom" : null;
+}
+
+function resetGeneratedTaskFilters() {
+  generatedTaskTypeFilter.value = undefined;
+  generatedTaskSourceFilter.value = undefined;
+  generatedTaskModelFilter.value = undefined;
+  generatedTaskStatusFilter.value = undefined;
+  generatedTaskPromptFilter.value = "";
+  generatedTaskDateRangeFilter.value = null;
+  generatedTaskDatePreset.value = null;
+}
+
+function resetGeneratedTaskPagination() {
+  generatedTaskHistoryPage.value = 0;
+  generatedTaskHistoryTotal.value = 0;
+  generatedTasksLoadingMore.value = false;
+}
+
+function getGeneratedTaskIdentity(task: GeneratedTaskItem) {
+  return task.taskId ? `task:${task.taskId}` : `local:${task.localId}`;
+}
+
+function setupGeneratedTaskLoadMoreObserver(target: HTMLElement | null) {
+  generatedTaskLoadMoreObserver?.disconnect();
+  generatedTaskLoadMoreObserver = null;
+  if (!target) return;
+
+  generatedTaskLoadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadMoreGeneratedTasks();
+    },
+    { root: resultBodyRef.value, rootMargin: "0px 0px 260px 0px", threshold: 0.01 }
+  );
+  generatedTaskLoadMoreObserver.observe(target);
+}
+
+function handleGeneratedTaskResultScroll(event: Event) {
+  const target = event.currentTarget as HTMLElement | null;
+  maybeLoadMoreGeneratedTasksNearBottom(target);
+}
+
+function maybeLoadMoreGeneratedTasksNearBottom(target = resultBodyRef.value) {
+  if (!target || !hasMoreGeneratedTasks.value) return;
+  if (generatedTasksLoading.value || generatedTasksLoadingMore.value) return;
+  const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+  if (distanceToBottom <= 320) void loadMoreGeneratedTasks();
+}
+
 async function loadBoardsForGenerate() {
   if (!auth.isLoggedIn) {
     boards.value = [];
@@ -1056,63 +1228,119 @@ async function submitRenameSelectedBoardFromGenerate() {
 async function loadRecentGeneratedTasks() {
   if (!auth.isLoggedIn) {
     generatedTasks.value = [];
+    resetGeneratedTaskPagination();
+    stopAllTaskPolling();
+    return;
+  }
+
+  const requestId = ++generatedTaskLoadRequestId;
+  generatedTasksLoading.value = true;
+  resetGeneratedTaskPagination();
+
+  try {
+    await loadGeneratedTaskHistoryPages({ reset: true, requestId });
+  } catch {
+    stopAllTaskPolling();
+  } finally {
+    if (requestId === generatedTaskLoadRequestId) {
+      generatedTasksLoading.value = false;
+      void nextTick(() => maybeLoadMoreGeneratedTasksNearBottom());
+    }
+  }
+}
+
+async function loadMoreGeneratedTasks() {
+  if (!auth.isLoggedIn || generatedTasksLoading.value || generatedTasksLoadingMore.value || !hasMoreGeneratedTasks.value) return;
+  const requestId = generatedTaskLoadRequestId;
+  let loadedMoreSuccessfully = false;
+  generatedTasksLoadingMore.value = true;
+  try {
+    await loadGeneratedTaskHistoryPages({ reset: false, requestId });
+    loadedMoreSuccessfully = true;
+  } catch {
+    message.error("加载更多生成任务失败");
+  } finally {
+    if (requestId === generatedTaskLoadRequestId) {
+      generatedTasksLoadingMore.value = false;
+      if (loadedMoreSuccessfully) void nextTick(() => maybeLoadMoreGeneratedTasksNearBottom());
+    }
+  }
+}
+
+async function loadGeneratedTaskHistoryPages({
+  reset,
+  requestId,
+}: {
+  reset: boolean;
+  requestId: number;
+}) {
+  const seenTaskIds = new Set(
+    reset
+      ? []
+      : generatedTasks.value
+          .map((task) => task.taskId)
+          .filter((taskId): taskId is string => Boolean(taskId))
+  );
+  const loadedTasks: GeneratedTaskItem[] = [];
+  const failedTaskIds: string[] = [];
+  let nextPage = reset ? 1 : generatedTaskHistoryPage.value + 1;
+  let total = reset ? Infinity : generatedTaskHistoryTotal.value;
+  let lastLoadedPage = generatedTaskHistoryPage.value;
+
+  while (
+    loadedTasks.length < GENERATED_TASK_HISTORY_PAGE_SIZE
+    && (total === Infinity || (nextPage - 1) * GENERATED_TASK_HISTORY_PAGE_SIZE < total)
+  ) {
+    const res = await fetchHistory(nextPage, GENERATED_TASK_HISTORY_PAGE_SIZE, {
+      respect_pins: false,
+      include_prompt_reverse: false,
+      ...getGeneratedTaskHistoryFilter(),
+    });
+    if (requestId !== generatedTaskLoadRequestId) return;
+
+    total = res.total;
+    lastLoadedPage = nextPage;
+    if (!res.items.length) break;
+
+    res.items.forEach((item) => {
+      if (item.mode === "promptReverse" || !item.task_id || seenTaskIds.has(item.task_id)) return;
+      seenTaskIds.add(item.task_id);
+      loadedTasks.push(convertHistoryCardToGeneratedTask(item));
+      if (item.status === "failed") failedTaskIds.push(String(item.task_id));
+    });
+    nextPage += 1;
+  }
+
+  generatedTaskHistoryPage.value = lastLoadedPage;
+  generatedTaskHistoryTotal.value = total === Infinity ? 0 : total;
+  generatedTasks.value = reset
+    ? loadedTasks
+    : [
+        ...generatedTasks.value,
+        ...loadedTasks.filter((task) => {
+          const taskIdentity = getGeneratedTaskIdentity(task);
+          return !generatedTasks.value.some((current) => getGeneratedTaskIdentity(current) === taskIdentity);
+        }),
+      ];
+
+  if (failedTaskIds.length) {
+    try {
+      await syncFailureRefundRemainingCountFromTaskIds(failedTaskIds);
+    } catch {
+      // Ignore remaining-count sync failures; the page can still render history normally.
+    }
+  }
+
+  if (!activePollingTaskIds.value.length) {
     stopAllTaskPolling();
     return;
   }
 
   try {
-    const seenTaskIds = new Set<string>();
-    const recentHistoryItems: UserHistoryCard[] = [];
-    let page = 1;
-    let total = Infinity;
-
-    while (recentHistoryItems.length < total && seenTaskIds.size < MAX_RECENT_GENERATED_TASKS) {
-      const res = await fetchHistory(page, MAX_RECENT_GENERATED_TASKS, {
-        respect_pins: false,
-        include_prompt_reverse: false,
-        ...getSelectedBoardHistoryFilter(),
-      });
-      total = res.total;
-      if (!res.items.length) break;
-
-      res.items.forEach((item) => {
-        if (item.mode === "promptReverse" || !item.task_id || seenTaskIds.has(item.task_id)) return;
-        seenTaskIds.add(item.task_id);
-        recentHistoryItems.push(item);
-      });
-      page += 1;
-    }
-
-    const recentTasks = recentHistoryItems
-      .slice(0, MAX_RECENT_GENERATED_TASKS)
-      .map(convertHistoryCardToGeneratedTask);
-
-    generatedTasks.value = limitGeneratedTasks(recentTasks);
-
-    const failedTaskIds = recentHistoryItems
-      .filter((item) => item.status === "failed" && item.task_id)
-      .map((item) => String(item.task_id));
-    if (failedTaskIds.length) {
-      try {
-        await syncFailureRefundRemainingCountFromTaskIds(failedTaskIds);
-      } catch {
-        // Ignore remaining-count sync failures; the page can still render history normally.
-      }
-    }
-
-    if (!activePollingTaskIds.value.length) {
-      stopAllTaskPolling();
-      return;
-    }
-
-    try {
-      const items = await refreshTasks(activePollingTaskIds.value);
-      if (items.some((item) => item.status !== "success" && item.status !== "failed")) startTaskPolling();
-    } catch {
-      startTaskPolling();
-    }
+    const items = await refreshTasks(activePollingTaskIds.value);
+    if (items.some((item) => item.status !== "success" && item.status !== "failed")) startTaskPolling();
   } catch {
-    stopAllTaskPolling();
+    startTaskPolling();
   }
 }
 
@@ -1147,7 +1375,7 @@ async function submitGeneratedTask(
   const taskCount = Math.max(1, payload.num_images);
   const localTasks = Array.from({ length: taskCount }, () => createLocalGeneratedTask(taskDraft));
   const localTaskIds = new Set(localTasks.map((task) => task.localId));
-  generatedTasks.value = limitGeneratedTasks([...localTasks, ...generatedTasks.value]);
+  generatedTasks.value = [...localTasks, ...generatedTasks.value];
 
   try {
     const res = await createTask({
@@ -2600,6 +2828,12 @@ onActivated(async () => {
 onBeforeUnmount(() => {
   stopAllTaskPolling();
   stopGlobalActiveStatusPolling();
+  generatedTaskLoadMoreObserver?.disconnect();
+  generatedTaskLoadMoreObserver = null;
+  if (generatedTaskFilterDebounceTimer) {
+    window.clearTimeout(generatedTaskFilterDebounceTimer);
+    generatedTaskFilterDebounceTimer = null;
+  }
   window.removeEventListener("resize", syncViewportWidth);
   window.removeEventListener("focus", handleFilePickerFocusReturn);
   window.removeEventListener("paste", handleReferencePaste);
@@ -2620,6 +2854,21 @@ watch(generationModels, (models) => {
     selectedModel.value = models[0].model_key;
   }
 }, { immediate: true });
+
+watch(generatedTaskLoadMoreAnchor, (target) => {
+  setupGeneratedTaskLoadMoreObserver(target);
+});
+
+watch([
+  generatedTaskTypeFilter,
+  generatedTaskSourceFilter,
+  generatedTaskModelFilter,
+  generatedTaskStatusFilter,
+  generatedTaskPromptFilter,
+  generatedTaskDateRangeFilter,
+], () => {
+  scheduleGeneratedTaskFilterReload();
+});
 
 watch(
   () => route.query.mode,
@@ -2669,6 +2918,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     return;
   }
   generatedTasks.value = [];
+  generatedTaskLoadRequestId += 1;
+  resetGeneratedTaskPagination();
   boards.value = [];
   selectedBoardKey.value = DEFAULT_BOARD_KEY;
   remoteActiveGenerationImageCount.value = 0;
@@ -2680,8 +2931,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 <template>
   <div class="generate-page">
-    <div class="generate-workbench">
-      <div class="left-col">
+    <div class="generate-workbench" :class="{ 'config-collapsed': isConfigPanelCollapsed }">
+      <div v-if="!isConfigPanelCollapsed" class="left-col">
         <div class="generate-mode-shell">
           <div class="generate-mode-switch">
             <div class="mode-switch-cluster">
@@ -2713,6 +2964,16 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
             <div class="mode-switch-cluster">
               <div class="mode-switch-group mode-switch-group-secondary">
+                <a-tooltip title="收起配置">
+                  <button
+                    type="button"
+                    class="mode-switch-btn config-collapse-btn"
+                    aria-label="收起配置"
+                    @click="isConfigPanelCollapsed = true"
+                  >
+                    <MenuFoldOutlined />
+                  </button>
+                </a-tooltip>
                 <a-dropdown
                   :trigger="['hover']"
                   placement="bottomRight"
@@ -3655,6 +3916,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       <section class="work-panel result-panel">
         <div class="result-head">
           <div class="result-head-main">
+            <a-tooltip v-if="isConfigPanelCollapsed" title="展开配置">
+              <button
+                type="button"
+                class="result-config-expand-btn"
+                aria-label="展开配置"
+                @click="isConfigPanelCollapsed = false"
+              >
+                <MenuUnfoldOutlined />
+                <span>展开配置</span>
+              </button>
+            </a-tooltip>
             <a-select
               v-if="auth.isLoggedIn"
               v-model:value="selectedBoardKey"
@@ -3711,25 +3983,219 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
           <div class="result-head-center">
             <button type="button" class="result-canvas-entry-btn" @click="goCanvas">
               <img :src="canvasNavIcon" alt="" class="result-canvas-entry-icon" />
-              <span class="result-canvas-entry-text">进入画布模式</span>
-              <span class="result-canvas-entry-badge">NEW</span>
+              <span class="result-canvas-entry-text">画布模式</span>
             </button>
           </div>
           <div class="result-head-meta">
             <UpdateLogEntryButton />
-            <a-select
-              v-model:value="preferredResultColumnCount"
-              placeholder="每行列数"
-              class="history-filter-control history-filter-columns"
+            <a-popover
+              v-model:open="resultViewOptionsOpen"
+              trigger="click"
+              placement="bottomRight"
+              overlay-class-name="generate-view-popover"
+              :get-popup-container="getBodyPopupContainer"
             >
-              <a-select-option
-                v-for="columnCount in RESULT_COLUMN_OPTIONS"
-                :key="columnCount"
-                :value="columnCount"
-              >
-                {{ columnCount }} 列
-              </a-select-option>
-            </a-select>
+              <a-tooltip title="视图设置">
+                <button
+                  type="button"
+                  class="result-filter-trigger result-view-trigger"
+                  aria-label="打开视图设置"
+                >
+                  <AppstoreOutlined />
+                </button>
+              </a-tooltip>
+              <template #content>
+                <div class="generate-view-panel">
+                  <div class="generate-view-section">
+                    <div class="generate-view-panel-title">卡片形状</div>
+                    <div class="generate-card-aspect-options">
+                      <button
+                        v-for="option in RESULT_CARD_ASPECT_OPTIONS"
+                        :key="option.value"
+                        type="button"
+                        class="generate-card-aspect-option"
+                        :class="{ active: resultCardAspectRatio === option.value }"
+                        @click="resultCardAspectRatio = option.value"
+                      >
+                        <span class="generate-card-aspect-icon" :class="`aspect-${option.value.replace(':', '-')}`"></span>
+                        <span>{{ option.label }}</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="generate-view-section">
+                    <div class="generate-view-panel-title">每行列数</div>
+                  <a-radio-group
+                    v-model:value="preferredResultColumnCount"
+                    class="generate-view-column-group"
+                  >
+                    <a-radio-button
+                      v-for="columnCount in RESULT_COLUMN_OPTIONS"
+                      :key="columnCount"
+                      :value="columnCount"
+                    >
+                      {{ columnCount }} 列
+                    </a-radio-button>
+                  </a-radio-group>
+                  </div>
+                </div>
+              </template>
+            </a-popover>
+            <a-popover
+              v-model:open="generatedTaskFilterOpen"
+              trigger="click"
+              placement="bottomRight"
+              overlay-class-name="generate-filter-popover"
+              :get-popup-container="getBodyPopupContainer"
+            >
+              <a-tooltip title="筛选任务">
+                <button
+                  type="button"
+                  class="result-filter-trigger"
+                  :class="{ active: generatedTaskActiveFilterCount > 0 }"
+                  aria-label="打开任务筛选"
+                >
+                  <FilterOutlined />
+                  <span v-if="generatedTaskActiveFilterCount" class="result-filter-count">
+                    {{ generatedTaskActiveFilterCount }}
+                  </span>
+                </button>
+              </a-tooltip>
+              <template #content>
+                <div class="generate-filter-panel">
+                  <div class="generate-filter-panel-head">
+                    <div>
+                      <div class="generate-filter-panel-title">筛选生成任务</div>
+                      <div class="generate-filter-panel-desc">条件变化后会自动刷新当前分类任务</div>
+                    </div>
+                    <button type="button" class="generate-filter-reset" @click="resetGeneratedTaskFilters">
+                      重置
+                    </button>
+                  </div>
+
+                  <div class="generate-filter-grid">
+                    <label class="generate-filter-field generate-filter-field-third">
+                      <span>类型</span>
+                      <a-select
+                        v-model:value="generatedTaskTypeFilter"
+                        allow-clear
+                        placeholder="全部类型"
+                        class="generate-filter-control"
+                      >
+                        <a-select-option value="text_generate">文生图</a-select-option>
+                        <a-select-option value="image_edit">图编辑</a-select-option>
+                        <a-select-option value="inpaint">局部重绘</a-select-option>
+                      </a-select>
+                    </label>
+                    <label class="generate-filter-field generate-filter-field-third">
+                      <span>来源</span>
+                      <a-select
+                        v-model:value="generatedTaskSourceFilter"
+                        allow-clear
+                        placeholder="全部来源"
+                        class="generate-filter-control"
+                      >
+                        <a-select-option value="web">Web</a-select-option>
+                        <a-select-option value="app">App</a-select-option>
+                        <a-select-option value="api">API</a-select-option>
+                      </a-select>
+                    </label>
+                    <label class="generate-filter-field generate-filter-field-third">
+                      <span>状态</span>
+                      <a-select
+                        v-model:value="generatedTaskStatusFilter"
+                        allow-clear
+                        placeholder="全部状态"
+                        class="generate-filter-control"
+                      >
+                        <a-select-option value="pending">等待中</a-select-option>
+                        <a-select-option value="processing">处理中</a-select-option>
+                        <a-select-option value="success">成功</a-select-option>
+                        <a-select-option value="failed">失败</a-select-option>
+                      </a-select>
+                    </label>
+                    <label class="generate-filter-field generate-filter-field-half">
+                      <span>模型</span>
+                      <a-select
+                        v-model:value="generatedTaskModelFilter"
+                        allow-clear
+                        show-search
+                        option-filter-prop="label"
+                        placeholder="全部模型"
+                        class="generate-filter-control"
+                      >
+                        <a-select-option
+                          v-for="option in generatedTaskFilterModelOptions"
+                          :key="option.value"
+                          :value="option.value"
+                          :label="option.label"
+                        >
+                          {{ option.label }}
+                        </a-select-option>
+                      </a-select>
+                    </label>
+                    <label class="generate-filter-field generate-filter-field-half">
+                      <span>提示词</span>
+                      <a-input
+                        v-model:value="generatedTaskPromptFilter"
+                        allow-clear
+                        placeholder="按提示词筛选"
+                        class="generate-filter-input"
+                      />
+                    </label>
+                  </div>
+
+                  <div class="generate-filter-date-card">
+                    <div class="generate-filter-date-title">
+                      <CalendarOutlined />
+                      <span>日期</span>
+                    </div>
+                    <div class="generate-filter-date-presets">
+                      <button
+                        type="button"
+                        class="generate-filter-date-preset"
+                        :class="{ active: generatedTaskDatePreset === 'today' }"
+                        @click="setGeneratedTaskDatePreset('today')"
+                      >
+                        今天
+                      </button>
+                      <button
+                        type="button"
+                        class="generate-filter-date-preset"
+                        :class="{ active: generatedTaskDatePreset === 'yesterday' }"
+                        @click="setGeneratedTaskDatePreset('yesterday')"
+                      >
+                        昨天
+                      </button>
+                      <button
+                        type="button"
+                        class="generate-filter-date-preset"
+                        :class="{ active: generatedTaskDatePreset === 'week' }"
+                        @click="setGeneratedTaskDatePreset('week')"
+                      >
+                        近一周
+                      </button>
+                    </div>
+                    <div class="generate-filter-custom-date-row">
+                      <button
+                        type="button"
+                        class="generate-filter-date-preset generate-filter-date-custom"
+                        :class="{ active: generatedTaskDatePreset === 'custom' }"
+                        @click="generatedTaskDatePreset = 'custom'"
+                      >
+                        自定义范围
+                        <DownOutlined />
+                      </button>
+                      <a-range-picker
+                        v-model:value="generatedTaskDateRangeFilter"
+                        class="generate-filter-date-picker"
+                        :allow-clear="true"
+                        @change="handleGeneratedTaskCustomDateChange"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </a-popover>
             <div class="result-retain-badge">
               <ExclamationCircleFilled class="result-retain-icon" />
               <span>服务器只保留原图15天</span>
@@ -3737,8 +4203,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
           </div>
         </div>
 
-        <div class="result-body">
-          <template v-if="resultItems.length">
+        <div ref="resultBodyRef" class="result-body" @scroll="handleGeneratedTaskResultScroll">
+          <div v-if="generatedTasksLoading && !resultItems.length" class="result-empty result-loading-state">
+            <a-spin :indicator="h(LoadingOutlined, { style: neutralIndicatorStyle })" />
+            <div class="empty-title">正在加载生成任务...</div>
+            <div class="empty-desc">会展示当前分类下的全部生图任务，继续下滑可自动加载更多。</div>
+          </div>
+
+          <template v-else-if="resultItems.length">
             <TransitionGroup
               name="generate-result"
               tag="div"
@@ -3934,10 +4406,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </TransitionGroup>
 
             <div class="result-list-footnote">
-              当前仅展示最近 40 个生图任务。若需查看更早记录、完整参数或全部结果，请前往
+              已展示 {{ generatedTasks.length }} 个任务 / {{ resultItems.length }} 张结果
+              <span v-if="hasMoreGeneratedTasks">，继续下滑自动加载更多。</span>
+              <span v-else>，已加载该分类下全部任务。</span>
+              若需查看完整参数，请前往
               <router-link to="/history" class="result-tip-link">历史图片</router-link>
               查看。
             </div>
+            <div v-if="generatedTasksLoadingMore" class="result-load-more-tip">
+              <a-spin size="small" />
+              <span>正在加载更多生成任务...</span>
+            </div>
+            <div
+              v-if="hasMoreGeneratedTasks"
+              ref="generatedTaskLoadMoreAnchor"
+              class="result-load-more-anchor"
+              aria-hidden="true"
+            />
           </template>
 
           <div v-else class="result-empty">
@@ -4130,6 +4615,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
 }
 
+.generate-workbench.config-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
 @media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
   .generate-workbench {
     --generate-config-min-width: 340px;
@@ -4213,6 +4703,26 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .mode-switch-btn.active {
   color: var(--theme-accent-text);
+}
+
+.config-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-color: var(--theme-control-border-strong);
+  background: rgba(var(--theme-surface-strong-rgb), 0.74);
+  color: #9a7450;
+  font-size: 16px;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--theme-accent-text-hover);
+    border-color: var(--theme-border-strong);
+    background: rgba(var(--theme-surface-strong-rgb), 0.9);
+    box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
 }
 
 .mode-switch-group-primary .mode-switch-btn {
@@ -5687,6 +6197,432 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   animation: generate-slide-right-in var(--motion-duration-stage-delayed) var(--motion-ease-enter) 0.14s both;
 }
 
+.result-config-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-control-border-strong);
+  border-radius: 999px;
+  background: rgba(var(--theme-surface-strong-rgb), 0.92);
+  color: var(--theme-accent-text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible {
+    color: var(--theme-accent-text-hover);
+    border-color: var(--theme-border-strong);
+    background: rgba(var(--theme-surface-strong-rgb), 0.98);
+    transform: translateY(-1px);
+    box-shadow: 0 14px 24px var(--theme-shadow-soft);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+.result-filter-trigger {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theme-accent-text);
+  font-size: 22px;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-hover) var(--motion-ease-enter),
+    color var(--motion-duration-hover) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible,
+  &.active {
+    color: var(--theme-accent-text-hover);
+    background: rgba(var(--theme-surface-strong-rgb), 0.86);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
+}
+
+.result-filter-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #ff7f27;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 6px 12px rgba(255, 127, 39, 0.28);
+}
+
+.result-view-trigger {
+  font-size: 21px;
+}
+
+.generate-view-panel {
+  width: 260px;
+  color: var(--theme-title);
+}
+
+.generate-view-section + .generate-view-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--theme-panel-border);
+}
+
+.generate-view-panel-title {
+  color: var(--theme-title);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.generate-view-panel-desc {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.generate-card-aspect-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.generate-card-aspect-option {
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible,
+  &.active {
+    color: var(--theme-title);
+    border-color: var(--theme-border-strong);
+    background: var(--theme-control-hover-bg);
+  }
+
+  &.active {
+    color: var(--theme-accent-contrast);
+    border-color: transparent;
+    background: var(--theme-accent);
+  }
+}
+
+.generate-card-aspect-icon {
+  display: block;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
+.generate-card-aspect-icon.aspect-1-1 {
+  width: 16px;
+  height: 16px;
+}
+
+.generate-card-aspect-icon.aspect-2-3 {
+  width: 13px;
+  height: 20px;
+}
+
+.generate-card-aspect-icon.aspect-3-2 {
+  width: 20px;
+  height: 13px;
+}
+
+.generate-card-aspect-icon.aspect-3-4 {
+  width: 15px;
+  height: 20px;
+}
+
+.generate-card-aspect-icon.aspect-4-3 {
+  width: 20px;
+  height: 15px;
+}
+
+.generate-card-aspect-icon.aspect-16-9 {
+  width: 22px;
+  height: 13px;
+}
+
+.generate-card-aspect-icon.aspect-9-16 {
+  width: 13px;
+  height: 22px;
+}
+
+.generate-view-column-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+
+  :deep(.ant-radio-button-wrapper) {
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--theme-control-border) !important;
+    border-radius: 10px !important;
+    background: var(--theme-control-bg);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 32px;
+    text-align: center;
+    box-shadow: none !important;
+  }
+
+  :deep(.ant-radio-button-wrapper::before) {
+    display: none !important;
+  }
+
+  :deep(.ant-radio-button-wrapper-checked) {
+    color: var(--theme-accent-contrast);
+    border-color: transparent !important;
+    background: var(--theme-accent);
+  }
+}
+
+.generate-filter-panel {
+  width: min(480px, calc(100vw - 32px));
+  padding: 2px;
+  color: var(--theme-title);
+}
+
+.generate-filter-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.generate-filter-panel-title {
+  color: var(--theme-title);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.generate-filter-panel-desc {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.generate-filter-reset {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 999px;
+  background: var(--theme-panel-bg-soft);
+  color: var(--theme-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible {
+    color: var(--theme-accent-text-hover);
+    border-color: var(--theme-border-strong);
+    background: var(--theme-control-hover-bg);
+  }
+}
+
+.generate-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.generate-filter-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.generate-filter-field-third {
+  grid-column: span 2;
+}
+
+.generate-filter-field-half {
+  grid-column: span 3;
+}
+
+.generate-filter-control,
+.generate-filter-input {
+  width: 100%;
+}
+
+.generate-filter-control :deep(.ant-select-selector),
+.generate-filter-input.ant-input-affix-wrapper {
+  min-height: 36px !important;
+  border-radius: 12px !important;
+  border-color: var(--theme-control-border) !important;
+  background: var(--theme-control-bg) !important;
+  box-shadow: none !important;
+}
+
+.generate-filter-date-card {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-panel-border);
+  background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg));
+}
+
+.generate-filter-date-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--theme-title);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+
+  .anticon {
+    color: #27a7df;
+    font-size: 20px;
+  }
+}
+
+.generate-filter-date-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.generate-filter-date-preset {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--theme-control-hover-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible,
+  &.active {
+    color: var(--theme-title);
+    border-color: var(--theme-border-strong);
+    background: var(--theme-panel-bg-strong);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.generate-filter-custom-date-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.78fr) minmax(0, 1.22fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.generate-filter-date-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.generate-filter-date-picker.ant-picker {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 10px !important;
+  border-color: var(--theme-control-border) !important;
+  background: var(--theme-control-bg) !important;
+  box-shadow: none !important;
+}
+
+:global(.generate-filter-popover .ant-popover-inner) {
+  border-radius: 20px;
+  background: var(--theme-modal-bg);
+  border: 1px solid var(--theme-panel-border);
+  box-shadow: 0 22px 48px var(--theme-shadow-medium);
+}
+
+:global(.generate-view-popover .ant-popover-inner) {
+  border-radius: 18px;
+  background: var(--theme-modal-bg);
+  border: 1px solid var(--theme-panel-border);
+  box-shadow: 0 18px 38px var(--theme-shadow-medium);
+}
+
+:global(.generate-filter-popover .ant-popover-inner-content) {
+  padding: 16px;
+}
+
+:global(.generate-view-popover .ant-popover-inner-content) {
+  padding: 14px;
+}
+
 .result-canvas-entry-btn {
   display: inline-flex;
   align-items: center;
@@ -5967,6 +6903,22 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   text-align: center;
 }
 
+.result-load-more-tip {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.result-load-more-anchor {
+  width: 100%;
+  height: 1px;
+  margin-top: 1px;
+}
+
 .result-card {
   display: block;
   width: 100%;
@@ -5986,7 +6938,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-frame {
   position: relative;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--generate-result-card-aspect, 1 / 1);
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
@@ -6388,6 +7340,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   text-align: center;
 }
 
+.result-loading-state {
+  gap: 8px;
+  text-align: center;
+}
+
 .empty-illustration-shell {
   width: min(100%, 220px);
   margin-bottom: 8px;
@@ -6609,7 +7566,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .history-item-move,
   .generate-panel-slide-enter-active,
   .generate-panel-slide-leave-active,
-  .mode-switch-btn {
+  .mode-switch-btn,
+  .result-config-expand-btn {
     transition: none !important;
   }
 }
@@ -6995,6 +7953,22 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .mode-switc
   background: var(--theme-accent);
   color: var(--theme-accent-contrast);
   box-shadow: 0 8px 16px var(--theme-shadow-medium);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .config-collapse-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-config-expand-btn {
+  color: var(--theme-accent-text);
+  border-color: var(--theme-panel-border);
+  background: var(--theme-panel-bg-muted);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .config-collapse-btn:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .config-collapse-btn:focus-visible,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-config-expand-btn:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-config-expand-btn:focus-visible {
+  color: var(--theme-accent-text-hover);
+  border-color: var(--theme-border-strong);
+  background: var(--theme-control-hover-bg);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-footer {
