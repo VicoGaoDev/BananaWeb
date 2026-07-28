@@ -181,6 +181,7 @@ type PrimaryMenuItem = {
 };
 
 type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
+const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
 
 const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
   { key: "textGenerate", label: "文生图", icon: FontSizeOutlined },
@@ -420,7 +421,10 @@ watch(
 function handleMenuClick({ key }: { key: string }) {
   mobileDrawerOpen.value = false;
   if (key === "templates") router.push("/templates");
-  else if (key === "generate") router.push("/generate");
+  else if (key === "generate") {
+    window.dispatchEvent(new CustomEvent(GENERATE_MENU_ENTRY_EVENT));
+    router.push("/generate");
+  }
   else if (key === "video-generate") router.push("/video-generate");
   else if (key === "canvas") {
     if (!auth.isLoggedIn) {
@@ -440,6 +444,7 @@ function handleMenuClick({ key }: { key: string }) {
 
 function openGenerateEntry(mode: GenerateEntryMode) {
   mobileDrawerOpen.value = false;
+  window.dispatchEvent(new CustomEvent(GENERATE_MENU_ENTRY_EVENT, { detail: { mode } }));
   router.push({
     path: "/generate",
     query: { mode },

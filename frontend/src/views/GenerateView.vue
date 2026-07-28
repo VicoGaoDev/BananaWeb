@@ -146,8 +146,19 @@ const DEFAULT_SCENE_COSTS: Record<string, number> = {
   inpaint: 4,
 };
 
+const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
 const generateMode = ref<GenerateMode>("imageEdit");
 const isConfigPanelCollapsed = ref(false);
+function expandConfigPanelForEditing() {
+  if (isConfigPanelCollapsed.value) {
+    isConfigPanelCollapsed.value = false;
+  }
+}
+
+function handleGenerateMenuEntry() {
+  expandConfigPanelForEditing();
+}
+
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card.svg");
 const canvasNavIcon = withBaseUrl("nav-canvas.svg");
@@ -2184,6 +2195,7 @@ async function handleGenerate() {
 }
 
 function handleReeditTask(task: GeneratedTaskItem) {
+  expandConfigPanelForEditing();
   generateMode.value = task.mode;
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
@@ -2225,6 +2237,7 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
     message.warning("当前结果图暂不可用于图编辑");
     return;
   }
+  expandConfigPanelForEditing();
   generateMode.value = "imageEdit";
   prompt.value = task.prompt;
   repaintPrompt.value = "";
@@ -2526,6 +2539,7 @@ function handleInpaintGeneratedImage(task: GeneratedTaskItem, img: ImageResult) 
     message.warning("当前结果图暂不可用于局部重绘");
     return;
   }
+  expandConfigPanelForEditing();
   generateMode.value = "inpaint";
   repaintPrompt.value = task.prompt || "";
   prompt.value = "";
@@ -2802,6 +2816,7 @@ onMounted(async () => {
   window.addEventListener("resize", syncViewportWidth);
   window.addEventListener("focus", handleFilePickerFocusReturn);
   window.addEventListener("paste", handleReferencePaste);
+  window.addEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
   document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
   await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus(), notifyCompletedUnreadFeedbacks()]);
@@ -2837,6 +2852,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", syncViewportWidth);
   window.removeEventListener("focus", handleFilePickerFocusReturn);
   window.removeEventListener("paste", handleReferencePaste);
+  window.removeEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
   document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
   clearFilePickerRecoveryTimer();
   unbindReferenceDragHandlers?.();
@@ -2932,8 +2948,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 <template>
   <div class="generate-page">
     <div class="generate-workbench" :class="{ 'config-collapsed': isConfigPanelCollapsed }">
-      <div v-if="!isConfigPanelCollapsed" class="left-col">
-        <div class="generate-mode-shell">
+      <transition name="config-panel-slide">
+        <div v-if="!isConfigPanelCollapsed" class="left-col">
+          <div class="generate-mode-shell">
           <div class="generate-mode-switch">
             <div class="mode-switch-cluster">
               <div class="mode-switch-group mode-switch-group-primary">
@@ -3910,10 +3927,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               </div>
             </section>
           </transition>
+          </div>
         </div>
-      </div>
+      </transition>
 
-      <section class="work-panel result-panel">
+      <section
+        class="work-panel result-panel"
+        :class="{ 'config-panel-is-collapsed': isConfigPanelCollapsed }"
+      >
         <div class="result-head">
           <div class="result-head-main">
             <a-tooltip v-if="isConfigPanelCollapsed" title="展开配置">
@@ -4597,7 +4618,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+@keyframes result-panel-slide-left-in {
+  from {
+    transform: translate3d(48px, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .generate-workbench {
+  position: relative;
   display: grid;
   grid-template-columns:
     clamp(
@@ -4613,6 +4644,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   min-height: 100%;
   height: 100%;
   animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.04s both;
+  transition:
+    grid-template-columns var(--motion-duration-slide) var(--motion-ease-soft),
+    gap var(--motion-duration-slide) var(--motion-ease-soft);
 }
 
 .generate-workbench.config-collapsed {
@@ -4635,7 +4669,41 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   min-height: 0;
   min-width: var(--generate-config-min-width);
   max-width: var(--generate-config-max-width);
-  animation: generate-slide-left-in var(--motion-duration-stage) var(--motion-ease-enter) 0.08s both;
+}
+
+.config-panel-slide-enter-active,
+.config-panel-slide-leave-active {
+  overflow: hidden;
+  transition:
+    opacity var(--motion-duration-slide) var(--motion-ease-soft),
+    transform var(--motion-duration-slide) var(--motion-ease-enter),
+    filter var(--motion-duration-slide) var(--motion-ease-soft);
+}
+
+.config-panel-slide-leave-active {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 3;
+  width: clamp(
+    var(--generate-config-min-width),
+    var(--generate-config-fluid-width),
+    var(--generate-config-max-width)
+  );
+  pointer-events: none;
+}
+
+.config-panel-slide-enter-from,
+.config-panel-slide-leave-to {
+  opacity: 0;
+  transform: translate3d(-28px, 0, 0) scaleX(0.96);
+  filter: blur(6px);
+}
+
+.config-panel-slide-enter-to,
+.config-panel-slide-leave-from {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scaleX(1);
+  filter: blur(0);
 }
 
 .generate-mode-shell {
@@ -5297,6 +5365,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   border-radius: 24px;
   box-shadow: 0 18px 45px var(--theme-shadow-soft);
   padding: 20px;
+  transition:
+    transform var(--motion-duration-slide) var(--motion-ease-enter),
+    opacity var(--motion-duration-slide) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-slide) var(--motion-ease-soft);
 }
 
 .panel-head {
@@ -6194,7 +6266,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   height: 100%;
   min-height: 0;
   padding: 16px 18px 18px;
-  animation: generate-slide-right-in var(--motion-duration-stage-delayed) var(--motion-ease-enter) 0.14s both;
+}
+
+.result-panel.config-panel-is-collapsed {
+  animation: result-panel-slide-left-in var(--motion-duration-slide) var(--motion-ease-enter) both;
 }
 
 .result-config-expand-btn {
@@ -7564,6 +7639,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .history-item-enter-active,
   .history-item-leave-active,
   .history-item-move,
+  .config-panel-slide-enter-active,
+  .config-panel-slide-leave-active,
   .generate-panel-slide-enter-active,
   .generate-panel-slide-leave-active,
   .mode-switch-btn,
