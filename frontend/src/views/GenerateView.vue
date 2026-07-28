@@ -28,8 +28,8 @@ import {
   QuestionCircleOutlined,
   UnorderedListOutlined,
   VideoCameraOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
+  DoubleLeftOutlined,
+  DoubleRightOutlined,
   FilterOutlined,
   CalendarOutlined,
 } from "@ant-design/icons-vue";
@@ -54,7 +54,7 @@ import {
   uploadReferenceImage,
 } from "@/api/upload";
 import { getMe } from "@/api/auth";
-import { getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
+import { getMyUnreadFeedbackCount } from "@/api/feedback";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
@@ -2769,7 +2769,7 @@ async function loadTaskSceneConfigs() {
 async function notifyCompletedUnreadFeedbacks() {
   if (!auth.isLoggedIn) return;
   try {
-    const { count } = await getMyCompletedUnreadFeedbackCount();
+    const { count } = await getMyUnreadFeedbackCount();
     setStoredUserCompletedUnreadFeedbackCount(count);
     if (count > 1) {
       notification.info({
@@ -2964,16 +2964,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
             <div class="mode-switch-cluster">
               <div class="mode-switch-group mode-switch-group-secondary">
-                <a-tooltip title="收起配置">
-                  <button
-                    type="button"
-                    class="mode-switch-btn config-collapse-btn"
-                    aria-label="收起配置"
-                    @click="isConfigPanelCollapsed = true"
-                  >
-                    <MenuFoldOutlined />
-                  </button>
-                </a-tooltip>
                 <a-dropdown
                   :trigger="['hover']"
                   placement="bottomRight"
@@ -3011,6 +3001,16 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-menu>
                   </template>
                 </a-dropdown>
+                <a-tooltip title="收起配置">
+                  <button
+                    type="button"
+                    class="mode-switch-btn config-collapse-btn"
+                    aria-label="收起配置"
+                    @click="isConfigPanelCollapsed = true"
+                  >
+                    <DoubleLeftOutlined />
+                  </button>
+                </a-tooltip>
               </div>
             </div>
           </div>
@@ -3923,7 +3923,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 aria-label="展开配置"
                 @click="isConfigPanelCollapsed = false"
               >
-                <MenuUnfoldOutlined />
+                <DoubleRightOutlined />
                 <span>展开配置</span>
               </button>
             </a-tooltip>
@@ -4752,7 +4752,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .mode-switch-btn.tool {
-  min-width: 152px;
+  min-width: 126px;
   border-width: 1px;
   border-style: solid;
   border-color: var(--theme-control-border-strong);
@@ -4807,7 +4807,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   gap: 8px;
   height: 42px;
   min-height: 42px;
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: 13px;
 }
 
@@ -7806,9 +7806,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 
 <style lang="scss">
 .generate-tool-dropdown .generate-tool-menu {
-  min-width: 196px;
-  padding: 12px;
-  border-radius: 18px;
+  min-width: 156px;
+  padding: 8px;
+  border-radius: 16px;
   border: 1px solid var(--theme-panel-border);
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
   box-shadow: 0 16px 28px var(--theme-shadow-soft);
@@ -7817,10 +7817,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item {
   display: flex;
   align-items: center;
-  min-height: 50px;
+  min-height: 42px;
   margin: 0 !important;
-  padding: 10px 16px !important;
-  border-radius: 14px;
+  padding: 8px 12px !important;
+  border-radius: 12px;
   color: var(--theme-title);
   font-weight: 700;
   transition:
@@ -7831,7 +7831,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 }
 
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item + .ant-menu-item {
-  margin-top: 8px !important;
+  margin-top: 6px !important;
 }
 
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item:hover {

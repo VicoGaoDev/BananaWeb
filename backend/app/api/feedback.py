@@ -11,7 +11,7 @@ from app.schemas.feedback import (
     FeedbackReadCountResponse,
 )
 from app.services.feedback_service import (
-    count_user_completed_unread_feedbacks,
+    count_user_unread_feedbacks,
     create_feedback,
     get_feedback_detail,
     list_feedbacks,
@@ -62,12 +62,20 @@ def list_my_feedback(
     )
 
 
+@router.get("/unread-count", response_model=FeedbackReadCountResponse)
+def get_my_unread_feedback_count(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return {"count": count_user_unread_feedbacks(db, user_id=user.id)}
+
+
 @router.get("/completed-unread-count", response_model=FeedbackReadCountResponse)
 def get_my_completed_unread_feedback_count(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return {"count": count_user_completed_unread_feedbacks(db, user_id=user.id)}
+    return {"count": count_user_unread_feedbacks(db, user_id=user.id)}
 
 
 @router.patch("/{feedback_id}/read", response_model=FeedbackDetail)

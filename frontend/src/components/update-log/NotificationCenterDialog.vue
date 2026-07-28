@@ -4,8 +4,17 @@ import dayjs from "dayjs";
 import { MessageOutlined, MailOutlined, BellOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
-import { listMyFeedbacks } from "@/api/feedback";
-import { listMySystemMessages } from "@/api/systemMessages";
+import {
+  getMyUnreadFeedbackCount,
+  listMyFeedbacks,
+  markAllMyFeedbackAsRead,
+  markMyFeedbackAsRead,
+} from "@/api/feedback";
+import {
+  getMyUnreadSystemMessageCount,
+  listMySystemMessages,
+  markAllMySystemMessagesAsRead,
+} from "@/api/systemMessages";
 import { listUpdateLogs } from "@/api/updateLogs";
 import { useAuthStore } from "@/stores/auth";
 import type { FeedbackItem, FeedbackStatus, SystemMessageItem, UpdateLogItem, UpdateLogTagType } from "@/types";
@@ -19,6 +28,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  "read-state-change": [];
 }>();
 
 const auth = useAuthStore();
@@ -30,12 +40,16 @@ const feedbackItems = ref<FeedbackItem[]>([]);
 const feedbackTotal = ref(0);
 const feedbackPage = ref(1);
 const feedbackPageSize = ref(10);
+const feedbackUnreadCount = ref(0);
+const feedbackMarkingAllRead = ref(false);
 
 const systemLoading = ref(false);
 const systemItems = ref<SystemMessageItem[]>([]);
 const systemTotal = ref(0);
 const systemPage = ref(1);
 const systemPageSize = ref(10);
+const systemUnreadCount = ref(0);
+const systemMarkingAllRead = ref(false);
 
 const updateLogLoading = ref(false);
 const updateLogItems = ref<UpdateLogItem[]>([]);
@@ -59,6 +73,12 @@ const currentPagination = computed(() => {
   }
   return { current: updateLogPage.value, pageSize: updateLogPageSize.value, total: updateLogTotal.value };
 });
+
+function getTabUnreadCount(tabKey: NotificationTabKey) {
+  if (tabKey === "feedback") return feedbackUnreadCount.value;
+  if (tabKey === "system-messages") return systemUnreadCount.value;
+  return 0;
+}
 
 function closeDialog() {
   emit("update:open", false);
@@ -115,6 +135,24 @@ function formatContent(content: string) {
   return (content || "").trim().split(/\n+/).filter(Boolean);
 }
 
+async function loadUnreadCounts() {
+  if (!auth.isLoggedIn) {
+    feedbackUnreadCount.value = 0;
+    systemUnreadCount.value = 0;
+    return;
+  }
+  try {
+    const [feedbackRes, systemRes] = await Promise.all([
+      getMyUnreadFeedbackCount(),
+      getMyUnreadSystemMessageCount(),
+    ]);
+    feedbackUnreadCount.value = Number(feedbackRes.count || 0);
+    systemUnreadCount.value = Number(systemRes.count || 0);
+  } catch {
+    // Keep the last known badge counts when lightweight refresh fails.
+  }
+}
+
 async function loadFeedbacks() {
   if (!auth.isLoggedIn) {
     feedbackItems.value = [];
@@ -167,6 +205,38 @@ async function loadUpdateLogs() {
   }
 }
 
+async function markFeedbacksAllRead() {
+  if (!auth.isLoggedIn || feedbackMarkingAllRead.value || feedbackUnreadCount.value <= 0) return;
+  feedbackMarkingAllRead.value = true;
+  try {
+    await markAllMyFeedbackAsRead();
+    feedbackUnreadCount.value = 0;
+    feedbackItems.value = feedbackItems.value.map((item) => ({ ...item, is_read: true }));
+    emit("read-state-change");
+    message.success("我的反馈已全部标记为已读");
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "标记反馈已读失败");
+  } finally {
+    feedbackMarkingAllRead.value = false;
+  }
+}
+
+async function markSystemMessagesAllRead() {
+  if (!auth.isLoggedIn || systemMarkingAllRead.value || systemUnreadCount.value <= 0) return;
+  systemMarkingAllRead.value = true;
+  try {
+    await markAllMySystemMessagesAsRead();
+    systemUnreadCount.value = 0;
+    systemItems.value = systemItems.value.map((item) => ({ ...item, is_read: true }));
+    emit("read-state-change");
+    message.success("系统消息已全部标记为已读");
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "标记系统消息已读失败");
+  } finally {
+    systemMarkingAllRead.value = false;
+  }
+}
+
 async function loadRecentUpdateLogState() {
   try {
     const res = await listUpdateLogs(1, 1);
@@ -192,7 +262,19 @@ function switchTab(key: NotificationTabKey) {
   activeTab.value = key;
 }
 
-function openFeedbackDetail(item: FeedbackItem) {
+async function openFeedbackDetail(item: FeedbackItem) {
+  if (!item.is_read) {
+    try {
+      await markMyFeedbackAsRead(item.feedback_id);
+      feedbackItems.value = feedbackItems.value.map((feedbackItem) => (
+        feedbackItem.feedback_id === item.feedback_id ? { ...feedbackItem, is_read: true } : feedbackItem
+      ));
+      feedbackUnreadCount.value = Math.max(feedbackUnreadCount.value - 1, 0);
+      emit("read-state-change");
+    } catch {
+      // Reading the detail is still allowed if the read-state update fails.
+    }
+  }
   closeDialog();
   void router.push(`/feedbacks/${item.feedback_id}`);
 }
@@ -226,6 +308,7 @@ watch(
     if (value) {
       activeTab.value = props.defaultTab || "update-logs";
       void loadRecentUpdateLogState();
+      void loadUnreadCounts();
       loadActiveTab();
     }
   },
@@ -258,6 +341,9 @@ watch(activeTab, () => {
         >
           <component :is="tab.icon" />
           <span>{{ tab.label }}</span>
+          <span v-if="getTabUnreadCount(tab.key)" class="notification-title-count">
+            {{ getTabUnreadCount(tab.key) }}
+          </span>
           <span v-if="tab.key === 'update-logs' && hasRecentUpdateLog" class="notification-title-badge">NEW</span>
         </button>
       </div>
@@ -266,53 +352,88 @@ watch(activeTab, () => {
     <div class="notification-dialog">
       <div v-if="activeTab === 'feedback'" class="notification-panel">
         <div v-if="!auth.isLoggedIn" class="notification-empty-state">登录后可查看我的反馈。</div>
-        <a-spin v-else :spinning="feedbackLoading">
-          <div v-if="feedbackItems.length" class="notification-list">
-            <article
-              v-for="item in feedbackItems"
-              :key="item.feedback_id"
-              class="notification-card notification-card-clickable"
-              @click="openFeedbackDetail(item)"
+        <template v-else>
+          <div class="notification-panel-toolbar">
+            <span class="notification-unread-summary">未读反馈 {{ feedbackUnreadCount }} 条</span>
+            <a-button
+              size="small"
+              type="primary"
+              ghost
+              :disabled="feedbackUnreadCount <= 0"
+              :loading="feedbackMarkingAllRead"
+              @click="markFeedbacksAllRead"
             >
-              <div class="notification-meta">
-                <div class="notification-meta-left">
-                  <a-tag class="warm-tag" :color="feedbackStatusColor(item.status)">{{ feedbackStatusLabel(item.status) }}</a-tag>
-                </div>
-                <span class="notification-time">{{ formatTime(item.updated_at || item.created_at) }}</span>
-              </div>
-              <div class="notification-text">{{ item.content || "-" }}</div>
-              <div v-if="item.process_note" class="notification-subtext">处理进度：{{ item.process_note }}</div>
-              <div class="notification-subtext">处理结果：{{ item.result_note || "暂未填写处理结果" }}</div>
-            </article>
+              一键已读
+            </a-button>
           </div>
-          <a-empty v-else class="warm-empty" description="暂无反馈记录" />
-        </a-spin>
+          <a-spin :spinning="feedbackLoading">
+            <div v-if="feedbackItems.length" class="notification-list">
+              <article
+                v-for="item in feedbackItems"
+                :key="item.feedback_id"
+                class="notification-card notification-card-clickable"
+                :class="{ unread: !item.is_read }"
+                @click="openFeedbackDetail(item)"
+              >
+                <div class="notification-meta">
+                  <div class="notification-meta-left">
+                    <a-tag class="warm-tag" :color="feedbackStatusColor(item.status)">{{ feedbackStatusLabel(item.status) }}</a-tag>
+                    <a-tag class="warm-tag" :color="item.is_read ? 'green' : 'orange'">
+                      {{ item.is_read ? "已读" : "未读" }}
+                    </a-tag>
+                  </div>
+                  <span class="notification-time">{{ formatTime(item.updated_at || item.created_at) }}</span>
+                </div>
+                <div class="notification-text">{{ item.content || "-" }}</div>
+                <div v-if="item.process_note" class="notification-subtext">处理进度：{{ item.process_note }}</div>
+                <div class="notification-subtext">处理结果：{{ item.result_note || "暂未填写处理结果" }}</div>
+              </article>
+            </div>
+            <a-empty v-else class="warm-empty" description="暂无反馈记录" />
+          </a-spin>
+        </template>
       </div>
 
       <div v-else-if="activeTab === 'system-messages'" class="notification-panel">
         <div v-if="!auth.isLoggedIn" class="notification-empty-state">登录后可查看系统消息。</div>
-        <a-spin v-else :spinning="systemLoading">
-          <div v-if="systemItems.length" class="notification-list">
-            <article
-              v-for="item in systemItems"
-              :key="item.message_id"
-              class="notification-card notification-card-clickable"
-              @click="openSystemMessageDetail(item)"
+        <template v-else>
+          <div class="notification-panel-toolbar">
+            <span class="notification-unread-summary">未读消息 {{ systemUnreadCount }} 条</span>
+            <a-button
+              size="small"
+              type="primary"
+              ghost
+              :disabled="systemUnreadCount <= 0"
+              :loading="systemMarkingAllRead"
+              @click="markSystemMessagesAllRead"
             >
-              <div class="notification-meta">
-                <div class="notification-meta-left">
-                  <a-tag class="warm-tag" :color="item.is_read ? 'green' : 'orange'">
-                    {{ item.is_read ? "已读" : "未读" }}
-                  </a-tag>
-                </div>
-                <span class="notification-time">{{ formatTime(item.created_at) }}</span>
-              </div>
-              <div class="notification-title">{{ item.subject }}</div>
-              <div class="notification-text">{{ item.content_text || "-" }}</div>
-            </article>
+              一键已读
+            </a-button>
           </div>
-          <a-empty v-else class="warm-empty" description="暂无系统消息" />
-        </a-spin>
+          <a-spin :spinning="systemLoading">
+            <div v-if="systemItems.length" class="notification-list">
+              <article
+                v-for="item in systemItems"
+                :key="item.message_id"
+                class="notification-card notification-card-clickable"
+                :class="{ unread: !item.is_read }"
+                @click="openSystemMessageDetail(item)"
+              >
+                <div class="notification-meta">
+                  <div class="notification-meta-left">
+                    <a-tag class="warm-tag" :color="item.is_read ? 'green' : 'orange'">
+                      {{ item.is_read ? "已读" : "未读" }}
+                    </a-tag>
+                  </div>
+                  <span class="notification-time">{{ formatTime(item.created_at) }}</span>
+                </div>
+                <div class="notification-title">{{ item.subject }}</div>
+                <div class="notification-text">{{ item.content_text || "-" }}</div>
+              </article>
+            </div>
+            <a-empty v-else class="warm-empty" description="暂无系统消息" />
+          </a-spin>
+        </template>
       </div>
 
       <div v-else class="notification-panel">
@@ -387,6 +508,7 @@ watch(activeTab, () => {
   color: #ff7f27;
 }
 
+.notification-title-count,
 .notification-title-badge {
   padding: 0 6px;
   border-radius: 999px;
@@ -395,6 +517,11 @@ watch(activeTab, () => {
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
+}
+
+.notification-title-count {
+  min-width: 18px;
+  text-align: center;
 }
 
 .notification-dialog {
@@ -407,6 +534,21 @@ watch(activeTab, () => {
 .notification-panel {
   flex: 1;
   min-height: 500px;
+}
+
+.notification-panel-toolbar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.notification-unread-summary {
+  color: var(--theme-muted-text);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .notification-list {
@@ -423,6 +565,11 @@ watch(activeTab, () => {
   border: 1px solid var(--theme-panel-border);
   border-radius: 18px;
   background: var(--theme-panel-bg-soft);
+}
+
+.notification-card.unread {
+  border-color: rgba(255, 127, 39, 0.32);
+  background: rgba(255, 127, 39, 0.06);
 }
 
 .notification-card-clickable {

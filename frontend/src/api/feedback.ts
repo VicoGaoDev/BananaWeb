@@ -39,8 +39,8 @@ export function getMyFeedbackDetail(feedbackId: string): Promise<FeedbackDetail>
   return client.get(`/feedback/${feedbackId}`);
 }
 
-export function getMyCompletedUnreadFeedbackCount(): Promise<FeedbackReadCountResponse> {
-  return client.get("/feedback/completed-unread-count");
+export function getMyUnreadFeedbackCount(): Promise<FeedbackReadCountResponse> {
+  return client.get("/feedback/unread-count");
 }
 
 export function markMyFeedbackAsRead(feedbackId: string): Promise<FeedbackDetail> {

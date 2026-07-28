@@ -366,12 +366,11 @@ def count_unresolved_feedbacks(
     return query.count()
 
 
-def count_user_completed_unread_feedbacks(db: Session, *, user_id: int) -> int:
+def count_user_unread_feedbacks(db: Session, *, user_id: int) -> int:
     return (
         db.query(Feedback)
         .filter(
             Feedback.user_id == user_id,
-            Feedback.status == "completed",
             Feedback.is_read.is_(False),
         )
         .count()

@@ -14,7 +14,7 @@ import {
   validatePromoCode,
 } from "@/api/auth";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
-import { createFeedback, getMyCompletedUnreadFeedbackCount } from "@/api/feedback";
+import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
 import UserSuggestionDialog from "@/components/feedback/UserSuggestionDialog.vue";
 import NotificationCenterDialog from "@/components/update-log/NotificationCenterDialog.vue";
@@ -513,7 +513,7 @@ async function syncAdminUnresolvedFeedbackCount(options?: { showToast?: boolean 
 async function syncUserCompletedUnreadFeedbackCount() {
   if (!auth.isLoggedIn) return;
   try {
-    const { count } = await getMyCompletedUnreadFeedbackCount();
+    const { count } = await getMyUnreadFeedbackCount();
     userCompletedUnreadFeedbackCount.value = setStoredUserCompletedUnreadFeedbackCount(count);
   } catch {
     // ignore user unread feedback count failures
