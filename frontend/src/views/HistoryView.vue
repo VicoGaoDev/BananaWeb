@@ -20,7 +20,15 @@ import { getAdminHistoryCards, listUsers } from "@/api/admin";
 import { listBoards } from "@/api/boards";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory, toggleHistoryPin } from "@/api/history";
-import { getDisplayImageUrl, getDownloadUrl, getPreviewImageSrc, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import {
+  exceedsRealtimeImagePreviewLimit,
+  getDisplayImageUrl,
+  getDownloadUrl,
+  getPreviewImageSrc,
+  getPreviewImageUrl,
+  LARGE_IMAGE_PREVIEW_NOTICE,
+  resolveImageUrl,
+} from "@/api/images";
 import { createTemplateFromTaskImage, listTemplateTags, type TemplatePayload } from "@/api/templates";
 import { deletePromptHistory } from "@/api/auth";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
@@ -497,7 +505,14 @@ function getHistoryCardMedia(item: UserHistoryCard) {
   if (item.mode === "promptReverse") {
     return getPreviewImageSrc(item.source_image_thumb || item.source_image);
   }
+  if (shouldShowHistoryLargeImagePreviewNotice(item)) {
+    return "";
+  }
   return getHistoryImageSrc(item);
+}
+
+function shouldShowHistoryLargeImagePreviewNotice(item: UserHistoryCard) {
+  return item.mode !== "promptReverse" && item.status === "success" && exceedsRealtimeImagePreviewLimit(item.image_size_bytes);
 }
 
 function handleHistoryImageError(event: Event) {
@@ -1267,6 +1282,9 @@ function handleEditImage(item: UserHistoryCard) {
               @load="markHistoryCardMediaLoaded(item)"
               @error="handleHistoryImageError"
             />
+            <div v-else-if="shouldShowHistoryLargeImagePreviewNotice(item)" class="result-card-preview-notice">
+              <span>{{ LARGE_IMAGE_PREVIEW_NOTICE }}</span>
+            </div>
             <div v-else class="result-card-placeholder">
               <template v-if="isHistoryItemPending(item.status)">
                 <a-spin
@@ -2228,6 +2246,25 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .history-page .result-card
   font-size: 28px;
   background: linear-gradient(180deg, rgba(255, 250, 240, 0.1), rgba(255, 250, 240, 0.16));
   backdrop-filter: blur(0.25px);
+  border-radius: calc(var(--media-radius, 18px) - 1px);
+}
+
+.result-card-preview-notice {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  color: var(--theme-text-secondary);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.7;
+  background:
+    linear-gradient(180deg, rgba(var(--theme-surface-strong-rgb), 0.78), rgba(var(--theme-page-base-rgb), 0.92)),
+    linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg));
   border-radius: calc(var(--media-radius, 18px) - 1px);
 }
 

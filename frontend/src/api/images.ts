@@ -2,6 +2,9 @@ import client from "./client";
 import type { ImageResult } from "@/types";
 import { withApiBaseUrl } from "@/lib/assets";
 
+export const REALTIME_IMAGE_PREVIEW_LIMIT_BYTES = 32 * 1024 * 1024;
+export const LARGE_IMAGE_PREVIEW_NOTICE = "原图体积较大，暂不支持实时预览，请下载原图查看完整内容";
+
 export function regenerateImage(imageId: number): Promise<any> {
   return client.post(`/images/${imageId}/regenerate`);
 }
@@ -17,6 +20,10 @@ export function resolveImageUrl(imageUrl?: string): string {
 export function appendImageTransform(url: string, transform: string): string {
   if (!url || url.startsWith("data:") || url.startsWith("blob:")) return url;
   return `${url}${url.includes("?") ? "&" : "?"}${transform}`;
+}
+
+export function exceedsRealtimeImagePreviewLimit(imageSizeBytes?: number | null): boolean {
+  return typeof imageSizeBytes === "number" && imageSizeBytes >= REALTIME_IMAGE_PREVIEW_LIMIT_BYTES;
 }
 
 export function getDisplayImageUrl(image?: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url">): string {
