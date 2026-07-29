@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   AppstoreOutlined,
   PictureOutlined,
@@ -13,6 +13,7 @@ import TemplateDetailDialog from "@/components/templates/TemplateDetailDialog.vu
 import type { CreativeTemplate, GenerationModelOption } from "@/types";
 
 const router = useRouter();
+const openCreditsContact = inject<(() => void) | undefined>("openCreditsContact", undefined);
 const showcaseItems = ref<CreativeTemplate[]>([]);
 const loadingShowcase = ref(true);
 const generationModels = ref<GenerationModelOption[]>([]);
@@ -113,6 +114,19 @@ const imageUseCases = [
     title: "创意合成",
     desc: "多图合成、产品场景化",
   },
+] as const;
+
+const footerNavLinks = [
+  { label: "创意模版", route: "/templates" },
+  { label: "AI 生图", route: "/generate" },
+  { label: "AI 视频", route: "/video-generate" },
+  { label: "无限画布", route: "/canvas" },
+] as const;
+
+const footerLegalLinks = [
+  { label: "关于", route: "/" },
+  { label: "用户协议", route: "/user-agreement" },
+  { label: "隐私政策", route: "/privacy-policy" },
 ] as const;
 
 const marqueeItems = computed(() => [...showcaseItems.value, ...showcaseItems.value]);
@@ -265,6 +279,14 @@ function useTemplate() {
   );
   detailOpen.value = false;
   router.push("/generate");
+}
+
+function openFooterContact() {
+  if (openCreditsContact) {
+    openCreditsContact();
+    return;
+  }
+  window.location.href = "mailto:support@80ai.net";
 }
 
 onMounted(() => {
@@ -453,6 +475,54 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <footer class="home-footer motion-fade-up" style="--motion-delay: 0.2s">
+      <div class="home-footer-watermark" aria-hidden="true">80AI</div>
+      <div class="home-footer-main">
+        <div class="home-footer-brand">
+          <button type="button" class="home-footer-logo" @click="router.push('/')">
+            <img src="/香蕉.svg" alt="80AI" />
+            <span>80AI.net</span>
+          </button>
+          <p>聚合全球领先 AI 生图模型，一个入口接入数百种创作能力。</p>
+        </div>
+
+        <div class="home-footer-links">
+          <div class="home-footer-column">
+            <div class="home-footer-column-title">导航</div>
+            <button
+              v-for="item in footerNavLinks"
+              :key="item.route"
+              type="button"
+              class="home-footer-link"
+              @click="router.push(item.route)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+          <div class="home-footer-column">
+            <div class="home-footer-column-title">联系</div>
+            <button type="button" class="home-footer-link" @click="openFooterContact">联系我们</button>
+            <a class="home-footer-link" href="mailto:support@80ai.net">邮箱</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-footer-bottom">
+        <span>@ 2026 80AI. 版权所有</span>
+        <div class="home-footer-legal">
+          <button
+            v-for="item in footerLegalLinks"
+            :key="item.label"
+            type="button"
+            class="home-footer-link home-footer-legal-link"
+            @click="router.push(item.route)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
+    </footer>
+
     <TemplateDetailDialog
       v-model:open="detailOpen"
       :loading="detailLoading"
@@ -469,6 +539,172 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 22px;
   min-height: calc(100vh - 130px);
+}
+
+.home-footer {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 18px;
+  padding: 34px 42px 24px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 28px 28px 0 0;
+  background:
+    radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--theme-accent) 10%, transparent), transparent 30%),
+    radial-gradient(circle at 86% 16%, rgba(var(--theme-surface-strong-rgb), 0.42), transparent 26%),
+    var(--theme-page-gradient);
+  color: var(--theme-text);
+  box-shadow: 0 -18px 55px var(--theme-shadow-soft);
+}
+
+.home-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  opacity: 0.42;
+  background-image: radial-gradient(rgba(130, 108, 83, 0.16) 1px, transparent 1px);
+  background-size: 14px 14px;
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.75) 48%, transparent 100%);
+}
+
+.home-footer::after {
+  content: "";
+  position: absolute;
+  left: 42px;
+  right: 42px;
+  bottom: 74px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--theme-panel-border), transparent);
+}
+
+.home-footer-watermark {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  z-index: -1;
+  transform: translateX(-50%);
+  color: color-mix(in srgb, var(--theme-accent) 18%, transparent);
+  font-size: clamp(86px, 18vw, 230px);
+  font-weight: 900;
+  letter-spacing: -0.08em;
+  line-height: 0.78;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.home-footer-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 0.72fr);
+  gap: 48px;
+  align-items: start;
+  min-height: 132px;
+}
+
+.home-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 520px;
+}
+
+.home-footer-logo {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-title);
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.home-footer-logo img {
+  width: 44px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 9px;
+  border-radius: 16px;
+  background: rgb(255, 171, 39);
+  object-fit: contain;
+  box-shadow: 0 12px 22px var(--theme-brand-shadow);
+}
+
+.home-footer-brand p {
+  margin: 0;
+  color: var(--theme-text-secondary);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.home-footer-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 54px;
+}
+
+.home-footer-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.home-footer-column-title {
+  margin-bottom: 2px;
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.home-footer-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-hover) var(--motion-ease-soft),
+    transform var(--motion-duration-hover) var(--motion-ease-enter);
+}
+
+.home-footer-link:hover {
+  color: var(--theme-accent-text-hover);
+  transform: translateX(2px);
+}
+
+.home-footer-bottom {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 34px;
+  padding-top: 24px;
+  color: var(--theme-muted-text);
+  font-size: 12px;
+}
+
+.home-footer-legal {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.home-footer-legal-link {
+  color: var(--theme-muted-text);
 }
 
 .section-block {
@@ -1256,6 +1492,15 @@ onBeforeUnmount(() => {
   .use-cases-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .home-footer-main {
+    grid-template-columns: 1fr;
+    gap: 34px;
+  }
+
+  .home-footer-links {
+    max-width: 520px;
+  }
 }
 
 @media (max-width: 960px) {
@@ -1303,6 +1548,21 @@ onBeforeUnmount(() => {
 
 @media (max-width: 820px) {
   .cta-band {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .home-footer {
+    padding: 30px 26px 22px;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .home-footer-links {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .home-footer-bottom {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -1364,9 +1624,19 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .summary-card,
   .use-cases-shell,
-  .cta-band {
+  .cta-band,
+  .home-footer {
     padding: 22px;
     border-radius: 24px;
+  }
+
+  .home-footer::after {
+    left: 22px;
+    right: 22px;
+  }
+
+  .home-footer-legal {
+    gap: 12px;
   }
 
   .use-cases-grid {
