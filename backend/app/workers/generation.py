@@ -68,6 +68,22 @@ PROMPT_MODERATION_PRECHECK_PUBLIC_MESSAGE = (
 _async_poll_recovery_lock = threading.Lock()
 _async_poll_recovery_started = False
 FALLBACK_HTTP_STATUSES = {502, 503, 504}
+FALLBACK_TRANSIENT_ERROR_KEYWORDS = (
+    "server is busy",
+    "please retry later",
+    "retry later",
+    "try again later",
+    "temporarily unavailable",
+    "too many requests",
+    "rate limit",
+    "read timed out",
+    "timed out",
+    "timeout",
+    "请求超时",
+    "响应读取超时",
+    "上游请求超时",
+    "连接超时",
+)
 
 
 @dataclass
@@ -167,10 +183,17 @@ def _is_configured_image_path_missing_error(error_message: str) -> bool:
     return "生图接口返回内容缺少配置路径" in message and "对应的 base64 数据" in message
 
 
+def _is_transient_upstream_error(error_message: str) -> bool:
+    message = (error_message or "").strip().lower()
+    return bool(message) and any(keyword in message for keyword in FALLBACK_TRANSIENT_ERROR_KEYWORDS)
+
+
 def _should_use_fallback_api(http_status: int | None, error_message: str) -> bool:
     if http_status is not None and int(http_status) in FALLBACK_HTTP_STATUSES:
         return True
     if _is_configured_image_path_missing_error(error_message):
+        return True
+    if _is_transient_upstream_error(error_message):
         return True
     detected_status = _extract_fallback_http_status(error_message)
     return detected_status is not None

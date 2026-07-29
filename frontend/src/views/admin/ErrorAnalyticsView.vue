@@ -62,6 +62,39 @@ let activeDetailRequestKey = "";
 
 const TASK_TABLE_PAGE_SIZE = 10;
 
+const fallbackTriggerGroups = [
+  {
+    title: "HTTP 状态",
+    desc: "主接口直接返回这些上游临时故障状态码时切换备用接口。",
+    items: ["HTTP 502", "HTTP 503", "HTTP 504"],
+  },
+  {
+    title: "临时上游故障关键词",
+    desc: "主接口错误文案命中以下关键词时切换备用接口。",
+    items: [
+      "server is busy",
+      "please retry later",
+      "retry later",
+      "try again later",
+      "temporarily unavailable",
+      "too many requests",
+      "rate limit",
+      "timeout",
+      "timed out",
+      "read timed out",
+      "请求超时",
+      "响应读取超时",
+      "上游请求超时",
+      "连接超时",
+    ],
+  },
+  {
+    title: "结果解析异常",
+    desc: "上游响应成功但缺少配置的结果图字段时，也会尝试备用接口。",
+    items: ["缺少配置路径对应的 base64 数据"],
+  },
+];
+
 const taskColumns = computed(() => {
   const baseColumns = [
     { title: "用户", dataIndex: "username", width: 120 },
@@ -691,6 +724,25 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div class="fallback-trigger-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 150ms">
+      <div class="fallback-trigger-head">
+        <div>
+          <div class="table-card-title">备用接口触发条件</div>
+          <div class="table-card-desc">以下规则为静态记录，和图片生成 worker 的备用接口判断保持一致；命中后会尝试调用绑定的备用接口。</div>
+        </div>
+        <span class="fallback-trigger-note">图片任务</span>
+      </div>
+      <div class="fallback-trigger-grid">
+        <div v-for="group in fallbackTriggerGroups" :key="group.title" class="fallback-trigger-group">
+          <div class="fallback-trigger-group-title">{{ group.title }}</div>
+          <div class="fallback-trigger-group-desc">{{ group.desc }}</div>
+          <div class="fallback-trigger-tags">
+            <span v-for="item in group.items" :key="item" class="fallback-trigger-tag">{{ item }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="summary-grid">
       <div
         v-for="(item, index) in summaryCards"
@@ -924,6 +976,76 @@ onMounted(async () => {
   border: 1px solid rgba(240, 223, 190, 0.95);
   color: #8c7458;
   font-size: 13px;
+}
+
+.fallback-trigger-card {
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.fallback-trigger-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(240, 223, 190, 0.9);
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.2));
+}
+
+.fallback-trigger-note {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(22, 119, 255, 0.08);
+  border: 1px solid rgba(22, 119, 255, 0.18);
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fallback-trigger-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  padding: 16px 20px 18px;
+}
+
+.fallback-trigger-group {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 253, 248, 0.72);
+  border: 1px solid rgba(240, 223, 190, 0.86);
+}
+
+.fallback-trigger-group-title {
+  color: #4c341a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.fallback-trigger-group-desc {
+  margin-top: 6px;
+  color: #9a805b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fallback-trigger-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fallback-trigger-tag {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 243, 218, 0.82);
+  border: 1px solid rgba(229, 187, 112, 0.38);
+  color: #7c5b2e;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .summary-grid {
