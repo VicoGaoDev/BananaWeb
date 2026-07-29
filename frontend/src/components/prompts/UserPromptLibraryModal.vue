@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { CheckSquareOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons-vue";
+import { CheckSquareOutlined, CopyOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons-vue";
 import { Modal, message } from "ant-design-vue";
 
 import { useUserPrompts, type UserPromptCategoryFilter } from "@/composables/useUserPrompts";
@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{
   open: boolean;
   title?: string;
 }>(), {
-  title: "提示词库",
+  title: "我的提示词",
 });
 
 const emit = defineEmits<{
@@ -80,7 +80,7 @@ const allVisibleSelected = computed(() => (
 watch(() => props.open, (open) => {
   if (!open) return;
   void refreshCurrent().catch((err: any) => {
-    message.error(err?.response?.data?.detail || "获取提示词库失败");
+    message.error(err?.response?.data?.detail || "获取我的提示词失败");
   });
 }, { immediate: true });
 
@@ -306,6 +306,20 @@ function handleUsePrompt(prompt: UserPrompt) {
   emit("update:open", false);
 }
 
+async function copyPromptContent(prompt: UserPrompt) {
+  const content = (prompt.content || "").trim();
+  if (!content) {
+    message.warning("该提示词内容为空");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(content);
+    message.success("提示词已复制");
+  } catch {
+    message.error("复制失败，请手动复制");
+  }
+}
+
 function openCreateCategoryDialog() {
   categoryDialogMode.value = "create";
   categoryDialogValue.value = "";
@@ -499,9 +513,12 @@ function handleDeleteCategory() {
                 <div class="prompt-card-header">
                   <div class="prompt-card-title">{{ item.title }}</div>
                   <div v-if="!batchMode" class="prompt-card-actions">
-                    <a-button type="link" size="small" @click="handleUsePrompt(item)">使用</a-button>
-                    <a-button type="link" size="small" @click="openEditPromptDialog(item)">
+                    <a-button type="link" size="small" class="prompt-card-action-btn" @click="handleUsePrompt(item)">使用</a-button>
+                    <a-button type="link" size="small" class="prompt-card-icon-btn" @click="openEditPromptDialog(item)">
                       <template #icon><EditOutlined /></template>
+                    </a-button>
+                    <a-button type="link" size="small" class="prompt-card-icon-btn" title="复制提示词" @click="copyPromptContent(item)">
+                      <template #icon><CopyOutlined /></template>
                     </a-button>
                     <a-button type="link" size="small" danger @click="handleDeletePrompt(item)">
                       <template #icon><DeleteOutlined /></template>
@@ -913,6 +930,18 @@ function handleDeleteCategory() {
   flex-shrink: 0;
 }
 
+.prompt-card-action-btn,
+.prompt-card-icon-btn {
+  color: #c47b13;
+}
+
+.prompt-card-action-btn:hover,
+.prompt-card-action-btn:focus,
+.prompt-card-icon-btn:hover,
+.prompt-card-icon-btn:focus {
+  color: #de971e;
+}
+
 .prompt-card-meta-row {
   font-size: 12px;
   color: #8b6b3f;
@@ -1023,6 +1052,18 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-batch-summary,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-meta-row,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-empty-desc {
   color: var(--theme-text-secondary);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn {
+  color: #ffbf66;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn:focus,
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn:hover,
+html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn:focus {
+  color: #ffd995;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-loading-mask {

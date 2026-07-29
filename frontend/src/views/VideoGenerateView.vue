@@ -13,6 +13,7 @@ import {
   MessageOutlined,
   MoreOutlined,
   PictureOutlined,
+  PlusOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
   VideoCameraOutlined,
@@ -25,13 +26,16 @@ import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { getMe } from "@/api/auth";
+import { createUserPrompt } from "@/api/userPrompts";
 import {
   isImageUploadTooLarge,
   MAX_IMAGE_UPLOAD_SIZE_TEXT,
   uploadReferenceImage,
 } from "@/api/upload";
 import { getVideoTaskScenes } from "@/api/videoConfig";
+import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
+import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import { createVideoTask, deleteVideoTask, getVideoTasks } from "@/api/videoTasks";
 import { useAuthStore } from "@/stores/auth";
 import type { SceneOptionItem, UserAsset, UserPrompt, VideoTaskResult, VideoTaskSceneConfig } from "@/types";
@@ -45,6 +49,8 @@ interface UploadPreviewItem {
   remoteUrl: string;
   status: UploadItemStatus;
   objectUrl?: string;
+  fileName?: string;
+  savedToAsset?: boolean;
 }
 
 const auth = useAuthStore();
@@ -71,6 +77,7 @@ const selectedDuration = ref("");
 const selectedResolution = ref("");
 const selectedTaskCount = ref<number>(DEFAULT_VIDEO_TASK_COUNT);
 const prompt = ref("");
+const lastSavedPromptText = ref("");
 const taskScenes = ref<VideoTaskSceneConfig[]>([]);
 const videoTasks = ref<VideoTaskResult[]>([]);
 const failureRefundRemainingCount = ref<number | null>(null);
@@ -79,6 +86,8 @@ const referenceItems = ref<UploadPreviewItem[]>([]);
 const firstLastFrameItems = ref<[UploadPreviewItem | null, UploadPreviewItem | null]>([null, null]);
 const assetPickerOpen = ref(false);
 const assetPickerFrameSlot = ref<0 | 1 | null>(null);
+const quickSavingReferenceIds = ref<string[]>([]);
+const quickSavingPromptKeys = ref<string[]>([]);
 const promptLibraryVisible = ref(false);
 const detailOpen = ref(false);
 const detailTask = ref<VideoTaskResult | null>(null);
@@ -92,6 +101,7 @@ const viewportWidth = ref(typeof window === "undefined" ? 1200 : window.innerWid
 const preferredResultColumnCount = ref<ResultColumnOption>(DEFAULT_RESULT_COLUMN_COUNT);
 const playingVideoTaskIds = ref<Set<string>>(new Set());
 const videoPlayerRefs = new Map<string, HTMLVideoElement>();
+const { uploadFiles: uploadUserAssetFiles } = useUserAssets();
 
 function isSceneAvailableForGenerateMode(scene: VideoTaskSceneConfig, mode: VideoGenerateMode) {
   const availabilityModes = scene.availability_modes?.length
@@ -311,6 +321,107 @@ function setFrameReferenceItem(slot: 0 | 1, item: UploadPreviewItem | null) {
   firstLastFrameItems.value = next;
 }
 
+function isSavingReferenceToLibrary(itemId: string) {
+  return quickSavingReferenceIds.value.includes(itemId);
+}
+
+function canQuickSaveReferenceItem(item: UploadPreviewItem | null | undefined) {
+  return !!item && item.status === "success" && !!item.objectUrl && !item.savedToAsset;
+}
+
+function isQuickSavePromptPending(promptKey: string) {
+  return quickSavingPromptKeys.value.includes(promptKey);
+}
+
+function canQuickSavePrompt(content: string, lastSavedContent: string) {
+  const normalized = content.trim();
+  return !!normalized && normalized !== lastSavedContent.trim();
+}
+
+function markPromptQuickSaved(value: string) {
+  lastSavedPromptText.value = value;
+}
+
+async function ensureLibraryAuth(kind: "asset" | "prompt") {
+  if (auth.isLoggedIn) return true;
+  message.warning(kind === "asset" ? "请先登录后使用我的素材" : "请先登录后使用我的提示词");
+  return false;
+}
+
+async function saveReferenceItemToLibrary(item: UploadPreviewItem) {
+  if (!(await ensureLibraryAuth("asset"))) return;
+  if (!canQuickSaveReferenceItem(item)) return;
+  if (isSavingReferenceToLibrary(item.id)) return;
+  quickSavingReferenceIds.value = [...quickSavingReferenceIds.value, item.id];
+  try {
+    const file = await imageUrlToFile(item.objectUrl || item.localUrl, {
+      fileName: item.fileName,
+      fallbackPrefix: "video-reference",
+    });
+    await uploadUserAssetFiles([file]);
+    updateReferenceItem(item.id, { savedToAsset: true });
+    message.success("已加入我的素材");
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || err?.message || "加入我的素材失败");
+  } finally {
+    quickSavingReferenceIds.value = quickSavingReferenceIds.value.filter((id) => id !== item.id);
+  }
+}
+
+function confirmSaveReferenceItem(item: UploadPreviewItem) {
+  Modal.confirm({
+    title: "加入我的素材",
+    content: "确认将这张参考图加入我的素材吗？",
+    centered: true,
+    okText: "确认加入",
+    cancelText: "取消",
+    async onOk() {
+      await saveReferenceItemToLibrary(item);
+    },
+  });
+}
+
+function confirmSaveFrameReferenceItem(slot: 0 | 1) {
+  const item = firstLastFrameItems.value[slot];
+  if (item) {
+    confirmSaveReferenceItem(item);
+  }
+}
+
+async function savePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
+  const normalized = content.trim();
+  if (!normalized) return;
+  if (!(await ensureLibraryAuth("prompt"))) return;
+  if (isQuickSavePromptPending(promptKey)) return;
+  quickSavingPromptKeys.value = [...quickSavingPromptKeys.value, promptKey];
+  try {
+    const title = buildQuickSavePromptTitle(normalized);
+    await createUserPrompt({ title, content: normalized });
+    onSaved(normalized);
+    message.success("已加入我的提示词");
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || "加入我的提示词失败");
+  } finally {
+    quickSavingPromptKeys.value = quickSavingPromptKeys.value.filter((key) => key !== promptKey);
+  }
+}
+
+function confirmSavePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
+  const normalized = content.trim();
+  if (!normalized) return;
+  const title = buildQuickSavePromptTitle(normalized);
+  Modal.confirm({
+    title: "加入我的提示词",
+    content: `确认将当前提示词加入我的提示词吗？将使用“${title}”作为默认标题。`,
+    centered: true,
+    okText: "确认加入",
+    cancelText: "取消",
+    async onOk() {
+      await savePromptToLibrary(normalized, promptKey, onSaved);
+    },
+  });
+}
+
 function addLibraryAssetToReference(asset: UserAsset) {
   if (generateMode.value === "firstLastFrame" && assetPickerFrameSlot.value !== null) {
     return addLibraryAssetToFrameSlot(asset, assetPickerFrameSlot.value);
@@ -328,6 +439,8 @@ function addLibraryAssetToReference(asset: UserAsset) {
     localUrl: asset.thumb_url || asset.image_url,
     remoteUrl: asset.image_url,
     status: "success",
+    fileName: asset.file_name,
+    savedToAsset: true,
   });
   return true;
 }
@@ -343,6 +456,8 @@ function addLibraryAssetToFrameSlot(asset: UserAsset, slot: 0 | 1) {
     localUrl: asset.thumb_url || asset.image_url,
     remoteUrl: asset.image_url,
     status: "success",
+    fileName: asset.file_name,
+    savedToAsset: true,
   });
   return true;
 }
@@ -394,6 +509,8 @@ function addLibraryAssetsToReference(assets: UserAsset[]) {
       localUrl: asset.thumb_url || asset.image_url,
       remoteUrl: asset.image_url,
       status: "success",
+      fileName: asset.file_name,
+      savedToAsset: true,
     });
   });
   if (uniqueAssets.length < assets.length) {
@@ -419,7 +536,7 @@ async function handlePickUserAssets(assets: UserAsset[]) {
 function openAssetPicker() {
   assetPickerFrameSlot.value = null;
   if (!auth.isLoggedIn) {
-    message.warning("请先登录后使用素材库");
+    message.warning("请先登录后使用我的素材");
     return;
   }
   assetPickerOpen.value = true;
@@ -433,7 +550,7 @@ function openFrameAssetPicker(slot: 0 | 1) {
 
 function openPromptLibrary() {
   if (!auth.isLoggedIn) {
-    message.warning("请先登录后使用提示词库");
+    message.warning("请先登录后使用我的提示词");
     return;
   }
   promptLibraryVisible.value = true;
@@ -497,6 +614,8 @@ async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = nu
       remoteUrl: "",
       status: "uploading",
       objectUrl,
+      fileName: file.name,
+      savedToAsset: false,
     };
     setFrameReferenceItem(frameSlot, item);
     try {
@@ -536,6 +655,8 @@ async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = nu
       remoteUrl: "",
       status: "uploading",
       objectUrl,
+      fileName: file.name,
+      savedToAsset: false,
     };
     referenceItems.value.push(item);
 
@@ -1168,10 +1289,12 @@ onBeforeUnmount(() => {
                     @drop="handleReferenceDrop"
                   >
                     <div class="panel-head">
-                      <h3>参考图</h3>
-                      <div class="panel-head-actions">
+                      <div class="panel-head-main">
+                        <h3>参考图</h3>
                         <span class="panel-hint">(最多 {{ maxReferenceImages }} 张，支持拖拽上传)</span>
-                        <a-button type="text" class="asset-library-btn" @click.stop="openAssetPicker">素材库</a-button>
+                      </div>
+                      <div class="panel-head-actions">
+                        <a-button type="text" class="asset-library-btn" @click.stop="openAssetPicker">我的素材</a-button>
                       </div>
                     </div>
 
@@ -1195,6 +1318,17 @@ onBeforeUnmount(() => {
                           <a-spin v-if="item.status === 'uploading'" />
                           <span v-else>上传失败</span>
                         </div>
+                        <a-tooltip v-if="canQuickSaveReferenceItem(item)" title="加入我的素材">
+                          <button
+                            type="button"
+                            class="thumb-save"
+                            aria-label="加入我的素材"
+                            :disabled="isSavingReferenceToLibrary(item.id)"
+                            @click.stop="confirmSaveReferenceItem(item)"
+                          >
+                            <PlusOutlined />
+                          </button>
+                        </a-tooltip>
                         <button
                           type="button"
                           class="thumb-remove"
@@ -1210,7 +1344,7 @@ onBeforeUnmount(() => {
                         class="upload-add"
                         @click="triggerUpload()"
                       >
-                        <a-spin v-if="uploading || referencePickerOpening" />
+                        <a-spin v-if="referencePickerOpening" />
                         <template v-else>
                           <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
                           <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
@@ -1255,6 +1389,17 @@ onBeforeUnmount(() => {
                             <a-spin v-if="getFrameReferenceStatus(slot) === 'uploading'" />
                             <span v-else>上传失败</span>
                           </div>
+                          <a-tooltip v-if="canQuickSaveReferenceItem(firstLastFrameItems[slot])" title="加入我的素材">
+                            <button
+                              type="button"
+                              class="thumb-save"
+                              :aria-label="slot === 0 ? '将首帧加入我的素材' : '将尾帧加入我的素材'"
+                              :disabled="isSavingReferenceToLibrary(firstLastFrameItems[slot]?.id || '')"
+                              @click.stop="confirmSaveFrameReferenceItem(slot)"
+                            >
+                              <PlusOutlined />
+                            </button>
+                          </a-tooltip>
                           <button
                             type="button"
                             class="thumb-remove"
@@ -1269,14 +1414,14 @@ onBeforeUnmount(() => {
                           class="upload-add frame-upload-add"
                           @click="triggerUpload(slot)"
                         >
-                          <a-spin v-if="uploading || referencePickerOpening" />
+                          <a-spin v-if="referencePickerOpening" />
                           <template v-else>
                             <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
                             <span>{{ frameDragActive === slot ? "松开上传" : `上传${slot === 0 ? "首帧" : "尾帧"}` }}</span>
                           </template>
                         </div>
                         <a-button type="text" class="asset-library-btn frame-asset-btn" @click.stop="openFrameAssetPicker(slot)">
-                          素材库
+                          我的素材
                         </a-button>
                       </div>
                     </div>
@@ -1284,19 +1429,35 @@ onBeforeUnmount(() => {
 
                   <div class="prompt-block config-section">
                     <div class="prompt-label-row">
-                      <label>提示词</label>
+                      <div class="prompt-label-main">
+                        <label>提示词</label>
+                        <a-tooltip v-if="canQuickSavePrompt(prompt, lastSavedPromptText)" title="加入我的提示词">
+                          <button
+                            type="button"
+                            class="prompt-quick-save-btn"
+                            aria-label="加入我的提示词"
+                            :disabled="isQuickSavePromptPending('video-prompt')"
+                            @click="confirmSavePromptToLibrary(prompt, 'video-prompt', markPromptQuickSaved)"
+                          >
+                            <PlusOutlined />
+                          </button>
+                        </a-tooltip>
+                      </div>
                       <div class="prompt-label-actions">
-                        <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
+                        <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                       </div>
                     </div>
-                    <a-textarea
-                      v-model:value="prompt"
-                      :rows="5"
-                      :maxlength="5000"
-                      show-count
-                      :placeholder="promptPlaceholder"
-                      class="prompt-input"
-                    />
+                    <div class="prompt-input-wrap">
+                      <a-textarea
+                        v-model:value="prompt"
+                        :rows="5"
+                        :maxlength="5000"
+                        allow-clear
+                        show-count
+                        :placeholder="promptPlaceholder"
+                        class="prompt-input"
+                      />
+                    </div>
                   </div>
 
                   <div class="settings-row settings-row-inline config-section compact-config-section">
@@ -1537,7 +1698,7 @@ onBeforeUnmount(() => {
     </div>
     <UserAssetPicker
       v-model:open="assetPickerOpen"
-      title="选择个人素材"
+      title="我的素材"
       @select-asset="handlePickUserAsset"
       @select-assets="handlePickUserAssets"
     />
@@ -1836,6 +1997,12 @@ onBeforeUnmount(() => {
   }
 }
 
+.prompt-label-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .prompt-label-actions {
   display: inline-flex;
   align-items: center;
@@ -1846,6 +2013,10 @@ onBeforeUnmount(() => {
 .prompt-block {
   display: flex;
   flex-direction: column;
+}
+
+.prompt-input-wrap {
+  position: relative;
 }
 
 .panel-hint {
@@ -1870,6 +2041,13 @@ onBeforeUnmount(() => {
     margin: 0;
     font-weight: 700;
   }
+}
+
+.panel-head-main {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .panel-head-actions {
@@ -1970,6 +2148,43 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
+}
+
+.thumb-save {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.upload-thumb:hover .thumb-save,
+.upload-thumb:focus-within .thumb-save {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.thumb-save:hover,
+.thumb-save:focus-visible {
+  background: rgba(0, 0, 0, 0.92);
 }
 
 .upload-add {
@@ -2208,8 +2423,41 @@ onBeforeUnmount(() => {
       0 12px 24px rgba(188, 154, 94, 0.08);
     color: var(--theme-title);
     line-height: 1.7;
-    padding: 14px 16px;
+    padding: 14px 16px 44px;
   }
+}
+
+.prompt-quick-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.5;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    opacity var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.prompt-quick-save-btn:hover,
+.prompt-quick-save-btn:focus-visible {
+  background: rgba(0, 0, 0, 0.92);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.prompt-quick-save-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .generate-btn {

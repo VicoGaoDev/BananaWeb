@@ -3628,7 +3628,7 @@ function handleCanvasSideTool(action: "freeNode" | "userAssets" | "searchNode" |
   }
   const labels = {
     freeNode: "自由节点",
-    userAssets: "素材库",
+    userAssets: "我的素材",
     searchNode: "搜索节点",
     historyTasks: "历史任务",
   };
@@ -4237,7 +4237,7 @@ function getImageNodeBadgeText(node: CanvasNode) {
   if (workbenchNode.uploadStatus === "uploading") return "上传中";
   if (workbenchNode.uploadStatus === "failed") return "失败";
   if (isNodeAssetDeleted(node)) return "已删除";
-  return isUserAssetUrl(node.image_url) ? "素材库" : "上传";
+  return isUserAssetUrl(node.image_url) ? "我的素材" : "上传";
 }
 
 async function loadAssetCategories() {
@@ -4324,14 +4324,14 @@ async function submitSaveNodeToAssetDialog() {
       height: Math.round(getNodeCardHeight(node)),
     });
     saveToAssetDialogOpen.value = false;
-    message.success("已添加到素材库");
+    message.success("已添加到我的素材");
   } catch (err: any) {
     const quotaMessage = resolveAssetQuotaErrorMessage(err);
     if (quotaMessage) {
       message.warning(quotaMessage);
       return;
     }
-    message.error(err?.response?.data?.detail || "添加到素材库失败");
+    message.error(err?.response?.data?.detail || "添加到我的素材失败");
   } finally {
     saveToAssetSubmitting.value = false;
   }
@@ -4673,7 +4673,7 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" :disabled="canvasReadOnly" @click="assetPickerOpen = true">
           <PictureOutlined />
-          <span>素材库</span>
+          <span>我的素材</span>
         </button>
         <button type="button" :disabled="canvasReadOnly" @click="arrangeCanvasNodesFromContextMenu">
           <ClearOutlined />
@@ -4916,7 +4916,7 @@ onBeforeUnmount(() => {
               <PlusOutlined />
             </button>
           </a-tooltip>
-          <a-tooltip title="素材库" placement="right">
+          <a-tooltip title="我的素材" placement="right">
             <button
               type="button"
               :class="{ active: assetPickerOpen }"
@@ -5053,7 +5053,7 @@ onBeforeUnmount(() => {
                   </button>
                   <button type="button" @click="openUserAssetPicker">
                     <PictureOutlined />
-                    <span>素材库</span>
+                    <span>我的素材</span>
                   </button>
                   <button type="button" @click="openCanvasReferencePicker">
                     <AimOutlined />
@@ -5407,7 +5407,7 @@ onBeforeUnmount(() => {
           @click="openSaveNodeToAssetDialog(nodeContextMenuNode)"
         >
           <PictureOutlined />
-          <span>添加到素材库</span>
+          <span>添加到我的素材</span>
         </button>
         <button v-if="!canvasReadOnly" type="button" class="danger" @click="handleNodeContextDelete">
           <DeleteOutlined />
@@ -5633,7 +5633,7 @@ onBeforeUnmount(() => {
     />
     <UserAssetPicker
       v-model:open="assetPickerOpen"
-      title="素材库"
+      title="我的素材"
       :enable-drag="true"
       :mask="false"
       :show-insert-to-canvas="true"
@@ -5644,7 +5644,7 @@ onBeforeUnmount(() => {
     />
     <a-modal
       v-model:open="saveToAssetDialogOpen"
-      title="添加到素材库"
+      title="添加到我的素材"
       centered
       ok-text="保存"
       cancel-text="取消"

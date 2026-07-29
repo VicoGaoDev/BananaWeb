@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<{
   mask?: boolean;
   showInsertToCanvas?: boolean;
 }>(), {
-  title: "素材库",
+  title: "我的素材",
   enableDrag: false,
   initialCategory: "all",
   mask: true,
@@ -102,7 +102,7 @@ watch(() => props.open, (open) => {
     keyword: keyword.value,
     limit: 120,
   }).catch((err: any) => {
-    message.error(err?.response?.data?.detail || "获取素材库失败");
+    message.error(err?.response?.data?.detail || "获取我的素材失败");
   });
 }, { immediate: true });
 
@@ -137,7 +137,7 @@ async function reloadAssets() {
       limit: 120,
     });
   } catch (err: any) {
-    message.error(err?.response?.data?.detail || "刷新素材库失败");
+    message.error(err?.response?.data?.detail || "刷新我的素材失败");
   }
 }
 
@@ -812,7 +812,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
             </div>
             <div v-else class="asset-empty">
               <div class="asset-empty-title">暂无素材</div>
-              <div class="asset-empty-desc">上传到素材库的图片会永久保存，可在画布页和 AI 生图页复用。每个用户最多可保存 50 个素材。</div>
+              <div class="asset-empty-desc">上传到我的素材的图片会永久保存，可在画布页和 AI 生图页复用。每个用户最多可保存 50 个素材。</div>
             </div>
           </div>
         </div>

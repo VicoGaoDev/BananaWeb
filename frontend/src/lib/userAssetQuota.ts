@@ -5,11 +5,11 @@ export function isAssetQuotaFull(quota: UserAssetQuota) {
 }
 
 export function getAssetQuotaFullMessage(quota: UserAssetQuota) {
-  return `素材库已满，最多支持 ${quota.limit} 个素材，请删除后再试`;
+  return `我的素材已满，最多支持 ${quota.limit} 个素材，请删除后再试`;
 }
 
 export function getAssetQuotaTruncatedMessage(acceptedCount: number, remaining: number) {
-  return `素材库剩余 ${remaining} 个额度，本次仅上传前 ${acceptedCount} 个`;
+  return `我的素材剩余 ${remaining} 个额度，本次仅上传前 ${acceptedCount} 个`;
 }
 
 export function truncateByAssetQuota<T>(items: T[], remaining: number) {

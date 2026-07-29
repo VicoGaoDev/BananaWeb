@@ -8,7 +8,6 @@ import {
   FontSizeOutlined,
   CloseOutlined,
   CloudUploadOutlined,
-  ClearOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -48,6 +47,7 @@ import {
   resolveImageUrl,
 } from "@/api/images";
 import { reversePrompt } from "@/api/promptReverse";
+import { createUserPrompt } from "@/api/userPrompts";
 import {
   isImageUploadTooLarge,
   MAX_IMAGE_UPLOAD_SIZE_TEXT,
@@ -66,7 +66,9 @@ import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
+import { useUserAssets } from "@/composables/useUserAssets";
 import { withBaseUrl } from "@/lib/assets";
+import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import {
   formatGenerationErrorMessage,
   formatGenerationTaskFailureMessage,
@@ -184,6 +186,8 @@ const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponen
 `)}`;
 const prompt = ref("");
 const repaintPrompt = ref("");
+const lastSavedPromptText = ref("");
+const lastSavedRepaintPromptText = ref("");
 const TASK_PROMPT_MAX_LENGTH = 5000;
 const selectedModel = ref("");
 const numImages = ref(1);
@@ -269,11 +273,15 @@ interface UploadPreviewItem {
   remoteUrl: string;
   status: UploadItemStatus;
   objectUrl?: string;
+  fileName?: string;
+  savedToAsset?: boolean;
 }
 
 const DEFAULT_MAX_REFERENCE_IMAGES = 6;
 const referenceItems = ref<UploadPreviewItem[]>([]);
 const assetPickerOpen = ref(false);
+const quickSavingReferenceIds = ref<string[]>([]);
+const quickSavingPromptKeys = ref<string[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
 const referenceUploadBlockRef = ref<HTMLElement | null>(null);
 const referenceDragActive = ref(false);
@@ -322,6 +330,7 @@ const feedbackTarget = ref<{
   prompt: string;
   createdAt: string;
 } | null>(null);
+const { uploadFiles: uploadUserAssetFiles } = useUserAssets();
 const viewportWidth = ref(typeof window === "undefined" ? 1200 : window.innerWidth);
 const RESULT_COLUMN_OPTIONS = [3, 4, 5, 6, 7, 8] as const;
 type ResultColumnOption = typeof RESULT_COLUMN_OPTIONS[number];
@@ -1453,6 +1462,14 @@ async function ensureAuthenticated() {
   }
 }
 
+function ensureLoggedIn() {
+  if (!auth.isLoggedIn) {
+    loginModalVisible.value = true;
+    return false;
+  }
+  return true;
+}
+
 async function goCanvas() {
   if (!(await ensureAuthenticated())) return;
   router.push("/canvas");
@@ -1533,6 +1550,98 @@ function getReferencePreviewUrl(item: UploadPreviewItem) {
   return getPreviewImageSrc(item.localUrl || item.remoteUrl);
 }
 
+function isSavingReferenceToLibrary(itemId: string) {
+  return quickSavingReferenceIds.value.includes(itemId);
+}
+
+function canQuickSaveReferenceItem(item: UploadPreviewItem) {
+  return item.status === "success" && !!item.objectUrl && !item.savedToAsset;
+}
+
+function isQuickSavePromptPending(promptKey: string) {
+  return quickSavingPromptKeys.value.includes(promptKey);
+}
+
+function canQuickSavePrompt(content: string, lastSavedContent: string) {
+  const normalized = content.trim();
+  return !!normalized && normalized !== lastSavedContent.trim();
+}
+
+function markPromptQuickSaved(value: string) {
+  lastSavedPromptText.value = value;
+}
+
+function markRepaintPromptQuickSaved(value: string) {
+  lastSavedRepaintPromptText.value = value;
+}
+
+async function saveReferenceItemToLibrary(item: UploadPreviewItem) {
+  if (!(await ensureAuthenticated())) return;
+  if (!canQuickSaveReferenceItem(item)) return;
+  if (isSavingReferenceToLibrary(item.id)) return;
+  quickSavingReferenceIds.value = [...quickSavingReferenceIds.value, item.id];
+  try {
+    const file = await imageUrlToFile(item.objectUrl || item.localUrl, {
+      fileName: item.fileName,
+      fallbackPrefix: "reference-image",
+    });
+    await uploadUserAssetFiles([file]);
+    updateReferenceItem(item.id, { savedToAsset: true });
+    message.success("已加入我的素材");
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || err?.message || "加入我的素材失败");
+  } finally {
+    quickSavingReferenceIds.value = quickSavingReferenceIds.value.filter((id) => id !== item.id);
+  }
+}
+
+function confirmSaveReferenceItem(item: UploadPreviewItem) {
+  Modal.confirm({
+    title: "加入我的素材",
+    content: "确认将这张参考图加入我的素材吗？",
+    centered: true,
+    okText: "确认加入",
+    cancelText: "取消",
+    async onOk() {
+      await saveReferenceItemToLibrary(item);
+    },
+  });
+}
+
+async function savePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
+  const normalized = content.trim();
+  if (!normalized) return;
+  if (!(await ensureAuthenticated())) return;
+  if (isQuickSavePromptPending(promptKey)) return;
+  quickSavingPromptKeys.value = [...quickSavingPromptKeys.value, promptKey];
+  try {
+    const title = buildQuickSavePromptTitle(normalized);
+    await createUserPrompt({ title, content: normalized });
+    onSaved(normalized);
+    message.success("已加入我的提示词");
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || "加入我的提示词失败");
+  } finally {
+    quickSavingPromptKeys.value = quickSavingPromptKeys.value.filter((key) => key !== promptKey);
+  }
+}
+
+function confirmSavePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
+  const normalized = content.trim();
+  if (!normalized) return;
+  const title = buildQuickSavePromptTitle(normalized);
+  Modal.confirm({
+    title: "加入我的提示词",
+    content: `确认将当前提示词加入我的提示词吗？将使用“${title}”作为默认标题。`,
+    centered: true,
+    okText: "确认加入",
+    cancelText: "取消",
+    async onOk() {
+      await savePromptToLibrary(normalized, promptKey, onSaved);
+    },
+  });
+}
+
 function getReversePreviewUrl() {
   return getPreviewImageSrc(reverseImageUrl.value);
 }
@@ -1562,6 +1671,8 @@ function addLibraryAssetToReference(asset: UserAsset) {
     localUrl: asset.thumb_url || asset.image_url,
     remoteUrl: asset.image_url,
     status: "success",
+    fileName: asset.file_name,
+    savedToAsset: true,
   });
   if (shouldAutoDetect) {
     void maybeAutoDetectAspectRatioFromFirstReference(asset.image_url);
@@ -1602,6 +1713,8 @@ function addLibraryAssetsToReference(assets: UserAsset[]) {
       localUrl: asset.thumb_url || asset.image_url,
       remoteUrl: asset.image_url,
       status: "success",
+      fileName: asset.file_name,
+      savedToAsset: true,
     });
   });
   if (shouldAutoDetect && uniqueAssets[0]) {
@@ -1626,7 +1739,7 @@ async function handlePickUserAssets(assets: UserAsset[]) {
 }
 
 async function openAssetPicker() {
-  if (!(await ensureAuthenticated())) return;
+  if (!ensureLoggedIn()) return;
   assetPickerOpen.value = true;
 }
 
@@ -1671,15 +1784,14 @@ async function uploadReferenceFiles(files: File[]) {
       remoteUrl: "",
       status: "uploading",
       objectUrl,
+      fileName: file.name,
+      savedToAsset: false,
     };
     referenceItems.value.push(item);
 
     try {
       const res = await uploadReferenceImage(file, "ref");
-      revokeObjectUrl(objectUrl);
       updateReferenceItem(item.id, {
-        objectUrl: undefined,
-        localUrl: res.url,
         remoteUrl: res.url,
         status: "success",
       });
@@ -2621,7 +2733,7 @@ function handleDownload(imageId: number, imageUrl: string, previewUrl?: string) 
 }
 
 async function openPromptLibrary() {
-  if (!(await ensureAuthenticated())) return;
+  if (!ensureLoggedIn()) return;
   promptLibraryVisible.value = true;
 }
 
@@ -3184,20 +3296,36 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
               <div class="prompt-block config-section">
                 <div class="prompt-label-row">
-                  <label>提示词</label>
+                  <div class="prompt-label-main">
+                    <label>提示词</label>
+                    <a-tooltip v-if="canQuickSavePrompt(prompt, lastSavedPromptText)" title="加入我的提示词">
+                      <button
+                        type="button"
+                        class="prompt-quick-save-btn"
+                        aria-label="加入我的提示词"
+                        :disabled="isQuickSavePromptPending('prompt')"
+                        @click="confirmSavePromptToLibrary(prompt, 'prompt', markPromptQuickSaved)"
+                      >
+                        <PlusOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
                   <div class="prompt-label-actions">
                     <PromptInterceptionTip />
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
-                <a-textarea
-                  v-model:value="prompt"
-                  :rows="5"
-                  placeholder="描述您想要生成的图片..."
-                  class="prompt-input"
-                  :maxlength="TASK_PROMPT_MAX_LENGTH"
-                  show-count
-                />
+                <div class="prompt-input-wrap">
+                  <a-textarea
+                    v-model:value="prompt"
+                    :rows="5"
+                    placeholder="描述您想要生成的图片..."
+                    class="prompt-input"
+                    :maxlength="TASK_PROMPT_MAX_LENGTH"
+                    allow-clear
+                    show-count
+                  />
+                </div>
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
@@ -3240,7 +3368,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">比例自动识别</span>
                     <a-tooltip
-                      title="开启后，上传第一张参考图或从素材库添加第一张参考图时，会自动选择最匹配的宽高比。"
+                      title="开启后，上传第一张参考图或从我的素材添加第一张参考图时，会自动选择最匹配的宽高比。"
                       placement="top"
                       :get-popup-container="getBodyPopupContainer"
                     >
@@ -3266,7 +3394,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     >
                       提示词灵感
                     </a>
-                    (400+模版)
+                    (500+模版)
                   </div>
                   <div class="generate-link-tip-right">
                     支持 <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 张图片同时生成（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
@@ -3446,10 +3574,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 :class="{ 'is-reference-drag-over': referenceDragActive }"
               >
                 <div class="panel-head">
-                  <h3>参考图</h3>
-                  <div class="panel-head-actions">
+                  <div class="panel-head-main">
+                    <h3>参考图</h3>
                     <span class="panel-hint">(最多 {{ maxReferenceImages }} 张，支持拖拽、粘贴上传)</span>
-                    <a-button type="text" size="small" class="asset-library-btn" @click.stop="openAssetPicker">素材库</a-button>
+                  </div>
+                  <div class="panel-head-actions">
+                    <a-button type="text" size="small" class="asset-library-btn" @click.stop="openAssetPicker">我的素材</a-button>
                   </div>
                 </div>
 
@@ -3477,6 +3607,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       />
                       <span v-else>上传失败</span>
                     </div>
+                    <a-tooltip v-if="canQuickSaveReferenceItem(item)" title="加入我的素材">
+                      <button
+                        type="button"
+                        class="thumb-save"
+                        aria-label="加入我的素材"
+                        :disabled="isSavingReferenceToLibrary(item.id)"
+                        @click.stop="confirmSaveReferenceItem(item)"
+                      >
+                        <PlusOutlined />
+                      </button>
+                    </a-tooltip>
                     <button
                       type="button"
                       class="thumb-remove"
@@ -3493,7 +3634,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     @click="triggerUpload"
                   >
                     <a-spin
-                      v-if="uploading || referencePickerOpening"
+                      v-if="referencePickerOpening"
                       :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                     />
                     <template v-else>
@@ -3506,20 +3647,36 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
               <div class="prompt-block config-section">
                 <div class="prompt-label-row">
-                  <label>提示词</label>
+                  <div class="prompt-label-main">
+                    <label>提示词</label>
+                    <a-tooltip v-if="canQuickSavePrompt(prompt, lastSavedPromptText)" title="加入我的提示词">
+                      <button
+                        type="button"
+                        class="prompt-quick-save-btn"
+                        aria-label="加入我的提示词"
+                        :disabled="isQuickSavePromptPending('prompt')"
+                        @click="confirmSavePromptToLibrary(prompt, 'prompt', markPromptQuickSaved)"
+                      >
+                        <PlusOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
                   <div class="prompt-label-actions">
                     <PromptInterceptionTip />
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
-                <a-textarea
-                  v-model:value="prompt"
-                  :rows="5"
-                  placeholder="描述您想要生成的图片..."
-                  class="prompt-input"
-                  :maxlength="TASK_PROMPT_MAX_LENGTH"
-                  show-count
-                />
+                <div class="prompt-input-wrap">
+                  <a-textarea
+                    v-model:value="prompt"
+                    :rows="5"
+                    placeholder="描述您想要生成的图片..."
+                    class="prompt-input"
+                    :maxlength="TASK_PROMPT_MAX_LENGTH"
+                    allow-clear
+                    show-count
+                  />
+                </div>
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
@@ -3562,7 +3719,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">比例自动识别</span>
                     <a-tooltip
-                      title="开启后，上传第一张参考图或从素材库添加第一张参考图时，会自动选择最匹配的宽高比。"
+                      title="开启后，上传第一张参考图或从我的素材添加第一张参考图时，会自动选择最匹配的宽高比。"
                       placement="top"
                       :get-popup-container="getBodyPopupContainer"
                     >
@@ -3588,7 +3745,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     >
                       提示词灵感
                     </a>
-                    (400+模版)
+                    (500+模版)
                   </div>
                   <div class="generate-link-tip-right">
                     支持 <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 张图片同时生成（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
@@ -3696,7 +3853,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     >
                       提示词灵感
                     </a>
-                    (400+模版)
+                    (500+模版)
                   </div>
                 </div>
                 <a-button
@@ -3895,19 +4052,35 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
               <div class="prompt-block inpaint-prompt-block">
                 <div class="prompt-label-row">
-                  <label>提示词</label>
+                  <div class="prompt-label-main">
+                    <label>提示词</label>
+                    <a-tooltip v-if="canQuickSavePrompt(repaintPrompt, lastSavedRepaintPromptText)" title="加入我的提示词">
+                      <button
+                        type="button"
+                        class="prompt-quick-save-btn"
+                        aria-label="加入我的提示词"
+                        :disabled="isQuickSavePromptPending('repaint-prompt')"
+                        @click="confirmSavePromptToLibrary(repaintPrompt, 'repaint-prompt', markRepaintPromptQuickSaved)"
+                      >
+                        <PlusOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
                   <div class="prompt-label-actions">
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">提示词库</a-button>
+                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
-                <a-textarea
-                  v-model:value="repaintPrompt"
-                  :rows="5"
-                  placeholder="描述需要局部重绘后的效果..."
-                  class="prompt-input"
-                  :maxlength="TASK_PROMPT_MAX_LENGTH"
-                  show-count
-                />
+                <div class="prompt-input-wrap">
+                  <a-textarea
+                    v-model:value="repaintPrompt"
+                    :rows="5"
+                    placeholder="描述需要局部重绘后的效果..."
+                    class="prompt-input"
+                    :maxlength="TASK_PROMPT_MAX_LENGTH"
+                    allow-clear
+                    show-count
+                  />
+                </div>
               </div>
               </div>
 
@@ -4517,7 +4690,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     />
     <UserAssetPicker
       v-model:open="assetPickerOpen"
-      title="选择个人素材"
+      title="我的素材"
       @select-asset="handlePickUserAsset"
       @select-assets="handlePickUserAssets"
     />
@@ -5019,6 +5192,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   flex-direction: column;
 }
 
+.prompt-input-wrap {
+  position: relative;
+}
+
 .prompt-label-row {
   display: flex;
   align-items: center;
@@ -5032,6 +5209,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     line-height: 1.4;
     letter-spacing: 0.01em;
   }
+}
+
+.prompt-label-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .prompt-label-actions {
@@ -5118,7 +5301,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     border-radius: 14px !important;
     border-color: var(--theme-control-border) !important;
     background: var(--theme-control-bg) !important;
-    padding: 12px 15px !important;
+    padding: 12px 15px 42px !important;
     box-shadow: inset 0 1px 0 var(--theme-panel-inset);
   }
 
@@ -5141,6 +5324,39 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   :deep(textarea::placeholder) {
     color: var(--text-muted);
   }
+}
+
+.prompt-quick-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.5;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    opacity var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.prompt-quick-save-btn:hover,
+.prompt-quick-save-btn:focus-visible {
+  background: rgba(0, 0, 0, 0.92);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.prompt-quick-save-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 /* --- Settings row --- */
@@ -5387,6 +5603,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.panel-head-main {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .panel-head-actions {
   display: flex;
   align-items: center;
@@ -5501,12 +5724,42 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     background var(--motion-duration-fast) var(--motion-ease-soft);
 }
 
+.thumb-save {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
 .generate-config-panel .upload-thumb:hover .thumb-remove,
-.generate-config-panel .upload-thumb:focus-within .thumb-remove {
+.generate-config-panel .upload-thumb:focus-within .thumb-remove,
+.generate-config-panel .upload-thumb:hover .thumb-save,
+.generate-config-panel .upload-thumb:focus-within .thumb-save {
   opacity: 1;
   transform: scale(1);
 }
 
+.thumb-save:hover,
+.thumb-save:focus-visible,
 .thumb-remove:hover,
 .thumb-remove:focus-visible {
   background: rgba(0, 0, 0, 0.92);
