@@ -18,7 +18,7 @@ import {
 import { getMe } from "@/api/auth";
 import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory } from "@/api/history";
-import { deleteImage, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
+import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl, resolveImageUrl } from "@/api/images";
 import { createTask, getTasks } from "@/api/tasks";
 import {
   isImageUploadTooLarge,
@@ -1649,35 +1649,24 @@ function openFeedbackDialogForBatchCard(card: BatchGenerateCard) {
   feedbackDialogOpen.value = true;
 }
 
-function canDeleteBatchCardImage(card: BatchGenerateCard, image: ImageResult) {
-  return Boolean(card.taskId && image.id > 0 && (image.status === "success" || image.status === "failed"));
+function canDeleteBatchCardTask(card: BatchGenerateCard) {
+  return Boolean(card.taskId && (card.status === "success" || card.status === "failed"));
 }
 
-async function removeBatchCardImage(card: BatchGenerateCard, image: ImageResult) {
-  if (!canDeleteBatchCardImage(card, image)) {
-    message.warning("当前图片暂不支持删除");
+async function removeBatchCardTask(card: BatchGenerateCard) {
+  if (!canDeleteBatchCardTask(card) || !card.taskId) {
+    message.warning("当前任务暂不支持删除");
     return;
   }
 
   try {
-    await deleteImage(image.id);
-    card.images = card.images.filter((item) => item.id !== image.id);
-
-    if (!card.images.length) {
-      card.status = "idle";
-      card.errorMessage = "";
-      card.taskId = null;
-      card.createdAt = null;
-      card.creditRefunded = false;
-    } else if (!card.images.some((item) => item.status === "success")) {
-      card.status = "failed";
-      card.errorMessage = getPreferredGenerationErrorMessage(
-        card.errorMessage,
-        card.images.find((item) => item.status === "failed")?.error_message,
-        Boolean(card.creditRefunded),
-        "生成失败，请重试",
-      );
-    }
+    await deleteHistoryTask(card.taskId);
+    card.images = [];
+    card.status = "idle";
+    card.errorMessage = "";
+    card.taskId = null;
+    card.createdAt = null;
+    card.creditRefunded = false;
 
     message.success("删除成功");
   } catch {
@@ -1685,13 +1674,13 @@ async function removeBatchCardImage(card: BatchGenerateCard, image: ImageResult)
   }
 }
 
-function confirmRemoveBatchCardImage(card: BatchGenerateCard, image: ImageResult) {
+function confirmRemoveBatchCardTask(card: BatchGenerateCard) {
   Modal.confirm({
-    title: "确认删除这张图片？",
-    content: "删除后会移除当前任务卡片中的这张结果图。",
+    title: "确认删除这个任务？",
+    content: "删除后会移除当前任务卡片中的结果图与任务记录。",
     centered: true,
     async onOk() {
-      await removeBatchCardImage(card, image);
+      await removeBatchCardTask(card);
     },
   });
 }
@@ -2520,10 +2509,10 @@ onBeforeUnmount(() => {
                         <template #icon><MessageOutlined /></template>
                       </a-button>
                       <a-button
-                        v-if="canDeleteBatchCardImage(card, getPrimaryImage(card)!)"
+                        v-if="canDeleteBatchCardTask(card)"
                         shape="circle"
                         class="result-hover-action result-hover-action-danger"
-                        @click.stop="confirmRemoveBatchCardImage(card, getPrimaryImage(card)!)"
+                        @click.stop="confirmRemoveBatchCardTask(card)"
                       >
                         <template #icon><DeleteOutlined /></template>
                       </a-button>
@@ -2572,10 +2561,10 @@ onBeforeUnmount(() => {
                         <template #icon><MessageOutlined /></template>
                       </a-button>
                       <a-button
-                        v-if="card.images[0] && canDeleteBatchCardImage(card, card.images[0])"
+                        v-if="canDeleteBatchCardTask(card)"
                         shape="circle"
                         class="result-hover-action result-hover-action-danger"
-                        @click.stop="confirmRemoveBatchCardImage(card, card.images[0])"
+                        @click.stop="confirmRemoveBatchCardTask(card)"
                       >
                         <template #icon><DeleteOutlined /></template>
                       </a-button>

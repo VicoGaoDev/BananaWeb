@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.image import Image
 from app.models.regenerate_log import RegenerateLog
-from app.utils.datetime_utils import now_local
 
 
 def get_image(db: Session, image_id: int) -> Image:
@@ -93,13 +92,12 @@ def delete_image_for_user(db: Session, image_id: int, user_id: int) -> bool:
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         return False
-    if image.task.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作此图片")
-    if image.is_deleted:
+    task = image.task
+    if task.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作此图片所属任务")
+    if task.is_deleted:
         return True
 
-    db.query(RegenerateLog).filter(RegenerateLog.image_id == image.id).delete(synchronize_session=False)
-    image.is_deleted = True
-    image.deleted_at = now_local()
+    task.is_deleted = True
     db.commit()
     return True
