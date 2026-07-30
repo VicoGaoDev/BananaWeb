@@ -13,7 +13,8 @@ from app.models.referral_reward_grant import ReferralRewardGrant
 from app.models.user import User
 from app.models.user_promo_code import UserPromoCode
 from app.services.business_id_service import user_external_id
-from app.services.user_credit_service import change_user_credit_balance
+from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account
+from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 INVITE_CODE_PREFIX = "U"
@@ -354,6 +355,12 @@ def apply_referral_reward(
         log_type="allocate",
         description=_build_reward_description(invitee, normalized_source_type, normalized_source_id, reward_index),
     )
+    _send_referral_reward_notification(
+        db,
+        referrer=referrer,
+        invitee=invitee,
+        grant=grant,
+    )
     return grant
 
 
@@ -391,3 +398,39 @@ def _build_reward_description(invitee: User, source_type: str, source_id: str, r
     source_label = "在线购买" if source_type == REFERRAL_SOURCE_PAYMENT else "兑换码兑换"
     username = (invitee.username or "").strip() or f"ID {invitee.id}"
     return f"邀请奖励：{username} 第 {reward_index} 次{source_label}返利 {source_id}"
+
+
+def _build_user_label(user: User) -> str:
+    username = (user.username or "").strip() or f"ID {user.id}"
+    email = (user.email or "").strip()
+    return f"{username} ({email})" if email else username
+
+
+def _source_type_label(source_type: str) -> str:
+    return "在线购买" if source_type == REFERRAL_SOURCE_PAYMENT else "兑换码兑换"
+
+
+def _send_referral_reward_notification(
+    db: Session,
+    *,
+    referrer: User,
+    invitee: User,
+    grant: ReferralRewardGrant,
+) -> None:
+    credit_account = get_user_credit_account(db, referrer.id, create_if_missing=False)
+    remain_credit = int(credit_account.remain_credit or 0) if credit_account else 0
+    used_credit = int(credit_account.used_credit or 0) if credit_account else 0
+    send_wecom_markdown(
+        "## 🎉 邀请奖励已发放\n"
+        f"> 👤 邀请人: **{_build_user_label(referrer)}**\n"
+        f"> 🙋 被邀请用户: **{_build_user_label(invitee)}**\n"
+        f"> 🏷️ 奖励来源: **{_source_type_label(grant.source_type)}**\n"
+        f"> 🔖 来源编号: `{grant.source_id}`\n"
+        f"> ⚡ 对方到账积分: **{int(grant.source_credits or 0)}**\n"
+        f"> 🎁 奖励比例: **{int(grant.reward_rate or 0)}%**\n"
+        f"> 🎁 发放奖励积分: **{int(grant.reward_credits or 0)}**\n"
+        f"> 🔁 第 **{int(grant.reward_index or 0)}** 次奖励\n"
+        f"> ⚡ 邀请人已使用积分: **{used_credit}**\n"
+        f"> ⚡ 邀请人剩余积分: **{remain_credit}**\n"
+        f"> ⏰ 发放时间: {now_local().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
