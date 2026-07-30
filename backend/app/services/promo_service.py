@@ -31,7 +31,10 @@ def ensure_promo_access(user: User) -> None:
 def _generate_unique_promo_code(db: Session) -> str:
     while True:
         code = "".join(secrets.choice(PROMO_CODE_ALPHABET) for _ in range(PROMO_CODE_LENGTH))
-        exists = db.query(UserPromoCode.id).filter(UserPromoCode.code == code).first()
+        exists = (
+            db.query(UserPromoCode.id).filter(UserPromoCode.code == code).first()
+            or db.query(User.id).filter(User.invite_code == code).first()
+        )
         if not exists:
             return code
 
@@ -355,8 +358,13 @@ def get_my_promo_referral_activities(
     )
 
 
-def get_user_promo_dashboard_for_admin(db: Session, owner: User) -> dict:
-    if not owner.is_whitelisted:
+def get_user_promo_dashboard_for_admin(
+    db: Session,
+    owner: User,
+    *,
+    require_whitelist: bool = True,
+) -> dict:
+    if require_whitelist and not owner.is_whitelisted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户不是白名单用户")
     promo_payload = _build_promo_codes_payload(db, owner)
     return {

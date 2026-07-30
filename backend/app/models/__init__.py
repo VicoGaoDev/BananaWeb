@@ -24,6 +24,7 @@ from app.models.payment_order import PaymentOrder
 from app.models.user_credit import UserCredit
 from app.models.user_api_key import UserApiKey
 from app.models.user_promo_code import UserPromoCode
+from app.models.referral_reward_grant import ReferralRewardGrant
 from app.models.prompt_history import PromptHistory
 from app.models.history_pin import HistoryPin
 from app.models.feedback import Feedback
@@ -64,6 +65,7 @@ __all__ = [
     "UserCredit",
     "UserApiKey",
     "UserPromoCode",
+    "ReferralRewardGrant",
     "PromptHistory",
     "HistoryPin",
     "Feedback",

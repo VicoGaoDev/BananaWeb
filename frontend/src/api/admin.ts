@@ -50,6 +50,9 @@ import type {
   VideoStats,
   VideoAnalyticsQuery,
   VideoTaskResult,
+  AdminInviteRewardDashboard,
+  AdminInviteRewardUserDetail,
+  AdminPromoStatsDashboard,
 } from "@/types";
 
 function buildAnalyticsParams(query: AdminAnalyticsQuery): Record<string, unknown> {
@@ -194,6 +197,22 @@ export function updateRedeemKeyStatus(keyId: number, status: RedeemKeyStatus): P
 
 export function getStats(): Promise<AdminStats> {
   return client.get("/admin/stats");
+}
+
+export function getAdminInviteRewardDashboard(): Promise<AdminInviteRewardDashboard> {
+  return client.get("/admin/invite-rewards");
+}
+
+export function getAdminInviteRewardUserDetail(userId: string): Promise<AdminInviteRewardUserDetail> {
+  return client.get(`/admin/invite-rewards/users/${userId}`);
+}
+
+export function getAdminPromoStatsDashboard(): Promise<AdminPromoStatsDashboard> {
+  return client.get("/admin/promo-stats");
+}
+
+export function getAdminPromoStatsUserDetail(userId: string): Promise<AdminUserPromoDashboard> {
+  return client.get(`/admin/promo-stats/users/${userId}`);
 }
 
 export function getVideoStats(): Promise<VideoStats> {

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.user import User
 from app.services.business_id_service import user_external_id
+from app.services.referral_reward_service import REFERRAL_SOURCE_REDEEM, apply_referral_reward_safely
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account, get_user_credit_balance
 from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local
@@ -221,6 +222,13 @@ def redeem_credit_key(db: Session, *, redeem_key: str, user: User) -> dict:
         log_type="allocate",
         description=f"{REDEEM_LOG_DESCRIPTION_PREFIX} {row.redeem_key}",
         operator_id=None,
+    )
+    apply_referral_reward_safely(
+        db,
+        invitee_id=user.id,
+        source_type=REFERRAL_SOURCE_REDEEM,
+        source_id=row.redeem_key,
+        source_credits=int(row.credit_amount or 0),
     )
     db.commit()
     db.refresh(row)

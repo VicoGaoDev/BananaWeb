@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.models.credit_log import CreditLog
 from app.models.payment_order import PaymentOrder
 from app.models.user import User
+from app.services.referral_reward_service import REFERRAL_SOURCE_PAYMENT, apply_referral_reward_safely
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account
 from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local
@@ -591,6 +592,13 @@ def _apply_payment_order_credit(db: Session, order: PaymentOrder) -> bool:
         delta=int(order.credits or 0),
         log_type="allocate",
         description=_online_purchase_credit_description(order.order_no),
+    )
+    apply_referral_reward_safely(
+        db,
+        invitee_id=order.user_id,
+        source_type=REFERRAL_SOURCE_PAYMENT,
+        source_id=order.order_no,
+        source_credits=int(order.credits or 0),
     )
     _mark_payment_order_credited(db, order)
     return True

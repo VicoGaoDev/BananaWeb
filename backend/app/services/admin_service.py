@@ -14,9 +14,12 @@ from app.models.credit_log import CreditLog
 from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
+from app.models.referral_reward_grant import ReferralRewardGrant
+from app.models.user_promo_code import UserPromoCode
 from app.models.video_task import VideoTask
 from app.models.video_task_api_attempt import VideoTaskApiAttempt
 from app.models.user_credit import DEFAULT_USER_CREDIT_STATUS, UserCredit
+from app.services.promo_service import PROMO_CODE_REWARD_CREDITS, get_user_promo_dashboard_for_admin
 from app.services.business_id_service import get_user_by_business_id, task_external_id, user_external_id
 from app.services.content_safety_service import (
     build_content_safety_error_clause,
@@ -691,6 +694,427 @@ def list_payment_orders(
             }
         )
     return {"total": total, "items": items}
+
+
+def get_admin_invite_reward_dashboard(db: Session) -> dict:
+    invitee_alias = aliased(User)
+    referral_count = (
+        db.query(func.count(User.id))
+        .filter(User.referrer_id.is_not(None), User.used_promo_code_id.is_(None))
+        .scalar()
+        or 0
+    )
+    reward_summary = (
+        db.query(
+            func.count(ReferralRewardGrant.id),
+            func.count(func.distinct(ReferralRewardGrant.referrer_id)),
+            func.count(func.distinct(ReferralRewardGrant.invitee_id)),
+            func.coalesce(func.sum(ReferralRewardGrant.source_credits), 0),
+            func.coalesce(func.sum(ReferralRewardGrant.reward_credits), 0),
+        )
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(invitee_alias.used_promo_code_id.is_(None))
+        .first()
+    )
+    payment_reward_count = (
+        db.query(func.count(ReferralRewardGrant.id))
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(ReferralRewardGrant.source_type == "payment", invitee_alias.used_promo_code_id.is_(None))
+        .scalar()
+        or 0
+    )
+    redeem_reward_count = (
+        db.query(func.count(ReferralRewardGrant.id))
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(ReferralRewardGrant.source_type == "redeem", invitee_alias.used_promo_code_id.is_(None))
+        .scalar()
+        or 0
+    )
+
+    referral_rows = (
+        db.query(User.referrer_id, func.count(User.id))
+        .filter(User.referrer_id.is_not(None), User.used_promo_code_id.is_(None))
+        .group_by(User.referrer_id)
+        .all()
+    )
+    referral_count_map = {int(referrer_id): int(count or 0) for referrer_id, count in referral_rows if referrer_id}
+
+    reward_rows = (
+        db.query(
+            ReferralRewardGrant.referrer_id,
+            func.count(ReferralRewardGrant.id),
+            func.count(func.distinct(ReferralRewardGrant.invitee_id)),
+            func.coalesce(func.sum(ReferralRewardGrant.source_credits), 0),
+            func.coalesce(func.sum(ReferralRewardGrant.reward_credits), 0),
+            func.max(ReferralRewardGrant.created_at),
+        )
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(invitee_alias.used_promo_code_id.is_(None))
+        .group_by(ReferralRewardGrant.referrer_id)
+        .all()
+    )
+    reward_map = {
+        int(referrer_id): {
+            "reward_grant_count": int(reward_grant_count or 0),
+            "rewarded_invitees": int(rewarded_invitees or 0),
+            "source_credits": int(source_credits or 0),
+            "reward_credits": int(reward_credits or 0),
+            "last_reward_at": last_reward_at,
+        }
+        for referrer_id, reward_grant_count, rewarded_invitees, source_credits, reward_credits, last_reward_at in reward_rows
+        if referrer_id
+    }
+
+    referrer_ids = sorted(set(referral_count_map) | set(reward_map))
+    users = db.query(User).filter(User.id.in_(referrer_ids)).all() if referrer_ids else []
+    user_map = {user.id: user for user in users}
+    user_items = []
+    for referrer_id in referrer_ids:
+        user = user_map.get(referrer_id)
+        if not user:
+            continue
+        rewards = reward_map.get(referrer_id, {})
+        user_items.append(
+            {
+                "user_id": user_external_id(user),
+                "username": user.username,
+                "email": user.email or "",
+                "invite_code": user.invite_code or "",
+                "total_referrals": referral_count_map.get(referrer_id, 0),
+                "rewarded_invitees": int(rewards.get("rewarded_invitees") or 0),
+                "reward_grant_count": int(rewards.get("reward_grant_count") or 0),
+                "source_credits": int(rewards.get("source_credits") or 0),
+                "reward_credits": int(rewards.get("reward_credits") or 0),
+                "last_reward_at": rewards.get("last_reward_at"),
+                "created_at": user.created_at,
+            }
+        )
+    user_items.sort(key=lambda item: (item["reward_credits"], item["total_referrals"]), reverse=True)
+
+    recent_rows = (
+        db.query(ReferralRewardGrant, User, invitee_alias)
+        .join(User, User.id == ReferralRewardGrant.referrer_id)
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(invitee_alias.used_promo_code_id.is_(None))
+        .order_by(ReferralRewardGrant.created_at.desc(), ReferralRewardGrant.id.desc())
+        .limit(100)
+        .all()
+    )
+    recent_logs = []
+    for grant, referrer, invitee in recent_rows:
+        recent_logs.append(
+            {
+                "id": grant.id,
+                "referrer_user_id": user_external_id(referrer),
+                "referrer_username": referrer.username,
+                "invitee_user_id": user_external_id(invitee),
+                "invitee_username": invitee.username,
+                "source_type": grant.source_type,
+                "source_id": grant.source_id,
+                "source_credits": int(grant.source_credits or 0),
+                "reward_rate": int(grant.reward_rate or 0),
+                "reward_credits": int(grant.reward_credits or 0),
+                "reward_index": int(grant.reward_index or 0),
+                "created_at": grant.created_at,
+            }
+        )
+
+    reward_grant_count, rewarded_referrers, rewarded_invitees, source_credits, reward_credits = reward_summary
+    return {
+        "summary": {
+            "total_referrals": int(referral_count),
+            "rewarded_referrers": int(rewarded_referrers or 0),
+            "rewarded_invitees": int(rewarded_invitees or 0),
+            "reward_grant_count": int(reward_grant_count or 0),
+            "source_credits": int(source_credits or 0),
+            "reward_credits": int(reward_credits or 0),
+            "payment_reward_count": int(payment_reward_count),
+            "redeem_reward_count": int(redeem_reward_count),
+        },
+        "users": user_items,
+        "recent_logs": recent_logs,
+    }
+
+
+def get_admin_invite_reward_user_detail(db: Session, user_id: str) -> dict:
+    target_user = get_user_by_business_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    referrals = (
+        db.query(User)
+        .filter(User.referrer_id == target_user.id, User.used_promo_code_id.is_(None))
+        .order_by(User.created_at.desc(), User.id.desc())
+        .all()
+    )
+    invitee_ids = [user.id for user in referrals]
+    reward_map: dict[int, dict] = {}
+    if invitee_ids:
+        reward_rows = (
+            db.query(
+                ReferralRewardGrant.invitee_id,
+                func.count(ReferralRewardGrant.id),
+                func.coalesce(func.sum(ReferralRewardGrant.reward_credits), 0),
+                func.max(ReferralRewardGrant.created_at),
+            )
+            .filter(
+                ReferralRewardGrant.referrer_id == target_user.id,
+                ReferralRewardGrant.invitee_id.in_(invitee_ids),
+            )
+            .group_by(ReferralRewardGrant.invitee_id)
+            .all()
+        )
+        reward_map = {
+            int(invitee_id): {
+                "reward_count": int(reward_count or 0),
+                "reward_credits": int(reward_credits or 0),
+                "last_reward_at": last_reward_at,
+            }
+            for invitee_id, reward_count, reward_credits, last_reward_at in reward_rows
+            if invitee_id
+        }
+
+    referral_items = []
+    for invitee in referrals:
+        rewards = reward_map.get(invitee.id, {})
+        referral_items.append(
+            {
+                "user_id": user_external_id(invitee),
+                "username": invitee.username,
+                "email": invitee.email or "",
+                "reward_count": int(rewards.get("reward_count") or 0),
+                "reward_credits": int(rewards.get("reward_credits") or 0),
+                "last_reward_at": rewards.get("last_reward_at"),
+                "registered_at": invitee.created_at,
+            }
+        )
+
+    invitee_alias = aliased(User)
+    log_rows = (
+        db.query(ReferralRewardGrant, invitee_alias)
+        .join(invitee_alias, invitee_alias.id == ReferralRewardGrant.invitee_id)
+        .filter(ReferralRewardGrant.referrer_id == target_user.id, invitee_alias.used_promo_code_id.is_(None))
+        .order_by(ReferralRewardGrant.created_at.desc(), ReferralRewardGrant.id.desc())
+        .all()
+    )
+    reward_logs = [
+        {
+            "id": grant.id,
+            "invitee_user_id": user_external_id(invitee),
+            "invitee_username": invitee.username,
+            "invitee_email": invitee.email or "",
+            "source_type": grant.source_type,
+            "source_id": grant.source_id,
+            "source_credits": int(grant.source_credits or 0),
+            "reward_rate": int(grant.reward_rate or 0),
+            "reward_credits": int(grant.reward_credits or 0),
+            "reward_index": int(grant.reward_index or 0),
+            "created_at": grant.created_at,
+        }
+        for grant, invitee in log_rows
+    ]
+
+    total_reward_credits = sum(item["reward_credits"] for item in reward_logs)
+    total_source_credits = sum(item["source_credits"] for item in reward_logs)
+    rewarded_invitees = len({item["invitee_user_id"] for item in reward_logs})
+    return {
+        "user": {
+            "user_id": user_external_id(target_user),
+            "username": target_user.username,
+            "email": target_user.email or "",
+            "invite_code": target_user.invite_code or "",
+            "created_at": target_user.created_at,
+        },
+        "summary": {
+            "total_referrals": len(referral_items),
+            "rewarded_invitees": rewarded_invitees,
+            "reward_grant_count": len(reward_logs),
+            "source_credits": int(total_source_credits),
+            "reward_credits": int(total_reward_credits),
+        },
+        "referrals": referral_items,
+        "reward_logs": reward_logs,
+    }
+
+
+def get_admin_promo_stats_dashboard(db: Session) -> dict:
+    whitelisted_users = (
+        db.query(func.count(User.id)).filter(User.is_whitelisted.is_(True)).scalar() or 0
+    )
+    total_promo_codes = db.query(func.count(UserPromoCode.id)).scalar() or 0
+
+    promo_codes = db.query(UserPromoCode).all()
+    owner_promo_ids: dict[int, list[int]] = defaultdict(list)
+    promo_id_to_owner: dict[int, int] = {}
+    for promo in promo_codes:
+        owner_promo_ids[int(promo.user_id)].append(int(promo.id))
+        promo_id_to_owner[int(promo.id)] = int(promo.user_id)
+
+    promo_referral_rows = (
+        db.query(User.used_promo_code_id, func.count(User.id))
+        .filter(User.used_promo_code_id.is_not(None))
+        .group_by(User.used_promo_code_id)
+        .all()
+    )
+    promo_referral_map = {
+        int(promo_id): int(count or 0)
+        for promo_id, count in promo_referral_rows
+        if promo_id
+    }
+    used_promo_codes = sum(1 for count in promo_referral_map.values() if count > 0)
+
+    referred_users = (
+        db.query(User)
+        .filter(User.used_promo_code_id.is_not(None))
+        .order_by(User.created_at.desc(), User.id.desc())
+        .all()
+    )
+    total_referrals = len(referred_users)
+
+    owner_referral_map: dict[int, int] = defaultdict(int)
+    owner_last_referral: dict[int, datetime | None] = {}
+    invitee_to_owner: dict[int, int] = {}
+    for invitee in referred_users:
+        owner_id = promo_id_to_owner.get(int(invitee.used_promo_code_id or 0)) or (
+            int(invitee.referrer_id) if invitee.referrer_id else None
+        )
+        if not owner_id:
+            continue
+        owner_referral_map[owner_id] += 1
+        invitee_to_owner[int(invitee.id)] = owner_id
+        previous = owner_last_referral.get(owner_id)
+        if previous is None or (
+            invitee.created_at is not None and (previous is None or invitee.created_at > previous)
+        ):
+            owner_last_referral[owner_id] = invitee.created_at
+
+    all_invitee_ids = list(invitee_to_owner.keys())
+    purchase_count = 0
+    purchase_credits = 0
+    redeem_count = 0
+    redeem_credits = 0
+    owner_purchase_credits: dict[int, int] = defaultdict(int)
+    owner_redeem_credits: dict[int, int] = defaultdict(int)
+    if all_invitee_ids:
+        payment_rows = (
+            db.query(
+                PaymentOrder.user_id,
+                func.count(PaymentOrder.id),
+                func.coalesce(func.sum(PaymentOrder.credits), 0),
+            )
+            .filter(
+                PaymentOrder.user_id.in_(all_invitee_ids),
+                PaymentOrder.credited_at.is_not(None),
+            )
+            .group_by(PaymentOrder.user_id)
+            .all()
+        )
+        for user_id, count, credits in payment_rows:
+            purchase_count += int(count or 0)
+            purchase_credits += int(credits or 0)
+            owner_id = invitee_to_owner.get(int(user_id))
+            if owner_id:
+                owner_purchase_credits[owner_id] += int(credits or 0)
+
+        redeem_rows = (
+            db.query(
+                CreditRedeemKey.used_by_user_id,
+                func.count(CreditRedeemKey.id),
+                func.coalesce(func.sum(CreditRedeemKey.credit_amount), 0),
+            )
+            .filter(
+                CreditRedeemKey.used_by_user_id.in_(all_invitee_ids),
+                CreditRedeemKey.used_at.is_not(None),
+            )
+            .group_by(CreditRedeemKey.used_by_user_id)
+            .all()
+        )
+        for user_id, count, credits in redeem_rows:
+            redeem_count += int(count or 0)
+            redeem_credits += int(credits or 0)
+            owner_id = invitee_to_owner.get(int(user_id))
+            if owner_id:
+                owner_redeem_credits[owner_id] += int(credits or 0)
+
+    promoter_ids = sorted(set(owner_promo_ids) | set(owner_referral_map))
+    users = db.query(User).filter(User.id.in_(promoter_ids)).all() if promoter_ids else []
+    user_map = {user.id: user for user in users}
+    user_items = []
+    active_promoters = 0
+    for owner_id in promoter_ids:
+        user = user_map.get(owner_id)
+        if not user:
+            continue
+        promo_ids = owner_promo_ids.get(owner_id, [])
+        used_code_count = sum(1 for promo_id in promo_ids if promo_referral_map.get(promo_id, 0) > 0)
+        referrals = int(owner_referral_map.get(owner_id, 0))
+        if referrals > 0:
+            active_promoters += 1
+        user_items.append(
+            {
+                "user_id": user_external_id(user),
+                "username": user.username,
+                "email": user.email or "",
+                "is_whitelisted": bool(user.is_whitelisted),
+                "promo_code_count": len(promo_ids),
+                "used_code_count": used_code_count,
+                "total_referrals": referrals,
+                "reward_credits": referrals * PROMO_CODE_REWARD_CREDITS,
+                "purchase_credits": int(owner_purchase_credits.get(owner_id, 0)),
+                "redeem_credits": int(owner_redeem_credits.get(owner_id, 0)),
+                "last_referral_at": owner_last_referral.get(owner_id),
+                "created_at": user.created_at,
+            }
+        )
+    user_items.sort(key=lambda item: (item["total_referrals"], item["reward_credits"]), reverse=True)
+
+    promoter_alias = aliased(User)
+    recent_rows = (
+        db.query(User, UserPromoCode, promoter_alias)
+        .join(UserPromoCode, UserPromoCode.id == User.used_promo_code_id)
+        .join(promoter_alias, promoter_alias.id == UserPromoCode.user_id)
+        .order_by(User.created_at.desc(), User.id.desc())
+        .limit(100)
+        .all()
+    )
+    recent_referrals = [
+        {
+            "id": invitee.id,
+            "promoter_user_id": user_external_id(promoter),
+            "promoter_username": promoter.username,
+            "invitee_user_id": user_external_id(invitee),
+            "invitee_username": invitee.username,
+            "promo_code": promo.code,
+            "platform_name": promo.platform_name or "",
+            "reward_credits": PROMO_CODE_REWARD_CREDITS,
+            "registered_at": invitee.created_at,
+        }
+        for invitee, promo, promoter in recent_rows
+    ]
+
+    return {
+        "summary": {
+            "total_referrals": int(total_referrals),
+            "active_promoters": int(active_promoters),
+            "total_promo_codes": int(total_promo_codes),
+            "used_promo_codes": int(used_promo_codes),
+            "whitelisted_users": int(whitelisted_users),
+            "reward_credits": int(total_referrals * PROMO_CODE_REWARD_CREDITS),
+            "purchase_count": int(purchase_count),
+            "purchase_credits": int(purchase_credits),
+            "redeem_count": int(redeem_count),
+            "redeem_credits": int(redeem_credits),
+        },
+        "users": user_items,
+        "recent_referrals": recent_referrals,
+    }
+
+
+def get_admin_promo_stats_user_detail(db: Session, user_id: str) -> dict:
+    target_user = get_user_by_business_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    return get_user_promo_dashboard_for_admin(db, target_user, require_whitelist=False)
 
 
 def get_stats(db: Session) -> dict:

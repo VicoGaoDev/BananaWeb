@@ -13,6 +13,7 @@ import {
   redeemCreditKey,
   validatePromoCode,
 } from "@/api/auth";
+import { validateInviteCode } from "@/api/inviteRewards";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
@@ -72,6 +73,7 @@ import {
   FontSizeOutlined,
   SearchOutlined,
   HighlightOutlined,
+  ShareAltOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -90,6 +92,7 @@ const showSuggestionFab = computed(() =>
   && !isAdminRoute.value,
 );
 const SUGGESTION_FAB_POSITION_KEY = "userSuggestionFabPosition";
+const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
 const SUGGESTION_FAB_DESKTOP_GAP = 24;
 const SUGGESTION_FAB_MOBILE_GAP = 16;
 const SUGGESTION_FAB_DESKTOP_SIZE = 40;
@@ -131,30 +134,33 @@ const routeOrder = new Map<string, number>([
   ["/system-messages/:messageId", 9],
   ["/settings", 10],
   ["/credit-logs", 11],
-  ["/promo-codes", 12],
-  ["/feedbacks", 13],
-  ["/feedbacks/:feedbackId", 14],
-  ["/admin/templates", 15],
-  ["/admin/example-canvases", 16],
-  ["/admin/users", 17],
-  ["/admin/user-tasks", 18],
-  ["/admin/user-videos", 19],
-  ["/admin/user-canvases", 20],
-  ["/admin/dashboard", 21],
-  ["/admin/image-dashboard", 22],
-  ["/admin/video-dashboard", 23],
-  ["/admin/error-analytics", 24],
-  ["/admin/general-settings", 25],
-  ["/admin/redeem-keys", 26],
-  ["/admin/revenue", 27],
-  ["/admin/payment-orders", 28],
-  ["/admin/feedbacks", 29],
-  ["/admin/feedbacks/:feedbackId", 30],
-  ["/admin/system-messages", 31],
-  ["/admin/update-logs", 32],
-  ["/admin/cos-config", 33],
-  ["/admin/external-api-configs", 34],
-  ["/admin/video-api-configs", 35],
+  ["/invite-rewards", 12],
+  ["/promo-codes", 13],
+  ["/feedbacks", 14],
+  ["/feedbacks/:feedbackId", 15],
+  ["/admin/templates", 16],
+  ["/admin/example-canvases", 17],
+  ["/admin/users", 18],
+  ["/admin/user-tasks", 19],
+  ["/admin/user-videos", 20],
+  ["/admin/user-canvases", 21],
+  ["/admin/dashboard", 22],
+  ["/admin/image-dashboard", 23],
+  ["/admin/video-dashboard", 24],
+  ["/admin/error-analytics", 25],
+  ["/admin/general-settings", 26],
+  ["/admin/redeem-keys", 27],
+  ["/admin/revenue", 28],
+  ["/admin/invite-rewards", 29],
+  ["/admin/promo-stats", 30],
+  ["/admin/payment-orders", 31],
+  ["/admin/feedbacks", 32],
+  ["/admin/feedbacks/:feedbackId", 33],
+  ["/admin/system-messages", 34],
+  ["/admin/update-logs", 35],
+  ["/admin/cos-config", 36],
+  ["/admin/external-api-configs", 37],
+  ["/admin/video-api-configs", 38],
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
@@ -226,6 +232,8 @@ const adminMenuItems = computed(() =>
     { key: "/admin/general-settings", label: "通用设置", icon: SettingOutlined, superAdminOnly: false },
     { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
+    { key: "/admin/invite-rewards", label: "邀请奖励", icon: ShareAltOutlined, superAdminOnly: false },
+    { key: "/admin/promo-stats", label: "推广返利", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/feedbacks", label: "用户反馈", icon: MessageOutlined, superAdminOnly: false },
     { key: "/admin/system-messages", label: "系统邮件", icon: MailOutlined, superAdminOnly: false },
     { key: "/admin/update-logs", label: "更新日志", icon: BellOutlined, superAdminOnly: false },
@@ -253,6 +261,9 @@ const adminMenuAnalyticsItems = computed(() =>
     "/admin/error-analytics",
   ].includes(item.key))
 );
+const adminMenuPromoDataItems = computed(() =>
+  adminMenuItems.value.filter((item) => ["/admin/invite-rewards", "/admin/promo-stats"].includes(item.key))
+);
 const adminMenuBaseItems = computed(() =>
   adminMenuItems.value.filter((item) => [
     "/admin/general-settings",
@@ -273,6 +284,8 @@ const isAdminAnalyticsRoute = computed(() =>
   || route.path.startsWith("/admin/image-dashboard")
   || route.path.startsWith("/admin/video-dashboard")
   || route.path.startsWith("/admin/error-analytics")
+  || route.path.startsWith("/admin/invite-rewards")
+  || route.path.startsWith("/admin/promo-stats")
 );
 const isAdminThirdPartyRoute = computed(() =>
   route.path.startsWith("/admin/cos-config")
@@ -375,6 +388,7 @@ const selectedKeys = computed(() => {
     p === "/profile" ||
     p === "/settings" ||
     p === "/credit-logs" ||
+    p === "/invite-rewards" ||
     p === "/promo-codes" ||
     p === "/api-keys" ||
     p.startsWith("/feedbacks") ||
@@ -715,9 +729,73 @@ function isBannedEmailDomain(email: string) {
   return bannedEmailDomainSuffixes.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`));
 }
 
+function normalizeInviteCode(code?: string | null) {
+  return (code || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function isPersonalInviteCodeValue(code?: string | null) {
+  return /^U[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{7}$/.test(normalizeInviteCode(code));
+}
+
+function getStoredInviteCode() {
+  try {
+    const code = normalizeInviteCode(sessionStorage.getItem(INVITE_CODE_SESSION_KEY));
+    return isPersonalInviteCodeValue(code) ? code : "";
+  } catch {
+    return "";
+  }
+}
+
+function clearStoredInviteCode() {
+  try {
+    sessionStorage.removeItem(INVITE_CODE_SESSION_KEY);
+  } catch {
+    // Ignore storage errors in restricted browser modes.
+  }
+}
+
+function applyStoredInviteCodeToRegisterForm() {
+  const storedCode = getStoredInviteCode();
+  if (storedCode && !registerForm.promoCode.trim()) {
+    registerForm.promoCode = storedCode;
+  }
+}
+
+function captureInviteCodeFromRoute() {
+  if (auth.isLoggedIn) return;
+  const rawInvite = Array.isArray(route.query.invite) ? route.query.invite[0] : route.query.invite;
+  const inviteCode = normalizeInviteCode(typeof rawInvite === "string" ? rawInvite : "");
+  if (!isPersonalInviteCodeValue(inviteCode)) return;
+  try {
+    sessionStorage.setItem(INVITE_CODE_SESSION_KEY, inviteCode);
+  } catch {
+    // Ignore storage errors in restricted browser modes.
+  }
+  if (authTab.value === "register" || loginModalVisible.value) {
+    registerForm.promoCode = inviteCode;
+  }
+}
+
+watch(
+  () => route.query.invite,
+  () => {
+    captureInviteCodeFromRoute();
+  },
+  { immediate: true },
+);
+
+watch(authTab, (tab) => {
+  if (tab === "register") {
+    applyStoredInviteCodeToRegisterForm();
+  }
+});
+
 function openAuthModal(tab: "login" | "register") {
   mobileDrawerOpen.value = false;
   authTab.value = tab;
+  if (tab === "register") {
+    applyStoredInviteCodeToRegisterForm();
+  }
   loginModalVisible.value = true;
 }
 
@@ -910,11 +988,17 @@ async function handleRegisterSubmit() {
     message.warning("两次密码不一致");
     return;
   }
-  if (registerForm.promoCode.trim()) {
+  const normalizedInviteOrPromoCode = normalizeInviteCode(registerForm.promoCode);
+  const isPersonalInviteRegistration = isPersonalInviteCodeValue(normalizedInviteOrPromoCode);
+  if (normalizedInviteOrPromoCode) {
     try {
-      await validatePromoCode(registerForm.promoCode.trim());
+      if (isPersonalInviteRegistration) {
+        await validateInviteCode(normalizedInviteOrPromoCode);
+      } else {
+        await validatePromoCode(normalizedInviteOrPromoCode);
+      }
     } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || "推广码无效");
+      message.error(err.response?.data?.detail || err.message || "邀请码无效");
       return;
     }
   }
@@ -933,15 +1017,20 @@ async function handleRegisterSubmit() {
       registerForm.username.trim(),
       registerForm.email.trim(),
       registerForm.password,
-      registerForm.promoCode.trim() || undefined,
+      normalizedInviteOrPromoCode || undefined,
     );
     auth.setAuth(res.token, res.user);
     message.success("注册成功");
+    if (isPersonalInviteRegistration) {
+      clearStoredInviteCode();
+    }
     notification.success({
       message: "赠送积分已到账",
-      description: registerForm.promoCode.trim()
+      description: normalizedInviteOrPromoCode && !isPersonalInviteRegistration
         ? `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分和推广码额外奖励的 ${PROMO_CODE_REWARD_CREDITS} 个积分已到账。`
-        : `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账。`,
+        : isPersonalInviteRegistration
+          ? `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账，邀请关系已绑定。`
+          : `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账。`,
       placement: "topRight",
       duration: 6,
     });
@@ -1269,6 +1358,15 @@ function openRedeemEntry() {
   redeemDialogOpen.value = true;
 }
 
+function openInviteRewardsEntry() {
+  mobileDrawerOpen.value = false;
+  if (!auth.isLoggedIn) {
+    openAuthModal("login");
+    return;
+  }
+  router.push("/invite-rewards");
+}
+
 function openPurchaseEntry() {
   mobileDrawerOpen.value = false;
   if (!auth.isLoggedIn) {
@@ -1476,6 +1574,14 @@ watch(
                       <template #icon><component :is="item.icon" /></template>
                       {{ item.label }}
                     </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item
+                      v-for="item in adminMenuPromoDataItems"
+                      :key="item.key"
+                    >
+                      <template #icon><component :is="item.icon" /></template>
+                      {{ item.label }}
+                    </a-menu-item>
                   </a-sub-menu>
                   <template v-if="adminMenuConfigItems.length">
                     <a-sub-menu :key="ADMIN_THIRD_PARTY_MENU_KEY" popup-class-name="warm-dropdown">
@@ -1569,6 +1675,10 @@ watch(
           </a-button>
           <a-button type="text" class="top-link-btn" @click="openRedeemEntry">
             兑换积分
+          </a-button>
+          <a-button type="text" class="top-link-btn" @click="openInviteRewardsEntry">
+            <template #icon><ShareAltOutlined /></template>
+            邀请奖励
           </a-button>
           <template v-if="auth.isLoggedIn">
             <div class="credits-badge" @click="goCreditLogs">
@@ -1720,6 +1830,10 @@ watch(
           <GiftOutlined />
           <span>兑换积分</span>
         </button>
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openInviteRewardsEntry">
+          <ShareAltOutlined />
+          <span>邀请奖励</span>
+        </button>
         <span class="canvas-side-nav-divider"></span>
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
           <MessageOutlined />
@@ -1763,6 +1877,11 @@ watch(
                 <template #icon><BarChartOutlined /></template>
                 <template #title>数据统计</template>
                 <a-menu-item v-for="item in adminMenuAnalyticsItems" :key="item.key">
+                  <template #icon><component :is="item.icon" /></template>
+                  {{ item.label }}
+                </a-menu-item>
+                <a-menu-divider />
+                <a-menu-item v-for="item in adminMenuPromoDataItems" :key="item.key">
                   <template #icon><component :is="item.icon" /></template>
                   {{ item.label }}
                 </a-menu-item>
@@ -1980,6 +2099,10 @@ watch(
               <template #icon><GiftOutlined /></template>
               兑换积分
             </a-button>
+            <a-button block class="mobile-drawer-action-btn" @click="openInviteRewardsEntry">
+              <template #icon><ShareAltOutlined /></template>
+              邀请奖励
+            </a-button>
           </div>
         </div>
 
@@ -2020,6 +2143,11 @@ watch(
               <template #icon><BarChartOutlined /></template>
               <template #title>数据统计</template>
               <a-menu-item v-for="item in adminMenuAnalyticsItems" :key="item.key">
+                <template #icon><component :is="item.icon" /></template>
+                {{ item.label }}
+              </a-menu-item>
+              <a-menu-divider />
+              <a-menu-item v-for="item in adminMenuPromoDataItems" :key="item.key">
                 <template #icon><component :is="item.icon" /></template>
                 {{ item.label }}
               </a-menu-item>
@@ -2454,7 +2582,7 @@ watch(
               <a-input
                 v-model:value="registerForm.promoCode"
                 size="large"
-                placeholder="填写邀请码，可额外获得 20 积分"
+                placeholder="填写邀请码或推广码（选填）"
                 :maxlength="32"
               />
             </a-form-item>

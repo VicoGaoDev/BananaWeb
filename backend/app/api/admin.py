@@ -29,6 +29,10 @@ from app.services.admin_service import (
     create_user, list_users, update_user_status, update_user_role,
     update_user_whitelist, reset_user_password, get_stats, allocate_credits, reset_user_credits, get_credit_logs,
     list_payment_orders, create_offline_order, list_offline_orders,
+    get_admin_invite_reward_dashboard,
+    get_admin_invite_reward_user_detail,
+    get_admin_promo_stats_dashboard,
+    get_admin_promo_stats_user_detail,
     get_analytics_summary, get_analytics_timeseries, get_analytics_breakdown, get_analytics_redeem_revenue,
     get_analytics_payment_revenue, get_analytics_offline_order_revenue, get_error_analytics, get_error_category_timeseries, get_error_tasks,
     get_video_stats, get_video_analytics_summary, get_video_analytics_timeseries, get_video_analytics_breakdown,
@@ -313,6 +317,40 @@ def admin_stats(
     db: Session = Depends(get_db),
 ):
     return get_stats(db)
+
+
+@router.get("/invite-rewards", response_model=dict)
+def admin_invite_rewards(
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_invite_reward_dashboard(db)
+
+
+@router.get("/invite-rewards/users/{user_id}", response_model=dict)
+def admin_invite_reward_user_detail(
+    user_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_invite_reward_user_detail(db, user_id)
+
+
+@router.get("/promo-stats", response_model=dict)
+def admin_promo_stats(
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_promo_stats_dashboard(db)
+
+
+@router.get("/promo-stats/users/{user_id}", response_model=dict)
+def admin_promo_stats_user_detail(
+    user_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_promo_stats_user_detail(db, user_id)
 
 
 @router.get("/video-stats", response_model=VideoStatsOut)
