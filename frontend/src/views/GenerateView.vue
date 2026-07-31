@@ -162,7 +162,7 @@ function handleGenerateMenuEntry() {
 }
 
 const failedResultAsset = withBaseUrl("failed-result.svg");
-const generateEmptyStateAsset = withBaseUrl("generate-task-card.svg");
+const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const canvasNavIcon = withBaseUrl("nav-canvas.svg");
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">

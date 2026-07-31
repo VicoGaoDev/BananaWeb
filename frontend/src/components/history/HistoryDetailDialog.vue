@@ -63,7 +63,7 @@ const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWid
 const loadedMediaKeys = ref<Set<string>>(new Set());
 const router = useRouter();
 const failedResultAsset = withBaseUrl("failed-result.svg");
-const generateTaskCardAsset = withBaseUrl("generate-task-card.svg");
+const generateTaskCardAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
   <defs>

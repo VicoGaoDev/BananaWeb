@@ -141,7 +141,7 @@ const MAX_ZOOM = 3;
 const VIEWPORT_SAVE_DELAY_MS = 10000;
 const CANVAS_BACKGROUND_STORAGE_KEY = "banana-canvas-background";
 const failedResultAsset = withBaseUrl("failed-result.svg");
-const generateEmptyStateAsset = withBaseUrl("generate-task-card.svg");
+const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const neutralIndicatorStyle = { fontSize: "24px", color: "var(--text-secondary)" };
 
 const route = useRoute();
