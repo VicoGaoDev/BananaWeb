@@ -286,7 +286,7 @@ def apply_referral_reward(
     normalized_source_type = (source_type or "").strip()
     normalized_source_id = (source_id or "").strip()
     credits = int(source_credits or 0)
-    if normalized_source_type not in {REFERRAL_SOURCE_PAYMENT, REFERRAL_SOURCE_REDEEM}:
+    if normalized_source_type != REFERRAL_SOURCE_PAYMENT:
         return None
     if not normalized_source_id or credits <= 0:
         return None

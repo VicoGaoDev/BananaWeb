@@ -146,7 +146,7 @@ onMounted(() => {
         </div>
         <div>
           <div class="warm-page-title">邀请奖励计划</div>
-          <div class="warm-page-desc">分享专属邀请链接，推荐用户购买或兑换积分后获得积分奖励。</div>
+          <div class="warm-page-desc">分享专属邀请链接，推荐用户在线购买积分后获得积分奖励。</div>
         </div>
       </div>
     </div>
@@ -155,7 +155,7 @@ onMounted(() => {
       <div class="invite-page-body">
         <div class="warm-card invite-main-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
           <div class="invite-rule-banner">
-            被推荐用户前 {{ overview.max_reward_count }} 次在线购买或兑换积分时，邀请人每次获得
+            被推荐用户前 {{ overview.max_reward_count }} 次在线购买积分时，邀请人每次获得
             <strong class="invite-rule-rate">{{ overview.reward_rate }}%</strong>
             积分奖励，立即到账。
           </div>
@@ -167,7 +167,7 @@ onMounted(() => {
                 <ol class="invite-guide-steps">
                   <li>复制<strong>邀请链接</strong>或下载<strong>邀请二维码</strong>发给好友；也可直接分享<strong>邀请码</strong>，好友注册时填写。</li>
                   <li>好友通过链接或扫码打开网站，在注册页完成注册。</li>
-                  <li>注册成功后，好友会自动与你建立邀请关联；之后其购买或兑换积分，你可按规则获得奖励。</li>
+                  <li>注册成功后，好友会自动与你建立邀请关联；之后其在线购买积分，你可按规则获得奖励。</li>
                 </ol>
                 <p class="invite-guide-note">邀请码长期有效，但账号被禁用时邀请关系将无法继续生效。</p>
               </div>
