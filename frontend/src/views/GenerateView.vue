@@ -66,6 +66,7 @@ import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
+import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { withBaseUrl } from "@/lib/assets";
 import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
@@ -323,6 +324,7 @@ const detailItem = ref<UserHistoryCard | null>(null);
 const detailTaskLocalId = ref<string | null>(null);
 const feedbackDialogOpen = ref(false);
 const loadedResultMediaKeys = ref<Set<string>>(new Set());
+const generatedResultImageLoad = useTransientImageLoad();
 const detailPreloadedMediaKeys = ref<string[]>([]);
 const feedbackTarget = ref<{
   taskId: string;
@@ -824,10 +826,7 @@ function getResultItemKey(item: {
   index: number;
   image: { id: number; status: string };
 }) {
-  if (item.image.status === "pending") {
-    return `${item.taskLocalId}-pending-${item.index}`;
-  }
-  return `${item.taskLocalId}-${item.image.id}-${item.index}`;
+  return `${item.taskLocalId}-${item.index}`;
 }
 
 const resultColumnCount = computed(() => {
@@ -863,6 +862,23 @@ watch(generatedTasks, (tasks) => {
     : undefined;
   detailItem.value = convertGeneratedTaskToHistoryCard(latest, focusedImage);
 });
+
+watch(
+  resultItems,
+  (items) => {
+    const validKeys = new Set<string>();
+    for (const item of items) {
+      const key = getGeneratedResultMediaLoadKey(item.task, item.image, item.index);
+      validKeys.add(key);
+      const shouldTrackSource = item.image.status === "success"
+        && !isGeneratedTaskExpired(item.task)
+        && !shouldShowGeneratedLargeImagePreviewNotice(item.task, item.image);
+      generatedResultImageLoad.syncSource(key, shouldTrackSource ? getResultDisplayUrl(item.image) : "");
+    }
+    generatedResultImageLoad.clearExcept(validKeys);
+  },
+  { immediate: true },
+);
 
 function syncViewportWidth() {
   viewportWidth.value = window.innerWidth;
@@ -2582,11 +2598,19 @@ function getResultDisplayUrl(img: ImageResult) {
   return getDisplayImageUrl(img);
 }
 
-function getGeneratedResultDisplayUrl(task: GeneratedTaskItem, img: ImageResult) {
+function getGeneratedResultMediaState(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  const key = getGeneratedResultMediaLoadKey(task, img, index);
+  return generatedResultImageLoad.getState(key);
+}
+
+function getGeneratedResultDisplayUrl(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success") return getResultDisplayUrl(img);
   if (isGeneratedTaskExpired(task)) return expiredResultAsset;
   if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return "";
-  return getResultDisplayUrl(img);
+  const displayUrl = getResultDisplayUrl(img);
+  if (!displayUrl) return "";
+  const state = getGeneratedResultMediaState(task, img, index);
+  return appendTransientImageNonce(displayUrl, state.nonce);
 }
 
 function shouldShowGeneratedLargeImagePreviewNotice(task: GeneratedTaskItem, img: ImageResult) {
@@ -2599,10 +2623,46 @@ function getGeneratedResultMediaLoadKey(task: GeneratedTaskItem, img: ImageResul
 
 function markGeneratedResultMediaLoaded(task: GeneratedTaskItem, img: ImageResult, index: number) {
   const key = getGeneratedResultMediaLoadKey(task, img, index);
+  generatedResultImageLoad.markLoaded(key, getResultDisplayUrl(img));
   if (loadedResultMediaKeys.value.has(key)) return;
   const next = new Set(loadedResultMediaKeys.value);
   next.add(key);
   loadedResultMediaKeys.value = next;
+}
+
+function handleGeneratedResultMediaError(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  if (img.status !== "success" || isGeneratedTaskExpired(task)) return;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return;
+  const source = getResultDisplayUrl(img);
+  if (!source) return;
+  const key = getGeneratedResultMediaLoadKey(task, img, index);
+  generatedResultImageLoad.scheduleRetry(key, source);
+}
+
+function shouldShowGeneratedUploadingState(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  if (img.status !== "success") return false;
+  if (isGeneratedTaskExpired(task)) return false;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return false;
+  const source = getResultDisplayUrl(img);
+  if (!source) return true;
+  return getGeneratedResultMediaState(task, img, index).phase === "retrying";
+}
+
+function shouldShowGeneratedLoadFailedState(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  if (img.status !== "success") return false;
+  if (isGeneratedTaskExpired(task)) return false;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return false;
+  const source = getResultDisplayUrl(img);
+  if (!source) return false;
+  return getGeneratedResultMediaState(task, img, index).phase === "failed";
+}
+
+function shouldRenderGeneratedResultImage(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  if (img.status !== "success") return false;
+  const displayUrl = getGeneratedResultDisplayUrl(task, img, index);
+  if (!displayUrl) return false;
+  const phase = getGeneratedResultMediaState(task, img, index).phase;
+  return phase !== "retrying" && phase !== "failed";
 }
 
 function getDetailPreloadedMediaKeys(task: GeneratedTaskItem, focusedImage?: ImageResult) {
@@ -2956,6 +3016,7 @@ onActivated(async () => {
 onBeforeUnmount(() => {
   stopAllTaskPolling();
   stopGlobalActiveStatusPolling();
+  generatedResultImageLoad.dispose();
   generatedTaskLoadMoreObserver?.disconnect();
   generatedTaskLoadMoreObserver = null;
   if (generatedTaskFilterDebounceTimer) {
@@ -4469,12 +4530,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     }"
                     @click="openGeneratedTaskDetail(item.task, item.image)"
                   >
-                    <template v-if="item.image.status === 'success' && getGeneratedResultDisplayUrl(item.task, item.image)">
+                    <template v-if="shouldRenderGeneratedResultImage(item.task, item.image, item.index)">
                       <img
-                        :src="getGeneratedResultDisplayUrl(item.task, item.image)"
+                        :src="getGeneratedResultDisplayUrl(item.task, item.image, item.index)"
                         alt="生成结果"
                         loading="lazy"
                         @load="markGeneratedResultMediaLoaded(item.task, item.image, item.index)"
+                        @error="handleGeneratedResultMediaError(item.task, item.image, item.index)"
                       />
                       <div class="result-actions">
                         <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
@@ -4561,6 +4623,37 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                             @click.stop="handleDownload(item.image.id, item.image.image_url, item.image.preview_url)"
                           >
                             <template #icon><DownloadOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
+                      </div>
+                    </template>
+
+                    <template v-else-if="shouldShowGeneratedUploadingState(item.task, item.image, item.index)">
+                      <div class="frame-state">
+                        <a-spin
+                          :indicator="h(LoadingOutlined, { style: neutralIndicatorStyle })"
+                        />
+                        <span>图片加载中...</span>
+                        <span class="frame-state-subtext">正在同步到云存储，通常只需几秒</span>
+                      </div>
+                      <div class="result-actions result-actions-pending">
+                        <a-tooltip title="重新生成">
+                          <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
+                            <template #icon><ReloadOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
+                      </div>
+                    </template>
+
+                    <template v-else-if="shouldShowGeneratedLoadFailedState(item.task, item.image, item.index)">
+                      <div class="frame-state">
+                        <span>图片加载较慢</span>
+                        <span class="frame-state-subtext">已自动重试多次，请稍后再次打开</span>
+                      </div>
+                      <div class="result-actions result-actions-pending">
+                        <a-tooltip title="重新生成">
+                          <a-button shape="circle" class="icon-chip" @click.stop="handleReeditTask(item.task)">
+                            <template #icon><ReloadOutlined /></template>
                           </a-button>
                         </a-tooltip>
                       </div>

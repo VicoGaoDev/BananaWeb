@@ -19,6 +19,7 @@ import {
   getPreviewImageUrl,
   LARGE_IMAGE_PREVIEW_NOTICE,
 } from "@/api/images";
+import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { withBaseUrl } from "@/lib/assets";
 import { getTaskImageFailureMessage } from "@/lib/generationErrors";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
@@ -61,6 +62,7 @@ const previewVisible = ref(false);
 const previewSrc = ref("");
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const loadedMediaKeys = ref<Set<string>>(new Set());
+const detailResultImageLoad = useTransientImageLoad();
 const router = useRouter();
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateTaskCardAsset = withBaseUrl("generate-task-card-minimal-a.svg");
@@ -143,6 +145,7 @@ watch(
     previewVisible.value = false;
     previewSrc.value = "";
     seedLoadedMediaKeys();
+    detailResultImageLoad.dispose();
     if (typeof document === "undefined") return;
     document.body.style.overflow = open ? "hidden" : "";
   },
@@ -156,6 +159,28 @@ watch(
   { deep: true },
 );
 
+watch(
+  () => (props.item?.images || []).map((img) => {
+    const key = getDetailBaseImageLoadKey(img);
+    const source = props.item
+      && img.status === "success"
+      && !isHistoryItemExpired(props.item)
+      && !shouldShowDetailLargeImagePreviewNotice(props.item, img)
+      ? getDetailBaseImageResourceUrl(props.item, img)
+      : "";
+    return { key, source };
+  }),
+  (entries) => {
+    const validKeys = new Set<string>();
+    for (const entry of entries) {
+      validKeys.add(entry.key);
+      detailResultImageLoad.syncSource(entry.key, entry.source);
+    }
+    detailResultImageLoad.clearExcept(validKeys);
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   updateViewportWidth();
   if (typeof window !== "undefined") {
@@ -165,6 +190,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  detailResultImageLoad.dispose();
   if (typeof window !== "undefined") {
     window.removeEventListener("resize", updateViewportWidth);
     window.removeEventListener("keydown", handleKeydown);
@@ -290,10 +316,7 @@ function getDetailImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "thum
   return getNestedImageSrc(image);
 }
 
-function getDetailBaseImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
-  if (isHistoryItemExpired(item) && image.status === "success") {
-    return expiredResultAsset;
-  }
+function getDetailBaseImageResourceUrl(item: UserHistoryCard, image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
   if (shouldShowDetailLargeImagePreviewNotice(item, image)) {
     return "";
   }
@@ -304,15 +327,53 @@ function getDetailBaseImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "
     preview_url: image.preview_url || "",
     thumb_url: "",
   });
-  if (fallbackPreviewUrl) return fallbackPreviewUrl;
+  return fallbackPreviewUrl;
+}
+
+function getDetailBaseImageLoadState(image: Pick<ImageResult, "id">) {
+  return detailResultImageLoad.getState(getDetailBaseImageLoadKey(image));
+}
+
+function shouldShowDetailBaseUploadingState(item: UserHistoryCard, image: Pick<ImageResult, "id" | "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
+  if (image.status !== "success") return false;
+  if (isHistoryItemExpired(item)) return false;
+  if (shouldShowDetailLargeImagePreviewNotice(item, image)) return false;
+  const source = getDetailBaseImageResourceUrl(item, image);
+  if (!source) return true;
+  return getDetailBaseImageLoadState(image).phase === "retrying";
+}
+
+function shouldShowDetailBaseLoadFailedState(item: UserHistoryCard, image: Pick<ImageResult, "id" | "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
+  if (image.status !== "success") return false;
+  if (isHistoryItemExpired(item)) return false;
+  if (shouldShowDetailLargeImagePreviewNotice(item, image)) return false;
+  const source = getDetailBaseImageResourceUrl(item, image);
+  if (!source) return false;
+  return getDetailBaseImageLoadState(image).phase === "failed";
+}
+
+function getDetailBaseImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "id" | "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
+  if (isHistoryItemExpired(item) && image.status === "success") {
+    return expiredResultAsset;
+  }
+  if (shouldShowDetailBaseUploadingState(item, image) || shouldShowDetailBaseLoadFailedState(item, image)) {
+    return "";
+  }
+  const baseSource = getDetailBaseImageResourceUrl(item, image);
+  if (baseSource) {
+    return appendTransientImageNonce(baseSource, getDetailBaseImageLoadState(image).nonce);
+  }
   return image.status === "failed" ? failedResultAsset : "";
 }
 
-function getDetailEnhancedImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
+function getDetailEnhancedImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "id" | "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
   if (isHistoryItemExpired(item) && image.status === "success") {
     return expiredResultAsset;
   }
   if (shouldShowDetailLargeImagePreviewNotice(item, image)) {
+    return "";
+  }
+  if (shouldShowDetailBaseUploadingState(item, image) || shouldShowDetailBaseLoadFailedState(item, image)) {
     return "";
   }
   const originalWebpUrl = getPreviewImageUrl({
@@ -369,11 +430,20 @@ function openPreview(url: string) {
 
 function handleDetailImageError(event: Event, key?: string) {
   if (key) markMediaLoaded(key);
+  if (!props.item || !isHistoryItemExpired(props.item)) return;
   const image = event.target as HTMLImageElement;
   if (image.dataset.expiredFallback === "true") return;
   image.dataset.expiredFallback = "true";
   image.classList.add("detail-expired-image");
   image.src = expiredResultAsset;
+}
+
+function handleDetailResultImageError(item: UserHistoryCard, image: Pick<ImageResult, "id" | "thumb_url" | "image_url" | "preview_url" | "status" | "image_size_bytes">) {
+  if (image.status !== "success" || isHistoryItemExpired(item)) return;
+  if (shouldShowDetailLargeImagePreviewNotice(item, image)) return;
+  const source = getDetailBaseImageResourceUrl(item, image);
+  if (!source) return;
+  detailResultImageLoad.scheduleRetry(getDetailBaseImageLoadKey(image), source);
 }
 
 async function copyPrompt(text?: string) {
@@ -490,7 +560,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                       @click="getDetailPreviewSrc(item, img) && openPreview(getDetailPreviewSrc(item, img))"
                     >
                       <div
-                        v-if="!shouldShowDetailLargeImagePreviewNotice(item, img) && !getDetailBaseImageSrc(item, img) && !isMediaLoaded(getDetailEnhancedImageLoadKey(img))"
+                        v-if="!shouldShowDetailLargeImagePreviewNotice(item, img) && !shouldShowDetailBaseUploadingState(item, img) && !shouldShowDetailBaseLoadFailedState(item, img) && !getDetailBaseImageSrc(item, img) && !isMediaLoaded(getDetailEnhancedImageLoadKey(img))"
                         class="detail-media-loading"
                       />
                       <img
@@ -501,7 +571,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                         :class="{ 'failed-result-image': img.status === 'failed' }"
                         loading="lazy"
                         @load="markMediaLoaded(getDetailBaseImageLoadKey(img))"
-                        @error="(event) => handleDetailImageError(event)"
+                        @error="handleDetailResultImageError(item, img)"
                       />
                       <img
                         v-if="getDetailEnhancedImageSrc(item, img) && getDetailEnhancedImageSrc(item, img) !== getDetailBaseImageSrc(item, img)"
@@ -518,6 +588,12 @@ function handleGenerateVideo(item: UserHistoryCard) {
                       </div>
                       <div v-else-if="shouldShowDetailLargeImagePreviewNotice(item, img)" class="detail-preview-notice">
                         <span>{{ LARGE_IMAGE_PREVIEW_NOTICE }}</span>
+                      </div>
+                      <div v-else-if="shouldShowDetailBaseUploadingState(item, img)" class="result-card-placeholder">
+                        <span>图片加载中...</span>
+                      </div>
+                      <div v-else-if="shouldShowDetailBaseLoadFailedState(item, img)" class="result-card-placeholder">
+                        <span>图片加载较慢，请稍后重试</span>
                       </div>
                       <div v-else-if="!getDetailBaseImageSrc(item, img) && !getDetailEnhancedImageSrc(item, img)" class="result-card-placeholder">
                         <span>图片处理中...</span>
