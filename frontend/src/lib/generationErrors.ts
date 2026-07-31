@@ -1,7 +1,7 @@
 import type { ImageResult } from "@/types";
 
 export const IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！";
-export const PROMPT_MODERATION_ERROR_MESSAGE = "提示词未通过安全审核，请修改提示词后重试";
+export const PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试";
 export const GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理";
 export const INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！";
 export const CREDIT_REFUNDED_SUFFIX = "（积分已返还）";

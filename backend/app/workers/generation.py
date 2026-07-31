@@ -63,7 +63,7 @@ SYNC_GENERATION_MAX_WORKERS = max(int(settings.SYNC_GENERATION_MAX_WORKERS or 0)
 _sync_generation_semaphore = threading.BoundedSemaphore(SYNC_GENERATION_MAX_WORKERS)
 PROMPT_MODERATION_PRECHECK_ERROR = "the request was rejected by prompt moderation precheck"
 PROMPT_MODERATION_PRECHECK_PUBLIC_MESSAGE = (
-    "提示词未通过安全审核，请修改提示词后重试"
+    "提示词或参考图未通过安全审核，请修改后重试"
 )
 _async_poll_recovery_lock = threading.Lock()
 _async_poll_recovery_started = False
