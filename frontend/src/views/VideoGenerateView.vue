@@ -1744,8 +1744,8 @@ onBeforeUnmount(() => {
 }
 
 :global(.app-layout-desktop-side-nav) .generate-page {
-  min-height: calc(100dvh - 44px);
-  height: calc(100dvh - 44px);
+  min-height: calc(100dvh - 66px);
+  height: calc(100dvh - 66px);
 }
 
 .generate-workbench {
