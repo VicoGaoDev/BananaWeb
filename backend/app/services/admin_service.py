@@ -72,6 +72,10 @@ def _analytics_user_filter():
     return User.role == "user", _non_whitelisted_user_filter()
 
 
+def _exclude_example_template_seed_task_clause():
+    return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
+
+
 def _get_first_admin_id(db: Session) -> int | None:
     first = db.query(User).filter(User.role == "admin").order_by(User.created_at.asc()).first()
     return first.id if first else None
@@ -1133,7 +1137,7 @@ def get_stats(db: Session) -> dict:
     total_generation_tasks = (
         db.query(func.count(Task.id))
         .join(User, User.id == Task.user_id)
-        .filter(*_analytics_user_filter())
+        .filter(*_analytics_user_filter(), _exclude_example_template_seed_task_clause())
         .scalar()
     )
     total_prompt_reverse_tasks = (
@@ -1149,7 +1153,7 @@ def get_stats(db: Session) -> dict:
     total_generation_credit_cost = (
         db.query(func.coalesce(func.sum(Task.credit_cost), 0))
         .join(User, User.id == Task.user_id)
-        .filter(*_analytics_user_filter())
+        .filter(*_analytics_user_filter(), _exclude_example_template_seed_task_clause())
         .scalar()
     )
     total_refunded_generation_credit = (
@@ -1181,6 +1185,7 @@ def get_stats(db: Session) -> dict:
             .filter(
                 Task.created_at >= now - timedelta(days=7),
                 *_analytics_user_filter(),
+                _exclude_example_template_seed_task_clause(),
             )
             .distinct()
             .all()
@@ -1445,6 +1450,7 @@ def _task_query(
         Task.created_at >= _to_db_datetime(start_date),
         Task.created_at <= _to_db_datetime(end_date),
         *_analytics_user_filter(),
+        _exclude_example_template_seed_task_clause(),
     )
     scene_type_map = get_task_scene_type_map(db)
     if status_filter:
@@ -2867,6 +2873,7 @@ def get_error_analytics(
                     TaskApiAttempt.status == "failed",
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
             if not include_unsafe_tasks:
@@ -2881,6 +2888,7 @@ def get_error_analytics(
                     Task.status == "failed",
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
             if used_fallback_api is False:
@@ -3009,6 +3017,7 @@ def get_error_category_timeseries(
                     TaskApiAttempt.status == "failed",
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
             if not include_unsafe_tasks:
@@ -3023,6 +3032,7 @@ def get_error_category_timeseries(
                     Task.status == "failed",
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
             if used_fallback_api is False:
@@ -3188,6 +3198,7 @@ def get_error_tasks(
                     Task.used_fallback_api.is_(True),
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
         else:
@@ -3198,6 +3209,7 @@ def get_error_tasks(
                     Task.status == "failed",
                     User.role != "superadmin",
                     _non_whitelisted_user_filter(),
+                    _exclude_example_template_seed_task_clause(),
                 )
             )
             if used_fallback_api is False:

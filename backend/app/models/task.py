@@ -36,6 +36,7 @@ class Task(Base):
     last_polled_at = Column(DateTime, nullable=True)
     next_poll_at = Column(DateTime, nullable=True)
     used_fallback_api = Column(Boolean, nullable=False, default=False, server_default="0")
+    is_example_template_seed = Column(Boolean, nullable=False, default=False, server_default="0")
     is_deleted = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())
     enqueued_at = Column(DateTime, nullable=True)

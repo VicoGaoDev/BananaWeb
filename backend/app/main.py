@@ -2283,6 +2283,19 @@ def _ensure_user_canvas_schema():
         with engine.begin() as conn:
             if "canvas_id" not in task_columns:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN canvas_id INTEGER NULL"))
+            if "is_example_template_seed" not in task_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN is_example_template_seed BOOLEAN NOT NULL DEFAULT 0"))
+            conn.execute(text(
+                "UPDATE tasks t "
+                "JOIN user_canvas c ON c.id = t.canvas_id "
+                "SET t.is_example_template_seed = 1 "
+                "WHERE c.source_example_id IS NOT NULL "
+                "AND COALESCE(t.credit_cost, 0) = 0 "
+                "AND COALESCE(t.provider_task_id, '') = '' "
+                "AND t.enqueued_at IS NULL "
+                "AND t.request_started_at IS NULL "
+                "AND t.request_finished_at IS NULL"
+            ))
             if "idx_tasks_canvas_id" not in task_indexes:
                 conn.execute(text("CREATE INDEX idx_tasks_canvas_id ON tasks (canvas_id)"))
             if "idx_tasks_user_canvas_deleted_created" not in task_indexes:

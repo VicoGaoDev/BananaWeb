@@ -47,6 +47,10 @@ TASK_CREDIT_REFUND_DESCRIPTIONS = (
 )
 
 
+def _exclude_example_template_seed_task_clause():
+    return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
+
+
 def _parse_refs(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -724,6 +728,7 @@ def get_all_history(
     task_query = (
         db.query(Task)
         .filter(Task.user_id.in_(visible_user_ids))
+        .filter(_exclude_example_template_seed_task_clause())
     )
     reverse_query = (
         db.query(CreditLog)
@@ -951,6 +956,7 @@ def get_admin_history_cards(
         )
         .filter(User.role != "superadmin")
         .filter(User.is_whitelisted.is_(False))
+        .filter(_exclude_example_template_seed_task_clause())
     )
     prompt_reverse_query = None
     if include_prompt_reverse:

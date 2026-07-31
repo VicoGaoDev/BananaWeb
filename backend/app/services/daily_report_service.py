@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.credit_redeem_key import CreditRedeemKey
@@ -16,6 +16,10 @@ from app.utils.datetime_utils import now_local
 from app.services.wecom_notify_service import is_wecom_notify_enabled, send_wecom_markdown
 
 PAYMENT_SUCCESS_STATUSES = ("paid", "credited")
+
+
+def _exclude_example_template_seed_task_clause():
+    return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,7 @@ def collect_daily_report_stats(
             Task.created_at >= start_at,
             Task.created_at < end_at,
             Task.is_deleted.is_(False),
+            _exclude_example_template_seed_task_clause(),
         )
         .one()
     )

@@ -618,6 +618,7 @@ def copy_example_canvas_project(db: Session, *, example_id: int, user_id: int) -
                 source_image=(task_payload.get("source_image") or "").strip(),
                 mask_image=(task_payload.get("mask_image") or "").strip(),
                 credit_cost=0,
+                is_example_template_seed=True,
                 status=(task_payload.get("status") or "success").strip() or "success",
                 error_message=(task_payload.get("error_message") or "").strip(),
             )
