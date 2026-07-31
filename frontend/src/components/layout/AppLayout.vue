@@ -188,6 +188,9 @@ type PrimaryMenuItem = {
 
 type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
 const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
+const SHOW_PRIMARY_MENU_BADGES = true;
+const INVITE_REWARDS_BADGE_TEXT = "新";
+const ADMIN_BADGE_OFFSET: [number, number] = [-8, 2];
 
 const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
   { key: "textGenerate", label: "文生图", icon: FontSizeOutlined },
@@ -199,8 +202,22 @@ const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; ico
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
   { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), icon: BulbOutlined },
   { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: ThunderboltFilled },
-  { key: "video-generate", label: "AI 视频", iconSrc: withBaseUrl("nav-generate.svg"), icon: VideoCameraOutlined, badgeText: "新" },
-  ...(canAccessCanvasMenu.value ? [{ key: "canvas", label: "无限画布", iconSrc: withBaseUrl("nav-canvas.svg"), icon: NumberOutlined, badgeText: "火热" }] : []),
+  {
+    key: "video-generate",
+    label: "AI 视频",
+    iconSrc: withBaseUrl("nav-generate.svg"),
+    icon: VideoCameraOutlined,
+    badgeText: SHOW_PRIMARY_MENU_BADGES ? "新" : undefined,
+  },
+  ...(canAccessCanvasMenu.value
+    ? [{
+        key: "canvas",
+        label: "无限画布",
+        iconSrc: withBaseUrl("nav-canvas.svg"),
+        icon: NumberOutlined,
+        badgeText: SHOW_PRIMARY_MENU_BADGES ? "火热" : undefined,
+      }]
+    : []),
   { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), icon: ClockCircleOutlined },
 ]);
 
@@ -357,7 +374,10 @@ const userMenuItems = computed(() => [
   { key: "logout", label: "退出登录", icon: LogoutOutlined, danger: true },
 ]);
 const userMenuAccountItems = computed(() =>
-  userMenuItems.value.filter((item) => ["profile", "credits", "promo-codes", "api-keys", "settings"].includes(item.key))
+  userMenuItems.value.filter((item) => ["profile", "credits", "promo-codes", "api-keys"].includes(item.key))
+);
+const userMenuSettingsItems = computed(() =>
+  userMenuItems.value.filter((item) => ["settings"].includes(item.key))
 );
 const userMenuNoticeItems = computed(() =>
   userMenuItems.value.filter((item) => ["my-feedback", "system-messages", "update-logs"].includes(item.key))
@@ -1533,7 +1553,7 @@ watch(
           </a-button>
           <div v-if="auth.isLoggedIn && isAdmin" class="desktop-admin-entry">
             <a-dropdown :trigger="['hover']" overlay-class-name="warm-dropdown">
-              <a-badge :count="adminUnresolvedFeedbackCount" :offset="[-2, 2]" :show-zero="false">
+              <a-badge :count="adminUnresolvedFeedbackCount" :offset="ADMIN_BADGE_OFFSET" :show-zero="false">
                 <a-button class="admin-btn" type="text">
                   <SettingOutlined />
                   管理后台
@@ -1678,7 +1698,8 @@ watch(
           </a-button>
           <a-button type="text" class="top-link-btn" @click="openInviteRewardsEntry">
             <template #icon><ShareAltOutlined /></template>
-            邀请奖励
+            <span>邀请奖励</span>
+            <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
           </a-button>
           <template v-if="auth.isLoggedIn">
             <div class="credits-badge" @click="goCreditLogs">
@@ -1740,6 +1761,13 @@ watch(
                       <span v-else>{{ item.label }}</span>
                     </a-menu-item>
                   </a-sub-menu>
+                  <a-menu-item
+                    v-for="item in userMenuSettingsItems"
+                    :key="item.key"
+                  >
+                    <component :is="item.icon" />
+                    <span style="margin-left: 8px">{{ item.label }}</span>
+                  </a-menu-item>
                   <a-menu-divider />
                   <a-menu-item
                     v-for="item in userMenuDangerItems"
@@ -1833,6 +1861,7 @@ watch(
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openInviteRewardsEntry">
           <ShareAltOutlined />
           <span>邀请奖励</span>
+          <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
         </button>
         <span class="canvas-side-nav-divider"></span>
         <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
@@ -1849,7 +1878,7 @@ watch(
           :get-popup-container="getDropdownPopupContainer"
           overlay-class-name="warm-dropdown"
         >
-          <a-badge :count="adminUnresolvedFeedbackCount" :offset="[-2, 2]" :show-zero="false">
+          <a-badge :count="adminUnresolvedFeedbackCount" :offset="ADMIN_BADGE_OFFSET" :show-zero="false">
             <button type="button" class="canvas-side-nav-item canvas-side-nav-action">
               <SettingOutlined />
               <span>后台管理</span>
@@ -1993,6 +2022,10 @@ watch(
                   <span v-else>{{ item.label }}</span>
                 </a-menu-item>
               </a-sub-menu>
+              <a-menu-item v-for="item in userMenuSettingsItems" :key="item.key">
+                <component :is="item.icon" />
+                <span style="margin-left: 8px">{{ item.label }}</span>
+              </a-menu-item>
               <a-menu-divider />
               <a-menu-item v-for="item in userMenuDangerItems" :key="item.key" danger>
                 <component :is="item.icon" />
@@ -2101,7 +2134,8 @@ watch(
             </a-button>
             <a-button block class="mobile-drawer-action-btn" @click="openInviteRewardsEntry">
               <template #icon><ShareAltOutlined /></template>
-              邀请奖励
+              <span>邀请奖励</span>
+              <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge nav-menu-new-badge-mobile">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
             </a-button>
           </div>
         </div>
@@ -2237,6 +2271,13 @@ watch(
                   <span v-else>{{ item.label }}</span>
                 </a-menu-item>
               </a-sub-menu>
+              <a-menu-item
+                v-for="item in userMenuSettingsItems"
+                :key="item.key"
+              >
+                <component :is="item.icon" />
+                <span>{{ item.label }}</span>
+              </a-menu-item>
               <a-menu-divider />
               <a-menu-item
                 v-for="item in userMenuDangerItems"
@@ -2781,6 +2822,7 @@ watch(
 }
 
 .top-link-btn {
+  position: relative;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;

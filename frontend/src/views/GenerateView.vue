@@ -451,6 +451,7 @@ let filePickerRecoveryTimer: number | null = null;
 const sourceDisplayUrl = computed(() => getPreviewImageSrc(sourcePreviewUrl.value || sourceImageUrl.value));
 const isTextGenerateMode = computed(() => generateMode.value === "textGenerate");
 const isImageEditMode = computed(() => generateMode.value === "imageEdit");
+const SHOW_MODEL_NEW_BADGES = false;
 const textGenerateModels = computed(() => (
   taskScenes.value
     .filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint")
@@ -3276,20 +3277,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-select
                       v-model:value="selectedModel"
                       :bordered="false"
-                      class="flat-select flat-select-has-badge"
+                      :class="['flat-select', { 'flat-select-has-badge': SHOW_MODEL_NEW_BADGES }]"
                       popup-class-name="generate-dropdown"
                     >
                       <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
                         <div class="model-option">
                           <div class="model-option-label-row">
                             <div class="model-option-label">{{ model.model_label }}</div>
-                            <span v-if="isNewModel(model)" class="model-new-badge">NEW</span>
+                            <span v-if="SHOW_MODEL_NEW_BADGES && isNewModel(model)" class="model-new-badge">NEW</span>
                           </div>
                           <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
                         </div>
                       </a-select-option>
                     </a-select>
-                    <span class="model-new-badge model-new-badge-selected">新模型</span>
+                    <span v-if="SHOW_MODEL_NEW_BADGES" class="model-new-badge model-new-badge-selected">新模型</span>
                   </div>
                 </div>
               </div>
@@ -3550,20 +3551,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-select
                       v-model:value="selectedModel"
                       :bordered="false"
-                      class="flat-select flat-select-has-badge"
+                      :class="['flat-select', { 'flat-select-has-badge': SHOW_MODEL_NEW_BADGES }]"
                       popup-class-name="generate-dropdown"
                     >
                       <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
                         <div class="model-option">
                           <div class="model-option-label-row">
                             <div class="model-option-label">{{ model.model_label }}</div>
-                            <span v-if="isNewModel(model)" class="model-new-badge">NEW</span>
+                            <span v-if="SHOW_MODEL_NEW_BADGES && isNewModel(model)" class="model-new-badge">NEW</span>
                           </div>
                           <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
                         </div>
                       </a-select-option>
                     </a-select>
-                    <span class="model-new-badge model-new-badge-selected">新模型</span>
+                    <span v-if="SHOW_MODEL_NEW_BADGES" class="model-new-badge model-new-badge-selected">新模型</span>
                   </div>
                 </div>
               </div>
