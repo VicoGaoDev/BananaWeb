@@ -178,6 +178,9 @@ class AnalyticsSummaryOut(BaseModel):
     credits_consumed: AnalyticsMetricOut
     new_users: AnalyticsMetricOut
     active_users: AnalyticsMetricOut
+    fallback_task_total: int = 0
+    fallback_success_tasks: int = 0
+    fallback_failed_tasks: int = 0
 
 
 class AnalyticsTimeseriesPointOut(BaseModel):

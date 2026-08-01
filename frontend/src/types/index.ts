@@ -1072,6 +1072,9 @@ export interface AdminAnalyticsSummary {
   credits_consumed: AdminAnalyticsMetric;
   new_users: AdminAnalyticsMetric;
   active_users: AdminAnalyticsMetric;
+  fallback_task_total: number;
+  fallback_success_tasks: number;
+  fallback_failed_tasks: number;
 }
 
 export interface AdminAnalyticsTimeseriesPoint {

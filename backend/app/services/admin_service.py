@@ -91,6 +91,7 @@ class AnalyticsRecord:
     task_type: str
     credit_cost: int
     created_at: datetime
+    used_fallback_api: bool = False
 
 
 VIDEO_TASK_TYPE_TEXT_TO_VIDEO = "text_to_video"
@@ -1574,6 +1575,7 @@ def _build_analytics_records(
             task_type=resolve_task_type_for_task(task, scene_type_map=scene_type_map),
             credit_cost=0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
             created_at=task.created_at,
+            used_fallback_api=bool(task.used_fallback_api),
         )
         for task in tasks
     ]
@@ -1601,6 +1603,7 @@ def _build_analytics_records(
                 task_type=TASK_TYPE_PROMPT_REVERSE,
                 credit_cost=max(0, int(-(log.amount or 0))),
                 created_at=log.created_at,
+                used_fallback_api=False,
             )
             for log in prompt_reverse_query.all()
         ]
@@ -1614,6 +1617,15 @@ def _task_summary_metrics(records: list[AnalyticsRecord]) -> dict[str, int]:
         "failed_tasks": sum(1 for record in records if record.status == "failed"),
         "credits_consumed": sum(record.credit_cost for record in records),
         "active_users": len({record.user_id for record in records}),
+    }
+
+
+def _fallback_summary_metrics(records: list[AnalyticsRecord]) -> dict[str, int]:
+    fallback_records = [record for record in records if record.used_fallback_api]
+    return {
+        "fallback_task_total": len(fallback_records),
+        "fallback_success_tasks": sum(1 for record in fallback_records if record.status == "success"),
+        "fallback_failed_tasks": sum(1 for record in fallback_records if record.status == "failed"),
     }
 
 
@@ -1710,6 +1722,7 @@ def get_analytics_summary(
 
     current_metrics = _task_summary_metrics(current_records)
     previous_metrics = _task_summary_metrics(previous_records)
+    current_fallback_metrics = _fallback_summary_metrics(current_records)
     current_new_users = _user_query(db, start_date=current_start, end_date=current_end, user_id=user_id).count()
     previous_new_users = _user_query(db, start_date=previous_start, end_date=previous_end, user_id=user_id).count()
     total_users = _user_query(db).count()
@@ -1725,6 +1738,9 @@ def get_analytics_summary(
         "credits_consumed": _metric_payload(current_metrics["credits_consumed"], previous_metrics["credits_consumed"]),
         "new_users": _metric_payload(current_new_users, previous_new_users),
         "active_users": _metric_payload(current_metrics["active_users"], previous_metrics["active_users"]),
+        "fallback_task_total": current_fallback_metrics["fallback_task_total"],
+        "fallback_success_tasks": current_fallback_metrics["fallback_success_tasks"],
+        "fallback_failed_tasks": current_fallback_metrics["fallback_failed_tasks"],
     }
 
 
@@ -2053,6 +2069,7 @@ def _build_video_analytics_records(
             task_type=_video_task_type_for_task(task),
             credit_cost=0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
             created_at=task.created_at,
+            used_fallback_api=bool(task.used_fallback_api),
         )
         for task in tasks
     ]
@@ -2097,6 +2114,7 @@ def get_video_analytics_summary(
     )
     current_metrics = _task_summary_metrics(current_records)
     previous_metrics = _task_summary_metrics(previous_records)
+    current_fallback_metrics = _fallback_summary_metrics(current_records)
     total_users = (
         db.query(func.count(func.distinct(VideoTask.user_id)))
         .join(User, User.id == VideoTask.user_id)
@@ -2115,6 +2133,9 @@ def get_video_analytics_summary(
         "credits_consumed": _metric_payload(current_metrics["credits_consumed"], previous_metrics["credits_consumed"]),
         "new_users": zero_metric,
         "active_users": _metric_payload(current_metrics["active_users"], previous_metrics["active_users"]),
+        "fallback_task_total": current_fallback_metrics["fallback_task_total"],
+        "fallback_success_tasks": current_fallback_metrics["fallback_success_tasks"],
+        "fallback_failed_tasks": current_fallback_metrics["fallback_failed_tasks"],
     }
 
 

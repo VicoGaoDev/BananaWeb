@@ -40,6 +40,14 @@ import type {
   UserHistoryCard,
 } from "@/types";
 
+type FallbackCardItem = {
+  key: string;
+  label: string;
+  value: number | string;
+  desc: string;
+  color: string;
+};
+
 const router = useRouter();
 const analyticsLoading = ref(false);
 const historyLoading = ref(false);
@@ -133,6 +141,47 @@ const activeFilterSummary = computed(() => {
   }
   if (!chips.length && summary.value) chips.push(`统计范围：${summary.value.current_range_label}`);
   return chips;
+});
+
+const fallbackSummaryCards = computed<FallbackCardItem[]>(() => {
+  if (!summary.value) return [];
+  const fallbackTaskTotal = summary.value.fallback_task_total ?? 0;
+  const fallbackSuccessTasks = summary.value.fallback_success_tasks ?? 0;
+  const fallbackFailedTasks = summary.value.fallback_failed_tasks ?? 0;
+  const resolvedFallbackTasks = fallbackSuccessTasks + fallbackFailedTasks;
+  const fallbackSuccessRate = resolvedFallbackTasks
+    ? `${((fallbackSuccessTasks / resolvedFallbackTasks) * 100).toFixed(1)}%`
+    : "0%";
+  return [
+    {
+      key: "fallback_total",
+      label: "触发备用接口任务数",
+      value: fallbackTaskTotal,
+      desc: "当前时间范围内触发备用接口的任务数量",
+      color: "#1890ff",
+    },
+    {
+      key: "fallback_success",
+      label: "最终成功数",
+      value: fallbackSuccessTasks,
+      desc: "当前时间范围内触发备用接口后最终成功的任务数量",
+      color: "#38a816",
+    },
+    {
+      key: "fallback_failed",
+      label: "最终失败数",
+      value: fallbackFailedTasks,
+      desc: "当前时间范围内触发备用接口后最终失败的任务数量",
+      color: "#ff4d4f",
+    },
+    {
+      key: "fallback_success_rate",
+      label: "最终成功率",
+      value: fallbackSuccessRate,
+      desc: "当前时间范围内已结束的备用接口任务中最终成功的占比",
+      color: "#1677ff",
+    },
+  ];
 });
 
 const filterSignature = computed(() => JSON.stringify({
@@ -527,6 +576,28 @@ watch(filterSignature, async () => {
         <span class="section-kicker">Overview</span>
       </div>
       <KpiCards :summary="summary" :loading="analyticsLoading" @card-click="handleKpiCardClick" />
+    </section>
+
+    <section class="dashboard-section">
+      <div class="section-title-row">
+        <h3 class="section-title">备用接口任务</h3>
+        <span class="section-kicker">Fallback</span>
+      </div>
+      <div class="overview-grid">
+        <div
+          v-for="(item, index) in fallbackSummaryCards"
+          :key="item.key"
+          class="overview-card warm-card motion-card-lift motion-fade-up"
+          :style="{ '--motion-delay': `${220 + index * 40}ms` }"
+        >
+          <div class="overview-card-head">
+            <span class="overview-card-label">{{ item.label }}</span>
+            <span class="overview-card-dot" :style="{ background: item.color }" />
+          </div>
+          <div class="overview-card-value" :style="{ color: item.color }">{{ item.value }}</div>
+          <div class="overview-card-desc">{{ item.desc }}</div>
+        </div>
+      </div>
     </section>
 
     <section class="dashboard-section">
