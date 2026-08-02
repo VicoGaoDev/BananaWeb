@@ -20,6 +20,7 @@ import {
 } from "@ant-design/icons-vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
+import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
@@ -35,6 +36,10 @@ import {
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
+import {
+  PROMPT_INTERCEPTION_TIP_FOOTNOTE,
+  PROMPT_INTERCEPTION_TIP_SECTIONS,
+} from "@/lib/promptInterceptionTip";
 import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import { createVideoTask, deleteVideoTask, getVideoTasks } from "@/api/videoTasks";
 import { useAuthStore } from "@/stores/auth";
@@ -177,6 +182,16 @@ const promptPlaceholder = computed(() => (
     ? "描述参考画面的主体动作、镜头运动、转场方式和最终视频氛围..."
     : "描述您想要生成的视频内容、镜头运动、主体动作和场景氛围..."
 ));
+const VIDEO_PROMPT_INTERCEPTION_TIP_SECTIONS = [
+  {
+    title: "视频参考图额外提示",
+    items: [
+      "真人支持还不够好，参考图如果有真人，拦截或生成出错的概率会更高。",
+    ],
+  },
+  ...PROMPT_INTERCEPTION_TIP_SECTIONS,
+];
+const VIDEO_PROMPT_INTERCEPTION_TIP_FOOTNOTE = `${PROMPT_INTERCEPTION_TIP_FOOTNOTE} 若视频任务涉及真人参考图，建议优先改用非真人素材，或先简化提示词后再试。`;
 const emptyStateTitle = computed(() => (
   generateMode.value === "firstLastFrame"
     ? "还没有首尾帧任务"
@@ -1444,6 +1459,10 @@ onBeforeUnmount(() => {
                         </a-tooltip>
                       </div>
                       <div class="prompt-label-actions">
+                        <PromptInterceptionTip
+                          :sections="VIDEO_PROMPT_INTERCEPTION_TIP_SECTIONS"
+                          :footnote="VIDEO_PROMPT_INTERCEPTION_TIP_FOOTNOTE"
+                        />
                         <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                       </div>
                     </div>

@@ -4,7 +4,18 @@ import {
   PROMPT_INTERCEPTION_TIP_FOOTNOTE,
   PROMPT_INTERCEPTION_TIP_SECTIONS,
   PROMPT_INTERCEPTION_TIP_TITLE,
+  type PromptInterceptionTipSection,
 } from "@/lib/promptInterceptionTip";
+
+withDefaults(defineProps<{
+  title?: string;
+  sections?: PromptInterceptionTipSection[];
+  footnote?: string;
+}>(), {
+  title: PROMPT_INTERCEPTION_TIP_TITLE,
+  sections: () => PROMPT_INTERCEPTION_TIP_SECTIONS,
+  footnote: PROMPT_INTERCEPTION_TIP_FOOTNOTE,
+});
 
 function getBodyPopupContainer() {
   return document.body;
@@ -21,9 +32,9 @@ function getBodyPopupContainer() {
   >
     <template #content>
       <div class="prompt-interception-tip-panel">
-        <div class="prompt-interception-tip-panel-title">{{ PROMPT_INTERCEPTION_TIP_TITLE }}</div>
+        <div class="prompt-interception-tip-panel-title">{{ title }}</div>
         <div
-          v-for="section in PROMPT_INTERCEPTION_TIP_SECTIONS"
+          v-for="section in sections"
           :key="section.title"
           class="prompt-interception-tip-section"
         >
@@ -32,12 +43,12 @@ function getBodyPopupContainer() {
             <li v-for="item in section.items" :key="item">{{ item }}</li>
           </ul>
         </div>
-        <div class="prompt-interception-tip-footnote">{{ PROMPT_INTERCEPTION_TIP_FOOTNOTE }}</div>
+        <div class="prompt-interception-tip-footnote">{{ footnote }}</div>
       </div>
     </template>
     <button type="button" class="prompt-interception-trigger" aria-label="拦截内容提示">
       <WarningFilled class="prompt-interception-trigger-icon" />
-      <span>{{ PROMPT_INTERCEPTION_TIP_TITLE }}</span>
+      <span>{{ title }}</span>
     </button>
   </a-popover>
 </template>
