@@ -21,6 +21,10 @@ import {
   updateVideoExternalApiSceneBindingMeta,
   updateVideoExternalApiSceneBindingStatus,
 } from "@/api/admin";
+import {
+  parseAdminConfigTemplate,
+  stringifyAdminConfigTemplate,
+} from "@/lib/adminConfigTemplate";
 import type {
   ExternalApiConfigStatus,
   ExternalApiRequestFormat,
@@ -78,6 +82,8 @@ const configRequestFormatFilter = ref<"all" | ExternalApiRequestFormat>("all");
 const configNameFilter = ref("");
 const bindingGroupFilter = ref("all");
 const bindingNameFilter = ref("");
+const configImportJson = ref("");
+const sceneImportJson = ref("");
 
 const configColumns = [
   { title: "名称", dataIndex: "name", width: 280 },
@@ -87,7 +93,7 @@ const configColumns = [
   { title: "请求地址", dataIndex: "request_url", ellipsis: true },
   { title: "状态", dataIndex: "status", width: 100 },
   { title: "更新时间", dataIndex: "updated_at", width: 180 },
-  { title: "操作", key: "action", width: 360 },
+  { title: "操作", key: "action", width: 460 },
 ];
 
 const bindingColumns = [
@@ -97,7 +103,7 @@ const bindingColumns = [
   { title: "主接口", key: "bind", width: 320 },
   { title: "备用接口", key: "backup", width: 320 },
   { title: "积分计费", key: "credit", width: 320 },
-  { title: "操作", key: "action", width: 320 },
+  { title: "操作", key: "action", width: 420 },
 ];
 
 const form = reactive<VideoExternalApiConfigPayload>({
@@ -257,6 +263,41 @@ function matchesNameFilter(keyword: string, ...fields: Array<string | null | und
   return fields.some((field) => (field || "").toLowerCase().includes(normalized));
 }
 
+function normalizeStringValue(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : (value == null ? fallback : String(value));
+}
+
+function normalizeNumberValue(value: unknown, fallback = 0) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : fallback;
+}
+
+function normalizeBooleanValue(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeNullableNumberValue(value: unknown) {
+  if (value == null || value === "") return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function normalizeJsonFieldValue(value: unknown, fallback: string) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return fallback;
+}
+
+function normalizeAvailabilityModesValue(value: unknown) {
+  if (!Array.isArray(value)) return [...DEFAULT_AVAILABILITY_MODES];
+  const normalized = value
+    .map((item) => String(item || "").trim())
+    .filter((item): item is VideoGenerationMode => (
+      item === "text_to_video" || item === "image_to_video" || item === "first_last_frame"
+    ));
+  return normalized.length ? normalized.filter((item, index, arr) => arr.indexOf(item) === index) : [...DEFAULT_AVAILABILITY_MODES];
+}
+
 function formatRequestError(err: any) {
   return err?.response?.data?.detail || err?.message || "请求失败，请稍后重试";
 }
@@ -264,6 +305,7 @@ function formatRequestError(err: any) {
 function resetForm() {
   editingId.value = null;
   isCopyMode.value = false;
+  configImportJson.value = "";
   form.name = "";
   form.description = "";
   form.group_name = "默认";
@@ -297,6 +339,7 @@ function resetForm() {
 function fillForm(item: VideoExternalApiConfig) {
   editingId.value = item.id;
   isCopyMode.value = false;
+  configImportJson.value = "";
   form.name = item.name;
   form.description = item.description || "";
   form.group_name = item.group_name || "默认";
@@ -359,6 +402,7 @@ function fromBackupApiSelectValue(value: number | string | null | undefined) {
 
 function resetSceneForm() {
   isSceneCopyMode.value = false;
+  sceneImportJson.value = "";
   sceneForm.scene_key = "";
   sceneForm.scene_label = "";
   sceneForm.scene_description = "";
@@ -406,6 +450,7 @@ function buildCopiedSceneKey(sourceKey: string) {
 
 function fillSceneMetaForm(record: VideoExternalApiSceneBinding) {
   sceneEditingKey.value = record.scene_key;
+  sceneImportJson.value = "";
   sceneMetaForm.scene_key = record.scene_key;
   sceneMetaForm.scene_label = record.scene_label || "";
   sceneMetaForm.scene_description = record.scene_description || "";
@@ -484,6 +529,181 @@ function openCopy(item: VideoExternalApiConfig) {
   form.poll_timeout_seconds = Number(item.poll_timeout_seconds || 600);
   form.status = item.status;
   modalOpen.value = true;
+}
+
+function buildConfigTemplateData(item: VideoExternalApiConfig): VideoExternalApiConfigPayload {
+  return {
+    name: item.name,
+    description: item.description || "",
+    group_name: item.group_name || "默认",
+    request_url: item.request_url,
+    request_format: item.request_format || "json",
+    headers_json: item.headers_json,
+    payload_json: item.payload_json,
+    response_json: item.response_json || "{\n\n}",
+    result_video_url_field: item.result_video_url_field || "",
+    result_video_base64_field: item.result_video_base64_field || "",
+    result_cover_url_field: item.result_cover_url_field || "",
+    call_mode: "async",
+    submit_success_statuses_json: item.submit_success_statuses_json || DEFAULT_SUBMIT_SUCCESS_STATUSES_JSON,
+    poll_url: item.poll_url || "",
+    poll_method: item.poll_method || "GET",
+    poll_headers_json: item.poll_headers_json || "{\n\n}",
+    poll_payload_json: item.poll_payload_json || "{\n\n}",
+    task_id_field: item.task_id_field || "",
+    result_status_field: item.result_status_field || "",
+    result_success_values_json: item.result_success_values_json || DEFAULT_RESULT_SUCCESS_VALUES_JSON,
+    result_failed_values_json: item.result_failed_values_json || DEFAULT_RESULT_FAILED_VALUES_JSON,
+    result_error_field: item.result_error_field || "",
+    poll_result_video_url_field: item.poll_result_video_url_field || "",
+    poll_result_video_base64_field: item.poll_result_video_base64_field || "",
+    poll_result_cover_url_field: item.poll_result_cover_url_field || "",
+    poll_interval_seconds: Number(item.poll_interval_seconds || 5),
+    poll_timeout_seconds: Number(item.poll_timeout_seconds || 600),
+    status: item.status,
+  };
+}
+
+function buildSceneTemplateData(record: VideoExternalApiSceneBinding): VideoExternalApiSceneBindingCreatePayload {
+  const availabilityModes = normalizeAvailabilityModes(record.availability_modes, record.availability_mode);
+  return {
+    scene_key: record.scene_key,
+    scene_label: record.scene_label,
+    scene_description: record.scene_description || "",
+    sort_order: Number(record.sort_order || 0),
+    hide_aspect_ratio: !!record.hide_aspect_ratio,
+    hide_duration: !!record.hide_duration,
+    hide_resolution: !!record.hide_resolution,
+    availability_mode: legacyAvailabilityModeFromModes(availabilityModes),
+    availability_modes: availabilityModes,
+    max_reference_images: Number(record.max_reference_images || 0),
+    api_config_id: record.api_config_id ?? null,
+    backup_api_config_id: record.backup_api_config_id ?? null,
+    display_name: record.display_name || "",
+    subtitle: record.subtitle || "",
+    credit_billing_mode: record.credit_billing_mode || DEFAULT_CREDIT_BILLING_MODE,
+    credit_cost: Number(record.credit_cost || 0),
+    per_second_credit_cost: Number(record.per_second_credit_cost || 0),
+    aspect_ratio_options_json: record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
+    duration_options_json: record.duration_options_json || DEFAULT_DURATION_OPTIONS_JSON,
+    resolution_options_json: record.resolution_options_json || DEFAULT_RESOLUTION_OPTIONS_JSON,
+    resolution_mapping_json: record.resolution_mapping_json || DEFAULT_RESOLUTION_MAPPING_JSON,
+    resolution_credit_costs_json: record.resolution_credit_costs_json || DEFAULT_RESOLUTION_CREDIT_COSTS_JSON,
+    status: record.status,
+  };
+}
+
+async function copyTemplateJson(text: string, successText: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success(successText);
+  } catch {
+    message.error("复制失败，请检查剪贴板权限");
+  }
+}
+
+function handleCopyConfigJson(item: VideoExternalApiConfig) {
+  const template = stringifyAdminConfigTemplate("video-api-config", buildConfigTemplateData(item));
+  copyTemplateJson(template, "视频接口配置 JSON 已复制");
+}
+
+function handleCopySceneJson(record: VideoExternalApiSceneBinding) {
+  const template = stringifyAdminConfigTemplate("video-scene-binding", buildSceneTemplateData(record));
+  copyTemplateJson(template, "视频场景绑定 JSON 已复制");
+}
+
+function applyImportedConfigData(data: Record<string, unknown>) {
+  form.name = normalizeStringValue(data.name, form.name);
+  form.description = normalizeStringValue(data.description, form.description);
+  form.group_name = normalizeStringValue(data.group_name, form.group_name || "默认");
+  form.request_url = normalizeStringValue(data.request_url, form.request_url);
+  form.request_format = data.request_format === "multipart" ? "multipart" : "json";
+  form.headers_json = normalizeJsonFieldValue(data.headers_json, form.headers_json);
+  form.payload_json = normalizeJsonFieldValue(data.payload_json, form.payload_json);
+  form.response_json = normalizeJsonFieldValue(data.response_json, form.response_json);
+  form.result_video_url_field = normalizeStringValue(data.result_video_url_field, form.result_video_url_field);
+  form.result_video_base64_field = normalizeStringValue(data.result_video_base64_field, form.result_video_base64_field);
+  form.result_cover_url_field = normalizeStringValue(data.result_cover_url_field, form.result_cover_url_field);
+  form.call_mode = "async";
+  form.submit_success_statuses_json = normalizeJsonFieldValue(data.submit_success_statuses_json, form.submit_success_statuses_json);
+  form.poll_url = normalizeStringValue(data.poll_url, form.poll_url);
+  form.poll_method = data.poll_method === "POST" ? "POST" : "GET";
+  form.poll_headers_json = normalizeJsonFieldValue(data.poll_headers_json, form.poll_headers_json);
+  form.poll_payload_json = normalizeJsonFieldValue(data.poll_payload_json, form.poll_payload_json);
+  form.task_id_field = normalizeStringValue(data.task_id_field, form.task_id_field);
+  form.result_status_field = normalizeStringValue(data.result_status_field, form.result_status_field);
+  form.result_success_values_json = normalizeJsonFieldValue(data.result_success_values_json, form.result_success_values_json);
+  form.result_failed_values_json = normalizeJsonFieldValue(data.result_failed_values_json, form.result_failed_values_json);
+  form.result_error_field = normalizeStringValue(data.result_error_field, form.result_error_field);
+  form.poll_result_video_url_field = normalizeStringValue(data.poll_result_video_url_field, form.poll_result_video_url_field);
+  form.poll_result_video_base64_field = normalizeStringValue(data.poll_result_video_base64_field, form.poll_result_video_base64_field);
+  form.poll_result_cover_url_field = normalizeStringValue(data.poll_result_cover_url_field, form.poll_result_cover_url_field);
+  form.poll_interval_seconds = normalizeNumberValue(data.poll_interval_seconds, form.poll_interval_seconds);
+  form.poll_timeout_seconds = normalizeNumberValue(data.poll_timeout_seconds, form.poll_timeout_seconds);
+  form.status = data.status === "disabled" ? "disabled" : "enabled";
+}
+
+function handleApplyConfigImportJson() {
+  if (!configImportJson.value.trim()) {
+    message.warning("请先粘贴视频接口配置 JSON");
+    return;
+  }
+  try {
+    const parsed = parseAdminConfigTemplate(configImportJson.value);
+    if (parsed.kind !== "video-api-config") {
+      message.warning("这段 JSON 不是视频接口配置模板");
+      return;
+    }
+    applyImportedConfigData(parsed.data);
+    message.success("已识别并回填视频接口配置");
+  } catch (err: any) {
+    message.error(err?.message || "识别视频接口配置 JSON 失败");
+  }
+}
+
+function applyImportedSceneData(data: Record<string, unknown>) {
+  const availabilityModes = normalizeAvailabilityModesValue(data.availability_modes);
+  sceneForm.scene_key = normalizeStringValue(data.scene_key, sceneForm.scene_key);
+  sceneForm.scene_label = normalizeStringValue(data.scene_label, sceneForm.scene_label);
+  sceneForm.scene_description = normalizeStringValue(data.scene_description, sceneForm.scene_description);
+  sceneForm.sort_order = normalizeNumberValue(data.sort_order, sceneForm.sort_order);
+  sceneForm.hide_aspect_ratio = normalizeBooleanValue(data.hide_aspect_ratio, sceneForm.hide_aspect_ratio);
+  sceneForm.hide_duration = normalizeBooleanValue(data.hide_duration, sceneForm.hide_duration);
+  sceneForm.hide_resolution = normalizeBooleanValue(data.hide_resolution, sceneForm.hide_resolution);
+  sceneForm.availability_modes = availabilityModes;
+  sceneForm.availability_mode = legacyAvailabilityModeFromModes(availabilityModes);
+  sceneForm.max_reference_images = normalizeNumberValue(data.max_reference_images, sceneForm.max_reference_images);
+  sceneForm.api_config_id = normalizeNullableNumberValue(data.api_config_id);
+  sceneForm.backup_api_config_id = normalizeNullableNumberValue(data.backup_api_config_id);
+  sceneForm.display_name = normalizeStringValue(data.display_name, sceneForm.display_name);
+  sceneForm.subtitle = normalizeStringValue(data.subtitle, sceneForm.subtitle);
+  sceneForm.credit_billing_mode = data.credit_billing_mode === "per_second" ? "per_second" : "fixed";
+  sceneForm.credit_cost = normalizeNumberValue(data.credit_cost, sceneForm.credit_cost);
+  sceneForm.per_second_credit_cost = normalizeNumberValue(data.per_second_credit_cost, sceneForm.per_second_credit_cost);
+  sceneForm.aspect_ratio_options_json = normalizeJsonFieldValue(data.aspect_ratio_options_json, sceneForm.aspect_ratio_options_json);
+  sceneForm.duration_options_json = normalizeJsonFieldValue(data.duration_options_json, sceneForm.duration_options_json);
+  sceneForm.resolution_options_json = normalizeJsonFieldValue(data.resolution_options_json, sceneForm.resolution_options_json);
+  sceneForm.resolution_mapping_json = normalizeJsonFieldValue(data.resolution_mapping_json, sceneForm.resolution_mapping_json);
+  sceneForm.resolution_credit_costs_json = normalizeJsonFieldValue(data.resolution_credit_costs_json, sceneForm.resolution_credit_costs_json);
+  sceneForm.status = data.status === "disabled" ? "disabled" : "enabled";
+}
+
+function handleApplySceneImportJson() {
+  if (!sceneImportJson.value.trim()) {
+    message.warning("请先粘贴视频场景绑定 JSON");
+    return;
+  }
+  try {
+    const parsed = parseAdminConfigTemplate(sceneImportJson.value);
+    if (parsed.kind !== "video-scene-binding") {
+      message.warning("这段 JSON 不是视频场景绑定模板");
+      return;
+    }
+    applyImportedSceneData(parsed.data);
+    message.success("已识别并回填视频场景绑定");
+  } catch (err: any) {
+    message.error(err?.message || "识别视频场景绑定 JSON 失败");
+  }
 }
 
 function openCreateScene() {
@@ -1095,9 +1315,10 @@ onMounted(load);
               </a-tag>
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space>
+              <a-space wrap>
                 <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEdit(record)">编辑</a-button>
                 <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
+                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="handleCopyConfigJson(record)">复制 JSON</a-button>
                 <a-button size="small" :class="record.status === 'enabled' ? 'api-danger-btn' : 'api-secondary-btn'" @click="handleToggleStatus(record)">
                   {{ record.status === "enabled" ? "停用" : "启用" }}
                 </a-button>
@@ -1270,6 +1491,9 @@ onMounted(load);
                 <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopyScene(record)">
                   复制新增
                 </a-button>
+                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="handleCopySceneJson(record)">
+                  复制 JSON
+                </a-button>
                 <a-button v-if="!record.is_builtin" size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEditSceneMeta(record)">
                   编辑
                 </a-button>
@@ -1336,6 +1560,18 @@ onMounted(load);
 
     <a-modal v-model:open="sceneModalOpen" :title="sceneModalTitle" :mask-closable="false" :width="720" @ok="handleCreateScene">
       <a-form layout="vertical">
+        <a-form-item label="粘贴视频场景绑定 JSON 回填">
+          <a-textarea
+            v-model:value="sceneImportJson"
+            :rows="6"
+            allow-clear
+            class="warm-input"
+            placeholder="粘贴从“复制 JSON”得到的视频场景绑定模板，可自动识别并回填下面的字段"
+          />
+          <div style="display: flex; justify-content: flex-end; margin-top: 8px">
+            <a-button class="api-secondary-btn" @click="handleApplySceneImportJson">识别并回填</a-button>
+          </div>
+        </a-form-item>
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="场景标识" required>
@@ -1599,6 +1835,18 @@ onMounted(load);
 
     <a-modal v-model:open="modalOpen" :title="modalTitle" :mask-closable="false" :width="920" @ok="handleSave">
       <a-form layout="vertical">
+        <a-form-item v-if="!editingId" label="粘贴视频接口配置 JSON 回填">
+          <a-textarea
+            v-model:value="configImportJson"
+            :rows="6"
+            allow-clear
+            class="warm-input"
+            placeholder="粘贴从“复制 JSON”得到的视频接口配置模板，可自动识别并回填下面的字段"
+          />
+          <div style="display: flex; justify-content: flex-end; margin-top: 8px">
+            <a-button class="api-secondary-btn" @click="handleApplyConfigImportJson">识别并回填</a-button>
+          </div>
+        </a-form-item>
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="配置名称" required>
