@@ -4,14 +4,14 @@ export type AdminConfigTemplateKind =
   | "video-api-config"
   | "video-scene-binding";
 
-export interface AdminConfigTemplateEnvelope<T = Record<string, unknown>> {
+export interface AdminConfigTemplateEnvelope<T = object> {
   banana_admin_template: true;
   version: 1;
   kind: AdminConfigTemplateKind;
   data: T;
 }
 
-export function buildAdminConfigTemplate<T extends Record<string, unknown>>(
+export function buildAdminConfigTemplate<T extends object>(
   kind: AdminConfigTemplateKind,
   data: T,
 ): AdminConfigTemplateEnvelope<T> {
@@ -23,7 +23,7 @@ export function buildAdminConfigTemplate<T extends Record<string, unknown>>(
   };
 }
 
-export function stringifyAdminConfigTemplate<T extends Record<string, unknown>>(
+export function stringifyAdminConfigTemplate<T extends object>(
   kind: AdminConfigTemplateKind,
   data: T,
 ): string {
