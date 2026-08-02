@@ -11,7 +11,6 @@ import { isSessionExpiredError } from "@/lib/authError";
 import { VChart } from "@/components/admin/charting";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
-import { formatGenerationTaskFailureMessage } from "@/lib/generationErrors";
 import type {
   AdminErrorAnalytics,
   AdminErrorCategoryTimeseries,
@@ -565,13 +564,7 @@ function statusLabel(value: string) {
 }
 
 function taskErrorText(record: AdminErrorTaskItem) {
-  if (fallbackOnly.value) {
-    return record.error_message || "-";
-  }
-  if (taskKindFilter.value === "video") {
-    return record.error_message || "-";
-  }
-  return formatGenerationTaskFailureMessage(record.error_message, record.credit_refunded);
+  return record.error_message || "-";
 }
 
 function fallbackStatusLabel(value?: AdminErrorTaskItem["fallback_status"]) {

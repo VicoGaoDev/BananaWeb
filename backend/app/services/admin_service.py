@@ -3176,9 +3176,9 @@ def get_error_tasks(
                 if resolved_summary is None:
                     continue
                 attempt_summary = resolved_summary
-                row_error_message = resolved_summary["primary_error_message"] or str(task.error_message or "")
+                row_error_message = resolved_summary["primary_error_message"] or str(task.provider_error_message or task.error_message or "")
             else:
-                row_error_message = str(task.error_message or "")
+                row_error_message = str(task.provider_error_message or task.error_message or "")
                 if not include_unsafe_tasks and _is_content_safety_error(row_error_message):
                     continue
                 normalized_message = _normalize_error_message_for_analytics(row_error_message)
@@ -3264,9 +3264,9 @@ def get_error_tasks(
                 if resolved_summary is None:
                     continue
                 attempt_summary = resolved_summary
-                row_error_message = resolved_summary["primary_error_message"] or str(task.error_message or "")
+                row_error_message = resolved_summary["primary_error_message"] or str(task.provider_error_message or task.error_message or "")
             else:
-                row_error_message = str(task.error_message or "")
+                row_error_message = str(task.provider_error_message or task.error_message or "")
                 if not include_unsafe_tasks and _is_content_safety_error(row_error_message):
                     continue
                 normalized_message = _normalize_error_message_for_analytics(row_error_message)

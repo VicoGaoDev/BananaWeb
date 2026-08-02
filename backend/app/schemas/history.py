@@ -56,6 +56,7 @@ class HistoryItem(BaseModel):
     used_fallback_api: bool = False
     status: str
     error_message: str = ""
+    provider_error_message: str = ""
     task_is_deleted: bool = False
     is_soft_deleted: bool = False
     soft_deleted_count: int = 0
@@ -114,6 +115,7 @@ class UserHistoryCardItem(BaseModel):
     request_finished_at: datetime | None = None
     run_time: int | None = None
     error_message: str = ""
+    provider_error_message: str = ""
     images: list[HistoryImageOut] = []
     api_attempts: list[TaskApiAttemptOut] = []
 

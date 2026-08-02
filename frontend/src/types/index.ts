@@ -107,6 +107,7 @@ export interface HistoryItem {
   used_fallback_api?: boolean;
   status: string;
   error_message?: string;
+  provider_error_message?: string;
   task_is_deleted?: boolean;
   is_soft_deleted?: boolean;
   soft_deleted_count?: number;
@@ -198,6 +199,7 @@ export interface UserHistoryCard {
   request_finished_at?: string | null;
   run_time?: number | null;
   error_message?: string;
+  provider_error_message?: string;
   images: ImageResult[];
   api_attempts?: TaskApiAttempt[];
 }

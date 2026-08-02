@@ -98,6 +98,9 @@ const panelStyle = computed(() => (
     ? { left: `${SIDE_NAV_WIDTH}px` }
     : { left: "0px" }
 ));
+const detailErrorMessage = computed(() => (
+  (props.item?.provider_error_message || props.item?.error_message || "").trim()
+));
 
 function updateViewportWidth() {
   if (typeof window === "undefined") return;
@@ -715,9 +718,9 @@ function handleGenerateVideo(item: UserHistoryCard) {
                     </a-button>
                   </div>
                   <div class="detail-prompt">{{ item.prompt || "-" }}</div>
-                  <div v-if="showErrorMessage && item.error_message" class="detail-error-block">
+                  <div v-if="showErrorMessage && detailErrorMessage" class="detail-error-block">
                     <div class="detail-error-label">错误信息</div>
-                    <div class="detail-error-message">{{ item.error_message }}</div>
+                    <div class="detail-error-message">{{ detailErrorMessage }}</div>
                   </div>
                 </div>
               </div>

@@ -263,6 +263,7 @@ def _serialize_task_history_detail(
         "request_finished_at": task.request_finished_at,
         "run_time": _calculate_task_run_time(task),
         "error_message": task.error_message or "",
+        "provider_error_message": task.provider_error_message or "",
         "images": visible_images,
         "api_attempts": _serialize_task_api_attempts(resolved_attempts or []),
     }
@@ -547,6 +548,7 @@ def get_user_history(
             "credit_refunded": shared_payload["credit_refunded"],
             "created_at": task.created_at,
             "error_message": task.error_message or "",
+            "provider_error_message": task.provider_error_message or "",
             "images": shared_payload["visible_images"],
         })
 
@@ -873,6 +875,7 @@ def get_all_history(
             "credit_cost": 0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
             "status": task.status,
             "error_message": task.error_message or "",
+            "provider_error_message": task.provider_error_message or "",
             "task_is_deleted": bool(task.is_deleted),
             "is_soft_deleted": soft_deleted_count > 0,
             "soft_deleted_count": soft_deleted_count,
@@ -1210,6 +1213,7 @@ def get_admin_history_cards(
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
             "error_message": task.error_message or "",
+            "provider_error_message": task.provider_error_message or "",
             "images": visible_images,
             "api_attempts": [],
         })
@@ -1266,6 +1270,7 @@ def get_admin_history_cards(
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
             "error_message": task.error_message or "",
+            "provider_error_message": task.provider_error_message or "",
             "images": visible_images,
             "api_attempts": [],
         })
@@ -1322,6 +1327,7 @@ def get_admin_history_cards(
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
             "error_message": task.error_message or "",
+            "provider_error_message": task.provider_error_message or "",
             "images": [],
             "api_attempts": [],
         })

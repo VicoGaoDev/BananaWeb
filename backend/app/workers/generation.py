@@ -121,6 +121,15 @@ def _clip_error_message(message: str) -> str:
     cleaned = (message or "").strip()
     if not cleaned:
         return ""
+    if len(cleaned) <= MAX_ERROR_MESSAGE_LENGTH:
+        return cleaned
+    return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
+
+
+def _clip_public_error_message(message: str) -> str:
+    cleaned = (message or "").strip()
+    if not cleaned:
+        return ""
     if PROMPT_MODERATION_PRECHECK_ERROR in cleaned.lower():
         cleaned = PROMPT_MODERATION_PRECHECK_PUBLIC_MESSAGE
     if len(cleaned) <= MAX_ERROR_MESSAGE_LENGTH:
@@ -1307,7 +1316,7 @@ def _mark_image_storage_fallback(image: Image, error_message: str = "") -> None:
     if not fallback_url:
         image.image_format = ""
         image.image_size_bytes = 0
-        image.error_message = _clip_error_message(error_message or "图片已生成，但保存结果失败")
+        image.error_message = _clip_public_error_message(error_message or "图片已生成，但保存结果失败")
 
 
 def _mark_generation_failure(image: Image, error_message: str) -> None:
@@ -1316,7 +1325,7 @@ def _mark_generation_failure(image: Image, error_message: str) -> None:
     image.image_format = ""
     image.image_size_bytes = 0
     image.status = "failed"
-    image.error_message = _clip_error_message(error_message or "生图失败")
+    image.error_message = _clip_public_error_message(error_message or "生图失败")
 
 
 def _record_api_attempts(
@@ -1614,7 +1623,7 @@ def _expire_processing_task(
         return False
 
     task_images = images if images is not None else db.query(Image).filter(Image.task_id == task.id).all()
-    normalized_error = _clip_error_message(reason)
+    normalized_error = _clip_public_error_message(reason)
     for image in task_images:
         if image.status == "pending":
             _mark_generation_failure(image, normalized_error)
@@ -1645,7 +1654,7 @@ def _recover_task_after_exception(task_id: int, error_message: str) -> None:
         if not task:
             return
 
-        normalized_error = _clip_error_message(error_message or "生图任务执行异常")
+        normalized_error = _clip_public_error_message(error_message or "生图任务执行异常")
         images = recovery_db.query(Image).filter(Image.task_id == task_id).all()
         for image in images:
             if image.status == "pending":
@@ -1671,7 +1680,7 @@ def _recover_single_image_after_exception(image_id: int, error_message: str) -> 
         if not image:
             return
 
-        normalized_error = _clip_error_message(error_message or "重新生成任务执行异常")
+        normalized_error = _clip_public_error_message(error_message or "重新生成任务执行异常")
         if image.status == "pending":
             _mark_generation_failure(image, normalized_error)
 
@@ -2265,7 +2274,7 @@ def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True)
             if image:
                 _mark_generation_failure(image, task.provider_error_message)
             task.status = _resolve_task_status(list(task.images))
-            task.error_message = task.provider_error_message
+            task.error_message = _clip_public_error_message(task.provider_error_message)
             _mark_task_request_finished(task)
             refund_task_credit_for_generation_failure_if_needed(db, task)
             db.commit()
