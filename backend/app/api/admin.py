@@ -12,6 +12,7 @@ from app.schemas.admin import (
     CreateRedeemKeysBatchRequest, RedeemKeyBatchOut, RedeemKeyOut, UpdateRedeemKeyStatusRequest, PaymentOrderAdminOut,
     CreateOfflineOrderRequest, OfflineOrderOut,
     AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest,
+    AdminLedgerCreateRequest, AdminLedgerUpdateRequest, AdminLedgerOut,
     AdminUserPromoDashboardOut,
     VideoStatsOut,
 )
@@ -29,6 +30,7 @@ from app.services.admin_service import (
     create_user, list_users, update_user_status, update_user_role,
     update_user_whitelist, reset_user_password, get_stats, allocate_credits, reset_user_credits, get_credit_logs,
     list_payment_orders, create_offline_order, list_offline_orders,
+    list_admin_ledgers, get_admin_ledger, create_admin_ledger, update_admin_ledger, refresh_admin_ledger_income,
     get_admin_invite_reward_dashboard,
     get_admin_invite_reward_user_detail,
     get_admin_promo_stats_dashboard,
@@ -309,6 +311,53 @@ def admin_offline_orders(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+@router.get("/ledgers", response_model=dict)
+def admin_list_ledgers(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_admin_ledgers(db, page=page, page_size=page_size)
+
+
+@router.get("/ledgers/{month}", response_model=AdminLedgerOut)
+def admin_get_ledger(
+    month: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_ledger(db, month=month)
+
+
+@router.post("/ledgers", response_model=AdminLedgerOut)
+def admin_create_ledger(
+    body: AdminLedgerCreateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return create_admin_ledger(db, payload=body, operator=admin)
+
+
+@router.put("/ledgers/{month}", response_model=AdminLedgerOut)
+def admin_update_ledger(
+    month: str,
+    body: AdminLedgerUpdateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return update_admin_ledger(db, month=month, payload=body, operator=admin)
+
+
+@router.post("/ledgers/{month}/refresh-income", response_model=AdminLedgerOut)
+def admin_refresh_ledger_income(
+    month: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return refresh_admin_ledger_income(db, month=month, operator=admin)
 
 
 @router.get("/stats", response_model=StatsOut)

@@ -64,7 +64,8 @@ def get_upload_credential(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ = user
+    if body.purpose == "admin_ledger" and user.role not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="无权上传账本截图")
     return create_upload_credential(
         db,
         purpose=body.purpose,

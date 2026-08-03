@@ -121,6 +121,7 @@ def _run_startup_schema_sync():
     _ensure_feedback_schema()
     _ensure_system_message_schema()
     _ensure_update_log_schema()
+    _ensure_admin_ledger_schema()
     _ensure_history_pin_schema()
     _ensure_user_asset_schema()
     _ensure_user_board_schema()
@@ -2046,6 +2047,144 @@ def _ensure_update_log_schema():
     with engine.begin() as conn:
         if "ix_update_logs_business_id" not in refreshed_indexes:
             conn.execute(text("CREATE UNIQUE INDEX ix_update_logs_business_id ON update_logs (business_id)"))
+
+
+def _ensure_admin_ledger_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "users" not in table_names:
+        return
+
+    from app.models.admin_ledger import AdminLedger, AdminLedgerExpense, AdminLedgerLog
+
+    if "admin_ledgers" not in table_names:
+        AdminLedger.__table__.create(bind=engine)
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+    if "admin_ledger_expenses" not in table_names:
+        AdminLedgerExpense.__table__.create(bind=engine)
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+    if "admin_ledger_logs" not in table_names:
+        AdminLedgerLog.__table__.create(bind=engine)
+        inspector = inspect(engine)
+
+    ledger_columns = {col["name"] for col in inspector.get_columns("admin_ledgers")}
+    ledger_indexes = {index["name"] for index in inspector.get_indexes("admin_ledgers")}
+    with engine.begin() as conn:
+        if "business_id" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN business_id VARCHAR(32) NULL"))
+        if "ledger_month" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN ledger_month DATE NULL"))
+        if "title" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''"))
+        if "content" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN content TEXT"))
+        if "description" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN description TEXT"))
+        if "screenshot_urls_json" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN screenshot_urls_json TEXT"))
+        if "income_snapshot_json" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN income_snapshot_json TEXT"))
+        for column_name in ("online_revenue_fen", "redeem_revenue_fen", "offline_revenue_fen", "total_income_fen", "total_expense_fen", "net_income_fen"):
+            if column_name not in ledger_columns:
+                conn.execute(text(f"ALTER TABLE admin_ledgers ADD COLUMN {column_name} INTEGER NOT NULL DEFAULT 0"))
+        if "created_by" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN created_by INTEGER NULL"))
+        if "updated_by" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN updated_by INTEGER NULL"))
+        if "created_at" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in ledger_columns:
+            conn.execute(text("ALTER TABLE admin_ledgers ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        conn.execute(text("UPDATE admin_ledgers SET title = '' WHERE title IS NULL"))
+        conn.execute(text("UPDATE admin_ledgers SET content = '' WHERE content IS NULL"))
+        conn.execute(text("UPDATE admin_ledgers SET description = '' WHERE description IS NULL"))
+        conn.execute(text("UPDATE admin_ledgers SET screenshot_urls_json = '[]' WHERE screenshot_urls_json IS NULL OR screenshot_urls_json = ''"))
+        conn.execute(text("UPDATE admin_ledgers SET income_snapshot_json = '{}' WHERE income_snapshot_json IS NULL OR income_snapshot_json = ''"))
+        if "ix_admin_ledgers_business_id" not in ledger_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX ix_admin_ledgers_business_id ON admin_ledgers (business_id)"))
+        if "ix_admin_ledgers_ledger_month" not in ledger_indexes and "uq_admin_ledgers_ledger_month" not in ledger_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX ix_admin_ledgers_ledger_month ON admin_ledgers (ledger_month)"))
+
+    expense_columns = {col["name"] for col in inspect(engine).get_columns("admin_ledger_expenses")}
+    expense_indexes = {index["name"] for index in inspect(engine).get_indexes("admin_ledger_expenses")}
+    with engine.begin() as conn:
+        if "business_id" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN business_id VARCHAR(32) NULL"))
+        if "ledger_id" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN ledger_id INTEGER NULL"))
+        if "expense_type" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN expense_type VARCHAR(30) NOT NULL DEFAULT 'other'"))
+        if "title" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''"))
+        if "amount_fen" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN amount_fen INTEGER NOT NULL DEFAULT 0"))
+        if "content" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN content TEXT"))
+        if "description" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN description TEXT"))
+        if "screenshot_urls_json" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN screenshot_urls_json TEXT"))
+        if "sort_order" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+        if "created_by" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN created_by INTEGER NULL"))
+        if "updated_by" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN updated_by INTEGER NULL"))
+        if "created_at" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in expense_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_expenses ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        conn.execute(text("UPDATE admin_ledger_expenses SET title = '' WHERE title IS NULL"))
+        conn.execute(text("UPDATE admin_ledger_expenses SET content = '' WHERE content IS NULL"))
+        conn.execute(text("UPDATE admin_ledger_expenses SET description = '' WHERE description IS NULL"))
+        conn.execute(text("UPDATE admin_ledger_expenses SET screenshot_urls_json = '[]' WHERE screenshot_urls_json IS NULL OR screenshot_urls_json = ''"))
+        if "ix_admin_ledger_expenses_business_id" not in expense_indexes:
+            conn.execute(text("CREATE UNIQUE INDEX ix_admin_ledger_expenses_business_id ON admin_ledger_expenses (business_id)"))
+        if "ix_admin_ledger_expenses_ledger_id" not in expense_indexes:
+            conn.execute(text("CREATE INDEX ix_admin_ledger_expenses_ledger_id ON admin_ledger_expenses (ledger_id)"))
+
+    log_columns = {col["name"] for col in inspect(engine).get_columns("admin_ledger_logs")}
+    log_indexes = {index["name"] for index in inspect(engine).get_indexes("admin_ledger_logs")}
+    with engine.begin() as conn:
+        if "ledger_id" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN ledger_id INTEGER NULL"))
+        if "operator_id" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN operator_id INTEGER NULL"))
+        if "action" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN action VARCHAR(40) NOT NULL DEFAULT 'update'"))
+        if "summary" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN summary VARCHAR(500) NOT NULL DEFAULT ''"))
+        if "before_json" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN before_json TEXT"))
+        if "after_json" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN after_json TEXT"))
+        if "created_at" not in log_columns:
+            conn.execute(text("ALTER TABLE admin_ledger_logs ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        conn.execute(text("UPDATE admin_ledger_logs SET summary = '' WHERE summary IS NULL"))
+        conn.execute(text("UPDATE admin_ledger_logs SET before_json = '{}' WHERE before_json IS NULL OR before_json = ''"))
+        conn.execute(text("UPDATE admin_ledger_logs SET after_json = '{}' WHERE after_json IS NULL OR after_json = ''"))
+        if "ix_admin_ledger_logs_ledger_id" not in log_indexes:
+            conn.execute(text("CREATE INDEX ix_admin_ledger_logs_ledger_id ON admin_ledger_logs (ledger_id)"))
+        if "ix_admin_ledger_logs_created_at" not in log_indexes:
+            conn.execute(text("CREATE INDEX ix_admin_ledger_logs_created_at ON admin_ledger_logs (created_at)"))
+
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        changed = False
+        for row in db.query(AdminLedger).filter((AdminLedger.business_id.is_(None)) | (AdminLedger.business_id == "")).all():
+            row.business_id = generate_business_id()
+            changed = True
+        for row in db.query(AdminLedgerExpense).filter((AdminLedgerExpense.business_id.is_(None)) | (AdminLedgerExpense.business_id == "")).all():
+            row.business_id = generate_business_id()
+            changed = True
+        if changed:
+            db.commit()
+    finally:
+        db.close()
 
 
 def _ensure_history_pin_schema():

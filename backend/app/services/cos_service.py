@@ -25,6 +25,7 @@ UPLOAD_PURPOSE_PREFIXES = {
     "contact_qr": "contact_qr",
     "canvas_upload": "canvas_upload",
     "user_suggestion": "user_suggestion",
+    "admin_ledger": "admin_ledger",
     "canvas": "canvas",
     "template": "template",
     "generated": "generated",

@@ -1740,6 +1740,102 @@ export interface AdminVideoTaskListResponse {
   items: AdminVideoTaskResult[];
 }
 
+export type AdminLedgerExpenseType = "server" | "third_party_api" | "other";
+
+export interface AdminLedgerIncome {
+  online_revenue_yuan: number;
+  redeem_revenue_yuan: number;
+  offline_revenue_yuan: number;
+  total_income_yuan: number;
+}
+
+export interface AdminLedgerExpense {
+  id: number;
+  business_id: string;
+  expense_type: AdminLedgerExpenseType;
+  title: string;
+  amount_fen: number;
+  amount_yuan: number;
+  content: string;
+  description: string;
+  screenshot_urls: string[];
+  sort_order: number;
+  created_by_username: string;
+  updated_by_username: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AdminLedgerLog {
+  id: number;
+  operator_id: string;
+  operator_username: string;
+  action: string;
+  summary: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface AdminLedger {
+  id?: number | null;
+  business_id: string;
+  month: string;
+  title: string;
+  content: string;
+  description: string;
+  screenshot_urls: string[];
+  income: AdminLedgerIncome;
+  income_snapshot: Record<string, unknown>;
+  total_expense_fen: number;
+  total_expense_yuan: number;
+  net_income_fen: number;
+  net_income_yuan: number;
+  expenses: AdminLedgerExpense[];
+  logs: AdminLedgerLog[];
+  exists: boolean;
+  created_by_username: string;
+  updated_by_username: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AdminLedgerListItem {
+  id: number;
+  business_id: string;
+  month: string;
+  title: string;
+  total_income_yuan: number;
+  total_expense_yuan: number;
+  net_income_yuan: number;
+  updated_by_username: string;
+  updated_at?: string | null;
+}
+
+export interface AdminLedgerListResponse {
+  total: number;
+  items: AdminLedgerListItem[];
+}
+
+export interface AdminLedgerExpensePayload {
+  id?: number | null;
+  expense_type: AdminLedgerExpenseType;
+  title: string;
+  amount_yuan: number;
+  content: string;
+  description: string;
+  screenshot_urls: string[];
+}
+
+export interface AdminLedgerPayload {
+  month?: string;
+  title: string;
+  content: string;
+  description: string;
+  screenshot_urls: string[];
+  expenses: AdminLedgerExpensePayload[];
+}
+
 export type UploadPurpose =
   | "ref"
   | "source"
@@ -1749,6 +1845,7 @@ export type UploadPurpose =
   | "contact_qr"
   | "canvas_upload"
   | "user_suggestion"
+  | "admin_ledger"
   | "template";
 
 export interface UploadCredential {

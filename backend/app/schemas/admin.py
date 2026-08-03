@@ -323,6 +323,103 @@ class DailyReportRangeRequest(BaseModel):
     end_date: datetime
 
 
+class AdminLedgerExpenseIn(BaseModel):
+    id: int | None = None
+    expense_type: str = "other"
+    title: str = ""
+    amount_yuan: Decimal = Field(ge=0)
+    content: str = ""
+    description: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+
+
+class AdminLedgerCreateRequest(BaseModel):
+    month: str
+    title: str = ""
+    content: str = ""
+    description: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+    expenses: list[AdminLedgerExpenseIn] = Field(default_factory=list)
+
+
+class AdminLedgerUpdateRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+    description: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+    expenses: list[AdminLedgerExpenseIn] = Field(default_factory=list)
+
+
+class AdminLedgerIncomeOut(BaseModel):
+    online_revenue_yuan: float = 0
+    redeem_revenue_yuan: float = 0
+    offline_revenue_yuan: float = 0
+    total_income_yuan: float = 0
+
+
+class AdminLedgerExpenseOut(BaseModel):
+    id: int
+    business_id: str
+    expense_type: str
+    title: str
+    amount_fen: int
+    amount_yuan: float
+    content: str = ""
+    description: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+    sort_order: int = 0
+    created_by_username: str = ""
+    updated_by_username: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminLedgerLogOut(BaseModel):
+    id: int
+    operator_id: str
+    operator_username: str = ""
+    action: str
+    summary: str
+    before: dict = Field(default_factory=dict)
+    after: dict = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class AdminLedgerOut(BaseModel):
+    id: int | None = None
+    business_id: str = ""
+    month: str
+    title: str = ""
+    content: str = ""
+    description: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+    income: AdminLedgerIncomeOut
+    income_snapshot: dict = Field(default_factory=dict)
+    total_expense_fen: int = 0
+    total_expense_yuan: float = 0
+    net_income_fen: int = 0
+    net_income_yuan: float = 0
+    expenses: list[AdminLedgerExpenseOut] = Field(default_factory=list)
+    logs: list[AdminLedgerLogOut] = Field(default_factory=list)
+    exists: bool = True
+    created_by_username: str = ""
+    updated_by_username: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminLedgerListItemOut(BaseModel):
+    id: int
+    business_id: str
+    month: str
+    title: str
+    total_income_yuan: float
+    total_expense_yuan: float
+    net_income_yuan: float
+    updated_by_username: str = ""
+    updated_at: datetime | None = None
+
+
 class AdminPromoCodeItemOut(BaseModel):
     id: int
     code: str

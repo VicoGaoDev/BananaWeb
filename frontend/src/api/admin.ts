@@ -53,6 +53,9 @@ import type {
   AdminInviteRewardDashboard,
   AdminInviteRewardUserDetail,
   AdminPromoStatsDashboard,
+  AdminLedger,
+  AdminLedgerListResponse,
+  AdminLedgerPayload,
 } from "@/types";
 
 function buildAnalyticsParams(query: AdminAnalyticsQuery): Record<string, unknown> {
@@ -167,6 +170,29 @@ export function listOfflineOrders(params: {
   end_date?: string;
 }): Promise<{ total: number; items: AdminOfflineOrder[] }> {
   return client.get("/admin/offline-orders", { params });
+}
+
+export function listAdminLedgers(params: {
+  page?: number;
+  page_size?: number;
+} = {}): Promise<AdminLedgerListResponse> {
+  return client.get("/admin/ledgers", { params });
+}
+
+export function getAdminLedger(month: string): Promise<AdminLedger> {
+  return client.get(`/admin/ledgers/${month}`);
+}
+
+export function createAdminLedger(payload: AdminLedgerPayload & { month: string }): Promise<AdminLedger> {
+  return client.post("/admin/ledgers", payload);
+}
+
+export function updateAdminLedger(month: string, payload: AdminLedgerPayload): Promise<AdminLedger> {
+  return client.put(`/admin/ledgers/${month}`, payload);
+}
+
+export function refreshAdminLedgerIncome(month: string): Promise<AdminLedger> {
+  return client.post(`/admin/ledgers/${month}/refresh-income`);
 }
 
 export function createRedeemKeysBatch(count: number, creditAmount: number): Promise<AdminRedeemKeyBatchResult> {

@@ -1,10 +1,11 @@
 from calendar import monthrange
 from collections import defaultdict
+import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, joinedload
 from sqlalchemy import case, func, or_
 from fastapi import HTTPException, status
 from app.models.user import User
@@ -12,6 +13,7 @@ from app.models.task import Task
 from app.models.task_api_attempt import TaskApiAttempt
 from app.models.credit_log import CreditLog
 from app.models.credit_redeem_key import CreditRedeemKey
+from app.models.admin_ledger import AdminLedger, AdminLedgerExpense, AdminLedgerLog
 from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
 from app.models.referral_reward_grant import ReferralRewardGrant
@@ -2454,6 +2456,460 @@ def get_analytics_offline_order_revenue(
         "total_used_count": total_used_count,
         "total_amount": round(total_amount, 2),
     }
+
+
+LEDGER_EXPENSE_TYPES = {"server", "third_party_api", "other"}
+LEDGER_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+
+
+def _parse_ledger_month(month: str) -> date:
+    normalized = (month or "").strip()
+    if not LEDGER_MONTH_RE.match(normalized):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="账本月份格式必须为 YYYY-MM")
+    year, month_value = normalized.split("-")
+    try:
+        return date(int(year), int(month_value), 1)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="账本月份无效") from exc
+
+
+def _format_ledger_month(value: date | datetime) -> str:
+    return value.strftime("%Y-%m")
+
+
+def _ledger_month_range(value: date) -> tuple[datetime, datetime]:
+    last_day = monthrange(value.year, value.month)[1]
+    return (
+        datetime(value.year, value.month, 1, 0, 0, 0),
+        datetime(value.year, value.month, last_day, 23, 59, 59, 999999),
+    )
+
+
+def _money_to_fen(amount_yuan: Decimal | int | float | str, *, allow_zero: bool = True) -> int:
+    try:
+        normalized = Decimal(str(amount_yuan or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="金额格式不正确") from exc
+    if normalized < 0 or (not allow_zero and normalized <= 0):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="金额不能为负数")
+    return int((normalized * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def _float_yuan_to_fen(amount_yuan: float | int | Decimal) -> int:
+    return _money_to_fen(Decimal(str(amount_yuan or 0)))
+
+
+def _fen_to_yuan(amount_fen: int | None) -> float:
+    return round(int(amount_fen or 0) / 100, 2)
+
+
+def _json_loads(raw: str | None, fallback):
+    if not raw:
+        return fallback
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+
+
+def _json_dumps(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _normalize_screenshot_urls(urls: list[str] | None) -> list[str]:
+    result: list[str] = []
+    for url in urls or []:
+        normalized = str(url or "").strip()
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result[:20]
+
+
+def _load_ledger(db: Session, month: str) -> AdminLedger | None:
+    ledger_month = _parse_ledger_month(month)
+    return (
+        db.query(AdminLedger)
+        .options(
+            joinedload(AdminLedger.expenses).joinedload(AdminLedgerExpense.creator),
+            joinedload(AdminLedger.expenses).joinedload(AdminLedgerExpense.updater),
+            joinedload(AdminLedger.logs).joinedload(AdminLedgerLog.operator),
+            joinedload(AdminLedger.creator),
+            joinedload(AdminLedger.updater),
+        )
+        .filter(AdminLedger.ledger_month == ledger_month)
+        .first()
+    )
+
+
+def _build_ledger_income_snapshot(db: Session, ledger_month: date) -> dict:
+    start_at, end_at = _ledger_month_range(ledger_month)
+    query = {
+        "granularity": "day",
+        "start_date": start_at,
+        "end_date": end_at,
+    }
+    payment = get_analytics_payment_revenue(db, **query)
+    redeem = get_analytics_redeem_revenue(db, **query)
+    offline = get_analytics_offline_order_revenue(db, **query)
+    online_revenue_fen = _float_yuan_to_fen(payment.get("total_amount", 0))
+    redeem_revenue_fen = _float_yuan_to_fen(redeem.get("total_amount", 0))
+    offline_revenue_fen = _float_yuan_to_fen(offline.get("total_amount", 0))
+    total_income_fen = online_revenue_fen + redeem_revenue_fen + offline_revenue_fen
+    return {
+        "range_start": start_at.isoformat(),
+        "range_end": end_at.isoformat(),
+        "online_revenue_fen": online_revenue_fen,
+        "redeem_revenue_fen": redeem_revenue_fen,
+        "offline_revenue_fen": offline_revenue_fen,
+        "total_income_fen": total_income_fen,
+        "payment": payment,
+        "redeem": redeem,
+        "offline": offline,
+    }
+
+
+def _apply_income_snapshot(ledger: AdminLedger, snapshot: dict) -> None:
+    ledger.online_revenue_fen = int(snapshot.get("online_revenue_fen") or 0)
+    ledger.redeem_revenue_fen = int(snapshot.get("redeem_revenue_fen") or 0)
+    ledger.offline_revenue_fen = int(snapshot.get("offline_revenue_fen") or 0)
+    ledger.total_income_fen = int(snapshot.get("total_income_fen") or 0)
+    ledger.income_snapshot_json = _json_dumps(snapshot)
+
+
+def _recalculate_ledger_totals(ledger: AdminLedger) -> None:
+    total_expense_fen = sum(int(expense.amount_fen or 0) for expense in (ledger.expenses or []))
+    ledger.total_expense_fen = total_expense_fen
+    ledger.net_income_fen = int(ledger.total_income_fen or 0) - total_expense_fen
+
+
+def _serialize_ledger_income(ledger: AdminLedger | None, snapshot: dict | None = None) -> dict:
+    if ledger:
+        online = int(ledger.online_revenue_fen or 0)
+        redeem = int(ledger.redeem_revenue_fen or 0)
+        offline = int(ledger.offline_revenue_fen or 0)
+    else:
+        snapshot = snapshot or {}
+        online = int(snapshot.get("online_revenue_fen") or 0)
+        redeem = int(snapshot.get("redeem_revenue_fen") or 0)
+        offline = int(snapshot.get("offline_revenue_fen") or 0)
+    return {
+        "online_revenue_yuan": _fen_to_yuan(online),
+        "redeem_revenue_yuan": _fen_to_yuan(redeem),
+        "offline_revenue_yuan": _fen_to_yuan(offline),
+        "total_income_yuan": _fen_to_yuan(online + redeem + offline),
+    }
+
+
+def _serialize_ledger_expense(expense: AdminLedgerExpense) -> dict:
+    return {
+        "id": int(expense.id),
+        "business_id": expense.business_id or "",
+        "expense_type": expense.expense_type or "other",
+        "title": expense.title or "",
+        "amount_fen": int(expense.amount_fen or 0),
+        "amount_yuan": _fen_to_yuan(expense.amount_fen),
+        "content": expense.content or "",
+        "description": expense.description or "",
+        "screenshot_urls": _json_loads(expense.screenshot_urls_json, []),
+        "sort_order": int(expense.sort_order or 0),
+        "created_by_username": expense.creator.username if expense.creator else "",
+        "updated_by_username": expense.updater.username if expense.updater else "",
+        "created_at": expense.created_at,
+        "updated_at": expense.updated_at,
+    }
+
+
+def _serialize_ledger_log(log: AdminLedgerLog) -> dict:
+    return {
+        "id": int(log.id),
+        "operator_id": user_external_id(log.operator) if log.operator else "",
+        "operator_username": log.operator.username if log.operator else "",
+        "action": log.action or "",
+        "summary": log.summary or "",
+        "before": _json_loads(log.before_json, {}),
+        "after": _json_loads(log.after_json, {}),
+        "created_at": log.created_at,
+    }
+
+
+def _ledger_snapshot_for_log(ledger: AdminLedger) -> dict:
+    expenses = sorted(ledger.expenses or [], key=lambda item: (int(item.sort_order or 0), int(item.id or 0)))
+    return {
+        "month": _format_ledger_month(ledger.ledger_month),
+        "title": ledger.title or "",
+        "content": ledger.content or "",
+        "description": ledger.description or "",
+        "screenshot_urls": _json_loads(ledger.screenshot_urls_json, []),
+        "income": _serialize_ledger_income(ledger),
+        "total_expense_yuan": _fen_to_yuan(ledger.total_expense_fen),
+        "net_income_yuan": _fen_to_yuan(ledger.net_income_fen),
+        "expenses": [
+            {
+                "id": int(expense.id),
+                "expense_type": expense.expense_type or "other",
+                "title": expense.title or "",
+                "amount_yuan": _fen_to_yuan(expense.amount_fen),
+                "content": expense.content or "",
+                "description": expense.description or "",
+                "screenshot_urls": _json_loads(expense.screenshot_urls_json, []),
+            }
+            for expense in expenses
+        ],
+    }
+
+
+def _add_ledger_log(
+    db: Session,
+    *,
+    ledger: AdminLedger,
+    operator: User,
+    action: str,
+    summary: str,
+    before: dict | None = None,
+    after: dict | None = None,
+) -> None:
+    db.add(AdminLedgerLog(
+        ledger_id=ledger.id,
+        operator_id=operator.id,
+        action=action,
+        summary=summary,
+        before_json=_json_dumps(before or {}),
+        after_json=_json_dumps(after or {}),
+    ))
+
+
+def _serialize_ledger(ledger: AdminLedger) -> dict:
+    expenses = sorted(ledger.expenses or [], key=lambda item: (int(item.sort_order or 0), int(item.id or 0)))
+    logs = sorted(ledger.logs or [], key=lambda item: item.created_at or datetime.min, reverse=True)
+    return {
+        "id": int(ledger.id),
+        "business_id": ledger.business_id or "",
+        "month": _format_ledger_month(ledger.ledger_month),
+        "title": ledger.title or "",
+        "content": ledger.content or "",
+        "description": ledger.description or "",
+        "screenshot_urls": _json_loads(ledger.screenshot_urls_json, []),
+        "income": _serialize_ledger_income(ledger),
+        "income_snapshot": _json_loads(ledger.income_snapshot_json, {}),
+        "total_expense_fen": int(ledger.total_expense_fen or 0),
+        "total_expense_yuan": _fen_to_yuan(ledger.total_expense_fen),
+        "net_income_fen": int(ledger.net_income_fen or 0),
+        "net_income_yuan": _fen_to_yuan(ledger.net_income_fen),
+        "expenses": [_serialize_ledger_expense(expense) for expense in expenses],
+        "logs": [_serialize_ledger_log(log) for log in logs],
+        "exists": True,
+        "created_by_username": ledger.creator.username if ledger.creator else "",
+        "updated_by_username": ledger.updater.username if ledger.updater else "",
+        "created_at": ledger.created_at,
+        "updated_at": ledger.updated_at,
+    }
+
+
+def _serialize_ledger_draft(month: str, income_snapshot: dict) -> dict:
+    return {
+        "id": None,
+        "business_id": "",
+        "month": month,
+        "title": f"{month} 账本",
+        "content": "",
+        "description": "",
+        "screenshot_urls": [],
+        "income": _serialize_ledger_income(None, income_snapshot),
+        "income_snapshot": income_snapshot,
+        "total_expense_fen": 0,
+        "total_expense_yuan": 0,
+        "net_income_fen": int(income_snapshot.get("total_income_fen") or 0),
+        "net_income_yuan": _fen_to_yuan(income_snapshot.get("total_income_fen") or 0),
+        "expenses": [],
+        "logs": [],
+        "exists": False,
+        "created_by_username": "",
+        "updated_by_username": "",
+        "created_at": None,
+        "updated_at": None,
+    }
+
+
+def list_admin_ledgers(db: Session, *, page: int = 1, page_size: int = 20) -> dict:
+    query = db.query(AdminLedger).options(joinedload(AdminLedger.updater))
+    total = query.count()
+    ledgers = (
+        query
+        .order_by(AdminLedger.ledger_month.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": int(ledger.id),
+                "business_id": ledger.business_id or "",
+                "month": _format_ledger_month(ledger.ledger_month),
+                "title": ledger.title or "",
+                "total_income_yuan": _fen_to_yuan(ledger.total_income_fen),
+                "total_expense_yuan": _fen_to_yuan(ledger.total_expense_fen),
+                "net_income_yuan": _fen_to_yuan(ledger.net_income_fen),
+                "updated_by_username": ledger.updater.username if ledger.updater else "",
+                "updated_at": ledger.updated_at,
+            }
+            for ledger in ledgers
+        ],
+    }
+
+
+def get_admin_ledger(db: Session, *, month: str) -> dict:
+    ledger = _load_ledger(db, month)
+    if ledger:
+        return _serialize_ledger(ledger)
+    ledger_month = _parse_ledger_month(month)
+    return _serialize_ledger_draft(month, _build_ledger_income_snapshot(db, ledger_month))
+
+
+def _apply_ledger_expenses(db: Session, *, ledger: AdminLedger, expenses: list, operator: User) -> tuple[int, int, int]:
+    existing_by_id = {int(expense.id): expense for expense in (ledger.expenses or [])}
+    seen_ids: set[int] = set()
+    created_count = 0
+    updated_count = 0
+    for index, payload in enumerate(expenses):
+        expense_id = int(payload.id or 0) if getattr(payload, "id", None) else 0
+        expense = existing_by_id.get(expense_id) if expense_id else None
+        if expense:
+            seen_ids.add(expense.id)
+            updated_count += 1
+            expense.updated_by = operator.id
+        else:
+            expense = AdminLedgerExpense(
+                ledger=ledger,
+                created_by=operator.id,
+                updated_by=operator.id,
+            )
+            db.add(expense)
+            created_count += 1
+
+        expense_type = (payload.expense_type or "other").strip()
+        if expense_type not in LEDGER_EXPENSE_TYPES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="支出类型无效")
+        expense.expense_type = expense_type
+        expense.title = (payload.title or "").strip()[:200]
+        expense.amount_fen = _money_to_fen(payload.amount_yuan)
+        expense.content = payload.content or ""
+        expense.description = payload.description or ""
+        expense.screenshot_urls_json = _json_dumps(_normalize_screenshot_urls(payload.screenshot_urls))
+        expense.sort_order = index
+
+    deleted_count = 0
+    for expense_id, expense in existing_by_id.items():
+        if expense_id not in seen_ids:
+            if expense in ledger.expenses:
+                ledger.expenses.remove(expense)
+            db.delete(expense)
+            deleted_count += 1
+    db.flush()
+    return created_count, updated_count, deleted_count
+
+
+def create_admin_ledger(db: Session, *, payload, operator: User) -> dict:
+    ledger_month = _parse_ledger_month(payload.month)
+    exists = db.query(AdminLedger.id).filter(AdminLedger.ledger_month == ledger_month).first()
+    if exists:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该月份账本已存在")
+    snapshot = _build_ledger_income_snapshot(db, ledger_month)
+    ledger = AdminLedger(
+        ledger_month=ledger_month,
+        title=(payload.title or f"{payload.month} 账本").strip()[:200],
+        content=payload.content or "",
+        description=payload.description or "",
+        screenshot_urls_json=_json_dumps(_normalize_screenshot_urls(payload.screenshot_urls)),
+        created_by=operator.id,
+        updated_by=operator.id,
+    )
+    _apply_income_snapshot(ledger, snapshot)
+    db.add(ledger)
+    db.flush()
+    _apply_ledger_expenses(db, ledger=ledger, expenses=payload.expenses or [], operator=operator)
+    _recalculate_ledger_totals(ledger)
+    db.flush()
+    after = _ledger_snapshot_for_log(ledger)
+    _add_ledger_log(
+        db,
+        ledger=ledger,
+        operator=operator,
+        action="create",
+        summary=f"{operator.username} 新增了 {_format_ledger_month(ledger_month)} 账本",
+        after=after,
+    )
+    db.commit()
+    return get_admin_ledger(db, month=_format_ledger_month(ledger_month))
+
+
+def update_admin_ledger(db: Session, *, month: str, payload, operator: User) -> dict:
+    ledger = _load_ledger(db, month)
+    if not ledger:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账本不存在")
+    before = _ledger_snapshot_for_log(ledger)
+    ledger.title = (payload.title or "").strip()[:200]
+    ledger.content = payload.content or ""
+    ledger.description = payload.description or ""
+    ledger.screenshot_urls_json = _json_dumps(_normalize_screenshot_urls(payload.screenshot_urls))
+    ledger.updated_by = operator.id
+    created_count, updated_count, deleted_count = _apply_ledger_expenses(
+        db,
+        ledger=ledger,
+        expenses=payload.expenses or [],
+        operator=operator,
+    )
+    _recalculate_ledger_totals(ledger)
+    db.flush()
+    after = _ledger_snapshot_for_log(ledger)
+    summary_parts = [f"{operator.username} 编辑了 {month} 账本"]
+    if created_count:
+        summary_parts.append(f"新增支出 {created_count} 项")
+    if deleted_count:
+        summary_parts.append(f"删除支出 {deleted_count} 项")
+    if updated_count:
+        summary_parts.append(f"更新支出 {updated_count} 项")
+    log_action = "update"
+    if created_count:
+        log_action = "create"
+    elif deleted_count:
+        log_action = "delete"
+    _add_ledger_log(
+        db,
+        ledger=ledger,
+        operator=operator,
+        action=log_action,
+        summary="，".join(summary_parts),
+        before=before,
+        after=after,
+    )
+    db.commit()
+    return get_admin_ledger(db, month=month)
+
+
+def refresh_admin_ledger_income(db: Session, *, month: str, operator: User) -> dict:
+    ledger = _load_ledger(db, month)
+    if not ledger:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账本不存在")
+    before = _ledger_snapshot_for_log(ledger)
+    snapshot = _build_ledger_income_snapshot(db, ledger.ledger_month)
+    _apply_income_snapshot(ledger, snapshot)
+    _recalculate_ledger_totals(ledger)
+    ledger.updated_by = operator.id
+    db.flush()
+    after = _ledger_snapshot_for_log(ledger)
+    _add_ledger_log(
+        db,
+        ledger=ledger,
+        operator=operator,
+        action="income_refresh",
+        summary=f"{operator.username} 刷新了 {month} 账本收入数据",
+        before=before,
+        after=after,
+    )
+    db.commit()
+    return get_admin_ledger(db, month=month)
 
 
 MISSING_INLINE_BASE64_ERROR_MESSAGE = (

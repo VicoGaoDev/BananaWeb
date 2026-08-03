@@ -65,6 +65,7 @@ import {
   MessageOutlined,
   GiftOutlined,
   AccountBookOutlined,
+  MoneyCollectOutlined,
   BellOutlined,
   BulbOutlined,
   CheckOutlined,
@@ -150,13 +151,14 @@ const routeOrder = new Map<string, number>([
   ["/admin/error-analytics", 25],
   ["/admin/general-settings", 26],
   ["/admin/redeem-keys", 27],
-  ["/admin/revenue", 28],
-  ["/admin/invite-rewards", 29],
-  ["/admin/promo-stats", 30],
-  ["/admin/payment-orders", 31],
-  ["/admin/feedbacks", 32],
-  ["/admin/feedbacks/:feedbackId", 33],
-  ["/admin/system-messages", 34],
+  ["/admin/ledger", 28],
+  ["/admin/revenue", 29],
+  ["/admin/invite-rewards", 30],
+  ["/admin/promo-stats", 31],
+  ["/admin/payment-orders", 32],
+  ["/admin/feedbacks", 33],
+  ["/admin/feedbacks/:feedbackId", 34],
+  ["/admin/system-messages", 35],
   ["/admin/update-logs", 35],
   ["/admin/cos-config", 36],
   ["/admin/external-api-configs", 37],
@@ -231,6 +233,7 @@ function getPrimaryMenuIconSrc(item: PrimaryMenuItem) {
 const ADMIN_TEMPLATE_MENU_KEY = "admin-template";
 const ADMIN_USER_DATA_MENU_KEY = "admin-user-data";
 const ADMIN_ANALYTICS_MENU_KEY = "admin-analytics";
+const ADMIN_FUNDS_MENU_KEY = "admin-funds";
 const ADMIN_THIRD_PARTY_MENU_KEY = "admin-third-party";
 const ADMIN_NOTICE_MENU_KEY = "admin-notice";
 
@@ -247,8 +250,9 @@ const adminMenuItems = computed(() =>
     { key: "/admin/video-dashboard", label: "视频数据", icon: VideoCameraOutlined, superAdminOnly: false },
     { key: "/admin/error-analytics", label: "错误统计", icon: BugOutlined, superAdminOnly: false },
     { key: "/admin/general-settings", label: "通用设置", icon: SettingOutlined, superAdminOnly: false },
-    { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
+    { key: "/admin/ledger", label: "账本", icon: MoneyCollectOutlined, superAdminOnly: false },
+    { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/invite-rewards", label: "邀请奖励", icon: ShareAltOutlined, superAdminOnly: false },
     { key: "/admin/promo-stats", label: "推广返利", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/feedbacks", label: "用户反馈", icon: MessageOutlined, superAdminOnly: false },
@@ -281,6 +285,9 @@ const adminMenuAnalyticsItems = computed(() =>
 const adminMenuPromoDataItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/invite-rewards", "/admin/promo-stats"].includes(item.key))
 );
+const adminMenuFundItems = computed(() =>
+  adminMenuItems.value.filter((item) => ["/admin/ledger", "/admin/revenue"].includes(item.key))
+);
 const adminMenuBaseItems = computed(() =>
   adminMenuItems.value.filter((item) => [
     "/admin/general-settings",
@@ -304,6 +311,10 @@ const isAdminAnalyticsRoute = computed(() =>
   || route.path.startsWith("/admin/invite-rewards")
   || route.path.startsWith("/admin/promo-stats")
 );
+const isAdminFundsRoute = computed(() =>
+  route.path.startsWith("/admin/ledger")
+  || route.path.startsWith("/admin/revenue")
+);
 const isAdminThirdPartyRoute = computed(() =>
   route.path.startsWith("/admin/cos-config")
   || route.path.startsWith("/admin/external-api-configs")
@@ -318,6 +329,7 @@ const adminMenuOpenKeys = ref<string[]>([
   ...(isAdminTemplateRoute.value ? [ADMIN_TEMPLATE_MENU_KEY] : []),
   ...(isAdminUserDataRoute.value ? [ADMIN_USER_DATA_MENU_KEY] : []),
   ...(isAdminAnalyticsRoute.value ? [ADMIN_ANALYTICS_MENU_KEY] : []),
+  ...(isAdminFundsRoute.value ? [ADMIN_FUNDS_MENU_KEY] : []),
   ...(isAdminThirdPartyRoute.value ? [ADMIN_THIRD_PARTY_MENU_KEY] : []),
   ...(isAdminNoticeRoute.value ? [ADMIN_NOTICE_MENU_KEY] : []),
 ]);
@@ -337,6 +349,11 @@ watch(isAdminAnalyticsRoute, (active) => {
     adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_ANALYTICS_MENU_KEY];
   }
 });
+watch(isAdminFundsRoute, (active) => {
+  if (active && !adminMenuOpenKeys.value.includes(ADMIN_FUNDS_MENU_KEY)) {
+    adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_FUNDS_MENU_KEY];
+  }
+});
 watch(isAdminThirdPartyRoute, (active) => {
   if (active && !adminMenuOpenKeys.value.includes(ADMIN_THIRD_PARTY_MENU_KEY)) {
     adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_THIRD_PARTY_MENU_KEY];
@@ -348,7 +365,7 @@ watch(isAdminNoticeRoute, (active) => {
   }
 });
 const adminMenuBusinessItems = computed(() =>
-  adminMenuItems.value.filter((item) => ["/admin/redeem-keys", "/admin/revenue"].includes(item.key))
+  adminMenuItems.value.filter((item) => ["/admin/redeem-keys"].includes(item.key))
 );
 const adminMenuNoticeItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/feedbacks", "/admin/system-messages", "/admin/update-logs"].includes(item.key))
@@ -1624,6 +1641,19 @@ watch(
                     <template #icon><component :is="item.icon" /></template>
                     {{ item.label }}
                   </a-menu-item>
+                  <template v-if="adminMenuFundItems.length">
+                    <a-sub-menu :key="ADMIN_FUNDS_MENU_KEY" popup-class-name="warm-dropdown">
+                      <template #icon><AccountBookOutlined /></template>
+                      <template #title>资金</template>
+                      <a-menu-item
+                        v-for="item in adminMenuFundItems"
+                        :key="item.key"
+                      >
+                        <template #icon><component :is="item.icon" /></template>
+                        {{ item.label }}
+                      </a-menu-item>
+                    </a-sub-menu>
+                  </template>
                   <a-menu-divider />
                   <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY" popup-class-name="warm-dropdown">
                     <template #icon><BellOutlined /></template>
@@ -1930,6 +1960,16 @@ watch(
                 <template #icon><component :is="item.icon" /></template>
                 {{ item.label }}
               </a-menu-item>
+              <template v-if="adminMenuFundItems.length">
+                <a-sub-menu :key="ADMIN_FUNDS_MENU_KEY" popup-class-name="warm-dropdown">
+                  <template #icon><AccountBookOutlined /></template>
+                  <template #title>资金</template>
+                  <a-menu-item v-for="item in adminMenuFundItems" :key="item.key">
+                    <template #icon><component :is="item.icon" /></template>
+                    {{ item.label }}
+                  </a-menu-item>
+                </a-sub-menu>
+              </template>
               <a-menu-divider />
               <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY" popup-class-name="warm-dropdown">
                 <template #icon><BellOutlined /></template>
@@ -2201,6 +2241,16 @@ watch(
               <template #icon><component :is="item.icon" /></template>
               {{ item.label }}
             </a-menu-item>
+            <template v-if="adminMenuFundItems.length">
+              <a-sub-menu :key="ADMIN_FUNDS_MENU_KEY">
+                <template #icon><AccountBookOutlined /></template>
+                <template #title>资金</template>
+                <a-menu-item v-for="item in adminMenuFundItems" :key="item.key">
+                  <template #icon><component :is="item.icon" /></template>
+                  {{ item.label }}
+                </a-menu-item>
+              </a-sub-menu>
+            </template>
             <a-menu-divider />
             <a-sub-menu :key="ADMIN_NOTICE_MENU_KEY">
               <template #icon><BellOutlined /></template>
