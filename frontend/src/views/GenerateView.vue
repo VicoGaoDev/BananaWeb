@@ -118,7 +118,7 @@ type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
 type GeneratedTaskStatusFilter = "pending" | "processing" | "success" | "failed";
 type GeneratedTaskDatePreset = "today" | "yesterday" | "week" | "custom";
 type ResultCardAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "16:9" | "9:16";
-const GENERATED_TASK_HISTORY_PAGE_SIZE = 40;
+const GENERATED_TASK_HISTORY_PAGE_SIZE = 20;
 const MAX_ACTIVE_GENERATION_IMAGES = 12;
 const RESULT_CARD_ASPECT_OPTIONS: Array<{ label: string; value: ResultCardAspectRatio }> = [
   { label: "1:1", value: "1:1" },
@@ -1040,22 +1040,10 @@ async function loadGlobalActiveGenerationStatus() {
   if (activeStatusRefreshInFlight.value) return;
   activeStatusRefreshInFlight.value = true;
   try {
-    const [pendingRes, processingRes] = await Promise.all([
-      fetchHistory(1, 100, {
-        respect_pins: false,
-        include_prompt_reverse: false,
-        status: "pending",
-      }),
-      fetchHistory(1, 100, {
-        respect_pins: false,
-        include_prompt_reverse: false,
-        status: "processing",
-      }),
-    ]);
-    const activeItems = [...pendingRes.items, ...processingRes.items];
+    const activeItems = generatedTasks.value.filter((item) => item.status === "pending" || item.status === "processing");
     const activeTaskIds = new Set<string>();
     activeItems.forEach((item) => {
-      if (item.task_id) activeTaskIds.add(item.task_id);
+      if (item.taskId) activeTaskIds.add(item.taskId);
     });
     remoteActiveTaskIds.value = activeTaskIds;
     remoteActiveGenerationImageCount.value = activeItems.length;
@@ -1082,26 +1070,6 @@ function syncGlobalActiveStatusPolling() {
   activeStatusPollTimer.value = setInterval(() => {
     void loadGlobalActiveGenerationStatus();
   }, 8000);
-}
-
-function getSelectedBoardHistoryFilter() {
-  if (selectedBoardKey.value === DEFAULT_BOARD_KEY) {
-    return { board_scope: "default" as const };
-  }
-  return { board_id: selectedBoardId.value ?? undefined };
-}
-
-function getGeneratedTaskHistoryFilter() {
-  return {
-    ...getSelectedBoardHistoryFilter(),
-    mode: generatedTaskTypeFilter.value,
-    source: generatedTaskSourceFilter.value,
-    model: generatedTaskModelFilter.value,
-    status: generatedTaskStatusFilter.value,
-    prompt: generatedTaskPromptFilter.value,
-    start_date: generatedTaskDateRangeFilter.value?.[0].startOf("day").toISOString(),
-    end_date: generatedTaskDateRangeFilter.value?.[1].endOf("day").toISOString(),
-  };
 }
 
 function reloadGeneratedTasksForFilters() {
@@ -1324,29 +1292,20 @@ async function loadGeneratedTaskHistoryPages({
   let total = reset ? Infinity : generatedTaskHistoryTotal.value;
   let lastLoadedPage = generatedTaskHistoryPage.value;
 
-  while (
-    loadedTasks.length < GENERATED_TASK_HISTORY_PAGE_SIZE
-    && (total === Infinity || (nextPage - 1) * GENERATED_TASK_HISTORY_PAGE_SIZE < total)
-  ) {
-    const res = await fetchHistory(nextPage, GENERATED_TASK_HISTORY_PAGE_SIZE, {
-      respect_pins: false,
-      include_prompt_reverse: false,
-      ...getGeneratedTaskHistoryFilter(),
-    });
-    if (requestId !== generatedTaskLoadRequestId) return;
+  if (total !== Infinity && (nextPage - 1) * GENERATED_TASK_HISTORY_PAGE_SIZE >= total) return;
 
-    total = res.total;
-    lastLoadedPage = nextPage;
-    if (!res.items.length) break;
+  const res = await fetchHistory(nextPage, GENERATED_TASK_HISTORY_PAGE_SIZE);
+  if (requestId !== generatedTaskLoadRequestId) return;
 
-    res.items.forEach((item) => {
-      if (item.mode === "promptReverse" || !item.task_id || seenTaskIds.has(item.task_id)) return;
-      seenTaskIds.add(item.task_id);
-      loadedTasks.push(convertHistoryCardToGeneratedTask(item));
-      if (item.status === "failed") failedTaskIds.push(String(item.task_id));
-    });
-    nextPage += 1;
-  }
+  total = res.total;
+  lastLoadedPage = nextPage;
+
+  res.items.forEach((item) => {
+    if (item.mode === "promptReverse" || !item.task_id || seenTaskIds.has(item.task_id)) return;
+    seenTaskIds.add(item.task_id);
+    loadedTasks.push(convertHistoryCardToGeneratedTask(item));
+    if (item.status === "failed") failedTaskIds.push(String(item.task_id));
+  });
 
   generatedTaskHistoryPage.value = lastLoadedPage;
   generatedTaskHistoryTotal.value = total === Infinity ? 0 : total;
