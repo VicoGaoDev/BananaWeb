@@ -1245,6 +1245,7 @@ def get_admin_history_cards(
             selectinload(Task.images),
             selectinload(Task.user),
             selectinload(Task.canvas),
+            lazyload(Task.api_attempts),
         )
         .filter(User.role != "superadmin")
         .filter(User.is_whitelisted.is_(False))
@@ -1369,6 +1370,7 @@ def get_admin_history_cards(
                     selectinload(Task.images),
                     selectinload(Task.user),
                     selectinload(Task.canvas),
+                    lazyload(Task.api_attempts),
                 )
                 .filter(Task.id.in_(candidate_task_ids))
                 .all()
@@ -1668,17 +1670,8 @@ def get_admin_history_cards(
 
     items.sort(key=lambda item: item.get("created_at") or datetime.min, reverse=True)
     page_items = items[start_index:start_index + page_size]
-    task_ids = [
-        int(item.get("_task_db_id"))
-        for item in page_items
-        if item.get("item_type") == "task" and item.get("_task_db_id")
-    ]
-    attempts_map = _load_task_attempts_map(db, task_ids)
     for item in page_items:
-        task_db_id = item.pop("_task_db_id", None)
-        if item.get("item_type") != "task" or not task_db_id:
-            continue
-        item["api_attempts"] = _serialize_task_api_attempts(attempts_map.get(int(task_db_id), []))
+        item.pop("_task_db_id", None)
     has_more = len(items) > start_index + page_size
     total = start_index + len(page_items) + (1 if has_more else 0)
     return {"total": total, "items": page_items}
