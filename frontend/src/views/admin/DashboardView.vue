@@ -65,7 +65,7 @@ const granularity = ref<AdminAnalyticsGranularity>("3hour");
 const preset = ref("today");
 const ready = ref(false);
 const detailOpen = ref(false);
-const detailLoading = ref(false);
+const detailRequestPreviewLoading = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
 const userInfoDialogOpen = ref(false);
 const selectedUserInfo = ref<AdminUser | null>(null);
@@ -402,12 +402,60 @@ function handlePageChange(nextPage: number) {
   loadHistory();
 }
 
+function historyRecordToDetailItem(record: HistoryItem): UserHistoryCard {
+  const primaryImage = record.images?.[0];
+  return {
+    history_id: record.history_id,
+    item_type: record.item_type,
+    display_id: record.display_id,
+    task_id: record.task_id,
+    canvas_id: record.canvas_id,
+    canvas_project_id: record.canvas_project_id,
+    image_id: primaryImage?.id ?? null,
+    user_id: record.user_id,
+    username: record.username,
+    avatar_url: record.avatar_url,
+    is_pinned: false,
+    image_url: primaryImage?.image_url || "",
+    preview_url: primaryImage?.preview_url || "",
+    thumb_url: primaryImage?.thumb_url || "",
+    status: record.status as UserHistoryCard["status"],
+    image_format: primaryImage?.image_format || "",
+    image_size_bytes: primaryImage?.image_size_bytes || 0,
+    task_is_deleted: record.task_is_deleted,
+    is_soft_deleted: record.is_soft_deleted,
+    task_type: record.task_type,
+    model: record.model,
+    source: record.source,
+    mode: record.mode,
+    prompt: record.prompt,
+    reference_images: record.reference_images || [],
+    reference_image_thumbs: [],
+    source_image: "",
+    source_image_thumb: "",
+    mask_image: "",
+    mask_image_thumb: "",
+    num_images: record.num_images,
+    size: record.size,
+    resolution: record.resolution,
+    custom_size: record.custom_size,
+    credit_cost: record.credit_cost,
+    credit_refunded: record.credit_refunded,
+    used_fallback_api: record.used_fallback_api,
+    created_at: record.created_at,
+    error_message: record.error_message,
+    provider_error_message: record.provider_error_message,
+    images: record.images || [],
+    api_attempts: record.api_attempts || [],
+  };
+}
+
 async function openHistoryDetail(record: HistoryItem) {
   detailOpen.value = true;
-  detailLoading.value = true;
-  detailItem.value = null;
+  detailItem.value = historyRecordToDetailItem(record);
   const requestKey = `${record.item_type}:${record.task_id || record.history_id || record.display_id || record.created_at}`;
   activeDetailRequestKey = requestKey;
+  detailRequestPreviewLoading.value = true;
   try {
     const detail = await getAdminHistoryDetail({
       item_type: record.item_type,
@@ -418,11 +466,10 @@ async function openHistoryDetail(record: HistoryItem) {
     detailItem.value = detail;
   } catch {
     if (activeDetailRequestKey !== requestKey) return;
-    detailOpen.value = false;
     message.error("获取任务详情失败");
   } finally {
     if (activeDetailRequestKey === requestKey) {
-      detailLoading.value = false;
+      detailRequestPreviewLoading.value = false;
     }
   }
 }
@@ -719,7 +766,7 @@ watch(filterSignature, async () => {
     <HistoryDetailDialog
       :open="detailOpen"
       :item="detailItem"
-      :loading="detailLoading"
+      :request-preview-loading="detailRequestPreviewLoading"
       :model-options="modelOptions"
       show-error-message
       @update:open="detailOpen = $event"

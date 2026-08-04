@@ -16,7 +16,7 @@ import {
   VideoCameraOutlined,
 } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
-import { getAdminHistoryCards, listUsers } from "@/api/admin";
+import { getAdminHistoryCards, getAdminHistoryDetail, listUsers } from "@/api/admin";
 import { listBoards } from "@/api/boards";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory, toggleHistoryPin } from "@/api/history";
@@ -85,6 +85,7 @@ const boardsLoading = ref(false);
 const generationModels = ref<GenerationModelOption[]>([]);
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const detailOpen = ref(false);
+const detailRequestPreviewLoading = ref(false);
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
@@ -115,6 +116,7 @@ const HISTORY_POLL_INTERVAL_MS = 10000;
 let historyPollTimer: number | null = null;
 let filterDebounceTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
+let activeDetailRequestKey = "";
 
 const previewVisible = ref(false);
 const previewSrc = ref("");
@@ -567,10 +569,30 @@ function getDetailPreloadedMediaKeys(item: UserHistoryCard) {
   return [];
 }
 
-function openDetail(item: UserHistoryCard) {
+async function openDetail(item: UserHistoryCard) {
   detailPreloadedMediaKeys.value = getDetailPreloadedMediaKeys(item);
   detailItem.value = item;
   detailOpen.value = true;
+  if (!isAdminHistoryView.value) return;
+  const requestKey = `${item.item_type}:${item.task_id || item.history_id || item.display_id || item.created_at}`;
+  activeDetailRequestKey = requestKey;
+  detailRequestPreviewLoading.value = true;
+  try {
+    const detail = await getAdminHistoryDetail({
+      item_type: item.item_type,
+      task_id: item.task_id,
+      history_id: item.history_id || undefined,
+    });
+    if (activeDetailRequestKey !== requestKey) return;
+    detailItem.value = detail;
+  } catch {
+    if (activeDetailRequestKey !== requestKey) return;
+    message.error("获取任务详情失败");
+  } finally {
+    if (activeDetailRequestKey === requestKey) {
+      detailRequestPreviewLoading.value = false;
+    }
+  }
 }
 
 const detailItemIndex = computed(() => {
@@ -1424,6 +1446,7 @@ function handleEditImage(item: UserHistoryCard) {
     <HistoryDetailDialog
       :open="detailOpen"
       :item="detailItem"
+      :request-preview-loading="detailRequestPreviewLoading"
       :preloaded-media-keys="detailPreloadedMediaKeys"
       :model-options="modelOptions"
       :show-error-message="isAdminHistoryView"

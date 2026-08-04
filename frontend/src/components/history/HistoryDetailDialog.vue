@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean;
   showActions?: boolean;
   showErrorMessage?: boolean;
+  requestPreviewLoading?: boolean;
   hasPrev?: boolean;
   hasNext?: boolean;
   modelOptions?: Array<{ label: string; value: string }>;
@@ -44,6 +45,7 @@ const props = withDefaults(defineProps<{
   loading: false,
   showActions: false,
   showErrorMessage: false,
+  requestPreviewLoading: false,
   hasPrev: false,
   hasNext: false,
   modelOptions: () => [],
@@ -62,6 +64,7 @@ const previewVisible = ref(false);
 const previewSrc = ref("");
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const loadedMediaKeys = ref<Set<string>>(new Set());
+const requestPreviewActiveKeys = ref<string[]>([]);
 const detailResultImageLoad = useTransientImageLoad();
 const router = useRouter();
 const failedResultAsset = withBaseUrl("failed-result.svg");
@@ -100,6 +103,12 @@ const panelStyle = computed(() => (
 ));
 const detailErrorMessage = computed(() => (
   (props.item?.provider_error_message || props.item?.error_message || "").trim()
+));
+const requestPreviewAttempts = computed(() => (
+  (props.item?.api_attempts || []).filter((attempt) => attempt.request_preview)
+));
+const showRequestPreviewSection = computed(() => (
+  props.requestPreviewLoading || requestPreviewAttempts.value.length > 0
 ));
 
 function updateViewportWidth() {
@@ -147,6 +156,7 @@ watch(
   ([open]) => {
     previewVisible.value = false;
     previewSrc.value = "";
+    requestPreviewActiveKeys.value = [];
     seedLoadedMediaKeys();
     detailResultImageLoad.dispose();
     if (typeof document === "undefined") return;
@@ -323,14 +333,13 @@ function getDetailBaseImageResourceUrl(item: UserHistoryCard, image: Pick<ImageR
   if (shouldShowDetailLargeImagePreviewNotice(item, image)) {
     return "";
   }
-  const zoomWebpUrl = getPreviewImageSrc(image.thumb_url || "");
-  if (zoomWebpUrl) return zoomWebpUrl;
-  const fallbackPreviewUrl = getPreviewImageUrl({
+  const webpPreviewUrl = getPreviewImageUrl({
     image_url: image.image_url || "",
     preview_url: image.preview_url || "",
     thumb_url: "",
   });
-  return fallbackPreviewUrl;
+  if (webpPreviewUrl) return webpPreviewUrl;
+  return getPreviewImageSrc(image.thumb_url || "");
 }
 
 function getDetailBaseImageLoadState(image: Pick<ImageResult, "id">) {
@@ -454,6 +463,42 @@ async function copyPrompt(text?: string) {
   try {
     await navigator.clipboard.writeText(text);
     message.success("已复制提示词");
+  } catch {
+    message.error("复制失败，请重试");
+  }
+}
+
+function stringifyRequestPayload(payload: unknown) {
+  if (payload == null) return "{}";
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
+function stringifyRequestHeaders(headers?: Record<string, string>) {
+  return JSON.stringify(headers || {}, null, 2);
+}
+
+function shellQuote(value: string) {
+  return `'${String(value || "").replace(/'/g, "'\\''")}'`;
+}
+
+function buildRequestCurl(preview: NonNullable<TaskApiAttempt["request_preview"]>) {
+  const lines = [`curl ${preview.request_url || ""}`];
+  Object.entries(preview.headers || {}).forEach(([name, value]) => {
+    lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`);
+  });
+  lines.push(`  -d ${shellQuote(stringifyRequestPayload(preview.payload))}`);
+  return lines.join(" \\\n");
+}
+
+async function copyRequestText(text: string, successMessage: string) {
+  if (!text.trim()) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success(successMessage);
   } catch {
     message.error("复制失败，请重试");
   }
@@ -635,32 +680,6 @@ function handleGenerateVideo(item: UserHistoryCard) {
                   </div>
                 </div>
 
-                <div v-if="item.api_attempts?.length" class="detail-section">
-                  <div class="detail-label">接口调用记录</div>
-                  <div class="detail-attempt-list">
-                    <div v-for="attempt in item.api_attempts" :key="`${attempt.id || 'attempt'}-${attempt.image_id || 0}-${attempt.attempt_index}`" class="detail-attempt-card">
-                      <div class="detail-attempt-header">
-                        <span class="detail-attempt-title">{{ attemptTargetLabel(attempt) }}</span>
-                        <a-space size="small">
-                          <a-tag class="api-tag" :class="attempt.is_fallback ? 'api-tag-group' : 'api-tag-muted'">
-                            {{ attemptRoleLabel(attempt) }}
-                          </a-tag>
-                          <a-tag class="api-tag" :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'">
-                            {{ attemptStatusLabel(attempt.status) }}
-                          </a-tag>
-                        </a-space>
-                      </div>
-                      <div class="detail-attempt-meta">
-                        <span>第 {{ attempt.attempt_index }} 次尝试</span>
-                        <span>接口：{{ attempt.api_config_name || "-" }}</span>
-                        <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
-                        <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
-                      </div>
-                      <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
-                    </div>
-                  </div>
-                </div>
-
                 <div v-if="item.mode === 'inpaint' && item.source_image" class="detail-section">
                   <div class="detail-label">局部重绘原图</div>
                   <div class="detail-thumb-row">
@@ -721,6 +740,122 @@ function handleGenerateVideo(item: UserHistoryCard) {
                   <div v-if="showErrorMessage && detailErrorMessage" class="detail-error-block">
                     <div class="detail-error-label">错误信息</div>
                     <div class="detail-error-message">{{ detailErrorMessage }}</div>
+                  </div>
+                  <div v-if="item.api_attempts?.length" class="detail-attempt-section">
+                    <div class="detail-label detail-attempt-section-title">接口调用记录</div>
+                    <div class="detail-attempt-list">
+                      <div v-for="attempt in item.api_attempts" :key="`${attempt.id || 'attempt'}-${attempt.image_id || 0}-${attempt.attempt_index}`" class="detail-attempt-card">
+                        <div class="detail-attempt-header">
+                          <span class="detail-attempt-title">{{ attemptTargetLabel(attempt) }}</span>
+                          <a-space size="small">
+                            <a-tag class="api-tag" :class="attempt.is_fallback ? 'api-tag-group' : 'api-tag-muted'">
+                              {{ attemptRoleLabel(attempt) }}
+                            </a-tag>
+                            <a-tag class="api-tag" :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'">
+                              {{ attemptStatusLabel(attempt.status) }}
+                            </a-tag>
+                          </a-space>
+                        </div>
+                        <div class="detail-attempt-meta">
+                          <span>第 {{ attempt.attempt_index }} 次尝试</span>
+                          <span>接口：{{ attempt.api_config_name || "-" }}</span>
+                          <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
+                          <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
+                        </div>
+                        <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="showRequestPreviewSection" class="detail-request-preview-section">
+                    <div class="detail-label-row detail-request-preview-title-row">
+                      <div class="detail-label">接口调用参数</div>
+                      <a-spin v-if="requestPreviewLoading" size="small" />
+                    </div>
+                    <div v-if="requestPreviewLoading" class="detail-request-loading">正在加载可复制的接口调用参数...</div>
+                    <a-collapse
+                      v-else
+                      v-model:activeKey="requestPreviewActiveKeys"
+                      ghost
+                      class="detail-request-collapse"
+                    >
+                      <a-collapse-panel
+                        v-for="attempt in requestPreviewAttempts"
+                        :key="String(attempt.id || `${attempt.image_id || 0}-${attempt.attempt_index}`)"
+                        :header="`${attemptTargetLabel(attempt)} · ${attemptRoleLabel(attempt)} · 第 ${attempt.attempt_index} 次尝试`"
+                      >
+                        <template v-if="attempt.request_preview">
+                          <div class="detail-request-preview">
+                            <div class="detail-request-preview-head">
+                              <span>{{ attempt.api_config_name || "绑定接口" }}</span>
+                            </div>
+                            <div class="detail-request-field">
+                              <div class="detail-request-field-head">
+                                <div class="detail-request-label">URL</div>
+                                <a-tooltip title="复制 URL">
+                                  <a-button
+                                    size="small"
+                                    type="text"
+                                    class="detail-request-copy-icon"
+                                    @click="copyRequestText(attempt.request_preview.request_url || '', '已复制 URL')"
+                                  >
+                                    <template #icon><CopyOutlined /></template>
+                                  </a-button>
+                                </a-tooltip>
+                              </div>
+                              <pre>{{ attempt.request_preview.request_url || "-" }}</pre>
+                            </div>
+                            <div class="detail-request-field">
+                              <div class="detail-request-field-head">
+                                <div class="detail-request-label">Header</div>
+                                <a-tooltip title="复制 Header">
+                                  <a-button
+                                    size="small"
+                                    type="text"
+                                    class="detail-request-copy-icon"
+                                    @click="copyRequestText(stringifyRequestHeaders(attempt.request_preview.headers), '已复制 Header')"
+                                  >
+                                    <template #icon><CopyOutlined /></template>
+                                  </a-button>
+                                </a-tooltip>
+                              </div>
+                              <pre>{{ stringifyRequestHeaders(attempt.request_preview.headers) }}</pre>
+                            </div>
+                            <div class="detail-request-field">
+                              <div class="detail-request-field-head">
+                                <div class="detail-request-label">参数 JSON</div>
+                                <a-tooltip title="复制参数 JSON">
+                                  <a-button
+                                    size="small"
+                                    type="text"
+                                    class="detail-request-copy-icon"
+                                    @click="copyRequestText(stringifyRequestPayload(attempt.request_preview.payload), '已复制参数 JSON')"
+                                  >
+                                    <template #icon><CopyOutlined /></template>
+                                  </a-button>
+                                </a-tooltip>
+                              </div>
+                              <pre>{{ stringifyRequestPayload(attempt.request_preview.payload) }}</pre>
+                            </div>
+                            <div class="detail-request-field">
+                              <div class="detail-request-field-head">
+                                <div class="detail-request-label">curl</div>
+                                <a-tooltip title="复制 curl">
+                                  <a-button
+                                    size="small"
+                                    type="text"
+                                    class="detail-request-copy-icon"
+                                    @click="copyRequestText(buildRequestCurl(attempt.request_preview), '已复制 curl')"
+                                  >
+                                    <template #icon><CopyOutlined /></template>
+                                  </a-button>
+                                </a-tooltip>
+                              </div>
+                              <pre>{{ buildRequestCurl(attempt.request_preview) }}</pre>
+                            </div>
+                          </div>
+                        </template>
+                      </a-collapse-panel>
+                    </a-collapse>
                   </div>
                 </div>
               </div>
@@ -866,6 +1001,14 @@ function handleGenerateVideo(item: UserHistoryCard) {
   gap: 10px;
 }
 
+.detail-attempt-section {
+  margin-top: 12px;
+}
+
+.detail-attempt-section-title {
+  margin-bottom: 8px;
+}
+
 .detail-attempt-card {
   border: 1px solid var(--border-color);
   border-radius: 14px;
@@ -900,6 +1043,118 @@ function handleGenerateVideo(item: UserHistoryCard) {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.detail-request-preview {
+  padding: 12px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 12px;
+  background: var(--theme-panel-bg-soft);
+}
+
+.detail-request-preview-section {
+  margin-top: 12px;
+}
+
+.detail-request-preview-title-row {
+  margin-bottom: 8px;
+}
+
+.detail-request-loading {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 9px 12px;
+  border: 1px dashed var(--theme-panel-border);
+  border-radius: 12px;
+  background: var(--theme-panel-bg-soft);
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+}
+
+.detail-request-collapse {
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 12px;
+  background: var(--theme-panel-bg-soft);
+}
+
+.detail-request-collapse :deep(.ant-collapse-item) {
+  border-bottom: 1px solid var(--theme-panel-border);
+}
+
+.detail-request-collapse :deep(.ant-collapse-item:last-child) {
+  border-bottom: 0;
+}
+
+.detail-request-collapse :deep(.ant-collapse-header) {
+  align-items: center;
+  padding: 10px 12px !important;
+  color: var(--theme-title) !important;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-request-collapse :deep(.ant-collapse-content-box) {
+  padding: 0 12px 12px !important;
+}
+
+.detail-request-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.detail-request-field + .detail-request-field {
+  margin-top: 10px;
+}
+
+.detail-request-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.detail-request-label {
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-request-copy-icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--theme-link) !important;
+}
+
+.detail-request-copy-icon:hover {
+  background: var(--theme-control-hover-bg) !important;
+  color: var(--theme-accent-text-hover) !important;
+}
+
+.detail-request-field pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.04);
+  color: var(--theme-title);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  scrollbar-width: thin;
 }
 
 .api-tag-danger {
