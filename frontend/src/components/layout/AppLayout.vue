@@ -86,6 +86,7 @@ const hideTopMenu = computed(() => route.meta.hideTopMenu === true);
 const isWorkbenchLayout = computed(() => route.meta.workbenchLayout === true);
 const isCanvasRoute = computed(() => route.path.startsWith("/canvas") || route.path.startsWith("/admin/user-canvases/"));
 const isAdminRoute = computed(() => route.path.startsWith("/admin"));
+const shouldSyncUserNoticeCounts = computed(() => !isCanvasRoute.value && !isAdminRoute.value);
 const showDesktopSideNav = computed(() => !hideTopMenu.value || (isWorkbenchLayout.value && isCanvasRoute.value));
 const showSuggestionFab = computed(() =>
   !hideTopMenu.value
@@ -568,6 +569,7 @@ async function syncAdminUnresolvedFeedbackCount(options?: { showToast?: boolean 
 
 async function syncUserCompletedUnreadFeedbackCount() {
   if (!auth.isLoggedIn) return;
+  if (!shouldSyncUserNoticeCounts.value) return;
   try {
     const { count } = await getMyUnreadFeedbackCount();
     userCompletedUnreadFeedbackCount.value = setStoredUserCompletedUnreadFeedbackCount(count);
@@ -578,7 +580,7 @@ async function syncUserCompletedUnreadFeedbackCount() {
 
 async function syncUserUnreadSystemMessageCount(options?: { showToast?: boolean; forceToast?: boolean }) {
   if (!auth.isLoggedIn) return;
-  if (isCanvasRoute.value) return;
+  if (!shouldSyncUserNoticeCounts.value) return;
   try {
     const previous = userUnreadSystemMessageCount.value;
     const { count } = await getMyUnreadSystemMessageCount();
@@ -625,7 +627,7 @@ function resetUserUnreadSystemMessageNotificationState() {
 }
 
 function startSystemMessagePolling() {
-  if (isCanvasRoute.value) return;
+  if (!shouldSyncUserNoticeCounts.value) return;
   if (typeof window === "undefined" || systemMessagePollTimer) return;
   systemMessagePollTimer = window.setInterval(() => {
     void syncUserUnreadSystemMessageCount({ showToast: true });
@@ -1508,9 +1510,9 @@ watch(
 );
 
 watch(
-  isCanvasRoute,
-  (inCanvas) => {
-    if (inCanvas) {
+  shouldSyncUserNoticeCounts,
+  (shouldSync) => {
+    if (!shouldSync) {
       stopSystemMessagePolling();
       notification.close(USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY);
       return;
