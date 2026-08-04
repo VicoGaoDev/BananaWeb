@@ -40,6 +40,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  usersLoading: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits<{
@@ -47,6 +51,7 @@ const emit = defineEmits<{
   (e: "preset-change", value: string): void;
   (e: "reset"): void;
   (e: "refresh"): void;
+  (e: "user-dropdown-visible", open: boolean): void;
 }>();
 
 const presetOptions = computed(() => {
@@ -120,6 +125,8 @@ const presetOptions = computed(() => {
         show-search
         option-filter-prop="label"
         class="analytics-filter-select"
+        :loading="usersLoading"
+        @dropdownVisibleChange="emit('user-dropdown-visible', $event)"
       >
         <a-select-option
           v-for="user in users"

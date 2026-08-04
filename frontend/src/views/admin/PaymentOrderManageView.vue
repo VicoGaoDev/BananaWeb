@@ -5,7 +5,7 @@ import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { AccountBookOutlined, ArrowLeftOutlined, CopyOutlined } from "@ant-design/icons-vue";
-import { listPaymentOrders, listUsers } from "@/api/admin";
+import { listPaymentOrders } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminPaymentOrder, AdminUser } from "@/types";
@@ -167,14 +167,6 @@ async function load() {
   }
 }
 
-async function loadUsers() {
-  try {
-    users.value = await listUsers();
-  } catch {
-    users.value = [];
-  }
-}
-
 function handleFilter() {
   pagination.page = 1;
   load();
@@ -232,7 +224,7 @@ async function handleCopy(text?: string, successText = "内容已复制") {
 }
 
 onMounted(async () => {
-  await Promise.all([loadUsers(), load()]);
+  await load();
 });
 </script>
 

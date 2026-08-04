@@ -18,6 +18,7 @@ import {
   getPreviewImageSrc,
   getPreviewImageUrl,
   LARGE_IMAGE_PREVIEW_NOTICE,
+  resolveImageUrl,
 } from "@/api/images";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { withBaseUrl } from "@/lib/assets";
@@ -333,13 +334,8 @@ function getDetailBaseImageResourceUrl(item: UserHistoryCard, image: Pick<ImageR
   if (shouldShowDetailLargeImagePreviewNotice(item, image)) {
     return "";
   }
-  const webpPreviewUrl = getPreviewImageUrl({
-    image_url: image.image_url || "",
-    preview_url: image.preview_url || "",
-    thumb_url: "",
-  });
-  if (webpPreviewUrl) return webpPreviewUrl;
-  return getPreviewImageSrc(image.thumb_url || "");
+  if (image.thumb_url) return resolveImageUrl(image.thumb_url);
+  return resolveImageUrl(image.preview_url || image.image_url || "");
 }
 
 function getDetailBaseImageLoadState(image: Pick<ImageResult, "id">) {
@@ -368,7 +364,7 @@ function getDetailBaseImageSrc(item: UserHistoryCard, image: Pick<ImageResult, "
   if (isHistoryItemExpired(item) && image.status === "success") {
     return expiredResultAsset;
   }
-  if (shouldShowDetailBaseUploadingState(item, image) || shouldShowDetailBaseLoadFailedState(item, image)) {
+  if (shouldShowDetailBaseLoadFailedState(item, image)) {
     return "";
   }
   const baseSource = getDetailBaseImageResourceUrl(item, image);

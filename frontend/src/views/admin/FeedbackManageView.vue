@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { CopyOutlined, MessageOutlined, SearchOutlined, UndoOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
-import { listAdminFeedbacks, listUsers } from "@/api/admin";
+import { listAdminFeedbacks } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminUser, FeedbackItem, FeedbackStatus, FeedbackType } from "@/types";
@@ -111,14 +111,6 @@ async function load() {
   }
 }
 
-async function loadUsers() {
-  try {
-    users.value = await listUsers();
-  } catch {
-    users.value = [];
-  }
-}
-
 function handleSearch() {
   page.value = 1;
   void load();
@@ -162,7 +154,7 @@ function openUserInfo(record: FeedbackItem) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadUsers(), load()]);
+  await load();
 });
 </script>
 

@@ -12,7 +12,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons-vue";
 import { createCanvas, deleteCanvas, listCanvases, updateCanvas } from "@/api/canvases";
-import { getAdminCanvases, listUsers } from "@/api/admin";
+import { getAdminCanvases, listUserOptions } from "@/api/admin";
 import { copyExampleCanvasProject, listExampleCanvasProjects } from "@/api/exampleCanvases";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { appendImageTransform } from "@/api/images";
@@ -32,6 +32,7 @@ const copyingExampleId = ref<number | null>(null);
 const canvases = ref<UserCanvasSummary[]>([]);
 const exampleProjects = ref<ExampleCanvasProject[]>([]);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const canvasSearchKeyword = ref("");
 const userFilter = ref<string | undefined>(undefined);
 const renameDialogOpen = ref(false);
@@ -128,12 +129,19 @@ async function loadExampleProjects() {
 }
 
 async function loadAdminUsers() {
-  if (!isAdminCanvasView.value) return;
+  if (!isAdminCanvasView.value || users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
   try {
-    users.value = await listUsers();
+    users.value = await listUserOptions();
   } catch {
     message.error("获取用户列表失败");
+  } finally {
+    usersLoading.value = false;
   }
+}
+
+function handleUserFilterDropdownVisible(open: boolean) {
+  if (open) void loadAdminUsers();
 }
 
 function openCanvas(canvas: UserCanvasSummary, options: { onboarding?: boolean } = {}) {
@@ -266,7 +274,6 @@ onMounted(async () => {
   await Promise.all([
     loadCanvases(),
     loadExampleProjects(),
-    loadAdminUsers(),
   ]);
 });
 </script>
@@ -294,6 +301,8 @@ onMounted(async () => {
           allow-clear
           show-search
           option-filter-prop="label"
+          :loading="usersLoading"
+          @dropdownVisibleChange="handleUserFilterDropdownVisible"
         >
           <a-select-option
             v-for="user in users"

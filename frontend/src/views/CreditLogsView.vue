@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { getCreditLogs as getUserCreditLogs } from "@/api/auth";
-import { getCreditLogs as getAdminCreditLogs, listUsers } from "@/api/admin";
+import { getCreditLogs as getAdminCreditLogs, listUserOptions } from "@/api/admin";
 import type { CreditLog, AdminUser, TaskType } from "@/types";
 import dayjs from "dayjs";
 
@@ -27,6 +27,7 @@ const filterDirection = ref<"increase" | "decrease" | undefined>(undefined);
 const filterMode = ref<TaskType | "manual" | "redeem" | "purchase" | undefined>(undefined);
 
 const userList = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 
 const columns = computed(() => {
   const base = [
@@ -84,12 +85,19 @@ async function loadLogs() {
 }
 
 async function loadUsers() {
-  if (!isAdmin.value) return;
+  if (!isAdmin.value || userList.value.length || usersLoading.value) return;
+  usersLoading.value = true;
   try {
-    userList.value = await listUsers();
+    userList.value = await listUserOptions();
   } catch {
     /* ignore */
+  } finally {
+    usersLoading.value = false;
   }
+}
+
+function handleUserDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
 }
 
 function handlePageChange(p: number) {
@@ -141,7 +149,6 @@ function modeLabel(mode: CreditLog["mode"]) {
 
 onMounted(() => {
   loadLogs();
-  loadUsers();
 });
 </script>
 
@@ -164,6 +171,8 @@ onMounted(() => {
         show-search
         option-filter-prop="label"
         style="width: 180px"
+        :loading="usersLoading"
+        @dropdownVisibleChange="handleUserDropdownVisible"
       >
         <a-select-option
           v-for="u in userList"

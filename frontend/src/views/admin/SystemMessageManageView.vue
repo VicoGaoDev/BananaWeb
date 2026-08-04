@@ -7,7 +7,7 @@ import type { IDomEditor, IEditorConfig, IToolbarConfig } from "@wangeditor/edit
 import { MailOutlined, PlusOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
-import { listUsers } from "@/api/admin";
+import { listUserOptions } from "@/api/admin";
 import { createAdminSystemMessage, getAdminSystemMessageDetail, listAdminSystemMessages } from "@/api/systemMessages";
 import type { AdminUser, SystemMessageDetail, SystemMessageItem, SystemMessageRecipientScope } from "@/types";
 
@@ -71,6 +71,13 @@ const editorConfig: Partial<IEditorConfig> = {
   },
 };
 
+const userOptions = computed(() =>
+  users.value.map((user) => ({
+    label: `${user.username}${user.email ? `（${user.email}）` : ""}`,
+    value: user.id,
+  })),
+);
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -85,13 +92,6 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-const userOptions = computed(() =>
-  users.value.map((user) => ({
-    label: `${user.username}${user.email ? `（${user.email}）` : ""}`,
-    value: user.id,
-  })),
-);
 
 function formatTime(value?: string | null) {
   return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-";
@@ -124,10 +124,10 @@ async function load() {
 }
 
 async function loadUsers() {
-  if (users.value.length) return;
+  if (users.value.length || usersLoading.value) return;
   usersLoading.value = true;
   try {
-    users.value = (await listUsers()).filter((user) => user.status === "active");
+    users.value = (await listUserOptions()).filter((user) => user.status === "active");
   } catch {
     message.error("获取用户列表失败");
   } finally {
@@ -135,10 +135,13 @@ async function loadUsers() {
   }
 }
 
+function handleRecipientUserDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
+}
+
 async function openCreateModal() {
   resetForm();
   modalOpen.value = true;
-  await loadUsers();
 }
 
 function handlePageChange(nextPage: number, nextPageSize: number) {
@@ -294,6 +297,7 @@ onBeforeUnmount(() => {
               :options="userOptions"
               placeholder="请选择一个或多个用户"
               option-filter-prop="label"
+              @dropdownVisibleChange="handleRecipientUserDropdownVisible"
             />
           </a-form-item>
           <a-form-item label="消息内容" required>

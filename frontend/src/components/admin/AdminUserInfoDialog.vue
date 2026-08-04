@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
-import { getCreditLogs as getAdminCreditLogs, listPaymentOrders } from "@/api/admin";
+import { getAdminUserDetail, getCreditLogs as getAdminCreditLogs, listPaymentOrders } from "@/api/admin";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminPaymentOrder, AdminUser, CreditLog } from "@/types";
 
@@ -25,8 +25,10 @@ const redeemTotal = ref(0);
 const purchaseOrders = ref<AdminPaymentOrder[]>([]);
 const purchaseTotal = ref(0);
 const loadedUserId = ref("");
+const detailedUser = ref<AdminUser | null>(null);
 
-const dialogTitle = computed(() => (props.user ? `用户信息 — ${props.user.username}` : "用户信息"));
+const displayUser = computed(() => detailedUser.value || props.user);
+const dialogTitle = computed(() => (displayUser.value ? `用户信息 — ${displayUser.value.username}` : "用户信息"));
 
 function formatTime(value?: string | null) {
   return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-";
@@ -35,16 +37,19 @@ function formatTime(value?: string | null) {
 async function loadUserRecords() {
   const userId = props.user?.id;
   if (!props.open || !userId || loadedUserId.value === userId) return;
+  detailedUser.value = null;
   redeemLogs.value = [];
   redeemTotal.value = 0;
   purchaseOrders.value = [];
   purchaseTotal.value = 0;
   loading.value = true;
   try {
-    const [redeemRes, purchaseRes] = await Promise.all([
+    const [userDetail, redeemRes, purchaseRes] = await Promise.all([
+      getAdminUserDetail(userId),
       getAdminCreditLogs(1, 5, userId, undefined, undefined, undefined, "redeem"),
       listPaymentOrders({ page: 1, page_size: 5, user: userId, status: "credited" }),
     ]);
+    detailedUser.value = userDetail;
     redeemLogs.value = redeemRes.items;
     redeemTotal.value = redeemRes.total;
     purchaseOrders.value = purchaseRes.items;
@@ -62,8 +67,8 @@ function closeDialog() {
 }
 
 function handleViewData() {
-  if (!props.user) return;
-  emit("view-data", props.user);
+  if (!displayUser.value) return;
+  emit("view-data", displayUser.value);
 }
 
 watch(() => [props.open, props.user?.id], () => {
@@ -81,27 +86,27 @@ watch(() => [props.open, props.user?.id], () => {
     @cancel="closeDialog"
   >
     <a-spin :spinning="loading">
-      <div v-if="user" class="user-info-dialog">
+      <div v-if="displayUser" class="user-info-dialog">
         <div class="user-info-scroll">
           <div class="user-info-header">
-            <a-avatar :size="54" :src="withApiBaseUrl(user.avatar_url) || undefined" class="user-info-avatar">
-              {{ user.username?.charAt(0)?.toUpperCase() }}
+            <a-avatar :size="54" :src="withApiBaseUrl(displayUser.avatar_url) || undefined" class="user-info-avatar">
+              {{ displayUser.username?.charAt(0)?.toUpperCase() }}
             </a-avatar>
             <div class="user-info-identity">
-              <div class="user-info-name">{{ user.username }}</div>
-              <div class="user-info-email">{{ user.email || "未设置邮箱" }}</div>
-              <div class="user-info-id">{{ user.id }}</div>
+              <div class="user-info-name">{{ displayUser.username }}</div>
+              <div class="user-info-email">{{ displayUser.email || "未设置邮箱" }}</div>
+              <div class="user-info-id">{{ displayUser.id }}</div>
             </div>
           </div>
 
           <div class="user-info-stats">
             <div class="user-info-stat-card">
               <span>已使用积分</span>
-              <strong>{{ user.consumed_credits || 0 }}</strong>
+              <strong>{{ displayUser.consumed_credits || 0 }}</strong>
             </div>
             <div class="user-info-stat-card">
               <span>剩余积分</span>
-              <strong>{{ user.credits || 0 }}</strong>
+              <strong>{{ displayUser.credits || 0 }}</strong>
             </div>
             <div class="user-info-stat-card">
               <span>兑换记录</span>

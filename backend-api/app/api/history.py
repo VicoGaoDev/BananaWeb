@@ -6,7 +6,7 @@ from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.history import HistoryPinToggleRequest, HistoryPinToggleResponse, UserHistoryResponse
-from app.services.history_service import delete_user_history_task, get_user_history, toggle_history_pin
+from app.services.history_service import delete_user_history_task, get_admin_history_cards, toggle_history_pin
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
@@ -27,13 +27,14 @@ def list_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_user_history(
+    return get_admin_history_cards(
         db,
-        user.id,
-        page,
-        page_size,
-        respect_pins=respect_pins,
+        page=page,
+        page_size=page_size,
+        user_id=user.id,
         include_prompt_reverse=include_prompt_reverse,
+        include_restricted_users=True,
+        include_deleted_tasks=False,
         mode=mode,
         source=source,
         model=model,

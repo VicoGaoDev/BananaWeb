@@ -16,7 +16,7 @@ import {
   VideoCameraOutlined,
 } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
-import { getAdminHistoryCards, getAdminHistoryDetail, listUsers } from "@/api/admin";
+import { getAdminHistoryCards, getAdminHistoryDetail, listUserOptions } from "@/api/admin";
 import { listBoards } from "@/api/boards";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory, toggleHistoryPin } from "@/api/history";
@@ -80,6 +80,7 @@ const userFilter = ref<string | undefined>(undefined);
 const promptFilter = ref("");
 const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const boards = ref<UserBoardSummary[]>([]);
 const boardsLoading = ref(false);
 const generationModels = ref<GenerationModelOption[]>([]);
@@ -337,12 +338,19 @@ async function loadModels() {
 }
 
 async function loadUsers() {
-  if (!isAdminHistoryView.value) return;
+  if (!isAdminHistoryView.value || users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
   try {
-    users.value = (await listUsers()).filter((item) => !item.is_whitelisted);
+    users.value = (await listUserOptions()).filter((item) => !item.is_whitelisted);
   } catch {
     users.value = [];
+  } finally {
+    usersLoading.value = false;
   }
+}
+
+function handleUserFilterDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
 }
 
 async function loadBoardsForHistory() {
@@ -363,7 +371,6 @@ async function loadBoardsForHistory() {
 
 onMounted(loadHistory);
 onMounted(loadModels);
-onMounted(loadUsers);
 onMounted(loadBoardsForHistory);
 onBeforeUnmount(() => {
   stopHistoryPolling();
@@ -1171,6 +1178,8 @@ function handleEditImage(item: UserHistoryCard) {
         allow-clear
         show-search
         option-filter-prop="label"
+        :loading="usersLoading"
+        @dropdownVisibleChange="handleUserFilterDropdownVisible"
       >
         <a-select-option
           v-for="user in users"

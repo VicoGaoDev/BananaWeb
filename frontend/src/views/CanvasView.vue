@@ -25,7 +25,6 @@ import {
   VideoCameraOutlined,
 } from "@ant-design/icons-vue";
 import { assignCanvasNodesToGroup, createCanvas, createCanvasGroup, createCanvasNode, createCanvasTask, createCanvasVideoTask, deleteCanvasGroup, deleteCanvasNode, getCanvas, listCanvases, removeCanvasNodesFromGroups, updateCanvas, updateCanvasEdge, updateCanvasGroup, updateCanvasNode, updateCanvasNodesBatch, updateCanvasViewport } from "@/api/canvases";
-import { listUsers } from "@/api/admin";
 import { getMe } from "@/api/auth";
 import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask } from "@/api/history";
@@ -2136,13 +2135,6 @@ async function openReadonlyOwnerDialog() {
   if (!fallback) return;
   selectedReadonlyOwner.value = adminUsers.value.find((user) => user.id === fallback.id) || fallback;
   readonlyOwnerDialogOpen.value = true;
-  if (adminUsers.value.length) return;
-  try {
-    adminUsers.value = await listUsers();
-    selectedReadonlyOwner.value = adminUsers.value.find((user) => user.id === fallback.id) || selectedReadonlyOwner.value;
-  } catch {
-    message.error("获取用户信息失败");
-  }
 }
 
 function handleDocumentPointerDown(event: PointerEvent) {

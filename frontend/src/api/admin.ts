@@ -93,6 +93,14 @@ export function listUsers(): Promise<AdminUser[]> {
   return client.get("/admin/users");
 }
 
+export function listUserOptions(): Promise<AdminUser[]> {
+  return client.get("/admin/user-options");
+}
+
+export function getAdminUserDetail(userId: string): Promise<AdminUser> {
+  return client.get(`/admin/users/${encodeURIComponent(userId)}`);
+}
+
 export function getAdminCanvases(): Promise<UserCanvasListResponse> {
   return client.get("/admin/canvases");
 }

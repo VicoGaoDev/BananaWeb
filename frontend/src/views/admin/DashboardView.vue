@@ -13,7 +13,7 @@ import {
   getAdminAnalyticsTimeseries,
   getAdminHistoryDetail,
   getAdminHistory,
-  listUsers,
+  listUserOptions,
 } from "@/api/admin";
 import { setStoredAdminUnresolvedFeedbackCount } from "@/lib/adminFeedbackNotice";
 import { withApiBaseUrl } from "@/lib/assets";
@@ -55,6 +55,7 @@ const summary = ref<AdminAnalyticsSummary | null>(null);
 const timeseries = ref<AdminAnalyticsTimeseries | null>(null);
 const breakdown = ref<AdminAnalyticsBreakdown | null>(null);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const generationModels = ref<GenerationModelOption[]>([]);
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const history = ref<HistoryItem[]>([]);
@@ -277,14 +278,6 @@ function formatQueryDate(value?: Dayjs) {
   return value ? value.format("YYYY-MM-DDTHH:mm:ss") : undefined;
 }
 
-async function loadUsers() {
-  try {
-    users.value = (await listUsers()).filter((item) => !item.is_whitelisted);
-  } catch {
-    users.value = [];
-  }
-}
-
 async function loadModels() {
   try {
     const [models, scenes] = await Promise.all([getGenerationModels(), getTaskScenes()]);
@@ -294,6 +287,22 @@ async function loadModels() {
     generationModels.value = [];
     taskScenes.value = [];
   }
+}
+
+async function loadUsers() {
+  if (users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
+  try {
+    users.value = (await listUserOptions()).filter((item) => !item.is_whitelisted);
+  } catch {
+    users.value = [];
+  } finally {
+    usersLoading.value = false;
+  }
+}
+
+function handleUserDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
 }
 
 async function loadAnalytics() {
@@ -574,7 +583,7 @@ function historyStatusSummary(record: HistoryItem) {
 onMounted(async () => {
   preset.value = defaultPresetByGranularity(granularity.value);
   applyPresetRange(preset.value);
-  await Promise.all([loadUsers(), loadModels()]);
+  await loadModels();
   await Promise.all([loadPageData(), checkUnresolvedFeedbacks()]);
   ready.value = true;
 });
@@ -611,10 +620,12 @@ watch(filterSignature, async () => {
       :granularity="granularity"
       :preset="preset"
       :loading="analyticsLoading || historyLoading"
+      :users-loading="usersLoading"
       @update:granularity="handleGranularityChange"
       @preset-change="handlePresetChange"
       @reset="handleReset"
       @refresh="handleRefresh"
+      @user-dropdown-visible="handleUserDropdownVisible"
     />
 
     <section class="dashboard-section">

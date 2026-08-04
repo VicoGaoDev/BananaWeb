@@ -537,8 +537,8 @@ def _serialize_task_history_detail(
         "source_image_thumb": source_asset["thumb_url"],
         "mask_image": mask_asset["image_url"],
         "mask_image_thumb": mask_asset["thumb_url"],
-        "num_images": task.num_images,
-        "size": task.size,
+        "num_images": task.num_images or 1,
+        "size": task.size or "",
         "resolution": task.resolution or "",
         "custom_size": task.custom_size or "",
         "credit_cost": task_credit_cost,
@@ -829,8 +829,8 @@ def get_user_history(
             "source_image_thumb": shared_payload["source_image_thumb"],
             "mask_image": shared_payload["mask_image"],
             "mask_image_thumb": shared_payload["mask_image_thumb"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": shared_payload["task_credit_cost"],
@@ -1157,8 +1157,8 @@ def get_all_history(
             "mode": task.mode or "generate",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": 0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
@@ -1225,6 +1225,8 @@ def get_admin_history_cards(
     page_size: int = 20,
     *,
     include_prompt_reverse: bool = True,
+    include_restricted_users: bool = False,
+    include_deleted_tasks: bool = True,
     user_id: int | None = None,
     mode: str | None = None,
     source: str | None = None,
@@ -1234,6 +1236,8 @@ def get_admin_history_cards(
     used_fallback_api: bool | None = None,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
+    board_id: int | None = None,
+    board_scope: str | None = None,
 ):
     cos_config = get_optional_cos_config(db)
     scene_type_map = get_task_scene_type_map(db)
@@ -1247,10 +1251,12 @@ def get_admin_history_cards(
             selectinload(Task.canvas),
             lazyload(Task.api_attempts),
         )
-        .filter(User.role != "superadmin")
-        .filter(User.is_whitelisted.is_(False))
         .filter(_exclude_example_template_seed_task_clause())
     )
+    if not include_restricted_users:
+        task_query = task_query.filter(User.role != "superadmin").filter(User.is_whitelisted.is_(False))
+    if not include_deleted_tasks:
+        task_query = task_query.filter(Task.is_deleted.is_(False))
     prompt_reverse_query = None
     if include_prompt_reverse:
         prompt_reverse_query = (
@@ -1258,15 +1264,23 @@ def get_admin_history_cards(
             .join(User, User.id == PromptHistory.user_id)
             .filter(
                 PromptHistory.mode == PROMPT_REVERSE_MODE,
-                User.role != "superadmin",
-                User.is_whitelisted.is_(False),
             )
         )
+        if not include_restricted_users:
+            prompt_reverse_query = prompt_reverse_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
 
     if user_id is not None:
         task_query = task_query.filter(Task.user_id == user_id)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.user_id == user_id)
+    if board_scope == "default":
+        task_query = task_query.filter(Task.board_id.is_(None))
+        prompt_reverse_query = None
+    elif board_id is not None:
+        if user_id is not None:
+            validate_user_board_id(db, user_id, board_id)
+        task_query = task_query.filter(Task.board_id == board_id)
+        prompt_reverse_query = None
     if mode:
         if mode == TASK_TYPE_PROMPT_REVERSE:
             task_query = task_query.filter(Task.id.is_(None))
@@ -1492,8 +1506,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": task_credit_cost,
@@ -1549,8 +1563,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": int(task.credit_cost or 0),
@@ -1606,8 +1620,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": task_credit_cost,

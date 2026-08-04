@@ -5,7 +5,7 @@ import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { CopyOutlined, GiftOutlined } from "@ant-design/icons-vue";
-import { createRedeemKeysBatch, listRedeemKeys, listUsers, updateRedeemKeyStatus } from "@/api/admin";
+import { createRedeemKeysBatch, listRedeemKeys, updateRedeemKeyStatus } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { copyText } from "@/lib/clipboard";
 import { withApiBaseUrl } from "@/lib/assets";
@@ -99,14 +99,6 @@ async function load() {
     message.error(err.response?.data?.detail || "获取兑换码列表失败");
   } finally {
     loading.value = false;
-  }
-}
-
-async function loadUsers() {
-  try {
-    users.value = await listUsers();
-  } catch {
-    users.value = [];
   }
 }
 
@@ -283,7 +275,7 @@ function applyRouteQueryFilters() {
 
 onMounted(() => {
   applyRouteQueryFilters();
-  void Promise.all([loadUsers(), load()]);
+  void load();
 });
 </script>
 

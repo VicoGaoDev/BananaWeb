@@ -13,7 +13,7 @@ import {
   getAdminAnalyticsPaymentRevenue,
   getAdminAnalyticsRedeemRevenue,
   listOfflineOrders,
-  listUsers,
+  listUserOptions,
   sendAdminDailyReportRange,
   testAdminDailyReportNotify,
 } from "@/api/admin";
@@ -41,6 +41,7 @@ const paymentRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const offlineOrderRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const offlineOrderItems = ref<AdminOfflineOrder[]>([]);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const offlineOrderForm = reactive({
   user_id: undefined as string | undefined,
   order_type: "purchase" as "purchase" | "refund",
@@ -249,12 +250,20 @@ function offlineOrderRowKey(record: AdminOfflineOrder) {
 }
 
 async function loadUsers() {
+  if (users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
   try {
-    users.value = await listUsers();
+    users.value = await listUserOptions();
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
     message.error("获取用户列表失败");
+  } finally {
+    usersLoading.value = false;
   }
+}
+
+function handleOfflineOrderUserDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
 }
 
 function openOfflineOrderModal() {
@@ -301,7 +310,6 @@ async function handleCreateOfflineOrder() {
 
 onMounted(() => {
   applyPreset("today");
-  loadUsers();
   load();
 });
 </script>
@@ -471,10 +479,12 @@ onMounted(() => {
             show-search
             placeholder="请选择用户"
             option-filter-prop="label"
+            :loading="usersLoading"
             :options="users.map((user) => ({
               label: user.email ? `${user.username} (${user.email})` : `${user.username} (${user.id})`,
               value: user.id,
             }))"
+            @dropdownVisibleChange="handleOfflineOrderUserDropdownVisible"
           />
         </a-form-item>
         <a-form-item label="类型">

@@ -27,7 +27,7 @@ from app.schemas.history import HistoryResponse, UserHistoryCardItem, UserHistor
 from app.schemas.video_task import AdminVideoTaskListOut, VideoTaskOut
 from app.services.business_id_service import get_user_by_business_id
 from app.services.admin_service import (
-    create_user, list_users, update_user_status, update_user_role,
+    create_user, list_users, list_user_options, get_user_detail, update_user_status, update_user_role,
     update_user_whitelist, reset_user_password, get_stats, allocate_credits, reset_user_credits, get_credit_logs,
     list_payment_orders, create_offline_order, list_offline_orders,
     list_admin_ledgers, get_admin_ledger, create_admin_ledger, update_admin_ledger, refresh_admin_ledger_income,
@@ -107,6 +107,25 @@ def admin_list_users(
     db: Session = Depends(get_db),
 ):
     return list_users(db)
+
+
+@router.get("/user-options", response_model=list[UserOut])
+def admin_list_user_options(
+    keyword: Optional[str] = Query(None),
+    limit: int = Query(2000, ge=1, le=5000),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_user_options(db, keyword=keyword, limit=limit)
+
+
+@router.get("/users/{user_id}", response_model=UserOut)
+def admin_get_user_detail(
+    user_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_user_detail(db, user_id)
 
 
 @router.get("/canvases", response_model=CanvasListResponse)

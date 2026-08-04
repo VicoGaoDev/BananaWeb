@@ -9,7 +9,7 @@ import {
   getAdminVideoAnalyticsSummary,
   getAdminVideoAnalyticsTimeseries,
   getAdminVideoTasks,
-  listUsers,
+  listUserOptions,
 } from "@/api/admin";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
@@ -37,6 +37,7 @@ const summary = ref<AdminAnalyticsSummary | null>(null);
 const timeseries = ref<AdminAnalyticsTimeseries | null>(null);
 const breakdown = ref<AdminAnalyticsBreakdown | null>(null);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const taskScenes = ref<VideoTaskSceneConfig[]>([]);
 const tasks = ref<AdminVideoTaskResult[]>([]);
 const taskTotal = ref(0);
@@ -489,20 +490,28 @@ function buildTaskFilters() {
   };
 }
 
-async function loadUsers() {
-  try {
-    users.value = (await listUsers()).filter((item) => !item.is_whitelisted);
-  } catch {
-    users.value = [];
-  }
-}
-
 async function loadModels() {
   try {
     taskScenes.value = await getVideoTaskScenes();
   } catch {
     taskScenes.value = [];
   }
+}
+
+async function loadUsers() {
+  if (users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
+  try {
+    users.value = (await listUserOptions()).filter((item) => !item.is_whitelisted);
+  } catch {
+    users.value = [];
+  } finally {
+    usersLoading.value = false;
+  }
+}
+
+function handleUserDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
 }
 
 async function loadAnalytics() {
@@ -720,7 +729,7 @@ function formatDelta(current: number, previous: number, delta: number, deltaPct?
 onMounted(async () => {
   preset.value = defaultPresetByGranularity(granularity.value);
   applyPresetRange(preset.value);
-  await Promise.all([loadUsers(), loadModels()]);
+  await loadModels();
   await loadPageData();
   ready.value = true;
 });
@@ -791,6 +800,8 @@ watch(filterSignature, async () => {
           show-search
           option-filter-prop="label"
           class="analytics-filter-select"
+          :loading="usersLoading"
+          @dropdownVisibleChange="handleUserDropdownVisible"
         >
           <a-select-option
             v-for="user in users"

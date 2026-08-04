@@ -10,7 +10,7 @@ import {
   LoadingOutlined,
   VideoCameraOutlined,
 } from "@ant-design/icons-vue";
-import { getAdminVideoTasks, listUsers } from "@/api/admin";
+import { getAdminVideoTasks, listUserOptions } from "@/api/admin";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
@@ -48,6 +48,7 @@ const userFilter = ref<string | undefined>(undefined);
 const promptFilter = ref("");
 const dateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const users = ref<AdminUser[]>([]);
+const usersLoading = ref(false);
 const taskScenes = ref<VideoTaskSceneConfig[]>([]);
 const detailOpen = ref(false);
 const detailItem = ref<AdminVideoTaskResult | null>(null);
@@ -175,6 +176,22 @@ async function loadNextPage() {
   }
 }
 
+async function loadUsers() {
+  if (users.value.length || usersLoading.value) return;
+  usersLoading.value = true;
+  try {
+    users.value = (await listUserOptions()).filter((item) => !item.is_whitelisted);
+  } catch {
+    users.value = [];
+  } finally {
+    usersLoading.value = false;
+  }
+}
+
+function handleUserFilterDropdownVisible(open: boolean) {
+  if (open) void loadUsers();
+}
+
 function setupLoadMoreObserver(target: HTMLElement | null) {
   loadMoreObserver?.disconnect();
   loadMoreObserver = null;
@@ -186,14 +203,6 @@ function setupLoadMoreObserver(target: HTMLElement | null) {
     { root: null, rootMargin: "0px 0px 260px 0px", threshold: 0.01 },
   );
   loadMoreObserver.observe(target);
-}
-
-async function loadUsers() {
-  try {
-    users.value = (await listUsers()).filter((item) => !item.is_whitelisted);
-  } catch {
-    users.value = [];
-  }
 }
 
 async function loadTaskScenes() {
@@ -433,7 +442,6 @@ watch(items, (tasks) => {
 
 onMounted(() => {
   void loadVideoTasks();
-  void loadUsers();
   void loadTaskScenes();
 });
 
@@ -508,6 +516,8 @@ onBeforeUnmount(() => {
         allow-clear
         show-search
         option-filter-prop="label"
+        :loading="usersLoading"
+        @dropdownVisibleChange="handleUserFilterDropdownVisible"
       >
         <a-select-option
           v-for="user in users"

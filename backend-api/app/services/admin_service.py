@@ -179,6 +179,57 @@ def list_users(db: Session) -> list[dict]:
     ]
 
 
+def list_user_options(db: Session, keyword: str | None = None, limit: int = 2000) -> list[dict]:
+    query = db.query(User).filter(User.role != "superadmin")
+    normalized_keyword = (keyword or "").strip()
+    if normalized_keyword:
+        keyword_like = f"%{normalized_keyword}%"
+        query = query.filter(or_(
+            User.username.ilike(keyword_like),
+            User.email.ilike(keyword_like),
+            User.business_id.ilike(keyword_like),
+        ))
+    users = (
+        query
+        .order_by(User.created_at.desc())
+        .limit(max(1, min(int(limit or 2000), 5000)))
+        .all()
+    )
+    return [
+        _serialize_user_with_balance(user, 0, 0)
+        for user in users
+    ]
+
+
+def get_user_detail(db: Session, user_id: str) -> dict:
+    user = get_user_by_business_id(db, user_id)
+    if not user or user.role == "superadmin":
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    consumed_credits = (
+        db.query(func.coalesce(func.sum(func.abs(CreditLog.amount)), 0))
+        .filter(
+            CreditLog.user_id == user.id,
+            CreditLog.type == "consume",
+        )
+        .scalar()
+    ) or 0
+    refunded_credits = (
+        db.query(func.coalesce(func.sum(CreditLog.amount), 0))
+        .filter(
+            CreditLog.user_id == user.id,
+            CreditLog.type == "allocate",
+            _task_credit_refund_filter(),
+        )
+        .scalar()
+    ) or 0
+    return _serialize_user_with_balance(
+        user,
+        get_user_credit_balance(db, user.id),
+        max(int(consumed_credits) - int(refunded_credits), 0),
+    )
+
+
 def _serialize_user_with_balance(user: User, balance: int, consumed_credits: int = 0) -> dict:
     return {
         "id": user_external_id(user),

@@ -171,8 +171,8 @@ def _serialize_task_history_detail(task: Task, *, cos_config, scene_type_map: di
         "source_image_thumb": source_asset["thumb_url"],
         "mask_image": mask_asset["image_url"],
         "mask_image_thumb": mask_asset["thumb_url"],
-        "num_images": task.num_images,
-        "size": task.size,
+        "num_images": task.num_images or 1,
+        "size": task.size or "",
         "resolution": task.resolution or "",
         "custom_size": task.custom_size or "",
         "credit_cost": task_credit_cost,
@@ -399,8 +399,8 @@ def get_user_history(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": task_credit_cost,
@@ -670,8 +670,8 @@ def get_all_history(
             "mode": task.mode or "generate",
             "prompt": task.prompt or "",
             "reference_images": _parse_refs(task.reference_images),
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": 0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
@@ -738,6 +738,8 @@ def get_admin_history_cards(
     page_size: int = 20,
     *,
     include_prompt_reverse: bool = True,
+    include_restricted_users: bool = False,
+    include_deleted_tasks: bool = True,
     user_id: int | None = None,
     mode: str | None = None,
     source: str | None = None,
@@ -759,8 +761,6 @@ def get_admin_history_cards(
             selectinload(Task.user),
             lazyload(Task.api_attempts),
         ))
-        .filter(User.role != "superadmin")
-        .filter(User.is_whitelisted.is_(False))
         .filter(Task.is_deleted.is_(False))
         .filter(Image.is_deleted.is_(False))
     )
@@ -768,21 +768,23 @@ def get_admin_history_cards(
         db.query(Task)
         .join(User, User.id == Task.user_id)
         .options(selectinload(Task.images), selectinload(Task.user), lazyload(Task.api_attempts))
-        .filter(User.role != "superadmin")
-        .filter(User.is_whitelisted.is_(False))
-        .filter(Task.is_deleted.is_(False))
         .filter(Task.status.in_(running_statuses))
     )
     task_without_image_query = (
         db.query(Task)
         .join(User, User.id == Task.user_id)
         .options(selectinload(Task.images), selectinload(Task.user), lazyload(Task.api_attempts))
-        .filter(User.role != "superadmin")
-        .filter(User.is_whitelisted.is_(False))
-        .filter(Task.is_deleted.is_(False))
         .filter(~Task.status.in_(running_statuses))
         .filter(~Task.images.any(Image.is_deleted.is_(False)))
     )
+    if not include_restricted_users:
+        image_query = image_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+        running_task_query = running_task_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+        task_without_image_query = task_without_image_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+    if not include_deleted_tasks:
+        image_query = image_query.filter(Task.is_deleted.is_(False))
+        running_task_query = running_task_query.filter(Task.is_deleted.is_(False))
+        task_without_image_query = task_without_image_query.filter(Task.is_deleted.is_(False))
     prompt_reverse_query = None
     if include_prompt_reverse:
         prompt_reverse_query = (
@@ -790,10 +792,10 @@ def get_admin_history_cards(
             .join(User, User.id == PromptHistory.user_id)
             .filter(
                 PromptHistory.mode == PROMPT_REVERSE_MODE,
-                User.role != "superadmin",
-                User.is_whitelisted.is_(False),
             )
         )
+        if not include_restricted_users:
+            prompt_reverse_query = prompt_reverse_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
 
     if user_id is not None:
         image_query = image_query.filter(Task.user_id == user_id)
@@ -972,8 +974,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": task_credit_cost,
@@ -1020,8 +1022,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": int(task.credit_cost or 0),
@@ -1073,8 +1075,8 @@ def get_admin_history_cards(
             "source_image_thumb": source_asset["thumb_url"],
             "mask_image": mask_asset["image_url"],
             "mask_image_thumb": mask_asset["thumb_url"],
-            "num_images": task.num_images,
-            "size": task.size,
+            "num_images": task.num_images or 1,
+            "size": task.size or "",
             "resolution": task.resolution or "",
             "custom_size": task.custom_size or "",
             "credit_cost": task_credit_cost,
