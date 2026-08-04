@@ -52,6 +52,12 @@ MAX_RESPONSE_PREVIEW_LENGTH = 1200
 QUEUE_UNAVAILABLE_ERROR = "任务队列暂不可用，请稍后重试"
 TASK_LOCK_UNAVAILABLE_ERROR = "任务锁服务不可用，请稍后重试"
 PROCESSING_TASK_TIMEOUT_ERROR = "任务处理超时，已自动关闭"
+GENERIC_GENERATION_FAILURE_MESSAGES = {
+    "生图失败",
+    "生成失败",
+    "生图失败，请反馈给我们处理",
+    "生成失败，请重试",
+}
 ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT = 3
 ASYNC_POLL_RECOVERY_INTERVAL_SECONDS = 30
@@ -61,10 +67,6 @@ TASK_PROCESSING_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 
 SINGLE_IMAGE_LOCK_TIMEOUT_SECONDS = max(int(settings.AI_TIMEOUT or 0) + 600, 900)
 SYNC_GENERATION_MAX_WORKERS = max(int(settings.SYNC_GENERATION_MAX_WORKERS or 0), 1)
 _sync_generation_semaphore = threading.BoundedSemaphore(SYNC_GENERATION_MAX_WORKERS)
-PROMPT_MODERATION_PRECHECK_ERROR = "the request was rejected by prompt moderation precheck"
-PROMPT_MODERATION_PRECHECK_PUBLIC_MESSAGE = (
-    "提示词或参考图未通过安全审核，请修改后重试"
-)
 _async_poll_recovery_lock = threading.Lock()
 _async_poll_recovery_started = False
 FALLBACK_HTTP_STATUSES = {502, 503, 504}
@@ -126,15 +128,17 @@ def _clip_error_message(message: str) -> str:
     return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
 
 
-def _clip_public_error_message(message: str) -> str:
-    cleaned = (message or "").strip()
-    if not cleaned:
-        return ""
-    if PROMPT_MODERATION_PRECHECK_ERROR in cleaned.lower():
-        cleaned = PROMPT_MODERATION_PRECHECK_PUBLIC_MESSAGE
-    if len(cleaned) <= MAX_ERROR_MESSAGE_LENGTH:
+def _resolve_generation_error(*messages: str, fallback: str = "生图失败") -> str:
+    generic_message = ""
+    for message in messages:
+        cleaned = _clip_error_message(message or "")
+        if not cleaned:
+            continue
+        if cleaned in GENERIC_GENERATION_FAILURE_MESSAGES:
+            generic_message = generic_message or cleaned
+            continue
         return cleaned
-    return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
+    return generic_message or fallback
 
 
 def _clip_response_preview(payload: object) -> str:
@@ -1316,7 +1320,7 @@ def _mark_image_storage_fallback(image: Image, error_message: str = "") -> None:
     if not fallback_url:
         image.image_format = ""
         image.image_size_bytes = 0
-        image.error_message = _clip_public_error_message(error_message or "图片已生成，但保存结果失败")
+        image.error_message = _clip_error_message(error_message or "图片已生成，但保存结果失败")
 
 
 def _mark_generation_failure(image: Image, error_message: str) -> None:
@@ -1325,7 +1329,7 @@ def _mark_generation_failure(image: Image, error_message: str) -> None:
     image.image_format = ""
     image.image_size_bytes = 0
     image.status = "failed"
-    image.error_message = _clip_public_error_message(error_message or "生图失败")
+    image.error_message = _clip_error_message(error_message or "生图失败")
 
 
 def _record_api_attempts(
@@ -1623,7 +1627,7 @@ def _expire_processing_task(
         return False
 
     task_images = images if images is not None else db.query(Image).filter(Image.task_id == task.id).all()
-    normalized_error = _clip_public_error_message(reason)
+    normalized_error = _clip_error_message(reason)
     for image in task_images:
         if image.status == "pending":
             _mark_generation_failure(image, normalized_error)
@@ -1654,7 +1658,7 @@ def _recover_task_after_exception(task_id: int, error_message: str) -> None:
         if not task:
             return
 
-        normalized_error = _clip_public_error_message(error_message or "生图任务执行异常")
+        normalized_error = _clip_error_message(error_message or "生图任务执行异常")
         images = recovery_db.query(Image).filter(Image.task_id == task_id).all()
         for image in images:
             if image.status == "pending":
@@ -1680,7 +1684,7 @@ def _recover_single_image_after_exception(image_id: int, error_message: str) -> 
         if not image:
             return
 
-        normalized_error = _clip_public_error_message(error_message or "重新生成任务执行异常")
+        normalized_error = _clip_error_message(error_message or "重新生成任务执行异常")
         if image.status == "pending":
             _mark_generation_failure(image, normalized_error)
 
@@ -1797,7 +1801,10 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         pending_images = [image for image in images if image.status == "pending"]
         if not pending_images:
             task.status = _resolve_task_status(images)
-            task.error_message = "" if task.status == "success" else (task.error_message or "生图失败")
+            task.error_message = "" if task.status == "success" else _resolve_generation_error(
+                task.error_message,
+                task.provider_error_message,
+            )
             refund_task_credit_for_generation_failure_if_needed(db, task)
             db.commit()
             logger.info(
@@ -1883,6 +1890,8 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         if task.status == "success":
             task.error_message = ""
             task.provider_error_message = ""
+        else:
+            task.error_message = _resolve_generation_error(task.error_message, task.provider_error_message)
         refund_task_credit_for_generation_failure_if_needed(db, task)
         db.commit()
         logger.info(
@@ -2035,7 +2044,11 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
 
         db.refresh(task)
         task.status = _resolve_task_status(list(task.images))
-        task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+        task.error_message = "" if task.status == "success" else _resolve_generation_error(
+            image.error_message,
+            task.error_message,
+            task.provider_error_message,
+        )
         if task.status == "success":
             task.provider_error_message = ""
         db.commit()
@@ -2083,7 +2096,11 @@ def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
     db.refresh(task)
     _mark_task_request_finished(task)
     task.status = _resolve_task_status(list(task.images))
-    task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+    task.error_message = "" if task.status == "success" else _resolve_generation_error(
+        image.error_message,
+        task.error_message,
+        task.provider_error_message,
+    )
     if task.status == "success":
         task.provider_error_message = ""
     refund_task_credit_for_generation_failure_if_needed(db, task)
@@ -2274,7 +2291,7 @@ def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True)
             if image:
                 _mark_generation_failure(image, task.provider_error_message)
             task.status = _resolve_task_status(list(task.images))
-            task.error_message = _clip_public_error_message(task.provider_error_message)
+            task.error_message = _clip_error_message(task.provider_error_message)
             _mark_task_request_finished(task)
             refund_task_credit_for_generation_failure_if_needed(db, task)
             db.commit()

@@ -52,6 +52,12 @@ MAX_RESPONSE_PREVIEW_LENGTH = 1200
 QUEUE_UNAVAILABLE_ERROR = "任务队列暂不可用，请稍后重试"
 TASK_LOCK_UNAVAILABLE_ERROR = "任务锁服务不可用，请稍后重试"
 PROCESSING_TASK_TIMEOUT_ERROR = "任务处理超时，已自动关闭"
+GENERIC_GENERATION_FAILURE_MESSAGES = {
+    "生图失败",
+    "生成失败",
+    "生图失败，请反馈给我们处理",
+    "生成失败，请重试",
+}
 ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT = 3
 ASYNC_POLL_RECOVERY_INTERVAL_SECONDS = 30
@@ -121,6 +127,19 @@ def _clip_error_message(message: str) -> str:
     if len(cleaned) <= MAX_ERROR_MESSAGE_LENGTH:
         return cleaned
     return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
+
+
+def _resolve_generation_error(*messages: str, fallback: str = "生图失败") -> str:
+    generic_message = ""
+    for message in messages:
+        cleaned = _clip_error_message(message or "")
+        if not cleaned:
+            continue
+        if cleaned in GENERIC_GENERATION_FAILURE_MESSAGES:
+            generic_message = generic_message or cleaned
+            continue
+        return cleaned
+    return generic_message or fallback
 
 
 def _clip_response_preview(payload: object) -> str:
@@ -1783,7 +1802,10 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         pending_images = [image for image in images if image.status == "pending"]
         if not pending_images:
             task.status = _resolve_task_status(images)
-            task.error_message = "" if task.status == "success" else (task.error_message or "生图失败")
+            task.error_message = "" if task.status == "success" else _resolve_generation_error(
+                task.error_message,
+                task.provider_error_message,
+            )
             refund_task_credit_for_generation_failure_if_needed(db, task)
             db.commit()
             logger.info(
@@ -1869,6 +1891,8 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
         if task.status == "success":
             task.error_message = ""
             task.provider_error_message = ""
+        else:
+            task.error_message = _resolve_generation_error(task.error_message, task.provider_error_message)
         refund_task_credit_for_generation_failure_if_needed(db, task)
         db.commit()
         logger.info(
@@ -2021,7 +2045,11 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
 
         db.refresh(task)
         task.status = _resolve_task_status(list(task.images))
-        task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+        task.error_message = "" if task.status == "success" else _resolve_generation_error(
+            image.error_message,
+            task.error_message,
+            task.provider_error_message,
+        )
         if task.status == "success":
             task.provider_error_message = ""
         db.commit()
@@ -2069,7 +2097,11 @@ def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
     db.refresh(task)
     _mark_task_request_finished(task)
     task.status = _resolve_task_status(list(task.images))
-    task.error_message = "" if task.status == "success" else (image.error_message or task.error_message)
+    task.error_message = "" if task.status == "success" else _resolve_generation_error(
+        image.error_message,
+        task.error_message,
+        task.provider_error_message,
+    )
     if task.status == "success":
         task.provider_error_message = ""
     refund_task_credit_for_generation_failure_if_needed(db, task)
