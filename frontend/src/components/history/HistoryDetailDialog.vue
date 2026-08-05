@@ -1042,10 +1042,9 @@ function handleGenerateVideo(item: UserHistoryCard) {
 }
 
 .detail-request-preview {
-  padding: 12px;
-  border: 1px solid var(--theme-panel-border);
-  border-radius: 12px;
-  background: var(--theme-panel-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .detail-request-preview-section {
@@ -1099,14 +1098,9 @@ function handleGenerateVideo(item: UserHistoryCard) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
   color: var(--theme-title);
   font-size: 13px;
   font-weight: 700;
-}
-
-.detail-request-field + .detail-request-field {
-  margin-top: 10px;
 }
 
 .detail-request-field-head {

@@ -509,12 +509,23 @@ function findHistoryUser(record: HistoryItem) {
 }
 
 function openUserInfoDialog(record: HistoryItem) {
-  const user = findHistoryUser(record);
-  if (!user) {
+  if (!record.user_id) {
     message.warning("未找到该用户信息");
     return;
   }
-  selectedUserInfo.value = user;
+  const matchedUser = findHistoryUser(record);
+  selectedUserInfo.value = matchedUser || {
+    id: record.user_id,
+    username: record.username || "未知用户",
+    email: "",
+    avatar_url: record.avatar_url || "",
+    role: "user",
+    status: "active",
+    is_whitelisted: false,
+    credits: 0,
+    consumed_credits: 0,
+    created_at: "",
+  };
   userInfoDialogOpen.value = true;
 }
 

@@ -643,12 +643,23 @@ onMounted(loadLedger);
 }
 
 .ledger-card {
+  min-width: 0;
   margin-bottom: 16px;
   border-radius: 18px;
 }
 
 .ledger-expense-table {
   margin-top: 4px;
+}
+
+:deep(.ledger-expense-table .ant-table-content) {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+:deep(.ledger-expense-table .ant-table-thead > tr > th),
+:deep(.ledger-expense-table .ant-table-tbody > tr > td) {
+  white-space: nowrap;
 }
 
 .ledger-bottom-grid {
@@ -963,18 +974,70 @@ onMounted(loadLedger);
   .ledger-grid,
   .ledger-bottom-grid,
   .summary-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .section-title-row {
+    flex-wrap: wrap;
   }
 }
 
 @media (max-width: 768px) {
   .ledger-page {
-    padding: 16px;
+    padding: 12px;
+  }
+
+  .ledger-toolbar :deep(.ant-picker),
+  .ledger-action-btn {
+    width: 100%;
   }
 
   .income-grid,
   .expense-form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metric-card,
+  .summary-card {
+    padding: 12px;
+  }
+
+  .metric-value,
+  .summary-card strong {
+    font-size: 20px;
+    word-break: break-all;
+  }
+
+  .section-title-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .ledger-add-expense-btn {
+    width: 100%;
+  }
+
+  :deep(.ledger-card .ant-card-head) {
+    padding-inline: 14px;
+  }
+
+  :deep(.ledger-card .ant-card-body) {
+    padding: 14px;
+  }
+
+  :deep(.expense-card .ant-card-body) {
+    overflow-x: hidden;
+  }
+
+  :deep(.ledger-expense-modal) {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto;
+  }
+
+  :deep(.ledger-expense-modal .ant-modal-body) {
+    max-height: min(70vh, calc(100vh - 180px));
+    padding-right: 12px;
   }
 }
 </style>
