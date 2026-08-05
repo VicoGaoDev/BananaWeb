@@ -12,9 +12,15 @@ from app.models.task import Task
 from app.models.user_asset import UserAsset
 from app.models.user import User
 from app.models.user_canvas import UserCanvas, generate_canvas_project_id
+from app.models.video_result import VideoResult
 from app.models.video_task import VideoTask
 from app.services.business_id_service import task_external_id, user_external_id
-from app.services.image_delivery_service import get_optional_cos_config, serialize_task
+from app.services.image_delivery_service import (
+    build_thumb_url,
+    get_optional_cos_config,
+    normalize_external_image_url,
+    serialize_task,
+)
 from app.services.task_service import create_tasks
 from app.services.video_task_service import create_video_task as create_video_task_record, serialize_video_task
 from app.utils.datetime_utils import now_local
@@ -100,6 +106,17 @@ def _visible_canvas_node_filter(*, user_id: int | None = None):
         image_task_clause = and_(image_task_clause, Task.user_id == user_id)
         video_task_clause = and_(video_task_clause, VideoTask.user_id == user_id)
     return or_(free_node_clause, image_task_clause, video_task_clause)
+
+
+def _resolve_preview_url(
+    raw_image_url: str | None,
+    *,
+    raw_preview_url: str | None = None,
+    cos_config=None,
+) -> str:
+    image_url = normalize_external_image_url(raw_image_url, cos_config=cos_config)
+    preview_url = normalize_external_image_url(raw_preview_url, cos_config=cos_config)
+    return build_thumb_url(image_url, preview_url=preview_url, cos_config=cos_config) or preview_url or image_url
 
 
 def _serialize_node(node: CanvasNode, *, cos_config=None) -> dict:
@@ -279,17 +296,14 @@ def _serialize_edge(edge: CanvasEdge) -> dict:
 
 
 def _build_preview_map(db: Session, user_id: int | None, canvas_ids: list[int]) -> dict[int, list[str]]:
-    from app.services.image_delivery_service import serialize_image
-
     if not canvas_ids:
         return {}
     cos_config = get_optional_cos_config(db)
     wanted_ids = set(canvas_ids)
     preview_map: dict[int, list[str]] = {canvas_id: [] for canvas_id in wanted_ids}
     recent_images_query = (
-        db.query(Image)
+        db.query(Task.canvas_id, Image.image_url, Image.preview_url)
         .join(Task, Image.task_id == Task.id)
-        .options(joinedload(Image.task))
         .filter(
             Task.canvas_id.in_(canvas_ids),
             Task.is_deleted.is_(False),
@@ -301,16 +315,14 @@ def _build_preview_map(db: Session, user_id: int | None, canvas_ids: list[int]) 
     if user_id is not None:
         recent_images_query = recent_images_query.filter(Task.user_id == user_id)
     recent_images = recent_images_query.limit(max(60, len(canvas_ids) * DEFAULT_CANVAS_PREVIEW_LIMIT * 4)).all()
-    for image in recent_images:
-        canvas_id = image.task.canvas_id if image.task else None
+    for canvas_id, raw_image_url, raw_preview_url in recent_images:
         if canvas_id not in wanted_ids:
             continue
         previews = preview_map.setdefault(canvas_id, [])
         if len(previews) >= DEFAULT_CANVAS_PREVIEW_LIMIT:
             continue
-        image_payload = serialize_image(image, cos_config=cos_config)
-        preview_url = image_payload.get("thumb_url") or image_payload.get("preview_url") or image_payload.get("image_url") or ""
-        if preview_url:
+        preview_url = _resolve_preview_url(raw_image_url, raw_preview_url=raw_preview_url, cos_config=cos_config)
+        if preview_url and preview_url not in previews:
             previews.append(preview_url)
     image_nodes = (
         db.query(CanvasNode.canvas_id, CanvasNode.image_url)
@@ -329,41 +341,34 @@ def _build_preview_map(db: Session, user_id: int | None, canvas_ids: list[int]) 
         previews = preview_map.setdefault(canvas_id, [])
         if len(previews) >= DEFAULT_CANVAS_PREVIEW_LIMIT:
             continue
-        image_url = (raw_image_url or "").strip()
-        if image_url and image_url not in previews:
-            previews.append(image_url)
-    video_nodes = (
-        db.query(CanvasNode)
-        .outerjoin(Task, Task.id == CanvasNode.task_id)
-        .outerjoin(VideoTask, VideoTask.id == CanvasNode.video_task_id)
-        .options(*CANVAS_NODE_LOAD_OPTIONS)
+        preview_url = _resolve_preview_url(raw_image_url, cos_config=cos_config)
+        if preview_url and preview_url not in previews:
+            previews.append(preview_url)
+    video_nodes_query = (
+        db.query(CanvasNode.canvas_id, CanvasNode.updated_at, CanvasNode.id, VideoResult.cover_url, VideoResult.video_url)
+        .join(VideoTask, VideoTask.id == CanvasNode.video_task_id)
+        .join(VideoResult, VideoResult.task_id == VideoTask.id)
         .filter(
             CanvasNode.canvas_id.in_(canvas_ids),
             CanvasNode.video_task_id.is_not(None),
-            _visible_canvas_node_filter(user_id=user_id),
+            VideoTask.is_deleted.is_(False),
+            VideoResult.status == "success",
         )
-        .order_by(CanvasNode.updated_at.desc(), CanvasNode.id.desc())
-        .limit(max(60, len(canvas_ids) * DEFAULT_CANVAS_PREVIEW_LIMIT * 4))
-        .all()
+        .order_by(CanvasNode.updated_at.desc(), CanvasNode.id.desc(), VideoResult.id.desc())
     )
-    for node in video_nodes:
-        video_task = node.video_task
-        if not video_task:
-            continue
-        canvas_id = int(node.canvas_id or 0)
+    if user_id is not None:
+        video_nodes_query = video_nodes_query.filter(VideoTask.user_id == user_id)
+    video_nodes = video_nodes_query.limit(max(60, len(canvas_ids) * DEFAULT_CANVAS_PREVIEW_LIMIT * 4)).all()
+    for canvas_id, _updated_at, _node_id, raw_cover_url, raw_video_url in video_nodes:
         if canvas_id not in wanted_ids:
             continue
         previews = preview_map.setdefault(canvas_id, [])
         if len(previews) >= DEFAULT_CANVAS_PREVIEW_LIMIT:
             continue
-        serialized = serialize_video_task(video_task, cos_config=cos_config)
-        cover_url = next(
-            (
-                (item.get("cover_url") or item.get("video_url") or "").strip()
-                for item in serialized.get("videos", [])
-                if item.get("status") == "success" and (item.get("cover_url") or item.get("video_url"))
-            ),
-            "",
+        cover_url = (
+            _resolve_preview_url(raw_cover_url, cos_config=cos_config)
+            if raw_cover_url
+            else normalize_external_image_url(raw_video_url, cos_config=cos_config)
         )
         if cover_url and cover_url not in previews:
             previews.append(cover_url)
@@ -416,7 +421,7 @@ def list_user_canvases(db: Session, user_id: int) -> dict:
         .all()
     )
     if not canvases:
-        return {"items": []}
+        return {"items": [], "total": 0, "page": 1, "page_size": 0, "has_more": False}
 
     canvas_ids = [canvas.id for canvas in canvases]
     count_rows = (
@@ -433,24 +438,46 @@ def list_user_canvases(db: Session, user_id: int) -> dict:
         "items": [
             _serialize_canvas_summary(canvas, count_map.get(canvas.id, 0), preview_map.get(canvas.id, []))
             for canvas in canvases
-        ]
+        ],
+        "total": len(canvases),
+        "page": 1,
+        "page_size": len(canvases),
+        "has_more": False,
     }
 
 
-def list_all_canvases(db: Session) -> dict:
-    canvases = (
+def list_all_canvases(
+    db: Session,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
+    owner_user_id: int | None = None,
+) -> dict:
+    base_query = (
         db.query(UserCanvas)
         .join(User, User.id == UserCanvas.user_id)
-        .options(joinedload(UserCanvas.user))
         .filter(
             User.role.notin_(["admin", "superadmin"]),
             User.is_whitelisted.is_(False),
         )
+    )
+    normalized_keyword = (keyword or "").strip()
+    if owner_user_id is not None:
+        base_query = base_query.filter(UserCanvas.user_id == owner_user_id)
+    if normalized_keyword:
+        base_query = base_query.filter(UserCanvas.name.ilike(f"%{normalized_keyword}%"))
+    total = int(base_query.with_entities(func.count(UserCanvas.id)).scalar() or 0)
+    canvases = (
+        base_query
+        .options(joinedload(UserCanvas.user))
         .order_by(UserCanvas.updated_at.desc(), UserCanvas.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     if not canvases:
-        return {"items": []}
+        return {"items": [], "total": total, "page": page, "page_size": page_size, "has_more": False}
 
     canvas_ids = [canvas.id for canvas in canvases]
     count_rows = (
@@ -472,7 +499,11 @@ def list_all_canvases(db: Session) -> dict:
                 is_readonly=True,
             )
             for canvas in canvases
-        ]
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": page * page_size < total,
     }
 
 

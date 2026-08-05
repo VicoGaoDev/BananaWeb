@@ -398,6 +398,10 @@ export interface CanvasGroupRemoveNodesResponse {
 
 export interface UserCanvasListResponse {
   items: UserCanvasSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
 }
 
 export type ExampleCanvasStatus = "draft" | "published" | "disabled";

@@ -138,6 +138,10 @@ class CanvasSummary(BaseModel):
 
 class CanvasListResponse(BaseModel):
     items: list[CanvasSummary]
+    total: int = 0
+    page: int = 1
+    page_size: int = 0
+    has_more: bool = False
 
 
 class CanvasNodeOut(BaseModel):

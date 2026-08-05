@@ -132,8 +132,18 @@ def admin_get_user_detail(
 def admin_list_canvases(
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(None),
+    user_id: str | None = Query(None),
 ):
-    return list_all_canvases(db)
+    return list_all_canvases(
+        db,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        owner_user_id=_resolve_optional_user_id(db, user_id),
+    )
 
 
 @router.put("/users/{user_id}/status", response_model=UserOut)

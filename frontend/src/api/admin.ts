@@ -101,8 +101,19 @@ export function getAdminUserDetail(userId: string): Promise<AdminUser> {
   return client.get(`/admin/users/${encodeURIComponent(userId)}`);
 }
 
-export function getAdminCanvases(): Promise<UserCanvasListResponse> {
-  return client.get("/admin/canvases");
+export function getAdminCanvases(
+  page = 1,
+  pageSize = 20,
+  filters?: { keyword?: string; userId?: string }
+): Promise<UserCanvasListResponse> {
+  return client.get("/admin/canvases", {
+    params: {
+      page,
+      page_size: pageSize,
+      keyword: filters?.keyword || undefined,
+      user_id: filters?.userId || undefined,
+    },
+  });
 }
 
 export function createUser(data: { username: string; password: string; role?: string }): Promise<AdminUser> {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRouter } from "vue-router";
@@ -25,11 +25,17 @@ const props = withDefaults(defineProps<{
   adminCanvases: false,
 });
 
+const ADMIN_CANVAS_PAGE_SIZE = 20;
 const router = useRouter();
 const loading = ref(false);
+const loadingMore = ref(false);
 const creating = ref(false);
 const copyingExampleId = ref<number | null>(null);
 const canvases = ref<UserCanvasSummary[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(ADMIN_CANVAS_PAGE_SIZE);
+const hasMoreAdminCanvases = ref(false);
 const exampleProjects = ref<ExampleCanvasProject[]>([]);
 const users = ref<AdminUser[]>([]);
 const usersLoading = ref(false);
@@ -41,10 +47,15 @@ const renameTarget = ref<UserCanvasSummary | null>(null);
 const renameName = ref("");
 const userInfoDialogOpen = ref(false);
 const selectedUserInfo = ref<AdminUser | null>(null);
+const adminCanvasLoadMoreAnchor = ref<HTMLElement | null>(null);
 const isAdminCanvasView = computed(() => props.adminCanvases);
+const canvasTotalLabel = computed(() => (isAdminCanvasView.value ? total.value : canvases.value.length));
 const shouldHighlightExampleSection = computed(
   () => !isAdminCanvasView.value && canvases.value.length === 0 && exampleProjects.value.length > 0
 );
+let adminCanvasReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let adminCanvasLoadMoreObserver: IntersectionObserver | null = null;
+let adminCanvasRequestSeq = 0;
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
   <defs>
@@ -86,11 +97,11 @@ function handleCanvasPreviewLoad(event: Event) {
 }
 
 const filteredCanvases = computed(() => {
+  if (isAdminCanvasView.value) {
+    return canvases.value;
+  }
   const keyword = canvasSearchKeyword.value.trim().toLowerCase();
   return canvases.value.filter((canvas) => {
-    if (isAdminCanvasView.value && userFilter.value && canvas.owner_user_id !== userFilter.value) {
-      return false;
-    }
     if (!keyword) return true;
     return canvas.name.toLowerCase().includes(keyword);
   });
@@ -106,14 +117,49 @@ function formatCanvasTime(value?: string | null) {
   return target.format("YYYY-MM-DD");
 }
 
-async function loadCanvases() {
+async function loadCanvases(options: { reset?: boolean } = {}) {
+  const reset = !!options.reset;
+  if (isAdminCanvasView.value) {
+    if (!reset && (loading.value || loadingMore.value || !hasMoreAdminCanvases.value)) return;
+    const requestPage = reset ? 1 : page.value;
+    const requestSeq = ++adminCanvasRequestSeq;
+    if (reset) {
+      loading.value = true;
+    } else {
+      loadingMore.value = true;
+    }
+    try {
+      const response = await getAdminCanvases(requestPage, pageSize.value, {
+        keyword: canvasSearchKeyword.value.trim() || undefined,
+        userId: userFilter.value,
+      });
+      if (requestSeq !== adminCanvasRequestSeq) return;
+      canvases.value = reset ? response.items : [...canvases.value, ...response.items];
+      total.value = response.total || response.items.length;
+      page.value = (response.page || requestPage) + 1;
+      pageSize.value = response.page_size || pageSize.value;
+      hasMoreAdminCanvases.value = !!response.has_more;
+    } catch {
+      if (requestSeq !== adminCanvasRequestSeq) return;
+      message.error("获取用户画布失败");
+    } finally {
+      if (requestSeq === adminCanvasRequestSeq) {
+        loading.value = false;
+        loadingMore.value = false;
+      }
+    }
+    return;
+  }
+
   loading.value = true;
   try {
-    canvases.value = isAdminCanvasView.value
-      ? (await getAdminCanvases()).items
-      : (await listCanvases()).items;
+    const response = await listCanvases();
+    canvases.value = response.items;
+    total.value = response.total || response.items.length;
+    page.value = response.page || 1;
+    pageSize.value = response.page_size || (response.items.length || ADMIN_CANVAS_PAGE_SIZE);
   } catch {
-    message.error(isAdminCanvasView.value ? "获取用户画布失败" : "获取画布列表失败");
+    message.error("获取画布列表失败");
   } finally {
     loading.value = false;
   }
@@ -142,6 +188,19 @@ async function loadAdminUsers() {
 
 function handleUserFilterDropdownVisible(open: boolean) {
   if (open) void loadAdminUsers();
+}
+
+function setupAdminCanvasLoadMoreObserver(target: HTMLElement | null) {
+  adminCanvasLoadMoreObserver?.disconnect();
+  adminCanvasLoadMoreObserver = null;
+  if (!isAdminCanvasView.value || !target) return;
+  adminCanvasLoadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadCanvases();
+    },
+    { root: null, rootMargin: "0px 0px 260px 0px", threshold: 0.01 }
+  );
+  adminCanvasLoadMoreObserver.observe(target);
 }
 
 function openCanvas(canvas: UserCanvasSummary, options: { onboarding?: boolean } = {}) {
@@ -272,9 +331,28 @@ function lockCanvasCardLeaveSize(el: Element) {
 
 onMounted(async () => {
   await Promise.all([
-    loadCanvases(),
+    loadCanvases({ reset: isAdminCanvasView.value }),
     loadExampleProjects(),
   ]);
+});
+
+watch([canvasSearchKeyword, userFilter], () => {
+  if (!isAdminCanvasView.value) return;
+  if (adminCanvasReloadTimer) clearTimeout(adminCanvasReloadTimer);
+  adminCanvasReloadTimer = setTimeout(() => {
+    page.value = 1;
+    hasMoreAdminCanvases.value = false;
+    void loadCanvases({ reset: true });
+  }, 250);
+});
+
+watch(adminCanvasLoadMoreAnchor, (target) => {
+  setupAdminCanvasLoadMoreObserver(target);
+});
+
+onBeforeUnmount(() => {
+  if (adminCanvasReloadTimer) clearTimeout(adminCanvasReloadTimer);
+  adminCanvasLoadMoreObserver?.disconnect();
 });
 </script>
 
@@ -324,7 +402,7 @@ onMounted(async () => {
           </template>
         </a-input>
         <div class="canvas-list-topbar-meta">
-          共 {{ canvases.length }} 个画布
+          {{ isAdminCanvasView ? `共 ${canvasTotalLabel} 个画布` : `共 ${canvasTotalLabel} 个画布` }}
         </div>
       </div>
     </div>
@@ -439,6 +517,11 @@ onMounted(async () => {
           </article>
         </TransitionGroup>
       </section>
+
+      <div v-if="isAdminCanvasView && canvases.length" ref="adminCanvasLoadMoreAnchor" class="canvas-list-load-more">
+        <a-spin v-if="loadingMore" size="small" />
+        <span v-else-if="!hasMoreAdminCanvases">已加载全部画布</span>
+      </div>
 
       <section
         v-if="!isAdminCanvasView && exampleProjects.length"
@@ -609,6 +692,15 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+}
+
+.canvas-list-load-more {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 28px;
+  color: var(--theme-text-tertiary);
+  font-size: 13px;
 }
 
 .canvas-list-search {
