@@ -26,7 +26,7 @@ export function useUserAssets() {
   const categories = ref<UserAssetCategory[]>([]);
   const uncategorizedCount = ref(0);
   const assets = ref<UserAsset[]>([]);
-  const quota = ref<UserAssetQuota>({ used: 0, limit: 50, remaining: 50 });
+  const quota = ref<UserAssetQuota>({ used: 0, limit: 100, remaining: 100 });
   const loading = ref(false);
   const uploading = ref(false);
 

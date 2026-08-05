@@ -27,8 +27,8 @@ class UserAssetCategoryListResponse(BaseModel):
 
 class UserAssetQuota(BaseModel):
     used: int = 0
-    limit: int = 50
-    remaining: int = 50
+    limit: int = 100
+    remaining: int = 100
 
 
 class UserAssetSummary(BaseModel):

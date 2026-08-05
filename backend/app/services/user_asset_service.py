@@ -27,7 +27,7 @@ from app.utils.datetime_utils import now_local
 
 logger = logging.getLogger(__name__)
 
-USER_ASSET_LIMIT = 50
+USER_ASSET_LIMIT = 100
 MAX_CATEGORY_NAME_LENGTH = 100
 PENDING_ASSET_STATUS = "pending"
 READY_ASSET_STATUS = "ready"
