@@ -41,9 +41,14 @@ VIDEO_TASK_ENQUEUE_REFUND_PREFIX = "AI视频任务入队失败返还"
 VIDEO_TASK_FAILURE_REFUND_PREFIX = "AI视频任务失败返还"
 VIDEO_TASK_CONSUME_PREFIX = "AI视频生成"
 VIDEO_TASK_SAFETY_ERROR_MESSAGE = "生成的视频存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！"
+VIDEO_TASK_INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试"
 VIDEO_TASK_FAILURE_MESSAGE = "生成视频失败，请反馈给我们处理"
 VIDEO_TASK_SAFETY_ERROR_PATTERN = re.compile(
     r"unsafe|image_unsafe|content blocked|appear to be unsafe|safety|nsfw|敏感|违规|审核拒绝|内容安全",
+    re.IGNORECASE,
+)
+VIDEO_TASK_INVALID_ASPECT_RATIO_PATTERN = re.compile(
+    r"n?put\.aspect_ratio is invalid|aspect_ratio is invalid",
     re.IGNORECASE,
 )
 video_task_logger = logging.getLogger("app.video_task")
@@ -91,6 +96,8 @@ def format_video_task_public_error_message(error_message: str | None) -> str:
         return ""
     if VIDEO_TASK_SAFETY_ERROR_PATTERN.search(detail):
         return VIDEO_TASK_SAFETY_ERROR_MESSAGE
+    if VIDEO_TASK_INVALID_ASPECT_RATIO_PATTERN.search(detail):
+        return VIDEO_TASK_INVALID_ASPECT_RATIO_MESSAGE
     return VIDEO_TASK_FAILURE_MESSAGE
 
 

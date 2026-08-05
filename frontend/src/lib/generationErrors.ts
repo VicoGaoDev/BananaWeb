@@ -4,10 +4,12 @@ export const IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（�
 export const PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试";
 export const GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理";
 export const INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！";
+export const INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试";
 export const CREDIT_REFUNDED_SUFFIX = "（积分已返还）";
 
 const PROMPT_MODERATION_ERROR_PATTERN = /prompt moderation precheck|request was rejected by prompt moderation|提示词未通过安全审核/i;
 const IMAGE_SAFETY_ERROR_PATTERN = /unsafe|image_unsafe|content blocked/i;
+const INVALID_ASPECT_RATIO_PATTERN = /n?put\.aspect_ratio is invalid|aspect_ratio is invalid/i;
 const INVALID_REFERENCE_IMAGE_PATTERN =
   /invalid image file or mode|provider_request_invalid|bad request to openai|poll rejected: 400|image \d+/i;
 const INVALID_REFERENCE_IMAGE_INDEX_PATTERN = /for image (\d+)/i;
@@ -39,6 +41,10 @@ export function isInvalidReferenceImageError(rawMessage?: string) {
   return INVALID_REFERENCE_IMAGE_PATTERN.test(String(rawMessage || "").trim());
 }
 
+export function isInvalidAspectRatioError(rawMessage?: string) {
+  return INVALID_ASPECT_RATIO_PATTERN.test(String(rawMessage || "").trim());
+}
+
 export function formatGenerationErrorMessage(rawMessage?: string, fallback = "生成失败，请重试") {
   const detail = String(rawMessage || "").trim();
   if (!detail) return fallback;
@@ -47,6 +53,9 @@ export function formatGenerationErrorMessage(rawMessage?: string, fallback = "�
   }
   if (isImageSafetyError(detail)) {
     return IMAGE_SAFETY_ERROR_MESSAGE;
+  }
+  if (isInvalidAspectRatioError(detail)) {
+    return INVALID_ASPECT_RATIO_MESSAGE;
   }
   if (isInvalidReferenceImageError(detail)) {
     return formatInvalidReferenceImageMessage(detail);
@@ -64,9 +73,11 @@ export function formatGenerationTaskFailureMessage(rawMessage?: string, creditRe
     ? PROMPT_MODERATION_ERROR_MESSAGE
     : isImageSafetyError(detail)
     ? IMAGE_SAFETY_ERROR_MESSAGE
-    : isInvalidReferenceImageError(detail)
-      ? formatInvalidReferenceImageMessage(detail)
-      : GENERATION_TASK_FAILURE_MESSAGE;
+    : isInvalidAspectRatioError(detail)
+      ? INVALID_ASPECT_RATIO_MESSAGE
+      : isInvalidReferenceImageError(detail)
+        ? formatInvalidReferenceImageMessage(detail)
+        : GENERATION_TASK_FAILURE_MESSAGE;
   return creditRefunded ? withCreditRefundedSuffix(message) : message;
 }
 

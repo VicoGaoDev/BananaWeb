@@ -58,6 +58,11 @@ GENERIC_GENERATION_FAILURE_MESSAGES = {
     "生图失败，请反馈给我们处理",
     "生成失败，请重试",
 }
+INVALID_ASPECT_RATIO_ERROR_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试"
+INVALID_ASPECT_RATIO_ERROR_PATTERN = re.compile(
+    r"n?put\.aspect_ratio is invalid|aspect_ratio is invalid",
+    re.IGNORECASE,
+)
 ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS = 60
 ASYNC_POLL_TRANSIENT_ERROR_RETRY_LIMIT = 3
 ASYNC_POLL_RECOVERY_INTERVAL_SECONDS = 30
@@ -129,6 +134,19 @@ def _clip_error_message(message: str) -> str:
     return cleaned[:MAX_ERROR_MESSAGE_LENGTH] + "..."
 
 
+def _is_invalid_aspect_ratio_error(message: str | None) -> bool:
+    return bool(INVALID_ASPECT_RATIO_ERROR_PATTERN.search((message or "").strip()))
+
+
+def _to_user_facing_generation_error(message: str | None, *, fallback: str = "生图失败") -> str:
+    cleaned = _clip_error_message(message or "")
+    if not cleaned:
+        return fallback
+    if _is_invalid_aspect_ratio_error(cleaned):
+        return INVALID_ASPECT_RATIO_ERROR_MESSAGE
+    return cleaned
+
+
 def _resolve_generation_error(*messages: str, fallback: str = "生图失败") -> str:
     generic_message = ""
     for message in messages:
@@ -138,8 +156,8 @@ def _resolve_generation_error(*messages: str, fallback: str = "生图失败") ->
         if cleaned in GENERIC_GENERATION_FAILURE_MESSAGES:
             generic_message = generic_message or cleaned
             continue
-        return cleaned
-    return generic_message or fallback
+        return _to_user_facing_generation_error(cleaned, fallback=fallback)
+    return _to_user_facing_generation_error(generic_message, fallback=fallback)
 
 
 def _clip_response_preview(payload: object) -> str:
@@ -1330,7 +1348,7 @@ def _mark_generation_failure(image: Image, error_message: str) -> None:
     image.image_format = ""
     image.image_size_bytes = 0
     image.status = "failed"
-    image.error_message = _clip_error_message(error_message or "生图失败")
+    image.error_message = _to_user_facing_generation_error(error_message, fallback="生图失败")
 
 
 def _record_api_attempts(
