@@ -1157,6 +1157,15 @@ function maybeLoadMoreGeneratedTasksNearBottom(target = resultBodyRef.value) {
   if (distanceToBottom <= 320) void loadMoreGeneratedTasks();
 }
 
+function getGeneratedTaskHistoryFilters() {
+  const boardId = selectedBoardId.value;
+  return {
+    include_prompt_reverse: false,
+    board_scope: selectedBoardKey.value === DEFAULT_BOARD_KEY ? "default" as const : undefined,
+    board_id: boardId ?? undefined,
+  };
+}
+
 async function loadBoardsForGenerate() {
   if (!auth.isLoggedIn) {
     boards.value = [];
@@ -1294,7 +1303,7 @@ async function loadGeneratedTaskHistoryPages({
 
   if (total !== Infinity && (nextPage - 1) * GENERATED_TASK_HISTORY_PAGE_SIZE >= total) return;
 
-  const res = await fetchHistory(nextPage, GENERATED_TASK_HISTORY_PAGE_SIZE);
+  const res = await fetchHistory(nextPage, GENERATED_TASK_HISTORY_PAGE_SIZE, getGeneratedTaskHistoryFilters());
   if (requestId !== generatedTaskLoadRequestId) return;
 
   total = res.total;
