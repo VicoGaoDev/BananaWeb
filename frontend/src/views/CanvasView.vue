@@ -2081,7 +2081,7 @@ async function loadSceneConfig() {
 }
 
 async function loadCanvasList(preferredProjectId?: string | null) {
-  const res = await listCanvases();
+  const res = await listCanvases(1, 100);
   canvases.value = res.items;
   const preferredCanvas = preferredProjectId ? res.items.find((item) => item.project_id === preferredProjectId) : null;
   if (preferredProjectId && !preferredCanvas) {

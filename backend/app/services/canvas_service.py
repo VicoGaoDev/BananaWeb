@@ -412,16 +412,32 @@ def get_canvas_for_read_or_404(
     return canvas, canvas.user_id != user_id
 
 
-def list_user_canvases(db: Session, user_id: int) -> dict:
-    canvases = (
+def list_user_canvases(
+    db: Session,
+    user_id: int,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
+) -> dict:
+    base_query = (
         db.query(UserCanvas)
-        .options(joinedload(UserCanvas.user))
         .filter(UserCanvas.user_id == user_id, UserCanvas.is_deleted.is_(False))
+    )
+    normalized_keyword = (keyword or "").strip()
+    if normalized_keyword:
+        base_query = base_query.filter(UserCanvas.name.ilike(f"%{normalized_keyword}%"))
+    total = int(base_query.with_entities(func.count(UserCanvas.id)).scalar() or 0)
+    canvases = (
+        base_query
+        .options(joinedload(UserCanvas.user))
         .order_by(UserCanvas.updated_at.desc(), UserCanvas.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     if not canvases:
-        return {"items": [], "total": 0, "page": 1, "page_size": 0, "has_more": False}
+        return {"items": [], "total": total, "page": page, "page_size": page_size, "has_more": False}
 
     canvas_ids = [canvas.id for canvas in canvases]
     count_rows = (
@@ -439,10 +455,10 @@ def list_user_canvases(db: Session, user_id: int) -> dict:
             _serialize_canvas_summary(canvas, count_map.get(canvas.id, 0), preview_map.get(canvas.id, []))
             for canvas in canvases
         ],
-        "total": len(canvases),
-        "page": 1,
-        "page_size": len(canvases),
-        "has_more": False,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": page * page_size < total,
     }
 
 

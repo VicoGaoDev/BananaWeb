@@ -13,8 +13,18 @@ import type {
   UserCanvasSummary,
 } from "@/types";
 
-export function listCanvases(): Promise<UserCanvasListResponse> {
-  return client.get("/canvases");
+export function listCanvases(
+  page = 1,
+  pageSize = 20,
+  filters?: { keyword?: string }
+): Promise<UserCanvasListResponse> {
+  return client.get("/canvases", {
+    params: {
+      page,
+      page_size: pageSize,
+      keyword: filters?.keyword || undefined,
+    },
+  });
 }
 
 export function getDefaultCanvasName(date = new Date()): string {

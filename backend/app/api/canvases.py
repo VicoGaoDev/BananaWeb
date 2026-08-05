@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -77,8 +77,11 @@ canvas_logger = logging.getLogger("app.canvas")
 def list_canvases(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(None),
 ):
-    return list_user_canvases(db, user.id)
+    return list_user_canvases(db, user.id, page=page, page_size=page_size, keyword=keyword)
 
 
 @router.post("", response_model=CanvasSummary, status_code=status.HTTP_201_CREATED)

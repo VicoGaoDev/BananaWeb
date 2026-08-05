@@ -25,7 +25,7 @@ const props = withDefaults(defineProps<{
   adminCanvases: false,
 });
 
-const ADMIN_CANVAS_PAGE_SIZE = 20;
+const CANVAS_PAGE_SIZE = 20;
 const router = useRouter();
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -34,8 +34,8 @@ const copyingExampleId = ref<number | null>(null);
 const canvases = ref<UserCanvasSummary[]>([]);
 const total = ref(0);
 const page = ref(1);
-const pageSize = ref(ADMIN_CANVAS_PAGE_SIZE);
-const hasMoreAdminCanvases = ref(false);
+const pageSize = ref(CANVAS_PAGE_SIZE);
+const hasMoreCanvases = ref(false);
 const exampleProjects = ref<ExampleCanvasProject[]>([]);
 const users = ref<AdminUser[]>([]);
 const usersLoading = ref(false);
@@ -47,15 +47,15 @@ const renameTarget = ref<UserCanvasSummary | null>(null);
 const renameName = ref("");
 const userInfoDialogOpen = ref(false);
 const selectedUserInfo = ref<AdminUser | null>(null);
-const adminCanvasLoadMoreAnchor = ref<HTMLElement | null>(null);
+const canvasLoadMoreAnchor = ref<HTMLElement | null>(null);
 const isAdminCanvasView = computed(() => props.adminCanvases);
-const canvasTotalLabel = computed(() => (isAdminCanvasView.value ? total.value : canvases.value.length));
+const canvasTotalLabel = computed(() => total.value || canvases.value.length);
 const shouldHighlightExampleSection = computed(
   () => !isAdminCanvasView.value && canvases.value.length === 0 && exampleProjects.value.length > 0
 );
-let adminCanvasReloadTimer: ReturnType<typeof setTimeout> | null = null;
-let adminCanvasLoadMoreObserver: IntersectionObserver | null = null;
-let adminCanvasRequestSeq = 0;
+let canvasReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let canvasLoadMoreObserver: IntersectionObserver | null = null;
+let canvasRequestSeq = 0;
 const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
   <defs>
@@ -96,16 +96,7 @@ function handleCanvasPreviewLoad(event: Event) {
   image.classList.remove("canvas-list-preview-expired");
 }
 
-const filteredCanvases = computed(() => {
-  if (isAdminCanvasView.value) {
-    return canvases.value;
-  }
-  const keyword = canvasSearchKeyword.value.trim().toLowerCase();
-  return canvases.value.filter((canvas) => {
-    if (!keyword) return true;
-    return canvas.name.toLowerCase().includes(keyword);
-  });
-});
+const filteredCanvases = computed(() => canvases.value);
 
 function formatCanvasTime(value?: string | null) {
   if (!value) return "暂无更新";
@@ -119,49 +110,37 @@ function formatCanvasTime(value?: string | null) {
 
 async function loadCanvases(options: { reset?: boolean } = {}) {
   const reset = !!options.reset;
-  if (isAdminCanvasView.value) {
-    if (!reset && (loading.value || loadingMore.value || !hasMoreAdminCanvases.value)) return;
-    const requestPage = reset ? 1 : page.value;
-    const requestSeq = ++adminCanvasRequestSeq;
-    if (reset) {
-      loading.value = true;
-    } else {
-      loadingMore.value = true;
-    }
-    try {
-      const response = await getAdminCanvases(requestPage, pageSize.value, {
-        keyword: canvasSearchKeyword.value.trim() || undefined,
-        userId: userFilter.value,
-      });
-      if (requestSeq !== adminCanvasRequestSeq) return;
-      canvases.value = reset ? response.items : [...canvases.value, ...response.items];
-      total.value = response.total || response.items.length;
-      page.value = (response.page || requestPage) + 1;
-      pageSize.value = response.page_size || pageSize.value;
-      hasMoreAdminCanvases.value = !!response.has_more;
-    } catch {
-      if (requestSeq !== adminCanvasRequestSeq) return;
-      message.error("获取用户画布失败");
-    } finally {
-      if (requestSeq === adminCanvasRequestSeq) {
-        loading.value = false;
-        loadingMore.value = false;
-      }
-    }
-    return;
+  if (!reset && (loading.value || loadingMore.value || !hasMoreCanvases.value)) return;
+  const requestPage = reset ? 1 : page.value;
+  const requestSeq = ++canvasRequestSeq;
+  if (reset) {
+    loading.value = true;
+  } else {
+    loadingMore.value = true;
   }
-
-  loading.value = true;
   try {
-    const response = await listCanvases();
-    canvases.value = response.items;
+    const response = isAdminCanvasView.value
+      ? await getAdminCanvases(requestPage, pageSize.value, {
+          keyword: canvasSearchKeyword.value.trim() || undefined,
+          userId: userFilter.value,
+        })
+      : await listCanvases(requestPage, pageSize.value, {
+          keyword: canvasSearchKeyword.value.trim() || undefined,
+        });
+    if (requestSeq !== canvasRequestSeq) return;
+    canvases.value = reset ? response.items : [...canvases.value, ...response.items];
     total.value = response.total || response.items.length;
-    page.value = response.page || 1;
-    pageSize.value = response.page_size || (response.items.length || ADMIN_CANVAS_PAGE_SIZE);
+    page.value = (response.page || requestPage) + 1;
+    pageSize.value = response.page_size || pageSize.value;
+    hasMoreCanvases.value = !!response.has_more;
   } catch {
-    message.error("获取画布列表失败");
+    if (requestSeq !== canvasRequestSeq) return;
+    message.error(isAdminCanvasView.value ? "获取用户画布失败" : "获取画布列表失败");
   } finally {
-    loading.value = false;
+    if (requestSeq === canvasRequestSeq) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
   }
 }
 
@@ -190,17 +169,17 @@ function handleUserFilterDropdownVisible(open: boolean) {
   if (open) void loadAdminUsers();
 }
 
-function setupAdminCanvasLoadMoreObserver(target: HTMLElement | null) {
-  adminCanvasLoadMoreObserver?.disconnect();
-  adminCanvasLoadMoreObserver = null;
-  if (!isAdminCanvasView.value || !target) return;
-  adminCanvasLoadMoreObserver = new IntersectionObserver(
+function setupCanvasLoadMoreObserver(target: HTMLElement | null) {
+  canvasLoadMoreObserver?.disconnect();
+  canvasLoadMoreObserver = null;
+  if (!target) return;
+  canvasLoadMoreObserver = new IntersectionObserver(
     (entries) => {
       if (entries.some((entry) => entry.isIntersecting)) void loadCanvases();
     },
     { root: null, rootMargin: "0px 0px 260px 0px", threshold: 0.01 }
   );
-  adminCanvasLoadMoreObserver.observe(target);
+  canvasLoadMoreObserver.observe(target);
 }
 
 function openCanvas(canvas: UserCanvasSummary, options: { onboarding?: boolean } = {}) {
@@ -294,7 +273,7 @@ async function submitRenameCanvas() {
     await updateCanvas(target.project_id, { name: nextName });
     message.success("画布已重命名");
     renameDialogOpen.value = false;
-    await loadCanvases();
+    await loadCanvases({ reset: true });
   } catch {
     message.error("重命名失败");
   } finally {
@@ -314,7 +293,7 @@ function handleDeleteCanvas(canvas: UserCanvasSummary) {
       try {
         await deleteCanvas(canvas.project_id);
         message.success("画布已删除");
-        await loadCanvases();
+        await loadCanvases({ reset: true });
       } catch {
         message.error("删除画布失败");
       }
@@ -331,28 +310,27 @@ function lockCanvasCardLeaveSize(el: Element) {
 
 onMounted(async () => {
   await Promise.all([
-    loadCanvases({ reset: isAdminCanvasView.value }),
+    loadCanvases({ reset: true }),
     loadExampleProjects(),
   ]);
 });
 
 watch([canvasSearchKeyword, userFilter], () => {
-  if (!isAdminCanvasView.value) return;
-  if (adminCanvasReloadTimer) clearTimeout(adminCanvasReloadTimer);
-  adminCanvasReloadTimer = setTimeout(() => {
+  if (canvasReloadTimer) clearTimeout(canvasReloadTimer);
+  canvasReloadTimer = setTimeout(() => {
     page.value = 1;
-    hasMoreAdminCanvases.value = false;
+    hasMoreCanvases.value = false;
     void loadCanvases({ reset: true });
   }, 250);
 });
 
-watch(adminCanvasLoadMoreAnchor, (target) => {
-  setupAdminCanvasLoadMoreObserver(target);
+watch(canvasLoadMoreAnchor, (target) => {
+  setupCanvasLoadMoreObserver(target);
 });
 
 onBeforeUnmount(() => {
-  if (adminCanvasReloadTimer) clearTimeout(adminCanvasReloadTimer);
-  adminCanvasLoadMoreObserver?.disconnect();
+  if (canvasReloadTimer) clearTimeout(canvasReloadTimer);
+  canvasLoadMoreObserver?.disconnect();
 });
 </script>
 
@@ -518,9 +496,9 @@ onBeforeUnmount(() => {
         </TransitionGroup>
       </section>
 
-      <div v-if="isAdminCanvasView && canvases.length" ref="adminCanvasLoadMoreAnchor" class="canvas-list-load-more">
+      <div v-if="canvases.length" ref="canvasLoadMoreAnchor" class="canvas-list-load-more">
         <a-spin v-if="loadingMore" size="small" />
-        <span v-else-if="!hasMoreAdminCanvases">已加载全部画布</span>
+        <span v-else-if="!hasMoreCanvases">已加载全部画布</span>
       </div>
 
       <section
