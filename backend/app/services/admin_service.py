@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from sqlalchemy.orm import Session, aliased, joinedload
-from sqlalchemy import case, func, or_
+from sqlalchemy import func, or_
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.task import Task
+from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.task_api_attempt import TaskApiAttempt
 from app.models.credit_log import CreditLog
 from app.models.credit_redeem_key import CreditRedeemKey
@@ -28,6 +29,7 @@ from app.services.content_safety_service import (
     build_exclude_content_safety_failed_task_clause,
     is_content_safety_error_text,
 )
+from app.services.external_api_config_service import SCENE_INPAINT
 from app.services.prompt_reverse_service import (
     PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
     PROMPT_REVERSE_MODE,
@@ -727,41 +729,113 @@ def _resolve_credit_log_mode(log: CreditLog, task_modes: dict[int, str]) -> str:
     return "manual"
 
 
-def _build_credit_log_mode_expression(scene_type_column):
-    return case(
-        (
-            or_(
-                CreditLog.description.in_(
-                    [
-                        PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
-                        f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}",
-                    ]
-                ),
-                Task.mode == PROMPT_REVERSE_MODE,
-            ),
-            PROMPT_REVERSE_MODE,
-        ),
-        ((CreditLog.description.like("兑换积分码 %")), "redeem"),
-        ((CreditLog.description.like("在线支付订单 %")), "purchase"),
-        (
-            or_(
-                Task.mode == "inpaint",
-                Task.model == SCENE_INPAINT,
-            ),
-            "inpaint",
-        ),
-        (scene_type_column == "image_edit", "image_edit"),
-        (Task.id.is_not(None), "text_generate"),
-        else_="manual",
+def _credit_log_prompt_reverse_descriptions() -> list[str]:
+    return [
+        PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+        f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}",
+    ]
+
+
+@dataclass
+class _CreditLogTaskSnapshot:
+    id: int
+    business_id: str | None
+    mode: str | None
+    model: str | None
+
+
+def _credit_log_image_edit_scene_keys_query(db: Session):
+    return (
+        db.query(ExternalApiSceneBinding.scene_key)
+        .filter(ExternalApiSceneBinding.is_deleted.is_(False))
+        .filter(ExternalApiSceneBinding.scene_type == TASK_TYPE_IMAGE_EDIT)
     )
 
 
-def _get_credit_log_task_context(db: Session, logs: list[CreditLog]) -> tuple[dict[int, Task], dict[int, str]]:
+def _apply_credit_log_mode_filter(query, db: Session, mode: str):
+    description = func.coalesce(CreditLog.description, "")
+    prompt_reverse_descriptions = _credit_log_prompt_reverse_descriptions()
+
+    if mode == "redeem":
+        return query.filter(description.like("兑换积分码 %"))
+    if mode == "purchase":
+        return query.filter(description.like("在线支付订单 %"))
+    if mode == TASK_TYPE_PROMPT_REVERSE:
+        return (
+            query
+            .outerjoin(Task, Task.id == CreditLog.task_id)
+            .filter(
+                or_(
+                    description.in_(prompt_reverse_descriptions),
+                    Task.mode == PROMPT_REVERSE_MODE,
+                )
+            )
+        )
+    if mode == TASK_TYPE_INPAINT:
+        return (
+            query
+            .join(Task, Task.id == CreditLog.task_id)
+            .filter(
+                or_(
+                    Task.mode == TASK_TYPE_INPAINT,
+                    Task.model == SCENE_INPAINT,
+                )
+            )
+        )
+    if mode == TASK_TYPE_IMAGE_EDIT:
+        image_edit_scene_keys = _credit_log_image_edit_scene_keys_query(db)
+        return (
+            query
+            .join(Task, Task.id == CreditLog.task_id)
+            .filter(Task.model.in_(image_edit_scene_keys))
+            .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_REVERSE_MODE))
+            .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
+            .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
+        )
+    if mode == TASK_TYPE_TEXT_GENERATE:
+        image_edit_scene_keys = _credit_log_image_edit_scene_keys_query(db)
+        return (
+            query
+            .join(Task, Task.id == CreditLog.task_id)
+            .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_REVERSE_MODE))
+            .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
+            .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
+            .filter(or_(Task.model.is_(None), ~Task.model.in_(image_edit_scene_keys)))
+        )
+    if mode == "manual":
+        return (
+            query
+            .outerjoin(Task, Task.id == CreditLog.task_id)
+            .filter(Task.id.is_(None))
+            .filter(~description.in_(prompt_reverse_descriptions))
+            .filter(~description.like("兑换积分码 %"))
+            .filter(~description.like("在线支付订单 %"))
+        )
+    return query.filter(CreditLog.id.is_(None))
+
+
+def _get_credit_log_task_context(
+    db: Session,
+    logs: list[CreditLog],
+) -> tuple[dict[int, _CreditLogTaskSnapshot], dict[int, str]]:
     task_ids = {int(log.task_id) for log in logs if log.task_id}
     if not task_ids:
         return {}, {}
 
-    tasks = db.query(Task).filter(Task.id.in_(task_ids)).all()
+    task_rows = (
+        db.query(Task.id, Task.business_id, Task.mode, Task.model)
+        .filter(Task.id.in_(task_ids))
+        .all()
+    )
+    tasks = [
+        _CreditLogTaskSnapshot(
+            id=task_id,
+            business_id=business_id,
+            mode=mode,
+            model=model,
+        )
+        for task_id, business_id, mode, model in task_rows
+    ]
     scene_type_map = get_task_scene_type_subset(
         db,
         {
@@ -842,22 +916,7 @@ def get_credit_logs(
         query = query.filter(CreditLog.amount < 0)
 
     if mode:
-        scene_type_subquery = (
-            db.query(
-                ExternalApiSceneBinding.scene_key.label("scene_key"),
-                func.max(ExternalApiSceneBinding.scene_type).label("scene_type"),
-            )
-            .filter(ExternalApiSceneBinding.is_deleted.is_(False))
-            .group_by(ExternalApiSceneBinding.scene_key)
-            .subquery()
-        )
-        mode_expression = _build_credit_log_mode_expression(scene_type_subquery.c.scene_type)
-        query = (
-            query
-            .outerjoin(Task, Task.id == CreditLog.task_id)
-            .outerjoin(scene_type_subquery, scene_type_subquery.c.scene_key == Task.model)
-            .filter(mode_expression == mode)
-        )
+        query = _apply_credit_log_mode_filter(query, db, mode)
 
     total = int(query.count() or 0)
     paged_logs = (
