@@ -197,11 +197,19 @@ def get_invite_reward_overview(db: Session, user: User, *, base_url: str) -> dic
     }
 
 
-def list_invite_reward_referrals(db: Session, user: User) -> dict:
-    rows = (
+def list_invite_reward_referrals(db: Session, user: User, *, page: int = 1, page_size: int = 10) -> dict:
+    normalized_page = max(int(page or 1), 1)
+    normalized_page_size = max(1, min(int(page_size or 10), 100))
+    query = (
         db.query(User)
         .filter(User.referrer_id == user.id, User.used_promo_code_id.is_(None))
+    )
+    total = int(query.count() or 0)
+    rows = (
+        query
         .order_by(User.created_at.desc(), User.id.desc())
+        .offset((normalized_page - 1) * normalized_page_size)
+        .limit(normalized_page_size)
         .all()
     )
     invitee_ids = [row.id for row in rows]
@@ -244,15 +252,28 @@ def list_invite_reward_referrals(db: Session, user: User) -> dict:
                 "registered_at": row.created_at,
             }
         )
-    return {"total": len(items), "items": items}
+    return {
+        "total": total,
+        "items": items,
+        "page": normalized_page,
+        "page_size": normalized_page_size,
+    }
 
 
-def list_invite_reward_logs(db: Session, user: User) -> dict:
-    rows = (
+def list_invite_reward_logs(db: Session, user: User, *, page: int = 1, page_size: int = 10) -> dict:
+    normalized_page = max(int(page or 1), 1)
+    normalized_page_size = max(1, min(int(page_size or 10), 100))
+    query = (
         db.query(ReferralRewardGrant, User)
         .join(User, User.id == ReferralRewardGrant.invitee_id)
         .filter(ReferralRewardGrant.referrer_id == user.id, User.used_promo_code_id.is_(None))
+    )
+    total = int(query.count() or 0)
+    rows = (
+        query
         .order_by(ReferralRewardGrant.created_at.desc(), ReferralRewardGrant.id.desc())
+        .offset((normalized_page - 1) * normalized_page_size)
+        .limit(normalized_page_size)
         .all()
     )
     items = []
@@ -272,7 +293,12 @@ def list_invite_reward_logs(db: Session, user: User) -> dict:
                 "created_at": grant.created_at,
             }
         )
-    return {"total": len(items), "items": items}
+    return {
+        "total": total,
+        "items": items,
+        "page": normalized_page,
+        "page_size": normalized_page_size,
+    }
 
 
 def apply_referral_reward(

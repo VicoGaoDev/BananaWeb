@@ -309,18 +309,22 @@ def get_my_invite_reward_overview(
 
 @router.get("/invite-rewards/referrals", response_model=InviteRewardReferralListResponse)
 def get_my_invite_reward_referrals(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return list_invite_reward_referrals(db, user)
+    return list_invite_reward_referrals(db, user, page=page, page_size=page_size)
 
 
 @router.get("/invite-rewards/logs", response_model=InviteRewardLogListResponse)
 def get_my_invite_reward_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return list_invite_reward_logs(db, user)
+    return list_invite_reward_logs(db, user, page=page, page_size=page_size)
 
 
 @router.get("/credit-logs")

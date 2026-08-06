@@ -13,7 +13,7 @@ from app.schemas.admin import (
     CreateOfflineOrderRequest, OfflineOrderOut,
     AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest,
     AdminLedgerCreateRequest, AdminLedgerUpdateRequest, AdminLedgerOut,
-    AdminUserPromoDashboardOut,
+    AdminUserListOut, AdminUserPromoDashboardOut,
     VideoStatsOut,
 )
 from app.schemas.canvas import CanvasListResponse
@@ -101,12 +101,26 @@ def admin_create_user(
     return create_user(db, body.username, body.password, body.role, operator=_user)
 
 
-@router.get("/users", response_model=list[UserOut])
+@router.get("/users", response_model=AdminUserListOut)
 def admin_list_users(
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(30, ge=1, le=100),
+    keyword: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    whitelist: Optional[bool] = Query(None),
+    sort: str = Query("created_at_desc"),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return list_users(db)
+    return list_users(
+        db,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        status_filter=status,
+        whitelist=whitelist,
+        sort=sort,
+    )
 
 
 @router.get("/user-options", response_model=list[UserOut])

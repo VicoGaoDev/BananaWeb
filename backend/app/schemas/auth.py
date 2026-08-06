@@ -159,6 +159,8 @@ class InviteRewardReferralItem(BaseModel):
 class InviteRewardReferralListResponse(BaseModel):
     total: int
     items: list[InviteRewardReferralItem]
+    page: int = 1
+    page_size: int = 20
 
 
 class InviteRewardLogItem(BaseModel):
@@ -178,3 +180,5 @@ class InviteRewardLogItem(BaseModel):
 class InviteRewardLogListResponse(BaseModel):
     total: int
     items: list[InviteRewardLogItem]
+    page: int = 1
+    page_size: int = 20

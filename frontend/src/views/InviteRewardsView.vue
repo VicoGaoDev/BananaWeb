@@ -29,6 +29,7 @@ import type {
 
 const INVITE_QR_SIZE = 192;
 const INVITE_QR_BRAND_ICON_URL = "/香蕉.svg";
+const INVITE_TABLE_PAGE_SIZE = 10;
 
 const loading = ref(false);
 const qrCodeDataUrl = ref("");
@@ -48,6 +49,10 @@ const overview = ref<InviteRewardOverviewResponse>({
 });
 const referrals = ref<InviteRewardReferralItem[]>([]);
 const rewardLogs = ref<InviteRewardLogItem[]>([]);
+const referralPage = ref(1);
+const referralTotal = ref(0);
+const rewardLogPage = ref(1);
+const rewardLogTotal = ref(0);
 
 const referralColumns = [
   { title: "用户", key: "user", width: "26%" },
@@ -200,19 +205,60 @@ function downloadQrCode() {
   document.body.removeChild(link);
 }
 
+async function loadOverview() {
+  overview.value = await getInviteRewardOverview();
+}
+
+async function loadReferrals(page = referralPage.value) {
+  const response = await getInviteRewardReferrals(page, INVITE_TABLE_PAGE_SIZE);
+  referrals.value = response.items;
+  referralTotal.value = response.total;
+  referralPage.value = response.page || page;
+}
+
+async function loadRewardLogs(page = rewardLogPage.value) {
+  const response = await getInviteRewardLogs(page, INVITE_TABLE_PAGE_SIZE);
+  rewardLogs.value = response.items;
+  rewardLogTotal.value = response.total;
+  rewardLogPage.value = response.page || page;
+}
+
 async function loadData() {
   loading.value = true;
   try {
-    const [overviewRes, referralsRes, logsRes] = await Promise.all([
-      getInviteRewardOverview(),
-      getInviteRewardReferrals(),
-      getInviteRewardLogs(),
+    await Promise.all([
+      loadOverview(),
+      loadReferrals(1),
+      loadRewardLogs(1),
     ]);
-    overview.value = overviewRes;
-    referrals.value = referralsRes.items;
-    rewardLogs.value = logsRes.items;
   } catch (err: any) {
     message.error(err.response?.data?.detail || "获取邀请奖励数据失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleReferralTableChange(pagination: { current?: number }) {
+  const nextPage = Math.max(1, Number(pagination.current || 1));
+  if (nextPage === referralPage.value) return;
+  loading.value = true;
+  try {
+    await loadReferrals(nextPage);
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "获取推荐好友失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleRewardLogTableChange(pagination: { current?: number }) {
+  const nextPage = Math.max(1, Number(pagination.current || 1));
+  if (nextPage === rewardLogPage.value) return;
+  loading.value = true;
+  try {
+    await loadRewardLogs(nextPage);
+  } catch (err: any) {
+    message.error(err.response?.data?.detail || "获取奖励记录失败");
   } finally {
     loading.value = false;
   }
@@ -363,8 +409,9 @@ onMounted(() => {
               :columns="referralColumns"
               :data-source="referrals"
               row-key="user_id"
-              :pagination="{ pageSize: 10 }"
+              :pagination="{ current: referralPage, pageSize: INVITE_TABLE_PAGE_SIZE, total: referralTotal, showSizeChanger: false }"
               :scroll="{ x: 860 }"
+              @change="handleReferralTableChange"
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'user'">
@@ -389,8 +436,9 @@ onMounted(() => {
               :columns="rewardLogColumns"
               :data-source="rewardLogs"
               row-key="id"
-              :pagination="{ pageSize: 10 }"
+              :pagination="{ current: rewardLogPage, pageSize: INVITE_TABLE_PAGE_SIZE, total: rewardLogTotal, showSizeChanger: false }"
               :scroll="{ x: 980 }"
+              @change="handleRewardLogTableChange"
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'user'">

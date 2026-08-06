@@ -23,6 +23,9 @@ const auth = useAuthStore();
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 
 const users = ref<AdminUser[]>([]);
+const totalUsers = ref(0);
+const firstAdminId = ref<string | null>(null);
+const whitelistedTotal = ref(0);
 const loading = ref(false);
 const modalOpen = ref(false);
 const creating = ref(false);
@@ -46,6 +49,11 @@ const creditsForm = reactive({ amount: 0, description: "" });
 const whitelistOpen = ref(false);
 const whitelistKeyword = ref("");
 const whitelistLoadingId = ref<string | null>(null);
+const whitelistUsers = ref<AdminUser[]>([]);
+const whitelistLoading = ref(false);
+const whitelistPage = ref(1);
+const whitelistPageSize = 20;
+const whitelistTotal = ref(0);
 const promoDashboardOpen = ref(false);
 const promoDashboardLoading = ref(false);
 const promoDashboard = ref<AdminUserPromoDashboard | null>(null);
@@ -55,6 +63,8 @@ const userInfoOpen = ref(false);
 const userInfoTarget = ref<AdminUser | null>(null);
 const currentPage = ref(1);
 const pageSize = 30;
+let filterDebounceTimer: number | null = null;
+let whitelistDebounceTimer: number | null = null;
 
 const columns = [
   { title: "ID", dataIndex: "id", width: 58 },
@@ -67,39 +77,8 @@ const columns = [
   { title: "操作", key: "action", width: 400 },
 ];
 
-const filteredUsers = computed(() => {
-  const keyword = filters.username.trim().toLowerCase();
-  const list = users.value.filter((user) => {
-    const matchUsername = !keyword
-      || user.username.toLowerCase().includes(keyword)
-      || (user.email || "").toLowerCase().includes(keyword);
-    const matchStatus = !filters.status || user.status === filters.status;
-    const matchWhitelist = filters.whitelist === undefined || user.is_whitelisted === filters.whitelist;
-    return matchUsername && matchStatus && matchWhitelist;
-  });
-
-  return [...list].sort((a, b) => {
-    if (filters.sort === "credits_desc") {
-      if (b.credits !== a.credits) return b.credits - a.credits;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    if (filters.sort === "consumed_credits_desc") {
-      if ((b.consumed_credits ?? 0) !== (a.consumed_credits ?? 0)) {
-        return (b.consumed_credits ?? 0) - (a.consumed_credits ?? 0);
-      }
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-});
-
-const paginatedUsers = computed(() => {
-  const start = (currentPage.value - 1) * pageSize;
-  return filteredUsers.value.slice(start, start + pageSize);
-});
-
 const currentRangeSummary = computed(() => {
-  const total = filteredUsers.value.length;
+  const total = totalUsers.value;
   if (!total) return "当前第 0-0 条 / 共 0 条";
   const start = (currentPage.value - 1) * pageSize + 1;
   const end = Math.min(currentPage.value * pageSize, total);
@@ -107,22 +86,26 @@ const currentRangeSummary = computed(() => {
 });
 
 const filteredWhitelistUsers = computed(() => {
-  const keyword = whitelistKeyword.value.trim().toLowerCase();
-  return [...users.value]
-    .filter((user) => !keyword
-      || user.username.toLowerCase().includes(keyword)
-      || (user.email || "").toLowerCase().includes(keyword))
-    .sort((a, b) => {
-      if (a.is_whitelisted !== b.is_whitelisted) return a.is_whitelisted ? -1 : 1;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
+  return whitelistUsers.value;
 });
 
-const whitelistedCount = computed(() => users.value.filter((user) => user.is_whitelisted).length);
+const whitelistedCount = computed(() => whitelistedTotal.value);
 
-async function load() {
+async function load(page = currentPage.value) {
   loading.value = true;
-  try { users.value = await listUsers(); }
+  try {
+    const response = await listUsers(page, pageSize, {
+      keyword: filters.username,
+      status: filters.status,
+      whitelist: filters.whitelist,
+      sort: filters.sort,
+    });
+    users.value = response.items;
+    totalUsers.value = response.total;
+    currentPage.value = response.page || page;
+    firstAdminId.value = response.first_admin_id || null;
+    whitelistedTotal.value = response.whitelisted_total || 0;
+  }
   catch { message.error("获取用户列表失败"); }
   finally { loading.value = false; }
 }
@@ -130,11 +113,25 @@ onMounted(load);
 
 watch(() => [filters.username, filters.status, filters.whitelist, filters.sort], () => {
   currentPage.value = 1;
+  if (filterDebounceTimer) window.clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = window.setTimeout(() => {
+    void load(1);
+  }, 250);
 });
 
-watch(filteredUsers, (list) => {
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize));
-  if (currentPage.value > maxPage) currentPage.value = maxPage;
+watch(whitelistOpen, (open) => {
+  if (!open) return;
+  whitelistPage.value = 1;
+  void loadWhitelistUsers(1);
+});
+
+watch(whitelistKeyword, () => {
+  if (!whitelistOpen.value) return;
+  whitelistPage.value = 1;
+  if (whitelistDebounceTimer) window.clearTimeout(whitelistDebounceTimer);
+  whitelistDebounceTimer = window.setTimeout(() => {
+    void loadWhitelistUsers(1);
+  }, 250);
 });
 
 async function handleCreate() {
@@ -145,7 +142,7 @@ async function handleCreate() {
     message.success("创建成功");
     modalOpen.value = false;
     form.username = ""; form.password = ""; form.role = "user";
-    load();
+    await load(1);
   } catch (err: any) { message.error(err.response?.data?.detail || "创建失败"); }
   finally { creating.value = false; }
 }
@@ -159,7 +156,10 @@ function toggleStatus(u: AdminUser) {
     async onOk() {
       await updateUserStatus(u.id, next);
       message.success(`${label}成功`);
-      load();
+      await Promise.all([
+        load(),
+        whitelistOpen.value ? loadWhitelistUsers() : Promise.resolve(),
+      ]);
     },
   });
 }
@@ -173,7 +173,10 @@ function toggleRole(u: AdminUser) {
     async onOk() {
       await updateUserRole(u.id, next);
       message.success(`${label}成功`);
-      load();
+      await Promise.all([
+        load(),
+        whitelistOpen.value ? loadWhitelistUsers() : Promise.resolve(),
+      ]);
     },
   });
 }
@@ -233,7 +236,10 @@ async function handleAllocateCredits() {
     await allocateCredits(creditsTarget.value.id, creditsForm.amount, creditsForm.description.trim());
     message.success("积分分配成功");
     creditsOpen.value = false;
-    load();
+    await Promise.all([
+      load(),
+      whitelistOpen.value ? loadWhitelistUsers() : Promise.resolve(),
+    ]);
   } catch (err: any) {
     message.error(err.response?.data?.detail || "分配失败");
   } finally {
@@ -252,7 +258,10 @@ function handleResetCredits(user: AdminUser) {
       try {
         await resetUserCredits(user.id);
         message.success("积分已清零");
-        await load();
+        await Promise.all([
+          load(),
+          whitelistOpen.value ? loadWhitelistUsers() : Promise.resolve(),
+        ]);
       } catch (err: any) {
         message.error(err.response?.data?.detail || "积分清零失败");
       }
@@ -266,7 +275,10 @@ async function handleToggleWhitelist(user: AdminUser) {
   try {
     await updateUserWhitelist(user.id, next);
     message.success(next ? "已加入白名单" : "已移出白名单");
-    await load();
+    await Promise.all([
+      load(),
+      whitelistOpen.value ? loadWhitelistUsers() : Promise.resolve(),
+    ]);
   } catch (err: any) {
     message.error(err.response?.data?.detail || "白名单更新失败");
   } finally {
@@ -289,10 +301,7 @@ async function openPromoDashboard(user: AdminUser) {
 }
 
 function isFirstAdmin(u: AdminUser) {
-  const admins = users.value.filter((x) => x.role === "admin");
-  if (!admins.length) return false;
-  admins.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  return admins[0].id === u.id;
+  return !!firstAdminId.value && firstAdminId.value === u.id;
 }
 
 function resetFilters() {
@@ -301,10 +310,33 @@ function resetFilters() {
   filters.whitelist = undefined;
   filters.sort = "created_at_desc";
   currentPage.value = 1;
+  void load(1);
 }
 
 function handlePageChange(page: number) {
-  currentPage.value = page;
+  void load(page);
+}
+
+async function loadWhitelistUsers(page = whitelistPage.value) {
+  whitelistLoading.value = true;
+  try {
+    const response = await listUsers(page, whitelistPageSize, {
+      keyword: whitelistKeyword.value,
+      sort: "created_at_desc",
+    });
+    whitelistUsers.value = response.items;
+    whitelistTotal.value = response.total;
+    whitelistPage.value = response.page || page;
+    whitelistedTotal.value = response.whitelisted_total || 0;
+  } catch {
+    message.error("获取白名单用户列表失败");
+  } finally {
+    whitelistLoading.value = false;
+  }
+}
+
+function handleWhitelistPageChange(page: number) {
+  void loadWhitelistUsers(page);
 }
 
 function formatUserId(id?: string) {
@@ -403,7 +435,7 @@ function promoActivityRowKey(record: {
     <div class="warm-card warm-table-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
       <a-table
         :columns="columns"
-        :data-source="paginatedUsers"
+        :data-source="users"
         :loading="loading"
         row-key="id"
         :pagination="false"
@@ -519,9 +551,9 @@ function promoActivityRowKey(record: {
     <div class="warm-pagination">
       <div class="pagination-summary">{{ currentRangeSummary }}</div>
       <a-pagination
-        v-if="filteredUsers.length > pageSize"
+        v-if="totalUsers > pageSize"
         :current="currentPage"
-        :total="filteredUsers.length"
+        :total="totalUsers"
         :page-size="pageSize"
         show-less-items
         @change="handlePageChange"
@@ -625,7 +657,7 @@ function promoActivityRowKey(record: {
           </div>
         </div>
 
-        <div class="whitelist-list">
+        <div class="whitelist-list" v-if="!whitelistLoading">
           <div v-for="user in filteredWhitelistUsers" :key="user.id" class="whitelist-item">
             <div class="user-cell">
               <a-avatar :size="36" :src="withApiBaseUrl(user.avatar_url) || undefined" class="table-avatar">
@@ -651,6 +683,24 @@ function promoActivityRowKey(record: {
               {{ user.is_whitelisted ? "移出白名单" : "加入白名单" }}
             </a-button>
           </div>
+        </div>
+        <a-spin v-else />
+        <div class="warm-pagination">
+          <div class="pagination-summary">
+            {{
+              whitelistTotal
+                ? `当前第 ${(whitelistPage - 1) * whitelistPageSize + 1}-${Math.min(whitelistPage * whitelistPageSize, whitelistTotal)} 条 / 共 ${whitelistTotal} 条`
+                : "当前第 0-0 条 / 共 0 条"
+            }}
+          </div>
+          <a-pagination
+            v-if="whitelistTotal > whitelistPageSize"
+            :current="whitelistPage"
+            :total="whitelistTotal"
+            :page-size="whitelistPageSize"
+            show-less-items
+            @change="handleWhitelistPageChange"
+          />
         </div>
       </div>
     </a-modal>

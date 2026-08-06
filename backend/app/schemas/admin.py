@@ -25,6 +25,16 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminUserListOut(BaseModel):
+    items: list[UserOut] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    has_more: bool = False
+    first_admin_id: str | None = None
+    whitelisted_total: int = 0
+
+
 class AllocateCreditsRequest(BaseModel):
     amount: int
     description: str = ""

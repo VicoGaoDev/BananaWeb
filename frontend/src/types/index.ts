@@ -664,6 +664,16 @@ export interface AdminUser {
   created_at: string;
 }
 
+export interface AdminUserListResponse {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  first_admin_id?: string | null;
+  whitelisted_total: number;
+}
+
 export interface AdminUserPromoDashboard {
   user_id: string;
   username: string;
@@ -814,6 +824,8 @@ export interface InviteRewardReferralItem {
 export interface InviteRewardReferralListResponse {
   total: number;
   items: InviteRewardReferralItem[];
+  page: number;
+  page_size: number;
 }
 
 export interface InviteRewardLogItem {
@@ -833,6 +845,8 @@ export interface InviteRewardLogItem {
 export interface InviteRewardLogListResponse {
   total: number;
   items: InviteRewardLogItem[];
+  page: number;
+  page_size: number;
 }
 
 export interface AdminInviteRewardSummary {

@@ -13,6 +13,7 @@ import type {
   AdminConfig,
   CosConfig,
   AdminUser,
+  AdminUserListResponse,
   AdminPaymentOrder,
   AdminOfflineOrder,
   CreditLog,
@@ -89,8 +90,26 @@ function buildVideoAnalyticsParams(query: VideoAnalyticsQuery): Record<string, u
   return params;
 }
 
-export function listUsers(): Promise<AdminUser[]> {
-  return client.get("/admin/users");
+export function listUsers(
+  page = 1,
+  pageSize = 30,
+  filters?: {
+    keyword?: string;
+    status?: "active" | "disabled";
+    whitelist?: boolean;
+    sort?: "created_at_desc" | "credits_desc" | "consumed_credits_desc";
+  }
+): Promise<AdminUserListResponse> {
+  return client.get("/admin/users", {
+    params: {
+      page,
+      page_size: pageSize,
+      keyword: filters?.keyword?.trim() || undefined,
+      status: filters?.status || undefined,
+      whitelist: typeof filters?.whitelist === "boolean" ? filters.whitelist : undefined,
+      sort: filters?.sort || "created_at_desc",
+    },
+  });
 }
 
 export function listUserOptions(): Promise<AdminUser[]> {

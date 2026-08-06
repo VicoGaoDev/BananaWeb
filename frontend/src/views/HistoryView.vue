@@ -133,6 +133,7 @@ const templateInitialValue = ref<TemplatePayload | null>(null);
 const templateTags = ref<TemplateTag[]>([]);
 const isAdminHistoryView = computed(() => props.adminUserTasks && auth.isAdmin);
 const isBoardHistoryView = computed(() => !isAdminHistoryView.value && !!props.boardKey);
+const isIncrementalHistoryView = computed(() => !isAdminHistoryView.value && !isBoardHistoryView.value);
 const userInfoDialogOpen = ref(false);
 const selectedUserInfo = ref<AdminUser | null>(null);
 
@@ -275,18 +276,44 @@ async function fetchHistoryPage(targetPage: number) {
   return fetchHistory(targetPage, pageSize.value, getHistoryQuery());
 }
 
-async function loadHistory(silent = false) {
+function mergeRefreshedFirstPage(firstPageItems: UserHistoryCard[]) {
+  const firstPageKeys = new Set(firstPageItems.map((item) => String(getHistoryItemKey(item))));
+  const retainedItems = items.value
+    .slice(pageSize.value)
+    .filter((item) => !firstPageKeys.has(String(getHistoryItemKey(item))));
+  return [...firstPageItems, ...retainedItems];
+}
+
+async function loadHistory(
+  silent = false,
+  options: { rebuildLoadedPages?: boolean } = {},
+) {
   if (!silent) loading.value = true;
   try {
-    const targetPages = Math.max(1, page.value);
-    const results = await Promise.all(
-      Array.from({ length: targetPages }, (_, index) => fetchHistoryPage(index + 1))
-    );
-    const mergedItems = results.flatMap((result) => result.items);
-    items.value = mergedItems;
-    total.value = results[0]?.total || 0;
-    syncSelection(mergedItems);
-    syncDetail(mergedItems);
+    const shouldRebuildLoadedPages = options.rebuildLoadedPages
+      ?? (!isIncrementalHistoryView.value && page.value > 1);
+
+    if (shouldRebuildLoadedPages) {
+      const targetPages = Math.max(1, page.value);
+      const results = await Promise.all(
+        Array.from({ length: targetPages }, (_, index) => fetchHistoryPage(index + 1))
+      );
+      const mergedItems = results.flatMap((result) => result.items);
+      items.value = mergedItems;
+      total.value = results[0]?.total || 0;
+      syncSelection(mergedItems);
+      syncDetail(mergedItems);
+      syncHistoryPolling();
+      return;
+    }
+
+    const firstPage = await fetchHistoryPage(1);
+    total.value = firstPage.total;
+    items.value = silent && isIncrementalHistoryView.value && page.value > 1
+      ? mergeRefreshedFirstPage(firstPage.items)
+      : firstPage.items;
+    syncSelection(items.value);
+    syncDetail(items.value);
     syncHistoryPolling();
   } catch {
     if (!silent) message.error("获取历史记录失败");
@@ -890,7 +917,7 @@ async function handleDelete(item: UserHistoryCard) {
       }
       if (items.value.length === 1 && page.value > 1) page.value -= 1;
       if (detailItem.value?.image_id === item.image_id) detailOpen.value = false;
-      await loadHistory();
+    await loadHistory(false, { rebuildLoadedPages: page.value > 1 });
     },
   });
 }
@@ -913,7 +940,7 @@ async function handleTogglePin(item: UserHistoryCard) {
   try {
     const result = await toggleHistoryPin(payload);
     message.success(result.is_pinned ? "已置顶到顶部" : "已取消置顶");
-    await loadHistory(true);
+    await loadHistory(true, { rebuildLoadedPages: page.value > 1 });
   } catch {
     message.error(item.is_pinned ? "取消置顶失败" : "置顶失败，请重试");
   } finally {
@@ -999,7 +1026,7 @@ async function deleteSelectedItems() {
     if (successIds.length === items.value.length && page.value > 1) page.value -= 1;
   }
 
-  await loadHistory();
+  await loadHistory(false, { rebuildLoadedPages: page.value > 1 });
 
   if (failedCount) {
     message.warning(`已删除 ${successKeys.length} 项，${failedCount} 项删除失败`);

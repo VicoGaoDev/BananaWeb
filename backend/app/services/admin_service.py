@@ -41,6 +41,8 @@ from app.services.task_type_service import (
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
     get_task_scene_type_map,
+    get_task_scene_type_subset,
+    resolve_task_type,
     resolve_task_type_for_task,
 )
 from app.services.user_credit_service import (
@@ -147,6 +149,11 @@ def _serialize_user(user: User) -> dict:
     }
 
 
+def _get_first_admin_external_id(db: Session) -> str | None:
+    first = db.query(User).filter(User.role == "admin").order_by(User.created_at.asc()).first()
+    return user_external_id(first) if first else None
+
+
 def create_user(db: Session, username: str, password: str, role: str = "user", operator: User | None = None) -> dict:
     if username == "administrator":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户名为系统保留，不可使用")
@@ -169,11 +176,95 @@ def create_user(db: Session, username: str, password: str, role: str = "user", o
     return _serialize_user(user)
 
 
-def list_users(db: Session) -> list[dict]:
+def list_users(
+    db: Session,
+    *,
+    page: int = 1,
+    page_size: int = 30,
+    keyword: str | None = None,
+    status_filter: str | None = None,
+    whitelist: bool | None = None,
+    sort: str = "created_at_desc",
+) -> dict:
+    normalized_page = max(int(page or 1), 1)
+    normalized_page_size = max(1, min(int(page_size or 30), 100))
+    normalized_keyword = (keyword or "").strip()
+    normalized_status = (status_filter or "").strip()
+    normalized_sort = (sort or "created_at_desc").strip()
+
+    query = db.query(User).filter(User.role != "superadmin")
+    if normalized_keyword:
+        keyword_like = f"%{normalized_keyword}%"
+        query = query.filter(or_(
+            User.username.ilike(keyword_like),
+            User.email.ilike(keyword_like),
+            User.business_id.ilike(keyword_like),
+        ))
+    if normalized_status in {"active", "disabled"}:
+        query = query.filter(User.status == normalized_status)
+    if whitelist is not None:
+        query = query.filter(User.is_whitelisted.is_(bool(whitelist)))
+
+    total = int(query.count() or 0)
+
+    if normalized_sort == "credits_desc":
+        credit_subquery = (
+            db.query(
+                UserCredit.user_id.label("user_id"),
+                func.coalesce(UserCredit.remain_credit, 0).label("credits"),
+            )
+            .subquery()
+        )
+        query = (
+            query
+            .outerjoin(credit_subquery, credit_subquery.c.user_id == User.id)
+            .order_by(func.coalesce(credit_subquery.c.credits, 0).desc(), User.created_at.desc())
+        )
+    elif normalized_sort == "consumed_credits_desc":
+        consumed_subquery = (
+            db.query(
+                CreditLog.user_id.label("user_id"),
+                func.coalesce(func.sum(func.abs(CreditLog.amount)), 0).label("consumed_credits"),
+            )
+            .filter(CreditLog.type == "consume")
+            .group_by(CreditLog.user_id)
+            .subquery()
+        )
+        refunded_subquery = (
+            db.query(
+                CreditLog.user_id.label("user_id"),
+                func.coalesce(func.sum(CreditLog.amount), 0).label("refunded_credits"),
+            )
+            .filter(
+                CreditLog.type == "allocate",
+                _task_credit_refund_filter(),
+            )
+            .group_by(CreditLog.user_id)
+            .subquery()
+        )
+        net_consumed = case(
+            (
+                func.coalesce(consumed_subquery.c.consumed_credits, 0)
+                - func.coalesce(refunded_subquery.c.refunded_credits, 0)
+                > 0,
+                func.coalesce(consumed_subquery.c.consumed_credits, 0)
+                - func.coalesce(refunded_subquery.c.refunded_credits, 0),
+            ),
+            else_=0,
+        )
+        query = (
+            query
+            .outerjoin(consumed_subquery, consumed_subquery.c.user_id == User.id)
+            .outerjoin(refunded_subquery, refunded_subquery.c.user_id == User.id)
+            .order_by(net_consumed.desc(), User.created_at.desc())
+        )
+    else:
+        query = query.order_by(User.created_at.desc())
+
     users = (
-        db.query(User)
-        .filter(User.role != "superadmin")
-        .order_by(User.created_at.desc())
+        query
+        .offset((normalized_page - 1) * normalized_page_size)
+        .limit(normalized_page_size)
         .all()
     )
     user_ids = [user.id for user in users]
@@ -214,14 +305,31 @@ def list_users(db: Session) -> list[dict]:
         )
         for row in consumed_credit_rows
     }
-    return [
-        _serialize_user_with_balance(
-            user,
-            credit_map.get(user.id, 0),
-            consumed_credit_map.get(user.id, 0),
+    whitelisted_total = int(
+        db.query(func.count(User.id))
+        .filter(
+            User.role != "superadmin",
+            User.is_whitelisted.is_(True),
         )
-        for user in users
-    ]
+        .scalar()
+        or 0
+    )
+    return {
+        "items": [
+            _serialize_user_with_balance(
+                user,
+                credit_map.get(user.id, 0),
+                consumed_credit_map.get(user.id, 0),
+            )
+            for user in users
+        ],
+        "total": total,
+        "page": normalized_page,
+        "page_size": normalized_page_size,
+        "has_more": normalized_page * normalized_page_size < total,
+        "first_admin_id": _get_first_admin_external_id(db),
+        "whitelisted_total": whitelisted_total,
+    }
 
 
 def list_user_options(db: Session, keyword: str | None = None, limit: int = 2000) -> list[dict]:
@@ -619,6 +727,98 @@ def _resolve_credit_log_mode(log: CreditLog, task_modes: dict[int, str]) -> str:
     return "manual"
 
 
+def _build_credit_log_mode_expression(scene_type_column):
+    return case(
+        (
+            or_(
+                CreditLog.description.in_(
+                    [
+                        PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
+                        f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}",
+                    ]
+                ),
+                Task.mode == PROMPT_REVERSE_MODE,
+            ),
+            PROMPT_REVERSE_MODE,
+        ),
+        ((CreditLog.description.like("兑换积分码 %")), "redeem"),
+        ((CreditLog.description.like("在线支付订单 %")), "purchase"),
+        (
+            or_(
+                Task.mode == "inpaint",
+                Task.model == SCENE_INPAINT,
+            ),
+            "inpaint",
+        ),
+        (scene_type_column == "image_edit", "image_edit"),
+        (Task.id.is_not(None), "text_generate"),
+        else_="manual",
+    )
+
+
+def _get_credit_log_task_context(db: Session, logs: list[CreditLog]) -> tuple[dict[int, Task], dict[int, str]]:
+    task_ids = {int(log.task_id) for log in logs if log.task_id}
+    if not task_ids:
+        return {}, {}
+
+    tasks = db.query(Task).filter(Task.id.in_(task_ids)).all()
+    scene_type_map = get_task_scene_type_subset(
+        db,
+        {
+            (task.model or "").strip()
+            for task in tasks
+            if (task.model or "").strip()
+        },
+    )
+    task_cache = {task.id: task for task in tasks}
+    task_modes = {
+        task.id: resolve_task_type(
+            mode=task.mode,
+            model=task.model,
+            scene_type_map=scene_type_map,
+        )
+        for task in tasks
+    }
+    return task_cache, task_modes
+
+
+def _serialize_credit_logs_page(db: Session, logs: list[CreditLog]) -> list[dict]:
+    if not logs:
+        return []
+
+    task_cache, task_modes = _get_credit_log_task_context(db, logs)
+    related_user_ids = {
+        int(user_id)
+        for user_id in [
+            *(log.user_id for log in logs if log.user_id),
+            *(log.operator_id for log in logs if log.operator_id),
+        ]
+        if user_id
+    }
+    user_cache = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_(related_user_ids)).all()
+    } if related_user_ids else {}
+
+    items = []
+    for log in logs:
+        target_user = user_cache.get(log.user_id)
+        operator = user_cache.get(log.operator_id) if log.operator_id else None
+        items.append({
+            "id": log.id,
+            "user_id": user_external_id(target_user) if target_user else "",
+            "username": target_user.username if target_user else "",
+            "amount": log.amount,
+            "type": log.type,
+            "mode": _resolve_credit_log_mode(log, task_modes),
+            "description": log.description,
+            "operator_name": operator.username if operator else "",
+            "task_id": task_external_id(task_cache.get(log.task_id)) if log.task_id and task_cache.get(log.task_id) else None,
+            "created_at": log.created_at,
+        })
+    return items
+
+
 def get_credit_logs(
     db: Session,
     user_id: int | None = None,
@@ -636,55 +836,42 @@ def get_credit_logs(
         query = query.filter(CreditLog.created_at >= start_date)
     if end_date is not None:
         query = query.filter(CreditLog.created_at <= end_date)
-    logs = query.order_by(CreditLog.created_at.desc()).all()
+    if direction == "increase":
+        query = query.filter(CreditLog.amount > 0)
+    elif direction == "decrease":
+        query = query.filter(CreditLog.amount < 0)
 
-    task_ids = {log.task_id for log in logs if log.task_id}
-    task_cache = {
-        task.id: task
-        for task in db.query(Task).filter(Task.id.in_(task_ids)).all()
-    } if task_ids else {}
-    scene_type_map = get_task_scene_type_map(db)
-    task_modes = {
-        task_id: resolve_task_type_for_task(task, scene_type_map=scene_type_map)
-        for task_id, task in task_cache.items()
+    if mode:
+        scene_type_subquery = (
+            db.query(
+                ExternalApiSceneBinding.scene_key.label("scene_key"),
+                func.max(ExternalApiSceneBinding.scene_type).label("scene_type"),
+            )
+            .filter(ExternalApiSceneBinding.is_deleted.is_(False))
+            .group_by(ExternalApiSceneBinding.scene_key)
+            .subquery()
+        )
+        mode_expression = _build_credit_log_mode_expression(scene_type_subquery.c.scene_type)
+        query = (
+            query
+            .outerjoin(Task, Task.id == CreditLog.task_id)
+            .outerjoin(scene_type_subquery, scene_type_subquery.c.scene_key == Task.model)
+            .filter(mode_expression == mode)
+        )
+
+    total = int(query.count() or 0)
+    paged_logs = (
+        query
+        .order_by(CreditLog.created_at.desc(), CreditLog.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "items": _serialize_credit_logs_page(db, paged_logs),
     }
-
-    filtered_logs: list[CreditLog] = []
-    for log in logs:
-        if direction == "increase" and log.amount <= 0:
-            continue
-        if direction == "decrease" and log.amount >= 0:
-            continue
-        resolved_mode = _resolve_credit_log_mode(log, task_modes)
-        if mode and resolved_mode != mode:
-            continue
-        filtered_logs.append(log)
-
-    total = len(filtered_logs)
-    paged_logs = filtered_logs[(page - 1) * page_size: page * page_size]
-
-    items = []
-    user_cache: dict[int, User | None] = {}
-    operator_cache: dict[int, User | None] = {}
-    for log in paged_logs:
-        if log.user_id not in user_cache:
-            user_cache[log.user_id] = db.query(User).filter(User.id == log.user_id).first()
-        if log.operator_id and log.operator_id not in operator_cache:
-            operator_cache[log.operator_id] = db.query(User).filter(User.id == log.operator_id).first()
-        operator = operator_cache.get(log.operator_id) if log.operator_id else None
-        items.append({
-            "id": log.id,
-            "user_id": user_external_id(user_cache[log.user_id]),
-            "username": user_cache[log.user_id].username if user_cache[log.user_id] else "",
-            "amount": log.amount,
-            "type": log.type,
-            "mode": _resolve_credit_log_mode(log, task_modes),
-            "description": log.description,
-            "operator_name": operator.username if operator else "",
-            "task_id": task_external_id(task_cache.get(log.task_id)) if log.task_id else None,
-            "created_at": log.created_at,
-        })
-    return {"total": total, "items": items}
 
 
 def list_payment_orders(
