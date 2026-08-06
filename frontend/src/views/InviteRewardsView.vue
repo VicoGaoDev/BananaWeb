@@ -27,6 +27,9 @@ import type {
   InviteRewardReferralItem,
 } from "@/types";
 
+const INVITE_QR_SIZE = 192;
+const INVITE_QR_BRAND_ICON_URL = "/香蕉.svg";
+
 const loading = ref(false);
 const qrCodeDataUrl = ref("");
 const overview = ref<InviteRewardOverviewResponse>({
@@ -84,14 +87,104 @@ async function copyText(text: string, successText: string) {
   }
 }
 
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    image.src = src;
+  });
+}
+
+function fillRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const maxRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + maxRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, maxRadius);
+  context.arcTo(x + width, y + height, x, y + height, maxRadius);
+  context.arcTo(x, y + height, x, y, maxRadius);
+  context.arcTo(x, y, x + width, y, maxRadius);
+  context.closePath();
+  context.fill();
+}
+
+async function drawQrBrand(context: CanvasRenderingContext2D) {
+  const badgeSize = 54;
+  const badgeX = (INVITE_QR_SIZE - badgeSize) / 2;
+  const badgeY = (INVITE_QR_SIZE - badgeSize) / 2;
+
+  context.save();
+  context.fillStyle = "#ffffff";
+  context.shadowColor = "rgba(15, 23, 42, 0.12)";
+  context.shadowBlur = 12;
+  context.shadowOffsetY = 3;
+  fillRoundedRect(context, badgeX, badgeY, badgeSize, badgeSize, 16);
+  context.restore();
+
+  try {
+    const icon = await loadImage(INVITE_QR_BRAND_ICON_URL);
+    const iconSize = 34;
+    const iconX = (INVITE_QR_SIZE - iconSize) / 2;
+    const iconY = (INVITE_QR_SIZE - iconSize) / 2;
+    context.drawImage(icon, iconX, iconY, iconSize, iconSize);
+  } catch {
+    context.save();
+    context.fillStyle = "#7c8f12";
+    context.font = "700 15px Inter, PingFang SC, Microsoft YaHei, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("80AI", INVITE_QR_SIZE / 2, INVITE_QR_SIZE / 2 + 1);
+    context.restore();
+  }
+}
+
 async function refreshQrCode(link: string) {
   qrCodeDataUrl.value = "";
   if (!link) return;
-  qrCodeDataUrl.value = await QRCode.toDataURL(link, {
-    width: 192,
+  const canvas = document.createElement("canvas");
+  canvas.width = INVITE_QR_SIZE;
+  canvas.height = INVITE_QR_SIZE;
+  await QRCode.toCanvas(canvas, link, {
+    width: INVITE_QR_SIZE,
     margin: 1,
-    errorCorrectionLevel: "M",
+    errorCorrectionLevel: "H",
   });
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("二维码画布初始化失败");
+  await drawQrBrand(context);
+  qrCodeDataUrl.value = canvas.toDataURL("image/png");
+}
+
+async function copyQrCode() {
+  if (!qrCodeDataUrl.value) {
+    message.warning("二维码还未生成，请稍后重试");
+    return;
+  }
+
+  if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+    await copyText(overview.value.invite_link, "当前浏览器不支持复制图片，已复制邀请链接");
+    return;
+  }
+
+  try {
+    const response = await fetch(qrCodeDataUrl.value);
+    const blob = await response.blob();
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        [blob.type || "image/png"]: blob,
+      }),
+    ]);
+    message.success("邀请二维码已复制");
+  } catch {
+    await copyText(overview.value.invite_link, "复制二维码失败，已复制邀请链接");
+  }
 }
 
 function downloadQrCode() {
@@ -234,19 +327,30 @@ onMounted(() => {
                   <QrcodeOutlined />
                   <span>邀请二维码</span>
                 </div>
-                <div class="invite-qr-wrap">
+                <div class="invite-qr-wrap invite-qr-wrap--clickable" @click="copyQrCode">
                   <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="邀请二维码">
                   <div v-else class="invite-qr-placeholder">生成中...</div>
                 </div>
-                <a-button
-                  type="link"
-                  class="invite-download-btn"
-                  :disabled="!qrCodeDataUrl"
-                  @click="downloadQrCode"
-                >
-                  <template #icon><DownloadOutlined /></template>
-                  下载二维码
-                </a-button>
+                <div class="invite-qr-actions">
+                  <a-button
+                    type="link"
+                    class="invite-download-btn"
+                    :disabled="!qrCodeDataUrl"
+                    @click="copyQrCode"
+                  >
+                    <template #icon><CopyOutlined /></template>
+                    复制二维码
+                  </a-button>
+                  <a-button
+                    type="link"
+                    class="invite-download-btn"
+                    :disabled="!qrCodeDataUrl"
+                    @click="downloadQrCode"
+                  >
+                    <template #icon><DownloadOutlined /></template>
+                    下载二维码
+                  </a-button>
+                </div>
               </div>
             </div>
           </div>
@@ -623,9 +727,25 @@ onMounted(() => {
   }
 }
 
+.invite-qr-wrap--clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+}
+
 .invite-qr-placeholder {
   color: var(--theme-text-secondary);
   font-size: 13px;
+}
+
+.invite-qr-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .invite-download-btn {
