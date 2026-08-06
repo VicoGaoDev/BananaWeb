@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from sqlalchemy.orm import Session, aliased, joinedload
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.task import Task
