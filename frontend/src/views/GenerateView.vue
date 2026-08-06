@@ -46,6 +46,7 @@ import {
   LARGE_IMAGE_PREVIEW_NOTICE,
   resolveImageUrl,
 } from "@/api/images";
+import { optimizePrompt } from "@/api/promptOptimize";
 import { reversePrompt } from "@/api/promptReverse";
 import { createUserPrompt } from "@/api/userPrompts";
 import {
@@ -97,6 +98,9 @@ const route = useRoute();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 const COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY = "user-completed-unread-feedback";
+const AUTH_USER_REFRESH_INTERVAL_MS = 60_000;
+let lastAuthUserRefreshAt = 0;
+let authUserRefreshPromise: Promise<void> | null = null;
 
 function getBodyPopupContainer() {
   return document.body;
@@ -146,6 +150,7 @@ const DEFAULT_SCENE_COSTS: Record<string, number> = {
   banana_pro_edit: 4,
   banana_pro_plus_edit: 4,
   prompt_reverse: 1,
+  prompt_optimize: 1,
   inpaint: 4,
 };
 
@@ -301,6 +306,14 @@ const reverseInput = ref<HTMLInputElement | null>(null);
 const reversePickerOpening = ref(false);
 const reverseLoading = ref(false);
 const reversePromptResult = ref("");
+const promptOptimizeLoading = ref(false);
+type PromptOptimizeTarget = "prompt" | "repaintPrompt";
+const promptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
+const activePromptOptimizeRequestId = ref<number | null>(null);
+const PROMPT_OPTIMIZE_TOOLTIP = "在保留原意的前提下，自动补全构图、光线、画风和细节，让提示词更适合出图";
+let promptOptimizeRequestSeq = 0;
+let promptOptimizeAbortController: AbortController | null = null;
+const cancelledPromptOptimizeRequestIds = new Set<number>();
 const brushSize = ref(28);
 const repaintTool = ref<"paint" | "erase" | "rect" | "circle" | "text">("paint");
 const repaintLineColor = ref<string>("#c38d36");
@@ -590,6 +603,7 @@ function resolveSceneCreditCost(sceneKey: string, targetResolution = resolution.
 }
 const selectedModelCreditCost = computed(() => resolveSceneCreditCost(selectedModel.value, resolution.value));
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
+const promptOptimizeCreditCost = computed(() => sceneCostMap.value.prompt_optimize ?? DEFAULT_SCENE_COSTS.prompt_optimize);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
 const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint");
 const activeExtendedToolLabel = computed(() => (
@@ -1433,13 +1447,34 @@ async function submitGeneratedTask(
   }
 }
 
+function refreshAuthUserInBackground() {
+  if (authUserRefreshPromise) return;
+  authUserRefreshPromise = getMe()
+    .then((user) => {
+      auth.updateUser(user);
+      lastAuthUserRefreshAt = Date.now();
+    })
+    .catch(() => {})
+    .finally(() => {
+      authUserRefreshPromise = null;
+    });
+}
+
 async function ensureAuthenticated() {
   if (!auth.isLoggedIn) {
     loginModalVisible.value = true;
     return false;
   }
+  if (auth.user) {
+    const now = Date.now();
+    if (now - lastAuthUserRefreshAt >= AUTH_USER_REFRESH_INTERVAL_MS) {
+      refreshAuthUserInBackground();
+    }
+    return true;
+  }
   try {
     auth.updateUser(await getMe());
+    lastAuthUserRefreshAt = Date.now();
     return true;
   } catch {
     loginModalVisible.value = true;
@@ -2108,6 +2143,153 @@ const promptReverseButtonText = computed(() => {
 const activePrompt = computed(() => (
   generateMode.value === "inpaint" ? repaintPrompt.value : prompt.value
 ));
+
+function getPromptOptimizeReferenceImages() {
+  if (generateMode.value === "imageEdit") {
+    return [...referenceUrls.value];
+  }
+  if (generateMode.value === "inpaint") {
+    return sourceImageUrl.value.trim() ? [sourceImageUrl.value.trim()] : [];
+  }
+  return [];
+}
+
+function applyOptimizedPrompt(nextPrompt: string, target: PromptOptimizeTarget) {
+  if (target === "repaintPrompt") {
+    repaintPrompt.value = nextPrompt;
+    return;
+  }
+  prompt.value = nextPrompt;
+}
+
+const isPromptOptimizeOnMainPrompt = computed(() => (
+  promptOptimizeLoading.value && promptOptimizeTarget.value === "prompt"
+));
+const isPromptOptimizeOnRepaintPrompt = computed(() => (
+  promptOptimizeLoading.value && promptOptimizeTarget.value === "repaintPrompt"
+));
+
+function getPromptOptimizeTarget(): PromptOptimizeTarget {
+  return generateMode.value === "inpaint" ? "repaintPrompt" : "prompt";
+}
+
+async function runPromptOptimize(
+  payload: {
+    prompt: string;
+    reference_images?: string[];
+  },
+  target: PromptOptimizeTarget,
+) {
+  const requestId = ++promptOptimizeRequestSeq;
+  const controller = new AbortController();
+  activePromptOptimizeRequestId.value = requestId;
+  promptOptimizeTarget.value = target;
+  promptOptimizeAbortController = controller;
+  promptOptimizeLoading.value = true;
+  try {
+    const res = await optimizePrompt(payload, controller.signal);
+    if (cancelledPromptOptimizeRequestIds.has(requestId) || activePromptOptimizeRequestId.value !== requestId) {
+      return;
+    }
+    const optimizedPrompt = (res.prompt || "").trim();
+    if (!optimizedPrompt) {
+      message.error("提示词优化返回内容为空");
+      return;
+    }
+    applyOptimizedPrompt(optimizedPrompt, target);
+    message.success("提示词已优化并回填");
+    getMe().then((u) => auth.updateUser(u)).catch(() => {});
+  } catch (err: any) {
+    if (cancelledPromptOptimizeRequestIds.has(requestId) || err?.code === "ERR_CANCELED" || err?.name === "CanceledError") {
+      return;
+    }
+    const detail = err?.response?.data?.detail || "";
+    if (isInsufficientCreditsError(err)) {
+      showInsufficientCreditsPurchase(detail);
+      return;
+    }
+    message.error(detail || "提示词优化失败");
+  } finally {
+    cancelledPromptOptimizeRequestIds.delete(requestId);
+    if (activePromptOptimizeRequestId.value === requestId) {
+      activePromptOptimizeRequestId.value = null;
+      promptOptimizeTarget.value = null;
+      promptOptimizeLoading.value = false;
+    }
+    if (promptOptimizeAbortController === controller) {
+      promptOptimizeAbortController = null;
+    }
+  }
+}
+
+function cancelPromptOptimize() {
+  const requestId = activePromptOptimizeRequestId.value;
+  if (requestId == null) return;
+  cancelledPromptOptimizeRequestIds.add(requestId);
+  activePromptOptimizeRequestId.value = null;
+  promptOptimizeTarget.value = null;
+  promptOptimizeLoading.value = false;
+  promptOptimizeAbortController?.abort();
+  promptOptimizeAbortController = null;
+}
+
+function confirmCancelPromptOptimize() {
+  if (!promptOptimizeLoading.value || activePromptOptimizeRequestId.value == null) return;
+  Modal.confirm({
+    title: "确认取消提示词优化？",
+    content: "取消后，即使本次优化结果稍后返回，也不会回填到输入框。",
+    centered: true,
+    okText: "确认取消",
+    cancelText: "继续等待",
+    okButtonProps: { danger: true },
+    onOk: () => {
+      cancelPromptOptimize();
+      message.info("已取消提示词优化");
+    },
+  });
+}
+
+async function handlePromptOptimize() {
+  if (promptOptimizeLoading.value) return;
+  if (!(await ensureAuthenticated())) return;
+  const normalizedPrompt = activePrompt.value.trim();
+  if (!normalizedPrompt) {
+    message.warning("请先输入需要优化的提示词");
+    return;
+  }
+  if (generateMode.value === "imageEdit" && hasPendingReferenceUploads.value) {
+    message.warning("参考图仍在上传中，请稍候再优化");
+    return;
+  }
+  if (generateMode.value === "inpaint" && sourceUploading.value) {
+    message.warning("原图仍在上传中，请稍候再优化");
+    return;
+  }
+  if (generateMode.value === "inpaint" && sourcePreviewUrl.value && !sourceImageUrl.value) {
+    message.warning("原图未上传完成，请稍候再优化");
+    return;
+  }
+  if (!isSuperAdmin.value && userCredits.value < promptOptimizeCreditCost.value) {
+    showInsufficientCreditsPurchase(`积分不足，需要 ${promptOptimizeCreditCost.value} 积分，当前余额 ${userCredits.value}`);
+    return;
+  }
+
+  const payload = {
+    prompt: normalizedPrompt,
+    reference_images: getPromptOptimizeReferenceImages(),
+  };
+  const target = getPromptOptimizeTarget();
+  Modal.confirm({
+    title: "确认优化当前提示词？",
+    content: "将对当前输入框中的提示词进行优化，自动补全构图、光线、画风和细节。",
+    centered: true,
+    okText: "确认优化",
+    cancelText: "取消",
+    onOk: () => {
+      void runPromptOptimize(payload, target);
+    },
+  });
+}
 
 async function handlePromptReverse() {
   if (!(await ensureAuthenticated())) return;
@@ -2982,6 +3164,7 @@ onActivated(async () => {
 });
 
 onBeforeUnmount(() => {
+  cancelPromptOptimize();
   stopAllTaskPolling();
   stopGlobalActiveStatusPolling();
   generatedResultImageLoad.dispose();
@@ -3328,6 +3511,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 <div class="prompt-label-row">
                   <div class="prompt-label-main">
                     <label>提示词</label>
+                    <PromptInterceptionTip />
                     <a-tooltip v-if="canQuickSavePrompt(prompt, lastSavedPromptText)" title="加入我的提示词">
                       <button
                         type="button"
@@ -3341,7 +3525,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
-                    <PromptInterceptionTip />
+                    <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
+                      <span>
+                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
+                          <template #icon><ThunderboltOutlined /></template>
+                          提示词优化（限时免费）
+                        </a-button>
+                      </span>
+                    </a-tooltip>
                     <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
@@ -3352,9 +3543,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     placeholder="描述您想要生成的图片..."
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
-                    allow-clear
+                    :allow-clear="!isPromptOptimizeOnMainPrompt"
+                    :readonly="isPromptOptimizeOnMainPrompt"
                     show-count
                   />
+                  <div v-if="isPromptOptimizeOnMainPrompt" class="prompt-optimize-status">
+                    <div class="prompt-optimize-status-text">
+                      <LoadingOutlined spin />
+                      <span>优化中，约 10 秒左右</span>
+                    </div>
+                    <button type="button" class="prompt-optimize-cancel-btn" @click="confirmCancelPromptOptimize">取消</button>
+                  </div>
                 </div>
               </div>
 
@@ -3679,6 +3878,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 <div class="prompt-label-row">
                   <div class="prompt-label-main">
                     <label>提示词</label>
+                    <PromptInterceptionTip />
                     <a-tooltip v-if="canQuickSavePrompt(prompt, lastSavedPromptText)" title="加入我的提示词">
                       <button
                         type="button"
@@ -3692,7 +3892,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
-                    <PromptInterceptionTip />
+                    <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
+                      <span>
+                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
+                          <template #icon><ThunderboltOutlined /></template>
+                          提示词优化（限时免费）
+                        </a-button>
+                      </span>
+                    </a-tooltip>
                     <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
@@ -3703,9 +3910,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     placeholder="描述您想要生成的图片..."
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
-                    allow-clear
+                    :allow-clear="!isPromptOptimizeOnMainPrompt"
+                    :readonly="isPromptOptimizeOnMainPrompt"
                     show-count
                   />
+                  <div v-if="isPromptOptimizeOnMainPrompt" class="prompt-optimize-status">
+                    <div class="prompt-optimize-status-text">
+                      <LoadingOutlined spin />
+                      <span>优化中，约 10 秒左右</span>
+                    </div>
+                    <button type="button" class="prompt-optimize-cancel-btn" @click="confirmCancelPromptOptimize">取消</button>
+                  </div>
                 </div>
               </div>
 
@@ -4084,6 +4299,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 <div class="prompt-label-row">
                   <div class="prompt-label-main">
                     <label>提示词</label>
+                    <PromptInterceptionTip />
                     <a-tooltip v-if="canQuickSavePrompt(repaintPrompt, lastSavedRepaintPromptText)" title="加入我的提示词">
                       <button
                         type="button"
@@ -4097,6 +4313,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
+                      <span>
+                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
+                          <template #icon><ThunderboltOutlined /></template>
+                          提示词优化（限时免费）
+                        </a-button>
+                      </span>
+                    </a-tooltip>
                     <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
                   </div>
                 </div>
@@ -4107,9 +4331,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     placeholder="描述需要局部重绘后的效果..."
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
-                    allow-clear
+                    :allow-clear="!isPromptOptimizeOnRepaintPrompt"
+                    :readonly="isPromptOptimizeOnRepaintPrompt"
                     show-count
                   />
+                  <div v-if="isPromptOptimizeOnRepaintPrompt" class="prompt-optimize-status">
+                    <div class="prompt-optimize-status-text">
+                      <LoadingOutlined spin />
+                      <span>优化中，约 10 秒左右</span>
+                    </div>
+                    <button type="button" class="prompt-optimize-cancel-btn" @click="confirmCancelPromptOptimize">取消</button>
+                  </div>
                 </div>
               </div>
               </div>
@@ -5256,6 +5488,60 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .prompt-input-wrap {
   position: relative;
+}
+
+.prompt-optimize-status {
+  position: absolute;
+  right: 12px;
+  bottom: 34px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.prompt-optimize-status-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #a88962;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.prompt-optimize-cancel-btn {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(241, 221, 183, 0.95);
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.96);
+  color: #a88962;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
+    color: #d38a12;
+    background: rgba(255, 238, 205, 0.94);
+    border-color: #efc784;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
 }
 
 .prompt-label-row {
@@ -8384,6 +8670,22 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-libr
     background: var(--theme-control-hover-bg) !important;
     border-color: var(--theme-border-strong) !important;
     box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-optimize-status-text {
+  color: var(--text-secondary);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-optimize-cancel-btn {
+  color: var(--text-secondary);
+  background: var(--theme-panel-bg-soft);
+  border-color: var(--theme-panel-border);
+
+  &:hover {
+    color: var(--theme-title);
+    background: var(--theme-control-hover-bg);
+    border-color: var(--theme-border-strong);
   }
 }
 

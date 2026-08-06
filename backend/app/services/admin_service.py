@@ -30,6 +30,11 @@ from app.services.content_safety_service import (
     is_content_safety_error_text,
 )
 from app.services.external_api_config_service import SCENE_INPAINT
+from app.services.prompt_optimize_service import (
+    PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION,
+    PROMPT_OPTIMIZE_MODE,
+    PROMPT_OPTIMIZE_MODEL,
+)
 from app.services.prompt_reverse_service import (
     PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
     PROMPT_REVERSE_MODE,
@@ -40,6 +45,7 @@ from app.services.task_service import is_task_generation_failure_credit_refunded
 from app.services.task_type_service import (
     TASK_TYPE_IMAGE_EDIT,
     TASK_TYPE_INPAINT,
+    TASK_TYPE_PROMPT_OPTIMIZE,
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
     get_task_scene_type_map,
@@ -722,6 +728,8 @@ def _resolve_credit_log_mode(log: CreditLog, task_modes: dict[int, str]) -> str:
         return task_modes[log.task_id]
     if log.description in {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}"}:
         return PROMPT_REVERSE_MODE
+    if log.description in {PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION}"}:
+        return PROMPT_OPTIMIZE_MODE
     if (log.description or "").startswith("兑换积分码 "):
         return "redeem"
     if (log.description or "").startswith("在线支付订单 "):
@@ -733,6 +741,20 @@ def _credit_log_prompt_reverse_descriptions() -> list[str]:
     return [
         PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
         f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}",
+    ]
+
+
+def _credit_log_prompt_optimize_descriptions() -> list[str]:
+    return [
+        PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION,
+        f"API {PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION}",
+    ]
+
+
+def _credit_log_prompt_tool_descriptions() -> list[str]:
+    return [
+        *_credit_log_prompt_reverse_descriptions(),
+        *_credit_log_prompt_optimize_descriptions(),
     ]
 
 
@@ -755,6 +777,8 @@ def _credit_log_image_edit_scene_keys_query(db: Session):
 def _apply_credit_log_mode_filter(query, db: Session, mode: str):
     description = func.coalesce(CreditLog.description, "")
     prompt_reverse_descriptions = _credit_log_prompt_reverse_descriptions()
+    prompt_optimize_descriptions = _credit_log_prompt_optimize_descriptions()
+    prompt_tool_descriptions = _credit_log_prompt_tool_descriptions()
 
     if mode == "redeem":
         return query.filter(description.like("兑换积分码 %"))
@@ -768,6 +792,17 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
                 or_(
                     description.in_(prompt_reverse_descriptions),
                     Task.mode == PROMPT_REVERSE_MODE,
+                )
+            )
+        )
+    if mode == TASK_TYPE_PROMPT_OPTIMIZE:
+        return (
+            query
+            .outerjoin(Task, Task.id == CreditLog.task_id)
+            .filter(
+                or_(
+                    description.in_(prompt_optimize_descriptions),
+                    Task.mode == PROMPT_OPTIMIZE_MODE,
                 )
             )
         )
@@ -789,6 +824,7 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
             .join(Task, Task.id == CreditLog.task_id)
             .filter(Task.model.in_(image_edit_scene_keys))
             .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_REVERSE_MODE))
+            .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_OPTIMIZE_MODE))
             .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
             .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
         )
@@ -798,6 +834,7 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
             query
             .join(Task, Task.id == CreditLog.task_id)
             .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_REVERSE_MODE))
+            .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_OPTIMIZE_MODE))
             .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
             .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
             .filter(or_(Task.model.is_(None), ~Task.model.in_(image_edit_scene_keys)))
@@ -807,7 +844,7 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
             query
             .outerjoin(Task, Task.id == CreditLog.task_id)
             .filter(Task.id.is_(None))
-            .filter(~description.in_(prompt_reverse_descriptions))
+            .filter(~description.in_(prompt_tool_descriptions))
             .filter(~description.like("兑换积分码 %"))
             .filter(~description.like("在线支付订单 %"))
         )
@@ -1445,7 +1482,7 @@ def get_stats(db: Session) -> dict:
         .join(User, User.id == CreditLog.user_id)
         .filter(
             CreditLog.type == "consume",
-            CreditLog.description.in_([PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}"]),
+            CreditLog.description.in_(_credit_log_prompt_tool_descriptions()),
             *_analytics_user_filter(),
         )
         .scalar()
@@ -1472,7 +1509,7 @@ def get_stats(db: Session) -> dict:
         .join(User, User.id == CreditLog.user_id)
         .filter(
             CreditLog.type == "consume",
-            CreditLog.description.in_([PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}"]),
+            CreditLog.description.in_(_credit_log_prompt_tool_descriptions()),
             *_analytics_user_filter(),
         )
         .scalar()
@@ -1498,7 +1535,7 @@ def get_stats(db: Session) -> dict:
             .join(User, User.id == CreditLog.user_id)
             .filter(
                 CreditLog.type == "consume",
-                CreditLog.description.in_([PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}"]),
+                CreditLog.description.in_(_credit_log_prompt_tool_descriptions()),
                 CreditLog.created_at >= now - timedelta(days=7),
                 *_analytics_user_filter(),
             )
@@ -1778,7 +1815,7 @@ def _task_query(
             image_edit_models = [key for key, value in scene_type_map.items() if value == "image_edit"]
             query = query.filter(Task.mode == "generate")
             query = query.filter(Task.model.in_(image_edit_models)) if image_edit_models else query.filter(Task.id.is_(None))
-        elif mode == TASK_TYPE_PROMPT_REVERSE:
+        elif mode in {TASK_TYPE_PROMPT_REVERSE, TASK_TYPE_PROMPT_OPTIMIZE}:
             query = query.filter(Task.id.is_(None))
         else:
             query = query.filter(Task.mode == mode)
@@ -1799,9 +1836,9 @@ def _prompt_reverse_query(
 ):
     if status_filter and status_filter != "success":
         return None
-    if mode and mode != TASK_TYPE_PROMPT_REVERSE:
+    if mode and mode not in {TASK_TYPE_PROMPT_REVERSE, TASK_TYPE_PROMPT_OPTIMIZE}:
         return None
-    if model and model != PROMPT_REVERSE_MODEL:
+    if model and model not in {PROMPT_REVERSE_MODEL, PROMPT_OPTIMIZE_MODEL}:
         return None
     if source and source != "web":
         return None
@@ -1810,7 +1847,7 @@ def _prompt_reverse_query(
 
     query = db.query(CreditLog).join(User, User.id == CreditLog.user_id).filter(
         CreditLog.type == "consume",
-        CreditLog.description.in_([PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION, f"API {PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION}"]),
+        CreditLog.description.in_(_credit_log_prompt_tool_descriptions()),
         CreditLog.created_at >= _to_db_datetime(start_date),
         CreditLog.created_at <= _to_db_datetime(end_date),
         *_analytics_user_filter(),
@@ -1897,9 +1934,21 @@ def _build_analytics_records(
                 user_id=log.user_id,
                 status="success",
                 source="web",
-                model=PROMPT_REVERSE_MODEL,
-                mode=PROMPT_REVERSE_MODE,
-                task_type=TASK_TYPE_PROMPT_REVERSE,
+                model=(
+                    PROMPT_OPTIMIZE_MODEL
+                    if log.description in set(_credit_log_prompt_optimize_descriptions())
+                    else PROMPT_REVERSE_MODEL
+                ),
+                mode=(
+                    PROMPT_OPTIMIZE_MODE
+                    if log.description in set(_credit_log_prompt_optimize_descriptions())
+                    else PROMPT_REVERSE_MODE
+                ),
+                task_type=(
+                    TASK_TYPE_PROMPT_OPTIMIZE
+                    if log.description in set(_credit_log_prompt_optimize_descriptions())
+                    else TASK_TYPE_PROMPT_REVERSE
+                ),
                 credit_cost=max(0, int(-(log.amount or 0))),
                 created_at=log.created_at,
                 used_fallback_api=False,

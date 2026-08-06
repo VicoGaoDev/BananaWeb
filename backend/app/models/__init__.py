@@ -26,6 +26,7 @@ from app.models.user_api_key import UserApiKey
 from app.models.user_promo_code import UserPromoCode
 from app.models.referral_reward_grant import ReferralRewardGrant
 from app.models.prompt_history import PromptHistory
+from app.models.prompt_optimize_task import PromptOptimizeTask
 from app.models.history_pin import HistoryPin
 from app.models.feedback import Feedback
 from app.models.system_message import SystemMessage, SystemMessageRecipient
@@ -68,6 +69,7 @@ __all__ = [
     "UserPromoCode",
     "ReferralRewardGrant",
     "PromptHistory",
+    "PromptOptimizeTask",
     "HistoryPin",
     "Feedback",
     "SystemMessage",

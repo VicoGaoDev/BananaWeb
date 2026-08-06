@@ -35,10 +35,12 @@ SCENE_BANANA2_EDIT = "banana2_edit"
 SCENE_BANANA_PRO_EDIT = "banana_pro_edit"
 SCENE_BANANA_PRO_PLUS_EDIT = "banana_pro_plus_edit"
 SCENE_PROMPT_REVERSE = "prompt_reverse"
+SCENE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_INPAINT = "inpaint"
 SCENE_TYPE_GENERATE = "generate"
 SCENE_TYPE_IMAGE_EDIT = "image_edit"
 SCENE_TYPE_PROMPT_REVERSE = "prompt_reverse"
+SCENE_TYPE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_TYPE_INPAINT = "inpaint"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
@@ -65,6 +67,7 @@ DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_BANANA_PRO_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 130, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
     {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_PROMPT_OPTIMIZE, "scene_type": SCENE_TYPE_PROMPT_OPTIMIZE, "scene_label": "提示词优化", "scene_description": "优化当前提示词", "sort_order": 55, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
 ]
 SCENE_DEFAULT_CREDIT_COSTS = {
@@ -77,6 +80,7 @@ SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA_PRO_EDIT: 4,
     SCENE_BANANA_PRO_PLUS_EDIT: 4,
     SCENE_PROMPT_REVERSE: 1,
+    SCENE_PROMPT_OPTIMIZE: 1,
     SCENE_INPAINT: 4,
 }
 IMAGE_EDIT_SCENE_SOURCE_MAP = {
@@ -86,7 +90,7 @@ IMAGE_EDIT_SCENE_SOURCE_MAP = {
     SCENE_BANANA_PRO_PLUS_EDIT: SCENE_BANANA_PRO_PLUS,
 }
 DEFAULT_SCENE_MAP = {item["scene_key"]: item for item in DEFAULT_SCENE_DEFINITIONS}
-NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_INPAINT}
+NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_PROMPT_OPTIMIZE, SCENE_INPAINT}
 DEFAULT_ASPECT_RATIO_OPTIONS = [
     {"label": "■  1:1", "value": "1:1"},
     {"label": "▮  2:3", "value": "2:3"},
@@ -340,6 +344,35 @@ def _default_prompt_reverse_payload() -> str:
     })
 
 
+def _default_prompt_optimize_payload() -> str:
+    return _dump_json({
+        "model": "qwen-vl-plus",
+        "input": {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"text": "{{prompt_optimize_text}}"},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"text": "原始提示词：{{prompt}}"},
+                        {"image": "{{reference_image_1_data_url}}"},
+                        {"image": "{{reference_image_2_data_url}}"},
+                        {"image": "{{reference_image_3_data_url}}"},
+                    ],
+                },
+            ],
+        },
+        "parameters": {
+            "temperature": 0.3,
+            "max_tokens": 1024,
+        },
+    })
+
+
 def _normalize_headers(data: Any) -> dict[str, str]:
     if not isinstance(data, dict):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Header JSON 必须是对象")
@@ -438,6 +471,8 @@ def get_default_credit_cost(scene_key: str, scene_type: str | None = None) -> in
         return SCENE_DEFAULT_CREDIT_COSTS[scene_key]
     if scene_type == SCENE_TYPE_PROMPT_REVERSE:
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_PROMPT_REVERSE]
+    if scene_type == SCENE_TYPE_PROMPT_OPTIMIZE:
+        return SCENE_DEFAULT_CREDIT_COSTS[SCENE_PROMPT_OPTIMIZE]
     if scene_type == SCENE_TYPE_INPAINT:
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_INPAINT]
     return SCENE_DEFAULT_CREDIT_COSTS[SCENE_BANANA_PRO]
@@ -1173,10 +1208,16 @@ def _build_test_variables(db: Session) -> dict[str, Any]:
         "reference_image_1_data_url": f"data:image/png;base64,{one_pixel_png}",
         "reference_image_2_data_url": f"data:image/png;base64,{one_pixel_png}",
         "reference_image_3_data_url": f"data:image/png;base64,{one_pixel_png}",
+        "reference_images": [
+            "https://example.com/reference-image-1.png",
+            "https://example.com/reference-image-2.png",
+            "https://example.com/reference-image-3.png",
+        ],
         "reference_image_count": 3,
         "source_image_url": "https://example.com/source-image.png",
         "image_data_url": f"data:image/png;base64,{one_pixel_png}",
         "prompt_reverse_text": "请返回测试提示词",
+        "prompt_optimize_text": "请优化测试提示词",
         **build_secret_variables(db),
     }
 
@@ -1250,6 +1291,14 @@ def _pick_prompt_reverse_config(db: Session) -> ExternalApiConfig | None:
     return candidates[-1] if candidates else None
 
 
+def _pick_prompt_optimize_config(db: Session) -> ExternalApiConfig | None:
+    candidates = db.query(ExternalApiConfig).filter(ExternalApiConfig.status == "enabled").order_by(ExternalApiConfig.id.asc()).all()
+    for item in candidates:
+        if "{{prompt_optimize_text}}" in (item.payload_json or ""):
+            return item
+    return None
+
+
 def _pick_inpaint_config(db: Session) -> ExternalApiConfig | None:
     candidates = db.query(ExternalApiConfig).filter(ExternalApiConfig.status == "enabled").order_by(ExternalApiConfig.id.asc()).all()
     for item in candidates:
@@ -1267,6 +1316,8 @@ def _pick_default_config_for_definition(db: Session, definition: dict[str, Any])
         return _pick_generation_config_for_scene(db, source_scene_key)
     if definition["scene_type"] == SCENE_TYPE_PROMPT_REVERSE:
         return _pick_prompt_reverse_config(db)
+    if definition["scene_type"] == SCENE_TYPE_PROMPT_OPTIMIZE:
+        return _pick_prompt_optimize_config(db)
     if definition["scene_type"] == SCENE_TYPE_INPAINT:
         return _pick_inpaint_config(db)
     return None
@@ -1274,9 +1325,44 @@ def _pick_default_config_for_definition(db: Session, definition: dict[str, Any])
 
 def _ensure_scene_bindings(db: Session) -> None:
     bindings = db.query(ExternalApiSceneBinding).all()
-    if not bindings:
-        return
     updated = False
+    binding_map = {str(binding.scene_key or "").strip(): binding for binding in bindings if (binding.scene_key or "").strip()}
+    for definition in DEFAULT_SCENE_DEFINITIONS:
+        if definition["scene_key"] in binding_map:
+            continue
+        aspect_ratio_options_json, image_size_options_json, custom_size_options_json = _get_scene_option_json(
+            definition["scene_type"],
+            None,
+            None,
+            None,
+        )
+        default_config = _pick_default_config_for_definition(db, definition)
+        binding = ExternalApiSceneBinding(
+            scene_key=definition["scene_key"],
+            scene_type=definition["scene_type"],
+            scene_label=definition["scene_label"],
+            scene_description=definition["scene_description"],
+            sort_order=definition["sort_order"],
+            hide_aspect_ratio=definition["hide_aspect_ratio"],
+            hide_resolution=definition["hide_resolution"],
+            hide_custom_size=definition["hide_custom_size"],
+            status="enabled",
+            api_config_id=default_config.id if default_config else None,
+            backup_api_config_id=None,
+            display_name="",
+            subtitle="",
+            credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+            max_reference_images=get_default_max_reference_images(definition["scene_type"]),
+            aspect_ratio_options_json=aspect_ratio_options_json,
+            image_size_options_json=image_size_options_json,
+            custom_size_options_json=custom_size_options_json,
+            resolution_mapping_json=_get_resolution_mapping_json(None),
+            resolution_credit_costs_json=_get_resolution_credit_costs_json(None),
+        )
+        db.add(binding)
+        bindings.append(binding)
+        binding_map[definition["scene_key"]] = binding
+        updated = True
     for binding in bindings:
         default_definition = DEFAULT_SCENE_MAP.get(binding.scene_key)
         default_cost = get_default_credit_cost(binding.scene_key, binding.scene_type)
@@ -1405,6 +1491,15 @@ def seed_legacy_configs(db: Session, ai_api_url: str, prompt_reverse_url: str) -
                 request_url=prompt_reverse_url,
                 headers_json=_default_prompt_reverse_headers(prompt_reverse_key),
                 payload_json=_default_prompt_reverse_payload(),
+                status="enabled",
+            ))
+            db.add(ExternalApiConfig(
+                name="默认提示词优化接口",
+                description="从旧版通义配置自动迁移而来",
+                group_name="默认",
+                request_url=prompt_reverse_url,
+                headers_json=_default_prompt_reverse_headers(prompt_reverse_key),
+                payload_json=_default_prompt_optimize_payload(),
                 status="enabled",
             ))
             created = True

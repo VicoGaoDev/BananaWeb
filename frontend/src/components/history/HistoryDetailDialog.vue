@@ -240,6 +240,7 @@ function modeLabel(taskType: UserHistoryCard["task_type"]) {
   if (taskType === "image_edit") return "图编辑";
   if (taskType === "inpaint") return "局部重绘";
   if (taskType === "promptReverse") return "提示词反推";
+  if (taskType === "promptOptimize") return "提示词优化";
   return taskType;
 }
 

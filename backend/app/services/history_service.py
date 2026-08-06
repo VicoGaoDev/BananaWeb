@@ -11,10 +11,15 @@ from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.history_pin import HistoryPin
 from app.models.image import Image
 from app.models.prompt_history import PromptHistory
+from app.models.prompt_optimize_task import PromptOptimizeTask
 from app.models.task import Task
 from app.models.task_api_attempt import TaskApiAttempt
 from app.models.user import User
 from app.services.content_safety_service import build_exclude_content_safety_failed_task_clause
+from app.services.prompt_optimize_service import (
+    PROMPT_OPTIMIZE_MODE,
+    PROMPT_OPTIMIZE_MODEL,
+)
 from app.services.prompt_reverse_service import (
     PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
     PROMPT_REVERSE_MODE,
@@ -23,6 +28,7 @@ from app.services.prompt_reverse_service import (
 from app.services.task_type_service import (
     TASK_TYPE_IMAGE_EDIT,
     TASK_TYPE_INPAINT,
+    TASK_TYPE_PROMPT_OPTIMIZE,
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
     get_task_scene_type_map,
@@ -54,6 +60,18 @@ TASK_CREDIT_REFUND_DESCRIPTIONS = (
     ENQUEUE_FAILURE_DESCRIPTION,
     TASK_FAILURE_REFUND_DESCRIPTION,
 )
+PROMPT_HISTORY_MODES = (PROMPT_REVERSE_MODE,)
+PROMPT_HISTORY_MODE_TO_TASK_TYPE = {
+    PROMPT_REVERSE_MODE: TASK_TYPE_PROMPT_REVERSE,
+}
+PROMPT_HISTORY_MODE_TO_MODEL = {
+    PROMPT_REVERSE_MODE: PROMPT_REVERSE_MODEL,
+}
+PROMPT_HISTORY_MODE_TO_DISPLAY_PREFIX = {
+    PROMPT_REVERSE_MODE: "PR",
+}
+PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE = "prompt_optimize_task"
+PROMPT_OPTIMIZE_IMAGE_ID_OFFSET = 1_000_000_000
 
 
 def _exclude_example_template_seed_task_clause():
@@ -76,6 +94,33 @@ def _resolve_history_card_status(task_status: str | None, image_status: str | No
     return image_status or task_status or "pending"
 
 
+def _is_prompt_history_mode(value: str | None) -> bool:
+    return (value or "").strip() in PROMPT_HISTORY_MODES
+
+
+def _resolve_prompt_history_task_type(value: str | None) -> str:
+    return PROMPT_HISTORY_MODE_TO_TASK_TYPE.get((value or "").strip(), TASK_TYPE_PROMPT_REVERSE)
+
+
+def _resolve_prompt_history_model(value: str | None) -> str:
+    return PROMPT_HISTORY_MODE_TO_MODEL.get((value or "").strip(), PROMPT_REVERSE_MODEL)
+
+
+def _build_prompt_optimize_pin_keys(row: PromptOptimizeTask) -> list[str]:
+    keys = [_build_history_pin_key(PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE, history_id=row.id)]
+    if isinstance(row.legacy_prompt_history_id, int):
+        keys.append(_build_history_pin_key("prompt_history", history_id=row.legacy_prompt_history_id))
+    return keys
+
+
+def _resolve_prompt_optimize_pin(history_pin_map: dict[str, HistoryPin], row: PromptOptimizeTask) -> tuple[bool, datetime | None]:
+    for key in _build_prompt_optimize_pin_keys(row):
+        pin = history_pin_map.get(key)
+        if pin:
+            return _serialize_history_pin(pin)
+    return False, None
+
+
 def _calculate_task_run_time(task: Task | None) -> int | None:
     if not task or not task.request_finished_at:
         return None
@@ -95,6 +140,8 @@ def _build_history_pin_key(item_type: str, image_id: int | None = None, history_
         return f"task:{image_id}"
     if item_type == "prompt_history" and isinstance(history_id, int):
         return f"prompt_history:{history_id}"
+    if item_type == PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE and isinstance(history_id, int):
+        return f"{PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE}:{history_id}"
     raise ValueError("invalid_history_pin_target")
 
 
@@ -562,10 +609,11 @@ def _serialize_prompt_history_detail(row: PromptHistory, *, cos_config) -> dict:
     source_asset = serialize_asset_urls(row.source_image or "", cos_config=cos_config)
     db = Session.object_session(row)
     user = db.query(User).filter(User.id == row.user_id).first() if db else None
+    prompt_history_mode = (row.mode or "").strip()
     return {
         "history_id": row.id,
         "item_type": "prompt_history",
-        "display_id": f"PR-{row.id}",
+        "display_id": f"{PROMPT_HISTORY_MODE_TO_DISPLAY_PREFIX.get(prompt_history_mode, 'PR')}-{row.id}",
         "task_id": None,
         "image_id": -row.id,
         "user_id": user_external_id(user),
@@ -581,10 +629,10 @@ def _serialize_prompt_history_detail(row: PromptHistory, *, cos_config) -> dict:
         "image_size_bytes": 0,
         "task_is_deleted": False,
         "is_soft_deleted": False,
-        "task_type": TASK_TYPE_PROMPT_REVERSE,
-        "model": PROMPT_REVERSE_MODEL,
+        "task_type": _resolve_prompt_history_task_type(prompt_history_mode),
+        "model": _resolve_prompt_history_model(prompt_history_mode),
         "source": "web",
-        "mode": PROMPT_REVERSE_MODE,
+        "mode": prompt_history_mode or PROMPT_REVERSE_MODE,
         "prompt": row.prompt or "",
         "reference_images": [],
         "reference_image_thumbs": [],
@@ -597,6 +645,55 @@ def _serialize_prompt_history_detail(row: PromptHistory, *, cos_config) -> dict:
         "resolution": "",
         "custom_size": "",
         "credit_cost": 0,
+        "used_fallback_api": False,
+        "created_at": row.created_at,
+        "error_message": "",
+        "images": [],
+        "api_attempts": [],
+    }
+
+
+def _serialize_prompt_optimize_detail(row: PromptOptimizeTask, *, cos_config) -> dict:
+    source_asset = serialize_asset_urls(row.source_image or "", cos_config=cos_config)
+    reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(row.reference_images_json)]
+    db = Session.object_session(row)
+    user = db.query(User).filter(User.id == row.user_id).first() if db else None
+    optimized_prompt = (row.optimized_prompt or row.original_prompt or "").strip()
+    return {
+        "history_id": row.id,
+        "item_type": PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE,
+        "display_id": f"PO-{row.id}",
+        "task_id": None,
+        "image_id": -(PROMPT_OPTIMIZE_IMAGE_ID_OFFSET + int(row.id)),
+        "user_id": user_external_id(user),
+        "username": user.username if user else "",
+        "avatar_url": (user.avatar_url or "") if user else "",
+        "is_pinned": False,
+        "pinned_at": None,
+        "image_url": "",
+        "preview_url": "",
+        "thumb_url": "",
+        "status": (row.status or "success").strip() or "success",
+        "image_format": "",
+        "image_size_bytes": 0,
+        "task_is_deleted": False,
+        "is_soft_deleted": False,
+        "task_type": TASK_TYPE_PROMPT_OPTIMIZE,
+        "model": PROMPT_OPTIMIZE_MODEL,
+        "source": (row.source or "web").strip() or "web",
+        "mode": PROMPT_OPTIMIZE_MODE,
+        "prompt": optimized_prompt,
+        "reference_images": [asset["image_url"] for asset in reference_assets],
+        "reference_image_thumbs": [asset["thumb_url"] for asset in reference_assets],
+        "source_image": source_asset["image_url"],
+        "source_image_thumb": source_asset["thumb_url"],
+        "mask_image": "",
+        "mask_image_thumb": "",
+        "num_images": 0,
+        "size": "-",
+        "resolution": "",
+        "custom_size": "",
+        "credit_cost": int(row.credit_cost or 0),
         "used_fallback_api": False,
         "created_at": row.created_at,
         "error_message": "",
@@ -655,6 +752,7 @@ def get_user_history(
         .filter(Image.is_deleted.is_(False))
     )
     prompt_reverse_query = None
+    prompt_optimize_query = None
     if include_prompt_reverse:
         prompt_reverse_query = (
             db.query(PromptHistory)
@@ -663,67 +761,100 @@ def get_user_history(
                 PromptHistory.mode == PROMPT_REVERSE_MODE,
             )
         )
+        prompt_optimize_query = (
+            db.query(PromptOptimizeTask)
+            .filter(PromptOptimizeTask.user_id == user_id)
+        )
     if board_scope == "default":
         image_query = image_query.filter(Task.board_id.is_(None))
         prompt_reverse_query = None
+        prompt_optimize_query = None
     elif board_id is not None:
         validate_user_board_id(db, user_id, board_id)
         image_query = image_query.filter(Task.board_id == board_id)
         prompt_reverse_query = None
+        prompt_optimize_query = None
     if mode:
         if mode == TASK_TYPE_PROMPT_REVERSE:
             image_query = image_query.filter(Task.id.is_(None))
+            prompt_optimize_query = None
+        elif mode == TASK_TYPE_PROMPT_OPTIMIZE:
+            image_query = image_query.filter(Task.id.is_(None))
+            prompt_reverse_query = None
         elif mode == TASK_TYPE_INPAINT:
             image_query = image_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif mode == TASK_TYPE_TEXT_GENERATE:
             text_generate_models = [key for key, value in scene_type_map.items() if value == "generate"]
             image_query = image_query.filter(Task.mode == "generate")
             image_query = image_query.filter(Task.model.in_(text_generate_models)) if text_generate_models else image_query.filter(Task.id.is_(None))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif mode == TASK_TYPE_IMAGE_EDIT:
             image_edit_models = [key for key, value in scene_type_map.items() if value == "image_edit"]
             image_query = image_query.filter(Task.mode == "generate")
             image_query = image_query.filter(Task.model.in_(image_edit_models)) if image_edit_models else image_query.filter(Task.id.is_(None))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         else:
             image_query = image_query.filter(Task.mode == mode)
-            if mode != PROMPT_REVERSE_MODE:
+            if mode not in PROMPT_HISTORY_MODES:
                 prompt_reverse_query = None
+            if mode != TASK_TYPE_PROMPT_OPTIMIZE:
+                prompt_optimize_query = None
     if source:
         image_query = image_query.filter(Task.source == source)
         if source != "web":
             prompt_reverse_query = None
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.source == source)
     if model:
         image_query = image_query.filter(Task.model == model)
         if model != PROMPT_REVERSE_MODEL:
             prompt_reverse_query = None
+        if model != PROMPT_OPTIMIZE_MODEL:
+            prompt_optimize_query = None
     if prompt:
         keyword = prompt.strip()
         if keyword:
             image_query = image_query.filter(Task.prompt.ilike(f"%{keyword}%"))
             if prompt_reverse_query is not None:
                 prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.prompt.ilike(f"%{keyword}%"))
+            if prompt_optimize_query is not None:
+                prompt_optimize_query = prompt_optimize_query.filter(or_(
+                    PromptOptimizeTask.optimized_prompt.ilike(f"%{keyword}%"),
+                    PromptOptimizeTask.original_prompt.ilike(f"%{keyword}%"),
+                ))
     if status:
         if status == "processing":
             image_query = image_query.filter(Image.status == "pending", Task.status == "processing")
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif status == "pending":
             image_query = image_query.filter(Image.status == "pending", Task.status.in_(["pending", "queued"]))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif status == "failed":
             image_query = image_query.filter(or_(Image.status == "failed", and_(Image.status == "pending", Task.status == "failed")))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         else:
             image_query = image_query.filter(Image.status == status)
+            if prompt_optimize_query is not None:
+                prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.status == status)
     if start_date:
         image_query = image_query.filter(Task.created_at >= start_date)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at >= start_date)
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at >= start_date)
     if end_date:
         image_query = image_query.filter(Task.created_at <= end_date)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at <= end_date)
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at <= end_date)
     start_index = (page - 1) * page_size
     fetch_limit = start_index + page_size
     if respect_pins:
@@ -731,6 +862,11 @@ def get_user_history(
         prompt_reverse_rows = (
             prompt_reverse_query.order_by(PromptHistory.created_at.desc(), PromptHistory.id.desc()).all()
             if prompt_reverse_query is not None
+            else []
+        )
+        prompt_optimize_rows = (
+            prompt_optimize_query.order_by(PromptOptimizeTask.created_at.desc(), PromptOptimizeTask.id.desc()).all()
+            if prompt_optimize_query is not None
             else []
         )
         total = None
@@ -749,6 +885,14 @@ def get_user_history(
             .limit(fetch_limit)
             .all()
             if prompt_reverse_query is not None
+            else []
+        )
+        prompt_optimize_rows = (
+            prompt_optimize_query
+            .order_by(PromptOptimizeTask.created_at.desc(), PromptOptimizeTask.id.desc())
+            .limit(fetch_limit)
+            .all()
+            if prompt_optimize_query is not None
             else []
         )
     task_ids = list({int(image.task_id) for image in images if image.task_id})
@@ -843,11 +987,12 @@ def get_user_history(
 
     for row in prompt_reverse_rows:
         source_asset = serialize_asset_urls(row.source_image or "", cos_config=cos_config)
+        prompt_history_mode = (row.mode or "").strip()
         is_pinned, pinned_at = _serialize_history_pin(history_pin_map.get(_build_history_pin_key("prompt_history", history_id=row.id)))
         items.append({
             "history_id": row.id,
             "item_type": "prompt_history",
-            "display_id": f"PR-{row.id}",
+            "display_id": f"{PROMPT_HISTORY_MODE_TO_DISPLAY_PREFIX.get(prompt_history_mode, 'PR')}-{row.id}",
             "task_id": None,
             "image_id": -row.id,
             "user_id": current_user_external_id,
@@ -863,10 +1008,10 @@ def get_user_history(
             "image_size_bytes": 0,
             "task_is_deleted": False,
             "is_soft_deleted": False,
-            "task_type": TASK_TYPE_PROMPT_REVERSE,
-            "model": PROMPT_REVERSE_MODEL,
+            "task_type": _resolve_prompt_history_task_type(prompt_history_mode),
+            "model": _resolve_prompt_history_model(prompt_history_mode),
             "source": "web",
-            "mode": PROMPT_REVERSE_MODE,
+            "mode": prompt_history_mode or PROMPT_REVERSE_MODE,
             "prompt": row.prompt or "",
             "reference_images": [],
             "reference_image_thumbs": [],
@@ -883,6 +1028,16 @@ def get_user_history(
             "error_message": "",
             "images": [],
         })
+
+    for row in prompt_optimize_rows:
+        item = _serialize_prompt_optimize_detail(row, cos_config=cos_config)
+        is_pinned, pinned_at = _resolve_prompt_optimize_pin(history_pin_map, row)
+        item["is_pinned"] = is_pinned
+        item["pinned_at"] = pinned_at
+        item["user_id"] = current_user_external_id
+        item["username"] = current_username
+        item["avatar_url"] = current_avatar_url
+        items.append(item)
 
     if respect_pins:
         items.sort(
@@ -932,6 +1087,7 @@ def toggle_history_pin(
     history_id: int | None = None,
 ):
     item_key = _build_history_pin_key(item_type, image_id=image_id, history_id=history_id)
+    candidate_keys = [item_key]
 
     if item_type == "task":
         if not isinstance(image_id, int):
@@ -957,22 +1113,37 @@ def toggle_history_pin(
             .filter(
                 PromptHistory.id == history_id,
                 PromptHistory.user_id == user_id,
-                PromptHistory.mode == PROMPT_REVERSE_MODE,
+                PromptHistory.mode.in_(PROMPT_HISTORY_MODES),
             )
             .first()
         )
         if not prompt_history_exists:
             raise LookupError("history_item_not_found")
+    elif item_type == PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE:
+        if not isinstance(history_id, int):
+            raise ValueError("invalid_history_pin_target")
+        prompt_optimize_task = (
+            db.query(PromptOptimizeTask)
+            .filter(
+                PromptOptimizeTask.id == history_id,
+                PromptOptimizeTask.user_id == user_id,
+            )
+            .first()
+        )
+        if not prompt_optimize_task:
+            raise LookupError("history_item_not_found")
+        candidate_keys = _build_prompt_optimize_pin_keys(prompt_optimize_task)
     else:
         raise ValueError("invalid_history_pin_target")
 
-    pin = (
+    pins = (
         db.query(HistoryPin)
-        .filter(HistoryPin.user_id == user_id, HistoryPin.item_key == item_key)
-        .first()
+        .filter(HistoryPin.user_id == user_id, HistoryPin.item_key.in_(candidate_keys))
+        .all()
     )
-    if pin:
-        db.delete(pin)
+    if pins:
+        for pin in pins:
+            db.delete(pin)
         db.commit()
         return {"is_pinned": False, "pinned_at": None}
 
@@ -981,7 +1152,7 @@ def toggle_history_pin(
         item_type=item_type,
         item_key=item_key,
         image_id=image_id if item_type == "task" else None,
-        history_id=history_id if item_type == "prompt_history" else None,
+        history_id=history_id if item_type in {"prompt_history", PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE} else None,
         pinned_at=now_local(),
     )
     db.add(pin)
@@ -1029,22 +1200,31 @@ def get_all_history(
             CreditLog.user_id.in_(visible_user_ids),
         )
     )
+    prompt_optimize_query = (
+        db.query(PromptOptimizeTask)
+        .filter(PromptOptimizeTask.user_id.in_(visible_user_ids))
+    )
 
     if status:
         task_query = task_query.filter(Task.status == status)
         if status != "success":
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
     if source:
         task_query = task_query.filter(Task.source == source)
         if source != "web":
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+        prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.source == source)
     if model:
         task_query = task_query.filter(Task.model == model)
         if model != PROMPT_REVERSE_MODEL:
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+        if model != PROMPT_OPTIMIZE_MODEL:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
     if canvas_task_filter == "canvas":
         task_query = task_query.filter(Task.canvas_id.is_not(None))
         reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+        prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
     elif canvas_task_filter == "non_canvas":
         task_query = task_query.filter(Task.canvas_id.is_(None))
     if not include_unsafe_tasks:
@@ -1052,33 +1232,45 @@ def get_all_history(
     if mode:
         if mode == TASK_TYPE_PROMPT_REVERSE:
             task_query = task_query.filter(Task.id.is_(None))
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
+        elif mode == TASK_TYPE_PROMPT_OPTIMIZE:
+            task_query = task_query.filter(Task.id.is_(None))
+            reverse_query = reverse_query.filter(CreditLog.id.is_(None))
         elif mode == TASK_TYPE_INPAINT:
             task_query = task_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
         elif mode == TASK_TYPE_TEXT_GENERATE:
             text_generate_models = [key for key, value in scene_type_map.items() if value == "generate"]
             task_query = task_query.filter(Task.mode == "generate")
             task_query = task_query.filter(Task.model.in_(text_generate_models)) if text_generate_models else task_query.filter(Task.id.is_(None))
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
         elif mode == TASK_TYPE_IMAGE_EDIT:
             image_edit_models = [key for key, value in scene_type_map.items() if value == "image_edit"]
             task_query = task_query.filter(Task.mode == "generate")
             task_query = task_query.filter(Task.model.in_(image_edit_models)) if image_edit_models else task_query.filter(Task.id.is_(None))
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
         else:
             task_query = task_query.filter(Task.mode == mode)
             if mode != PROMPT_REVERSE_MODE:
                 reverse_query = reverse_query.filter(CreditLog.id.is_(None))
+            if mode != PROMPT_OPTIMIZE_MODE:
+                prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
     if start_date:
         task_query = task_query.filter(Task.created_at >= start_date)
         reverse_query = reverse_query.filter(CreditLog.created_at >= start_date)
+        prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at >= start_date)
     if end_date:
         task_query = task_query.filter(Task.created_at <= end_date)
         reverse_query = reverse_query.filter(CreditLog.created_at <= end_date)
+        prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at <= end_date)
 
     task_total = int(task_query.with_entities(func.count(Task.id)).scalar() or 0)
     reverse_total = int(reverse_query.with_entities(func.count(CreditLog.id)).scalar() or 0)
-    total = task_total + reverse_total
+    prompt_optimize_total = int(prompt_optimize_query.with_entities(func.count(PromptOptimizeTask.id)).scalar() or 0)
+    total = task_total + reverse_total + prompt_optimize_total
 
     task_credit_total = int(
         task_query.with_entities(func.coalesce(func.sum(Task.credit_cost), 0)).scalar() or 0
@@ -1104,7 +1296,10 @@ def get_all_history(
     reverse_credit_total = int(
         reverse_query.with_entities(func.coalesce(func.sum(-CreditLog.amount), 0)).scalar() or 0
     )
-    total_credit_cost = task_credit_total - refunded_credit_total + reverse_credit_total
+    prompt_optimize_credit_total = int(
+        prompt_optimize_query.with_entities(func.coalesce(func.sum(PromptOptimizeTask.credit_cost), 0)).scalar() or 0
+    )
+    total_credit_cost = task_credit_total - refunded_credit_total + reverse_credit_total + prompt_optimize_credit_total
 
     start_index = (page - 1) * page_size
     fetch_limit = start_index + page_size
@@ -1121,9 +1316,15 @@ def get_all_history(
         .limit(fetch_limit)
         .all()
     )
+    prompt_optimize_rows = (
+        prompt_optimize_query
+        .order_by(PromptOptimizeTask.created_at.desc(), PromptOptimizeTask.id.desc())
+        .limit(fetch_limit)
+        .all()
+    )
     refunded_task_ids = _get_refunded_task_ids(db, [task.id for task in tasks])
 
-    page_user_ids = {task.user_id for task in tasks} | {log.user_id for log in reverse_logs}
+    page_user_ids = {task.user_id for task in tasks} | {log.user_id for log in reverse_logs} | {row.user_id for row in prompt_optimize_rows}
     users_by_id = {
         user.id: user
         for user in db.query(User).filter(User.id.in_(page_user_ids)).all()
@@ -1213,6 +1414,43 @@ def get_all_history(
             "images": [],
         })
 
+    for row in prompt_optimize_rows:
+        if row.user_id not in user_cache:
+            u = users_by_id.get(row.user_id)
+            user_cache[row.user_id] = {
+                "user_id": user_external_id(u),
+                "username": u.username if u else "未知",
+                "avatar_url": (u.avatar_url or "") if u else "",
+            }
+
+        items.append({
+            "item_type": PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE,
+            "task_id": None,
+            "history_id": row.id,
+            "display_id": f"PO-{row.id}",
+            "user_id": user_cache[row.user_id]["user_id"],
+            "username": user_cache[row.user_id]["username"],
+            "avatar_url": user_cache[row.user_id]["avatar_url"],
+            "task_type": TASK_TYPE_PROMPT_OPTIMIZE,
+            "model": PROMPT_OPTIMIZE_MODEL,
+            "source": (row.source or "web").strip() or "web",
+            "mode": PROMPT_OPTIMIZE_MODE,
+            "prompt": (row.optimized_prompt or row.original_prompt or "").strip(),
+            "reference_images": _parse_refs(row.reference_images_json),
+            "num_images": 0,
+            "size": "-",
+            "resolution": "",
+            "custom_size": "",
+            "credit_cost": int(row.credit_cost or 0),
+            "status": (row.status or "success").strip() or "success",
+            "error_message": "",
+            "task_is_deleted": False,
+            "is_soft_deleted": False,
+            "soft_deleted_count": 0,
+            "created_at": row.created_at,
+            "images": [],
+        })
+
     items.sort(key=lambda item: item["created_at"] or datetime.min, reverse=True)
     paged_items = items[start_index:start_index + page_size]
 
@@ -1258,6 +1496,7 @@ def get_admin_history_cards(
     if not include_deleted_tasks:
         task_query = task_query.filter(Task.is_deleted.is_(False))
     prompt_reverse_query = None
+    prompt_optimize_query = None
     if include_prompt_reverse:
         prompt_reverse_query = (
             db.query(PromptHistory)
@@ -1268,82 +1507,120 @@ def get_admin_history_cards(
         )
         if not include_restricted_users:
             prompt_reverse_query = prompt_reverse_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+        prompt_optimize_query = (
+            db.query(PromptOptimizeTask)
+            .join(User, User.id == PromptOptimizeTask.user_id)
+        )
+        if not include_restricted_users:
+            prompt_optimize_query = prompt_optimize_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
 
     if user_id is not None:
         task_query = task_query.filter(Task.user_id == user_id)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.user_id == user_id)
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.user_id == user_id)
     if board_scope == "default":
         task_query = task_query.filter(Task.board_id.is_(None))
         prompt_reverse_query = None
+        prompt_optimize_query = None
     elif board_id is not None:
         if user_id is not None:
             validate_user_board_id(db, user_id, board_id)
         task_query = task_query.filter(Task.board_id == board_id)
         prompt_reverse_query = None
+        prompt_optimize_query = None
     if mode:
         if mode == TASK_TYPE_PROMPT_REVERSE:
             task_query = task_query.filter(Task.id.is_(None))
+            prompt_optimize_query = None
+        elif mode == TASK_TYPE_PROMPT_OPTIMIZE:
+            task_query = task_query.filter(Task.id.is_(None))
+            prompt_reverse_query = None
         elif mode == TASK_TYPE_INPAINT:
             task_query = task_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif mode == TASK_TYPE_TEXT_GENERATE:
             text_generate_models = [key for key, value in scene_type_map.items() if value == "generate"]
             task_query = task_query.filter(Task.mode == "generate")
             task_query = task_query.filter(Task.model.in_(text_generate_models)) if text_generate_models else task_query.filter(Task.id.is_(None))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif mode == TASK_TYPE_IMAGE_EDIT:
             image_edit_models = [key for key, value in scene_type_map.items() if value == "image_edit"]
             task_query = task_query.filter(Task.mode == "generate")
             task_query = task_query.filter(Task.model.in_(image_edit_models)) if image_edit_models else task_query.filter(Task.id.is_(None))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         else:
             task_query = task_query.filter(Task.mode == mode)
-            if mode != PROMPT_REVERSE_MODE:
+            if mode not in PROMPT_HISTORY_MODES:
                 prompt_reverse_query = None
+            if mode != TASK_TYPE_PROMPT_OPTIMIZE:
+                prompt_optimize_query = None
     if source:
         task_query = task_query.filter(Task.source == source)
         if source != "web":
             prompt_reverse_query = None
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.source == source)
     if model:
         task_query = task_query.filter(Task.model == model)
         if model != PROMPT_REVERSE_MODEL:
             prompt_reverse_query = None
+        if model != PROMPT_OPTIMIZE_MODEL:
+            prompt_optimize_query = None
     if prompt:
         keyword = prompt.strip()
         if keyword:
             task_query = task_query.filter(Task.prompt.ilike(f"%{keyword}%"))
             if prompt_reverse_query is not None:
                 prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.prompt.ilike(f"%{keyword}%"))
+            if prompt_optimize_query is not None:
+                prompt_optimize_query = prompt_optimize_query.filter(or_(
+                    PromptOptimizeTask.optimized_prompt.ilike(f"%{keyword}%"),
+                    PromptOptimizeTask.original_prompt.ilike(f"%{keyword}%"),
+                ))
     if used_fallback_api is not None:
         task_query = task_query.filter(Task.used_fallback_api.is_(bool(used_fallback_api)))
         prompt_reverse_query = None
+        prompt_optimize_query = None
     if status:
         if status == "processing":
             task_query = task_query.filter(Task.status == "processing")
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif status == "pending":
             task_query = task_query.filter(Task.status.in_(["pending", "queued"]))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         elif status == "failed":
             task_query = task_query.filter(or_(
                 Task.status == "failed",
                 Task.images.any(and_(Image.is_deleted.is_(False), Image.status == "failed")),
             ))
             prompt_reverse_query = None
+            prompt_optimize_query = None
         else:
             task_query = task_query.filter(or_(
                 Task.status == status,
                 Task.images.any(and_(Image.is_deleted.is_(False), Image.status == status)),
             ))
+            if prompt_optimize_query is not None:
+                prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.status == status)
     if start_date:
         task_query = task_query.filter(Task.created_at >= start_date)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at >= start_date)
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at >= start_date)
     if end_date:
         task_query = task_query.filter(Task.created_at <= end_date)
         if prompt_reverse_query is not None:
             prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.created_at <= end_date)
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at <= end_date)
 
     start_index = (page - 1) * page_size
     fetch_limit = start_index + page_size + 1
@@ -1353,6 +1630,14 @@ def get_admin_history_cards(
         .limit(fetch_limit)
         .all()
         if prompt_reverse_query is not None
+        else []
+    )
+    prompt_optimize_rows = (
+        prompt_optimize_query
+        .order_by(PromptOptimizeTask.created_at.desc(), PromptOptimizeTask.id.desc())
+        .limit(fetch_limit)
+        .all()
+        if prompt_optimize_query is not None
         else []
     )
     task_candidate_limit = max(fetch_limit * 4, 80)
@@ -1445,6 +1730,7 @@ def get_admin_history_cards(
         | {task.user_id for task in running_tasks}
         | {task.user_id for task in tasks_without_images}
         | {row.user_id for row in prompt_reverse_rows}
+        | {row.user_id for row in prompt_optimize_rows}
     )
     user_cache = {
         user.id: user
@@ -1640,10 +1926,11 @@ def get_admin_history_cards(
     for row in prompt_reverse_rows:
         row_user = user_cache.get(row.user_id)
         source_asset = serialize_asset_urls(row.source_image or "", cos_config=cos_config)
+        prompt_history_mode = (row.mode or "").strip()
         items.append({
             "history_id": row.id,
             "item_type": "prompt_history",
-            "display_id": f"PR-{row.id}",
+            "display_id": f"{PROMPT_HISTORY_MODE_TO_DISPLAY_PREFIX.get(prompt_history_mode, 'PR')}-{row.id}",
             "task_id": None,
             "image_id": -row.id,
             "user_id": user_external_id(row_user),
@@ -1659,10 +1946,10 @@ def get_admin_history_cards(
             "image_size_bytes": 0,
             "task_is_deleted": False,
             "is_soft_deleted": False,
-            "task_type": TASK_TYPE_PROMPT_REVERSE,
-            "model": PROMPT_REVERSE_MODEL,
+            "task_type": _resolve_prompt_history_task_type(prompt_history_mode),
+            "model": _resolve_prompt_history_model(prompt_history_mode),
             "source": "web",
-            "mode": PROMPT_REVERSE_MODE,
+            "mode": prompt_history_mode or PROMPT_REVERSE_MODE,
             "prompt": row.prompt or "",
             "reference_images": [],
             "reference_image_thumbs": [],
@@ -1681,6 +1968,14 @@ def get_admin_history_cards(
             "images": [],
             "api_attempts": [],
         })
+
+    for row in prompt_optimize_rows:
+        item = _serialize_prompt_optimize_detail(row, cos_config=cos_config)
+        row_user = user_cache.get(row.user_id)
+        item["user_id"] = user_external_id(row_user)
+        item["username"] = row_user.username if row_user else ""
+        item["avatar_url"] = (row_user.avatar_url or "") if row_user else ""
+        items.append(item)
 
     items.sort(key=lambda item: item.get("created_at") or datetime.min, reverse=True)
     page_items = items[start_index:start_index + page_size]
@@ -1734,5 +2029,17 @@ def get_admin_history_detail(
         if not row:
             raise LookupError("prompt_history_not_found")
         return _serialize_prompt_history_detail(row, cos_config=cos_config)
+
+    if item_type == PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE:
+        if not isinstance(history_id, int):
+            raise ValueError("invalid_history_id")
+        row = (
+            db.query(PromptOptimizeTask)
+            .filter(PromptOptimizeTask.id == history_id)
+            .first()
+        )
+        if not row:
+            raise LookupError("prompt_optimize_task_not_found")
+        return _serialize_prompt_optimize_detail(row, cos_config=cos_config)
 
     raise ValueError("invalid_item_type")

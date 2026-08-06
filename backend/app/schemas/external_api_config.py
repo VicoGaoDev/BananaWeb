@@ -9,7 +9,7 @@ StatusType = Literal["enabled", "disabled"]
 RequestFormatType = Literal["json", "multipart"]
 CallModeType = Literal["sync", "async"]
 HttpMethodType = Literal["GET", "POST"]
-SceneTypeType = Literal["generate", "image_edit", "prompt_reverse", "inpaint"]
+SceneTypeType = Literal["generate", "image_edit", "prompt_reverse", "prompt_optimize", "inpaint"]
 SceneKeyType = str
 
 

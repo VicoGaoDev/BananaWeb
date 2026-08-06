@@ -174,7 +174,7 @@ export function getCreditLogs(
   startDate?: string,
   endDate?: string,
   direction?: "increase" | "decrease",
-  mode?: "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "manual" | "redeem" | "purchase",
+  mode?: "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "promptOptimize" | "manual" | "redeem" | "purchase",
 ): Promise<{ total: number; items: CreditLog[] }> {
   const params: Record<string, unknown> = { page, page_size: pageSize };
   if (userId) params.user_id = userId;
@@ -302,7 +302,7 @@ export function getAdminHistory(
 }
 
 export function getAdminHistoryDetail(payload: {
-  item_type: "task" | "prompt_history";
+  item_type: "task" | "prompt_history" | "prompt_optimize_task";
   task_id?: string | null;
   history_id?: number | null;
 }): Promise<UserHistoryCard> {

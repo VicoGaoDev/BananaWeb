@@ -32,7 +32,7 @@ export interface UserApiKey {
 export interface PromptHistoryItem {
   id: number;
   prompt: string;
-  mode: "generate" | "inpaint" | "promptReverse";
+  mode: "generate" | "inpaint" | "promptReverse" | "promptOptimize";
   source_image: string;
   created_at: string;
 }
@@ -49,9 +49,10 @@ export interface ImageResult {
   is_deleted?: boolean;
 }
 
-export type TaskMode = "generate" | "inpaint" | "promptReverse";
-export type TaskType = "text_generate" | "image_edit" | "inpaint" | "promptReverse";
+export type TaskMode = "generate" | "inpaint" | "promptReverse" | "promptOptimize";
+export type TaskType = "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "promptOptimize";
 export type TaskSource = "web" | "app" | "api";
+export type HistoryItemType = "task" | "prompt_history" | "prompt_optimize_task";
 
 export interface TaskResult {
   id: string;
@@ -83,7 +84,7 @@ export interface TaskResult {
 }
 
 export interface HistoryItem {
-  item_type: "task" | "prompt_history";
+  item_type: HistoryItemType;
   task_id?: string | null;
   canvas_id?: number | null;
   canvas_project_id?: string;
@@ -162,7 +163,7 @@ export interface TaskApiAttempt {
 
 export interface UserHistoryCard {
   history_id?: number | null;
-  item_type: "task" | "prompt_history";
+  item_type: HistoryItemType;
   display_id?: string;
   task_id?: string | null;
   canvas_id?: number | null;
@@ -215,7 +216,7 @@ export interface UserHistoryResponse {
 }
 
 export interface HistoryPinTogglePayload {
-  item_type: "task" | "prompt_history";
+  item_type: HistoryItemType;
   image_id?: number | null;
   history_id?: number | null;
 }
@@ -1329,7 +1330,7 @@ export type ExternalApiConfigStatus = "enabled" | "disabled";
 export type ExternalApiRequestFormat = "json" | "multipart";
 export type ExternalApiCallMode = "sync" | "async";
 export type ExternalApiPollMethod = "GET" | "POST";
-export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "inpaint";
+export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "prompt_optimize" | "inpaint";
 
 export interface SceneOptionItem {
   label: string;
