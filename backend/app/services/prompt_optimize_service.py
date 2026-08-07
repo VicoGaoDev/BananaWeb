@@ -75,11 +75,19 @@ def optimize_prompt(
     prompt: str,
     reference_images: list[str] | None = None,
     *,
+    style_name: str,
+    style_prompt: str,
     source: str = "web",
 ) -> str:
     normalized_prompt = (prompt or "").strip()
     if not normalized_prompt:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词不能为空")
+    normalized_style_name = (style_name or "").strip()
+    normalized_style_prompt = (style_prompt or "").strip()
+    if not normalized_style_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词风格名称不能为空")
+    if not normalized_style_prompt:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词风格内容不能为空")
 
     api_config = require_scene_config(db, SCENE_PROMPT_OPTIMIZE)
     credit_cost = get_scene_credit_cost(db, SCENE_PROMPT_OPTIMIZE)
@@ -101,6 +109,8 @@ def optimize_prompt(
         **_build_reference_image_variables(normalized_refs),
         "prompt": normalized_prompt,
         "prompt_optimize_text": PROMPT_OPTIMIZE_TEXT,
+        "prompt_optimize_style_prompt": normalized_style_prompt,
+        "style_prompt": normalized_style_prompt,
     }
     rendered = render_config(api_config, render_variables)
 
@@ -138,6 +148,8 @@ def optimize_prompt(
 
     db.add(PromptOptimizeTask(
         user_id=user_id,
+        style_id=None,
+        style_name_snapshot=normalized_style_name,
         source=(source or "").strip().lower() or "web",
         original_prompt=normalized_prompt,
         optimized_prompt=optimized_prompt,

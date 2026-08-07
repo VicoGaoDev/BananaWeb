@@ -662,6 +662,8 @@ def _serialize_prompt_optimize_detail(row: PromptOptimizeTask, *, cos_config) ->
     return {
         "history_id": row.id,
         "item_type": PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE,
+        "style_id": row.style_id,
+        "style_name": (row.style_name_snapshot or "").strip(),
         "display_id": f"PO-{row.id}",
         "task_id": None,
         "image_id": -(PROMPT_OPTIMIZE_IMAGE_ID_OFFSET + int(row.id)),
@@ -1427,6 +1429,8 @@ def get_all_history(
             "item_type": PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE,
             "task_id": None,
             "history_id": row.id,
+            "style_id": row.style_id,
+            "style_name": (row.style_name_snapshot or "").strip(),
             "display_id": f"PO-{row.id}",
             "user_id": user_cache[row.user_id]["user_id"],
             "username": user_cache[row.user_id]["username"],

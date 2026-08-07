@@ -45,6 +45,8 @@ class HistoryItem(BaseModel):
     canvas_id: int | None = None
     canvas_project_id: str = ""
     history_id: int | None = None
+    style_id: int | None = None
+    style_name: str = ""
     display_id: str = ""
     user_id: str = ""
     username: str = ""
@@ -82,6 +84,8 @@ class HistoryResponse(BaseModel):
 class UserHistoryCardItem(BaseModel):
     history_id: int | None = None
     item_type: str = "task"
+    style_id: int | None = None
+    style_name: str = ""
     display_id: str = ""
     task_id: str | None = None
     canvas_id: int | None = None

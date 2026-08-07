@@ -264,6 +264,7 @@ function detailMetaList(item: UserHistoryCard) {
     `来源：${sourceLabel(item.source)}`,
     `类型：${modeLabel(item.task_type)}`,
     `模型：${getModelLabel(item.model)}`,
+    item.style_name ? `风格：${item.style_name}` : "",
     `比例：${item.size || "-"}`,
     item.resolution ? `分辨率：${item.resolution}` : "",
     item.custom_size ? `自定义分辨率：${item.custom_size}` : "",

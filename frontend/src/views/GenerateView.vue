@@ -63,6 +63,7 @@ import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
 import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
+import PromptOptimizeStyleDialog from "@/components/generate/PromptOptimizeStyleDialog.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
@@ -90,7 +91,7 @@ import {
   readStoredBoardKey,
   writeStoredBoardKey,
 } from "@/lib/boardPreference";
-import type { BoardKey, GenerationModelOption, ImageResult, SceneOptionItem, TaskResult, TaskSceneConfig, TaskSource, TaskType, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
+import type { BoardKey, GenerationModelOption, ImageResult, PublicPromptOptimizeStyle, SceneOptionItem, TaskResult, TaskSceneConfig, TaskSource, TaskType, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -308,8 +309,17 @@ const reverseLoading = ref(false);
 const reversePromptResult = ref("");
 const promptOptimizeLoading = ref(false);
 type PromptOptimizeTarget = "prompt" | "repaintPrompt";
+type PromptOptimizePayload = {
+  prompt: string;
+  reference_images?: string[];
+  style_name: string;
+  style_prompt: string;
+};
 const promptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
 const activePromptOptimizeRequestId = ref<number | null>(null);
+const promptOptimizeStyleDialogOpen = ref(false);
+const pendingPromptOptimizePayload = ref<Omit<PromptOptimizePayload, "style_name" | "style_prompt"> | null>(null);
+const pendingPromptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
 const PROMPT_OPTIMIZE_TOOLTIP = "在保留原意的前提下，自动补全构图、光线、画风和细节，让提示词更适合出图";
 let promptOptimizeRequestSeq = 0;
 let promptOptimizeAbortController: AbortController | null = null;
@@ -2178,10 +2188,7 @@ function getPromptOptimizeTarget(): PromptOptimizeTarget {
 }
 
 async function runPromptOptimize(
-  payload: {
-    prompt: string;
-    reference_images?: string[];
-  },
+  payload: PromptOptimizePayload,
   target: PromptOptimizeTarget,
 ) {
   const requestId = ++promptOptimizeRequestSeq;
@@ -2253,6 +2260,37 @@ function confirmCancelPromptOptimize() {
   });
 }
 
+function openPromptOptimizeStyleDialog(
+  payload: Omit<PromptOptimizePayload, "style_name" | "style_prompt">,
+  target: PromptOptimizeTarget,
+) {
+  pendingPromptOptimizePayload.value = payload;
+  pendingPromptOptimizeTarget.value = target;
+  promptOptimizeStyleDialogOpen.value = true;
+}
+
+function closePromptOptimizeStyleDialog() {
+  promptOptimizeStyleDialogOpen.value = false;
+  pendingPromptOptimizePayload.value = null;
+  pendingPromptOptimizeTarget.value = null;
+}
+
+function handlePromptOptimizeStyleConfirm(style: PublicPromptOptimizeStyle) {
+  if (!pendingPromptOptimizePayload.value || !pendingPromptOptimizeTarget.value) {
+    message.warning("提示词优化请求已失效，请重新发起");
+    closePromptOptimizeStyleDialog();
+    return;
+  }
+  const payload: PromptOptimizePayload = {
+    ...pendingPromptOptimizePayload.value,
+    style_name: style.name,
+    style_prompt: style.style_prompt,
+  };
+  const target = pendingPromptOptimizeTarget.value;
+  closePromptOptimizeStyleDialog();
+  void runPromptOptimize(payload, target);
+}
+
 async function handlePromptOptimize() {
   if (promptOptimizeLoading.value) return;
   if (!(await ensureAuthenticated())) return;
@@ -2283,16 +2321,7 @@ async function handlePromptOptimize() {
     reference_images: getPromptOptimizeReferenceImages(),
   };
   const target = getPromptOptimizeTarget();
-  Modal.confirm({
-    title: "确认优化当前提示词？",
-    content: "将对当前输入框中的提示词进行优化，自动补全构图、光线、画风和细节。",
-    centered: true,
-    okText: "确认优化",
-    cancelText: "取消",
-    onOk: () => {
-      void runPromptOptimize(payload, target);
-    },
-  });
+  openPromptOptimizeStyleDialog(payload, target);
 }
 
 async function handlePromptReverse() {
@@ -5015,6 +5044,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       :tags="templateTags"
       :confirm-loading="templateDialogSaving"
       @save="handleSaveGeneratedTemplate"
+    />
+    <PromptOptimizeStyleDialog
+      v-model:open="promptOptimizeStyleDialogOpen"
+      @confirm="handlePromptOptimizeStyleConfirm"
+      @update:open="(value) => { if (!value) closePromptOptimizeStyleDialog(); }"
     />
   </div>
 </template>

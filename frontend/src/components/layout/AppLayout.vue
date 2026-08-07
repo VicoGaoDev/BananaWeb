@@ -141,6 +141,7 @@ const routeOrder = new Map<string, number>([
   ["/feedbacks", 14],
   ["/feedbacks/:feedbackId", 15],
   ["/admin/templates", 16],
+  ["/admin/prompt-optimize", 16.5],
   ["/admin/example-canvases", 17],
   ["/admin/users", 18],
   ["/admin/user-tasks", 19],
@@ -241,6 +242,7 @@ const ADMIN_NOTICE_MENU_KEY = "admin-notice";
 const adminMenuItems = computed(() =>
   [
     { key: "/admin/templates", label: "图片模版", icon: PictureOutlined, superAdminOnly: false },
+    { key: "/admin/prompt-optimize", label: "提示词优化", icon: ThunderboltOutlined, superAdminOnly: false },
     { key: "/admin/example-canvases", label: "画布模版", icon: AppstoreOutlined, superAdminOnly: false },
     { key: "/admin/users", label: "用户管理", icon: TeamOutlined, superAdminOnly: false },
     { key: "/admin/user-tasks", label: "用户图片", icon: PictureOutlined, superAdminOnly: false },
@@ -265,7 +267,7 @@ const adminMenuItems = computed(() =>
   ].filter((item) => !item.superAdminOnly || isSuperAdmin.value)
 );
 const adminMenuTemplateItems = computed(() =>
-  adminMenuItems.value.filter((item) => ["/admin/templates", "/admin/example-canvases"].includes(item.key))
+  adminMenuItems.value.filter((item) => ["/admin/templates", "/admin/prompt-optimize", "/admin/example-canvases"].includes(item.key))
 );
 const adminMenuUserDataItems = computed(() =>
   adminMenuItems.value.filter((item) => [
@@ -296,6 +298,7 @@ const adminMenuBaseItems = computed(() =>
 );
 const isAdminTemplateRoute = computed(() =>
   route.path.startsWith("/admin/templates")
+  || route.path.startsWith("/admin/prompt-optimize")
   || route.path.startsWith("/admin/example-canvases")
 );
 const isAdminUserDataRoute = computed(() =>

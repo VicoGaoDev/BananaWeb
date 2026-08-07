@@ -57,6 +57,9 @@ import type {
   AdminLedger,
   AdminLedgerListResponse,
   AdminLedgerPayload,
+  PromptOptimizeStyle,
+  PromptOptimizeStylePayload,
+  PromptOptimizeStyleStatus,
 } from "@/types";
 
 function buildAnalyticsParams(query: AdminAnalyticsQuery): Record<string, unknown> {
@@ -600,6 +603,30 @@ export function deleteExternalApiSceneBinding(
   sceneKey: ExternalApiSceneBinding["scene_key"],
 ): Promise<void> {
   return client.delete(`/admin/external-api-scene-bindings/${sceneKey}`);
+}
+
+export function listPromptOptimizeStyles(): Promise<PromptOptimizeStyle[]> {
+  return client.get("/admin/prompt-optimize-styles");
+}
+
+export function createPromptOptimizeStyle(payload: PromptOptimizeStylePayload): Promise<PromptOptimizeStyle> {
+  return client.post("/admin/prompt-optimize-styles", payload);
+}
+
+export function updatePromptOptimizeStyle(styleId: number, payload: PromptOptimizeStylePayload): Promise<PromptOptimizeStyle> {
+  return client.put(`/admin/prompt-optimize-styles/${styleId}`, payload);
+}
+
+export function updatePromptOptimizeStyleStatus(styleId: number, status: PromptOptimizeStyleStatus): Promise<PromptOptimizeStyle> {
+  return client.patch(`/admin/prompt-optimize-styles/${styleId}/status`, { status });
+}
+
+export function setPromptOptimizeStyleDefault(styleId: number): Promise<PromptOptimizeStyle> {
+  return client.post(`/admin/prompt-optimize-styles/${styleId}/set-default`);
+}
+
+export function deletePromptOptimizeStyle(styleId: number): Promise<void> {
+  return client.delete(`/admin/prompt-optimize-styles/${styleId}`);
 }
 
 export function updateExternalApiSceneBinding(

@@ -89,6 +89,8 @@ export interface HistoryItem {
   canvas_id?: number | null;
   canvas_project_id?: string;
   history_id?: number | null;
+  style_id?: number | null;
+  style_name?: string;
   display_id?: string;
   user_id?: string;
   username?: string;
@@ -164,6 +166,8 @@ export interface TaskApiAttempt {
 export interface UserHistoryCard {
   history_id?: number | null;
   item_type: HistoryItemType;
+  style_id?: number | null;
+  style_name?: string;
   display_id?: string;
   task_id?: string | null;
   canvas_id?: number | null;
@@ -650,6 +654,40 @@ export interface UpdateLogPayload {
   content: string;
   tag_type: UpdateLogTagType;
   effective_at?: string | null;
+}
+
+export type PromptOptimizeStyleStatus = "enabled" | "disabled";
+
+export interface PromptOptimizeStyle {
+  id: number;
+  name: string;
+  description: string;
+  style_prompt: string;
+  sort_order: number;
+  status: PromptOptimizeStyleStatus;
+  is_default: boolean;
+  is_deleted?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  usage_count?: number;
+}
+
+export interface PromptOptimizeStylePayload {
+  name: string;
+  description: string;
+  style_prompt: string;
+  sort_order: number;
+  status: PromptOptimizeStyleStatus;
+  is_default: boolean;
+}
+
+export interface PublicPromptOptimizeStyle {
+  id: number;
+  name: string;
+  description: string;
+  style_prompt: string;
+  is_default: boolean;
+  sort_order: number;
 }
 
 export interface AdminUser {

@@ -107,6 +107,7 @@ def _run_startup_schema_sync():
     _ensure_user_identity_schema()
     _ensure_business_id_schema()
     _ensure_prompt_history_columns()
+    _ensure_prompt_optimize_schema()
     _ensure_image_required_columns()
     _ensure_task_credit_cost_column()
     _ensure_task_api_attempt_schema()
@@ -1357,6 +1358,78 @@ def _ensure_prompt_history_columns():
             conn.execute(text("ALTER TABLE prompt_history ADD COLUMN mode VARCHAR(20) DEFAULT 'generate'"))
         if "source_image" not in prompt_history_columns:
             conn.execute(text("ALTER TABLE prompt_history ADD COLUMN source_image VARCHAR(500) DEFAULT ''"))
+
+
+def _ensure_prompt_optimize_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "prompt_optimize_styles" not in table_names:
+        from app.models.prompt_optimize_style import PromptOptimizeStyle
+
+        PromptOptimizeStyle.__table__.create(bind=engine)
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+    if "prompt_optimize_tasks" not in table_names:
+        from app.models.prompt_optimize_task import PromptOptimizeTask
+
+        PromptOptimizeTask.__table__.create(bind=engine)
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+    if "prompt_optimize_tasks" not in table_names or "prompt_optimize_styles" not in table_names:
+        return
+
+    style_columns = {col["name"] for col in inspector.get_columns("prompt_optimize_styles")}
+    style_indexes = {index["name"] for index in inspector.get_indexes("prompt_optimize_styles")}
+    task_columns = {col["name"] for col in inspector.get_columns("prompt_optimize_tasks")}
+    task_indexes = {index["name"] for index in inspector.get_indexes("prompt_optimize_tasks")}
+
+    with engine.begin() as conn:
+        if "description" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN description VARCHAR(255) NOT NULL DEFAULT ''"))
+        if "sort_order" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100"))
+        if "status" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'enabled'"))
+        if "is_default" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0"))
+        if "is_deleted" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"))
+        if "created_at" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+        if "updated_at" not in style_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_styles ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+
+        conn.execute(text("UPDATE prompt_optimize_styles SET description = '' WHERE description IS NULL"))
+        conn.execute(text("UPDATE prompt_optimize_styles SET status = 'enabled' WHERE status IS NULL OR status = ''"))
+        conn.execute(text("UPDATE prompt_optimize_styles SET sort_order = 100 WHERE sort_order IS NULL"))
+        conn.execute(text("UPDATE prompt_optimize_styles SET is_default = 0 WHERE is_default IS NULL"))
+        conn.execute(text("UPDATE prompt_optimize_styles SET is_deleted = 0 WHERE is_deleted IS NULL"))
+
+        if "idx_prompt_optimize_styles_sort" not in style_indexes:
+            conn.execute(text("CREATE INDEX idx_prompt_optimize_styles_sort ON prompt_optimize_styles (sort_order, id)"))
+        if "idx_prompt_optimize_styles_status_default" not in style_indexes:
+            conn.execute(text("CREATE INDEX idx_prompt_optimize_styles_status_default ON prompt_optimize_styles (status, is_default, is_deleted)"))
+
+        if "style_id" not in task_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_tasks ADD COLUMN style_id INTEGER NULL"))
+        if "style_name_snapshot" not in task_columns:
+            conn.execute(text("ALTER TABLE prompt_optimize_tasks ADD COLUMN style_name_snapshot VARCHAR(100) NOT NULL DEFAULT ''"))
+        conn.execute(text("UPDATE prompt_optimize_tasks SET style_name_snapshot = '' WHERE style_name_snapshot IS NULL"))
+        if "idx_prompt_optimize_tasks_style_id" not in task_indexes:
+            conn.execute(text("CREATE INDEX idx_prompt_optimize_tasks_style_id ON prompt_optimize_tasks (style_id)"))
+
+        conn.execute(text(
+            """
+            INSERT INTO prompt_optimize_styles (name, description, style_prompt, sort_order, status, is_default, is_deleted)
+            SELECT '通用优化', '默认风格，适合通用中文生图提示词补全',
+                   '在保留用户原始意图前提下，补全构图、镜头、光线、色彩、材质、氛围和画面细节，输出适合直接生图的中文提示词。',
+                   10, 'enabled', 1, 0
+            WHERE NOT EXISTS (
+              SELECT 1 FROM prompt_optimize_styles
+              WHERE name = '通用优化' AND is_deleted = 0
+            )
+            """
+        ))
 
 
 def _ensure_task_credit_cost_column():
@@ -2738,7 +2811,7 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, prompt_optimize, external_api_config, video_external_api_config, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts, update_logs  # noqa: E402
+from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, prompt_optimize, prompt_optimize_styles, external_api_config, video_external_api_config, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts, update_logs  # noqa: E402
 app.include_router(auth.router)
 app.include_router(user_api_keys.router)
 app.include_router(templates.router)
@@ -2768,6 +2841,8 @@ app.include_router(api_key.secret_router)
 app.include_router(api_key.public_router)
 app.include_router(prompt_reverse.router)
 app.include_router(prompt_optimize.router)
+app.include_router(prompt_optimize_styles.admin_router)
+app.include_router(prompt_optimize_styles.public_router)
 app.include_router(external_api_config.router)
 app.include_router(external_api_config.scene_router)
 app.include_router(external_api_config.public_router)

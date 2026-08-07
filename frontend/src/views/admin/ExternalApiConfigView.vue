@@ -1738,6 +1738,7 @@ function copySecret(value: string, label: string) {
               <div>用于提示词优化接口：</div>
               <pre v-pre>{{ prompt }}</pre>
               <pre v-pre>{{ prompt_optimize_text }}</pre>
+              <pre v-pre>{{ prompt_optimize_style_prompt }}</pre>
               <pre v-pre>{{ reference_images }}</pre>
               <pre v-pre>{{ reference_image_1_url }}</pre>
               <pre v-pre>{{ reference_image_1_data_url }}</pre>

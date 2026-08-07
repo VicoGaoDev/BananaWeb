@@ -16,5 +16,12 @@ def prompt_optimize(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    prompt = optimize_prompt(db, user.id, body.prompt, body.reference_images)
+    prompt = optimize_prompt(
+        db,
+        user.id,
+        body.prompt,
+        body.reference_images,
+        style_name=body.style_name,
+        style_prompt=body.style_prompt,
+    )
     return PromptOptimizeResponse(prompt=prompt)

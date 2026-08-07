@@ -9,6 +9,8 @@ class PromptOptimizeTask(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     legacy_prompt_history_id = Column(Integer, nullable=True, unique=True, index=True)
+    style_id = Column(Integer, ForeignKey("prompt_optimize_styles.id"), nullable=True, index=True)
+    style_name_snapshot = Column(String(100), nullable=False, default="", server_default="")
     source = Column(String(20), nullable=False, default="web", server_default="web")
     original_prompt = Column(String(5000), nullable=False, default="", server_default="")
     optimized_prompt = Column(String(5000), nullable=False, default="", server_default="")

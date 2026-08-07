@@ -352,7 +352,7 @@ def _default_prompt_optimize_payload() -> str:
                 {
                     "role": "system",
                     "content": [
-                        {"text": "{{prompt_optimize_text}}"},
+                        {"text": "{{prompt_optimize_text}}\n{{prompt_optimize_style_prompt}}"},
                     ],
                 },
                 {
@@ -1218,6 +1218,8 @@ def _build_test_variables(db: Session) -> dict[str, Any]:
         "image_data_url": f"data:image/png;base64,{one_pixel_png}",
         "prompt_reverse_text": "请返回测试提示词",
         "prompt_optimize_text": "请优化测试提示词",
+        "prompt_optimize_style_prompt": "偏电影感与光影层次，补足画面细节、材质与镜头语言",
+        "style_prompt": "偏电影感与光影层次，补足画面细节、材质与镜头语言",
         **build_secret_variables(db),
     }
 
