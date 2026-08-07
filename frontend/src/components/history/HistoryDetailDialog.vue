@@ -121,8 +121,22 @@ function closeDialog() {
   emit("update:open", false);
 }
 
-function seedLoadedMediaKeys() {
-  loadedMediaKeys.value = new Set(props.preloadedMediaKeys || []);
+function getDetailItemIdentity(item: UserHistoryCard | null | undefined) {
+  if (!item) return "";
+  // 与模板 detail-layout 的 :key 保持一致，避免 image_id 变化时清空已加载状态却不重挂载 img
+  return String(item.display_id || item.task_id || item.history_id || item.image_id || item.created_at || "");
+}
+
+function seedLoadedMediaKeys(mode: "reset" | "merge" = "reset") {
+  if (mode === "reset") {
+    loadedMediaKeys.value = new Set(props.preloadedMediaKeys || []);
+    return;
+  }
+  const next = new Set(loadedMediaKeys.value);
+  for (const key of props.preloadedMediaKeys || []) {
+    next.add(key);
+  }
+  loadedMediaKeys.value = next;
 }
 
 function navigatePrev() {
@@ -153,12 +167,12 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 watch(
-  () => [props.open, props.item?.display_id, props.item?.task_id, props.item?.history_id, props.item?.image_id] as const,
+  () => [props.open, getDetailItemIdentity(props.item)] as const,
   ([open]) => {
     previewVisible.value = false;
     previewSrc.value = "";
     requestPreviewActiveKeys.value = [];
-    seedLoadedMediaKeys();
+    seedLoadedMediaKeys("reset");
     detailResultImageLoad.dispose();
     if (typeof document === "undefined") return;
     document.body.style.overflow = open ? "hidden" : "";
@@ -168,7 +182,7 @@ watch(
 watch(
   () => props.preloadedMediaKeys,
   () => {
-    seedLoadedMediaKeys();
+    seedLoadedMediaKeys("merge");
   },
   { deep: true },
 );
@@ -426,10 +440,18 @@ function isMediaLoaded(key: string) {
 }
 
 function markMediaLoaded(key: string) {
-  if (loadedMediaKeys.value.has(key)) return;
+  if (!key || loadedMediaKeys.value.has(key)) return;
   const next = new Set(loadedMediaKeys.value);
   next.add(key);
   loadedMediaKeys.value = next;
+}
+
+function bindDetailMediaEl(el: unknown, key: string) {
+  if (!(el instanceof HTMLImageElement) || !key) return;
+  // 缓存命中时部分浏览器可能不再触发 @load，这里补齐已完成图片的可见状态
+  if (el.complete && el.naturalWidth > 0) {
+    markMediaLoaded(key);
+  }
 }
 
 function openPreview(url: string) {
@@ -583,6 +605,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                         class="detail-media-loading"
                       />
                       <img
+                        :ref="(el) => bindDetailMediaEl(el, getMediaLoadKey('prompt-reverse-source', item?.source_image_thumb || item?.source_image))"
                         :src="isHistoryItemExpired(item) ? expiredResultAsset : getPreviewImageSrc(item.source_image_thumb || item.source_image)"
                         alt="提示词反推原图"
                         loading="lazy"
@@ -687,6 +710,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                         class="detail-media-loading"
                       />
                       <img
+                        :ref="(el) => bindDetailMediaEl(el, getMediaLoadKey('inpaint-source', item?.source_image_thumb || item?.source_image))"
                         :src="isHistoryItemExpired(item) ? expiredResultAsset : getPreviewImageSrc(item.source_image_thumb || item.source_image)"
                         alt="局部重绘原图"
                         loading="lazy"
@@ -715,6 +739,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                         class="detail-media-loading"
                       />
                       <img
+                        :ref="(el) => bindDetailMediaEl(el, getMediaLoadKey('reference-image', `${index}-${ref}`))"
                         :src="getPreviewImageSrc(item.reference_image_thumbs[index] || ref)"
                         alt="参考图"
                         loading="lazy"
