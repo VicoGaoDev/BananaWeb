@@ -1,0 +1,20 @@
+---
+description: frontend 和 backend 目录开发细则
+globs: "{frontend/**/*,backend/**/*}"
+alwaysApply: false
+---
+
+# Frontend / Backend 开发细则
+
+1. 后端涉及数据结构变更时，先补 `docs/sql/migrations/` 里的版本化 SQL，再改 `model / schema / service / api`，不要只改 ORM。
+2. 新功能默认走清晰分层：后端 `api` 保持薄、`service` 放业务、`schema` 放输入输出、`model` 放数据结构。
+3. 前端大页面不要继续堆逻辑，复杂 dialog、表单块、选择器、长段交互优先拆成独立组件；公共请求放 `src/api`，公共类型放 `src/types`。
+4. 后台管理新增页面时，默认同时检查并同步：`router`、`AppLayout` 菜单入口、`api` 封装、`types`、页面级权限。
+5. 涉及历史记录、详情、删除、置顶、多类型卡片时，优先按 `item_type` 区分，不要只靠 `mode` 猜类型。
+6. 配置型能力（提示词、系统配置、场景模板、风格模板）要补占位符文档、默认值和管理入口，避免只有后端能力没有运营入口。
+7. 前端改动优先跑 `npm --prefix frontend run build`；后端改动优先跑 `python3 -m py_compile` 覆盖改动文件。
+
+## 例子
+
+- 好例子：新增后台 CRUD 时，同时补菜单、路由、API、类型、页面和 SQL 迁移。
+- 坏例子：只把新弹窗和状态逻辑塞进一个超大页面，或只改前端不补后端类型与接口。
