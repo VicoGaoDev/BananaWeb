@@ -848,6 +848,8 @@ const resultColumnCount = computed(() => {
   if (viewportWidth.value <= 960) return Math.min(2, preferredResultColumnCount.value);
   return preferredResultColumnCount.value;
 });
+const isDesktopGeneratedTaskAutoLoad = computed(() => viewportWidth.value > 960);
+const isMobileGeneratedTaskManualLoad = computed(() => !isDesktopGeneratedTaskAutoLoad.value);
 
 const resultListStyle = computed(() => ({
   gridTemplateColumns: `repeat(${resultColumnCount.value}, minmax(0, 1fr))`,
@@ -1148,7 +1150,7 @@ function getGeneratedTaskIdentity(task: GeneratedTaskItem) {
 function setupGeneratedTaskLoadMoreObserver(target: HTMLElement | null) {
   generatedTaskLoadMoreObserver?.disconnect();
   generatedTaskLoadMoreObserver = null;
-  if (!target) return;
+  if (!target || !isDesktopGeneratedTaskAutoLoad.value) return;
 
   generatedTaskLoadMoreObserver = new IntersectionObserver(
     (entries) => {
@@ -1160,11 +1162,13 @@ function setupGeneratedTaskLoadMoreObserver(target: HTMLElement | null) {
 }
 
 function handleGeneratedTaskResultScroll(event: Event) {
+  if (!isDesktopGeneratedTaskAutoLoad.value) return;
   const target = event.currentTarget as HTMLElement | null;
   maybeLoadMoreGeneratedTasksNearBottom(target);
 }
 
 function maybeLoadMoreGeneratedTasksNearBottom(target = resultBodyRef.value) {
+  if (!isDesktopGeneratedTaskAutoLoad.value) return;
   if (!target || !hasMoreGeneratedTasks.value) return;
   if (generatedTasksLoading.value || generatedTasksLoadingMore.value) return;
   const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
@@ -3200,6 +3204,10 @@ watch(generatedTaskLoadMoreAnchor, (target) => {
   setupGeneratedTaskLoadMoreObserver(target);
 });
 
+watch(isDesktopGeneratedTaskAutoLoad, () => {
+  setupGeneratedTaskLoadMoreObserver(generatedTaskLoadMoreAnchor.value);
+});
+
 watch([
   generatedTaskTypeFilter,
   generatedTaskSourceFilter,
@@ -4895,7 +4903,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
             <div class="result-list-footnote">
               已展示 {{ generatedTasks.length }} 个任务 / {{ resultItems.length }} 张结果
-              <span v-if="hasMoreGeneratedTasks">，继续下滑自动加载更多。</span>
+              <span v-if="hasMoreGeneratedTasks">
+                ，{{ isDesktopGeneratedTaskAutoLoad ? "继续下滑自动加载更多" : "可点击下方按钮继续加载更多" }}。
+              </span>
               <span v-else>，已加载该分类下全部任务。</span>
               若需查看完整参数，请前往
               <router-link to="/history" class="result-tip-link">历史图片</router-link>
@@ -4906,7 +4916,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               <span>正在加载更多生成任务...</span>
             </div>
             <div
-              v-if="hasMoreGeneratedTasks"
+              v-else-if="hasMoreGeneratedTasks && isMobileGeneratedTaskManualLoad"
+              class="result-load-more-action"
+            >
+              <a-button block class="result-load-more-btn" @click="loadMoreGeneratedTasks">
+                加载更多
+              </a-button>
+            </div>
+            <div
+              v-if="hasMoreGeneratedTasks && isDesktopGeneratedTaskAutoLoad"
               ref="generatedTaskLoadMoreAnchor"
               class="result-load-more-anchor"
               aria-hidden="true"
@@ -7587,6 +7605,30 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   gap: 10px;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.result-load-more-action {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.result-load-more-btn {
+  width: 100% !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  box-shadow: none !important;
+
+  &:hover,
+  &:focus {
+    color: var(--theme-accent-text-hover) !important;
+    background: var(--theme-control-hover-bg) !important;
+    border-color: var(--theme-border-strong) !important;
+  }
 }
 
 .result-load-more-anchor {
