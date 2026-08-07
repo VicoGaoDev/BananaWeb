@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
 import {
@@ -446,12 +446,63 @@ function markMediaLoaded(key: string) {
   loadedMediaKeys.value = next;
 }
 
-function bindDetailMediaEl(el: unknown, key: string) {
-  if (!(el instanceof HTMLImageElement) || !key) return;
-  // 缓存命中时部分浏览器可能不再触发 @load，这里补齐已完成图片的可见状态
-  if (el.complete && el.naturalWidth > 0) {
-    markMediaLoaded(key);
+function scheduleDetailMediaReveal(key: string) {
+  if (!key || loadedMediaKeys.value.has(key)) return;
+  // 双 rAF：先让浏览器画出 opacity:0，再切换，避免缓存图首帧直出造成闪断
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      markMediaLoaded(key);
+    });
+  });
+}
+
+async function revealDetailMediaFromEl(el: HTMLImageElement, key: string) {
+  if (!key || loadedMediaKeys.value.has(key) || !el.isConnected) return;
+  if (!(el.complete && el.naturalWidth > 0)) return;
+  try {
+    // load 只代表数据就绪；等 decode 完成再淡入，避免尚未上屏时露出上层底色
+    if (typeof el.decode === "function") {
+      await el.decode();
+    }
+  } catch {
+    // decode 失败时仍尝试按 complete 状态揭示
   }
+  if (!el.isConnected || !(el.complete && el.naturalWidth > 0)) return;
+  scheduleDetailMediaReveal(key);
+}
+
+function markDetailMediaElIfReady(
+  el: HTMLImageElement,
+  key: string,
+  options?: { softReveal?: boolean },
+) {
+  if (!key || !el.isConnected) return;
+  if (!(el.complete && el.naturalWidth > 0)) return;
+  if (options?.softReveal) {
+    void revealDetailMediaFromEl(el, key);
+    return;
+  }
+  markMediaLoaded(key);
+}
+
+function bindDetailMediaEl(
+  el: unknown,
+  key: string,
+  options?: { softReveal?: boolean },
+) {
+  if (!(el instanceof HTMLImageElement) || !key) return;
+  // 缓存命中时 load 可能早于监听绑定，这里同步 + nextTick 各检查一次
+  markDetailMediaElIfReady(el, key, options);
+  void nextTick(() => markDetailMediaElIfReady(el, key, options));
+}
+
+function handleEnhancedDetailMediaLoad(event: Event, image: Pick<ImageResult, "id">) {
+  const el = event.target;
+  if (el instanceof HTMLImageElement) {
+    void revealDetailMediaFromEl(el, getDetailEnhancedImageLoadKey(image));
+    return;
+  }
+  scheduleDetailMediaReveal(getDetailEnhancedImageLoadKey(image));
 }
 
 function openPreview(url: string) {
@@ -644,13 +695,18 @@ function handleGenerateVideo(item: UserHistoryCard) {
                       />
                       <img
                         v-if="getDetailEnhancedImageSrc(item, img) && getDetailEnhancedImageSrc(item, img) !== getDetailBaseImageSrc(item, img)"
+                        :ref="(el) => bindDetailMediaEl(el, getDetailEnhancedImageLoadKey(img), { softReveal: true })"
                         :src="getDetailEnhancedImageSrc(item, img)"
                         :alt="img.status === 'failed' ? '生成失败' : '结果图'"
                         class="detail-result-image-enhanced"
-                        :class="{ 'failed-result-image': img.status === 'failed', 'detail-media-hidden': !isMediaLoaded(getDetailEnhancedImageLoadKey(img)) }"
-                        loading="lazy"
-                        @load="markMediaLoaded(getDetailEnhancedImageLoadKey(img))"
-                        @error="() => markMediaLoaded(getDetailEnhancedImageLoadKey(img))"
+                        :class="{
+                          'failed-result-image': img.status === 'failed',
+                          'is-revealed': isMediaLoaded(getDetailEnhancedImageLoadKey(img)),
+                        }"
+                        loading="eager"
+                        decoding="async"
+                        @load="(event) => handleEnhancedDetailMediaLoad(event, img)"
+                        @error="() => scheduleDetailMediaReveal(getDetailEnhancedImageLoadKey(img))"
                       />
                       <div v-if="img.status === 'failed'" class="detail-failure-message">
                         {{ getDetailFailureMessage(item, img) }}
@@ -1513,7 +1569,17 @@ function handleGenerateVideo(item: UserHistoryCard) {
 
 .detail-result-image-enhanced {
   z-index: 2;
-  transition: opacity var(--motion-duration-base, 0.2s) var(--motion-ease-soft, ease);
+  opacity: 0;
+  /* 必须透明：若带 panel 底色，淡入时会先盖住 Zoom，表现为闪白 */
+  background: transparent !important;
+  transition: opacity var(--motion-duration-reveal-soft, 0.52s) var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1));
+  will-change: opacity;
+  pointer-events: none;
+
+  &.is-revealed {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .detail-media-loading {
