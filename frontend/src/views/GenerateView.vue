@@ -124,6 +124,7 @@ type GeneratedTaskStatusFilter = "pending" | "processing" | "success" | "failed"
 type GeneratedTaskDatePreset = "today" | "yesterday" | "week" | "custom";
 type ResultCardAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "16:9" | "9:16";
 const GENERATED_TASK_HISTORY_PAGE_SIZE = 20;
+const GENERATED_TASK_RETENTION_DAYS = 15;
 const MAX_ACTIVE_GENERATION_IMAGES = 12;
 const RESULT_CARD_ASPECT_OPTIONS: Array<{ label: string; value: ResultCardAspectRatio }> = [
   { label: "1:1", value: "1:1" },
@@ -256,6 +257,8 @@ const generatedTaskStatusFilter = ref<GeneratedTaskStatusFilter | undefined>(und
 const generatedTaskPromptFilter = ref("");
 const generatedTaskDateRangeFilter = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const generatedTaskDatePreset = ref<GeneratedTaskDatePreset | null>(null);
+const generatedTaskHideExpiredFilter = ref(true);
+const generatedTaskHideFailedFilter = ref(false);
 
 const taskPollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const taskPollingInFlight = ref(false);
@@ -510,6 +513,8 @@ const generatedTaskFilterModelOptions = computed(() => {
 });
 const generatedTaskActiveFilterCount = computed(() => {
   let count = 0;
+  if (generatedTaskHideExpiredFilter.value) count += 1;
+  if (generatedTaskHideFailedFilter.value) count += 1;
   if (generatedTaskTypeFilter.value) count += 1;
   if (generatedTaskSourceFilter.value) count += 1;
   if (generatedTaskModelFilter.value) count += 1;
@@ -517,6 +522,50 @@ const generatedTaskActiveFilterCount = computed(() => {
   if (generatedTaskPromptFilter.value.trim()) count += 1;
   if (generatedTaskDateRangeFilter.value) count += 1;
   return count;
+});
+
+const GENERATED_TASK_TYPE_FILTER_LABELS: Record<string, string> = {
+  text_generate: "文生图",
+  image_edit: "图编辑",
+  inpaint: "局部重绘",
+};
+const GENERATED_TASK_SOURCE_FILTER_LABELS: Record<string, string> = {
+  web: "Web",
+  app: "App",
+  api: "API",
+};
+const GENERATED_TASK_STATUS_FILTER_LABELS: Record<string, string> = {
+  pending: "等待中",
+  processing: "处理中",
+  success: "成功",
+  failed: "失败",
+};
+
+const generatedTaskFilterSummary = computed(() => {
+  const parts: string[] = [];
+  if (generatedTaskHideExpiredFilter.value) parts.push("不展示已过期任务图片（15天之前）");
+  if (generatedTaskHideFailedFilter.value) parts.push("不展示错误任务图片");
+  if (generatedTaskTypeFilter.value) {
+    parts.push(`类型：${GENERATED_TASK_TYPE_FILTER_LABELS[generatedTaskTypeFilter.value] || generatedTaskTypeFilter.value}`);
+  }
+  if (generatedTaskSourceFilter.value) {
+    parts.push(`来源：${GENERATED_TASK_SOURCE_FILTER_LABELS[generatedTaskSourceFilter.value] || generatedTaskSourceFilter.value}`);
+  }
+  if (generatedTaskStatusFilter.value) {
+    parts.push(`状态：${GENERATED_TASK_STATUS_FILTER_LABELS[generatedTaskStatusFilter.value] || generatedTaskStatusFilter.value}`);
+  }
+  if (generatedTaskModelFilter.value) {
+    const modelLabel = generatedTaskFilterModelOptions.value.find((item) => item.value === generatedTaskModelFilter.value)?.label
+      || generatedTaskModelFilter.value;
+    parts.push(`模型：${modelLabel}`);
+  }
+  const promptKeyword = generatedTaskPromptFilter.value.trim();
+  if (promptKeyword) parts.push(`提示词：${promptKeyword}`);
+  if (generatedTaskDateRangeFilter.value) {
+    const [start, end] = generatedTaskDateRangeFilter.value;
+    parts.push(`日期：${start.format("YYYY-MM-DD")} ~ ${end.format("YYYY-MM-DD")}`);
+  }
+  return parts.join("；");
 });
 
 function normalizeRouteGenerateMode(value: unknown): GenerateMode {
@@ -826,7 +875,11 @@ function createLocalGeneratedTask(taskDraft: GeneratedTaskDraft): GeneratedTaskI
 function isGeneratedTaskExpired(task: Pick<GeneratedTaskItem, "createdAt" | "status">) {
   if (task.status !== "success") return false;
   if (!task.createdAt) return false;
-  return dayjs().diff(dayjs(task.createdAt), "day", true) >= 15;
+  return dayjs().diff(dayjs(task.createdAt), "day", true) >= GENERATED_TASK_RETENTION_DAYS;
+}
+
+function getGeneratedTaskRetentionStart() {
+  return dayjs().subtract(GENERATED_TASK_RETENTION_DAYS, "day");
 }
 
 const resultItems = computed(() => (
@@ -836,7 +889,10 @@ const resultItems = computed(() => (
     task,
     image: img,
     index,
-  })))
+  }))).filter((item) => {
+    if (!generatedTaskHideFailedFilter.value) return true;
+    return item.task.status !== "failed" && item.image.status !== "failed";
+  })
 ));
 
 const hasMoreGeneratedTasks = computed(() => (
@@ -1138,6 +1194,8 @@ function handleGeneratedTaskCustomDateChange(value: [dayjs.Dayjs, dayjs.Dayjs] |
 }
 
 function resetGeneratedTaskFilters() {
+  generatedTaskHideExpiredFilter.value = true;
+  generatedTaskHideFailedFilter.value = false;
   generatedTaskTypeFilter.value = undefined;
   generatedTaskSourceFilter.value = undefined;
   generatedTaskModelFilter.value = undefined;
@@ -1187,10 +1245,27 @@ function maybeLoadMoreGeneratedTasksNearBottom(target = resultBodyRef.value) {
 
 function getGeneratedTaskHistoryFilters() {
   const boardId = selectedBoardId.value;
+  const dateRange = generatedTaskDateRangeFilter.value;
+  let startDate = dateRange?.[0]?.startOf("day") ?? null;
+  const endDate = dateRange?.[1]?.endOf("day") ?? null;
+
+  if (generatedTaskHideExpiredFilter.value) {
+    const retentionStart = getGeneratedTaskRetentionStart();
+    startDate = !startDate || startDate.isBefore(retentionStart) ? retentionStart : startDate;
+  }
+
   return {
     include_prompt_reverse: false,
     board_scope: selectedBoardKey.value === DEFAULT_BOARD_KEY ? "default" as const : undefined,
     board_id: boardId ?? undefined,
+    mode: generatedTaskTypeFilter.value,
+    source: generatedTaskSourceFilter.value,
+    model: generatedTaskModelFilter.value,
+    status: generatedTaskStatusFilter.value,
+    exclude_failed: generatedTaskHideFailedFilter.value || undefined,
+    prompt: generatedTaskPromptFilter.value.trim() || undefined,
+    start_date: startDate?.toISOString(),
+    end_date: endDate?.toISOString(),
   };
 }
 
@@ -3238,6 +3313,8 @@ watch(isDesktopGeneratedTaskAutoLoad, () => {
 });
 
 watch([
+  generatedTaskHideExpiredFilter,
+  generatedTaskHideFailedFilter,
   generatedTaskTypeFilter,
   generatedTaskSourceFilter,
   generatedTaskModelFilter,
@@ -4565,6 +4642,24 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </button>
                   </div>
 
+                  <div class="generate-filter-expired-row">
+                    <span>不展示已过期任务图片（15天之前）</span>
+                    <a-switch
+                      v-model:checked="generatedTaskHideExpiredFilter"
+                      size="small"
+                      class="warm-switch"
+                    />
+                  </div>
+
+                  <div class="generate-filter-expired-row">
+                    <span>不展示错误任务图片</span>
+                    <a-switch
+                      v-model:checked="generatedTaskHideFailedFilter"
+                      size="small"
+                      class="warm-switch"
+                    />
+                  </div>
+
                   <div class="generate-filter-grid">
                     <label class="generate-filter-field generate-filter-field-third">
                       <span>类型</span>
@@ -4935,10 +5030,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               <span v-if="hasMoreGeneratedTasks">
                 ，{{ isDesktopGeneratedTaskAutoLoad ? "继续下滑自动加载更多" : "可点击下方按钮继续加载更多" }}。
               </span>
+              <span v-else-if="generatedTaskFilterSummary">，已加载该分类下符合筛选条件的全部任务。</span>
               <span v-else>，已加载该分类下全部任务。</span>
-              若需查看完整参数，请前往
-              <router-link to="/history" class="result-tip-link">历史图片</router-link>
-              查看。
+              <span v-if="generatedTaskFilterSummary">当前筛选：{{ generatedTaskFilterSummary }}。</span>
             </div>
             <div v-if="generatedTasksLoadingMore" class="result-load-more-tip">
               <a-spin size="small" />
@@ -7209,6 +7303,26 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.generate-filter-expired-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 14px;
+  background: var(--theme-panel-bg-soft);
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.generate-filter-expired-row + .generate-filter-grid {
+  margin-top: 2px;
+}
+
 .generate-filter-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -7572,17 +7686,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   font-size: 13px;
 }
 
-.result-tip-link {
-  color: var(--theme-link);
-  font-weight: 700;
-  text-decoration: none;
-
-  &:hover {
-    color: var(--theme-link-hover);
-    text-decoration: underline;
-  }
-}
-
 .result-list {
   display: grid;
   align-items: start;
@@ -7821,6 +7924,18 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   z-index: 3;
   display: flex;
   gap: 8px;
+
+  .icon-chip,
+  .ant-btn,
+  button {
+    cursor: pointer;
+  }
+
+  .icon-chip:disabled,
+  .ant-btn:disabled,
+  button:disabled {
+    cursor: not-allowed;
+  }
 }
 
 .frame-state {
@@ -7966,6 +8081,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   color: #684825 !important;
   box-shadow: 0 10px 16px rgba(0, 0, 0, 0.1);
   font-size: 14px !important;
+  cursor: pointer;
   transition:
     transform var(--motion-duration-press) var(--motion-ease-soft),
     background var(--motion-duration-fast) var(--motion-ease-soft),
@@ -7980,6 +8096,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
   &:active {
     transform: scale(0.93);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
   }
 
   &.danger {
@@ -8974,8 +9094,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-b
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .source-upload-icon,
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .repaint-status-uploading,
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-tip-link {
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .repaint-status-uploading {
   color: var(--theme-accent);
 }
 

@@ -65,36 +65,30 @@ function getBodyPopupContainer() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
   padding: 0;
-  border: 1px solid rgba(255, 180, 180, 0.85);
-  border-radius: 12px;
-  background: rgba(255, 242, 242, 0.96);
-  color: #c0392b;
+  border: none;
+  background: transparent;
+  color: #faad14;
   line-height: 1;
   cursor: pointer;
   transition:
     transform var(--motion-duration-press) var(--motion-ease-soft),
-    background var(--motion-duration-fast) var(--motion-ease-soft),
-    border-color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    opacity var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    background: rgba(255, 230, 230, 0.98);
-    border-color: rgba(255, 150, 150, 0.95);
+    color: #ffc53d;
     transform: translateY(-1px);
-    box-shadow: 0 8px 18px rgba(192, 57, 43, 0.12);
   }
 
   &:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
   }
 }
 
 .prompt-interception-trigger-icon {
-  color: #faad14;
-  font-size: 14px;
+  color: inherit;
+  font-size: 18px;
 }
 </style>
 
@@ -166,15 +160,10 @@ function getBodyPopupContainer() {
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-interception-trigger {
-  color: #ff9c8f;
-  background: rgba(255, 77, 79, 0.12);
-  border-color: rgba(255, 77, 79, 0.28);
+  color: #ffc53d;
 
   &:hover {
-    color: #ffb4a8;
-    background: rgba(255, 77, 79, 0.18);
-    border-color: rgba(255, 77, 79, 0.42);
-    box-shadow: 0 8px 18px rgba(255, 77, 79, 0.16);
+    color: #ffd666;
   }
 }
 </style>

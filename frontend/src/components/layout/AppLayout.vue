@@ -63,6 +63,7 @@ import {
   MenuOutlined,
   MailOutlined,
   MessageOutlined,
+  CustomerServiceOutlined,
   GiftOutlined,
   AccountBookOutlined,
   MoneyCollectOutlined,
@@ -388,17 +389,18 @@ const userMenuItems = computed(() => [
   { key: "credits", label: "积分明细", icon: ThunderboltOutlined, danger: false },
   ...(canManagePromoCodes.value ? [{ key: "promo-codes", label: "我的推广码", icon: GiftOutlined, danger: false }] : []),
   { key: "api-keys", label: "API 调用", icon: KeyOutlined, danger: false },
-  { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "my-feedback", label: "我的反馈", icon: MessageOutlined, danger: false },
   { key: "system-messages", label: "系统消息", icon: MailOutlined, danger: false },
   { key: "update-logs", label: "更新日志", icon: BellOutlined, danger: false },
+  { key: "contact", label: "联系我们", icon: CustomerServiceOutlined, danger: false },
+  { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "logout", label: "退出登录", icon: LogoutOutlined, danger: true },
 ]);
 const userMenuAccountItems = computed(() =>
   userMenuItems.value.filter((item) => ["profile", "credits", "promo-codes", "api-keys"].includes(item.key))
 );
 const userMenuSettingsItems = computed(() =>
-  userMenuItems.value.filter((item) => ["settings"].includes(item.key))
+  userMenuItems.value.filter((item) => ["contact", "settings"].includes(item.key))
 );
 const userMenuNoticeItems = computed(() =>
   userMenuItems.value.filter((item) => ["my-feedback", "system-messages", "update-logs"].includes(item.key))
@@ -531,6 +533,7 @@ function handleUserMenu({ key }: { key: string }) {
     notificationCenterDefaultTab.value = "update-logs";
     notificationCenterDialogOpen.value = true;
   }
+  else if (key === "contact") openCreditsContact();
   else if (key === "settings") router.push("/settings");
   else if (key === "credits") router.push("/credit-logs");
   else if (key === "promo-codes") router.push("/promo-codes");
@@ -1570,7 +1573,12 @@ watch(
               <span class="brand-sub">AI Creative Studio</span>
             </div>
           </div>
-          <a-button type="text" class="top-link-btn" @click="openCreditsContact">
+          <a-button
+            v-if="!auth.isLoggedIn"
+            type="text"
+            class="top-link-btn"
+            @click="openCreditsContact"
+          >
             联系我们
           </a-button>
           <div v-if="auth.isLoggedIn && isAdmin" class="desktop-admin-entry">
@@ -1898,11 +1906,13 @@ watch(
           <span>邀请奖励</span>
           <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
         </button>
-        <span class="canvas-side-nav-divider"></span>
-        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
-          <MessageOutlined />
-          <span>联系我们</span>
-        </button>
+        <template v-if="!auth.isLoggedIn">
+          <span class="canvas-side-nav-divider"></span>
+          <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
+            <MessageOutlined />
+            <span>联系我们</span>
+          </button>
+        </template>
 
         <a-dropdown
           v-if="auth.isLoggedIn && isAdmin"
@@ -2124,9 +2134,6 @@ watch(
               <span class="brand-sub">AI Creative Studio</span>
             </div>
           </div>
-          <a-button type="link" size="small" class="mobile-drawer-contact-link" @click="openCreditsContact">
-            联系我们
-          </a-button>
         </div>
 
         <div v-if="auth.isLoggedIn" class="mobile-user-card">

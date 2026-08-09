@@ -812,7 +812,11 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
             </div>
             <div v-else class="asset-empty">
               <div class="asset-empty-title">暂无素材</div>
-              <div class="asset-empty-desc">上传到我的素材的图片会永久保存，可在画布页、AI 生图页和 AI 视频页复用。每个用户最多可保存 100 个素材。</div>
+              <div class="asset-empty-desc">
+                上传到我的素材的图片会
+                <strong class="asset-empty-desc-emphasis">永久保存</strong>
+                ，可在画布页、AI 生图页和 AI 视频页复用。每个用户最多可保存 100 个素材。
+              </div>
             </div>
           </div>
         </div>
@@ -1621,6 +1625,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .asset-empty-title {
   max-width: 420px;
   margin-top: 8px;
   line-height: 1.6;
+}
+
+.asset-empty-desc-emphasis {
+  margin: 0 2px;
+  color: var(--warm-ink, #3d2b1f);
+  font-size: 1.2em;
+  font-weight: 800;
 }
 
 @media (max-width: 960px) {

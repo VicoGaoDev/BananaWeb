@@ -1475,6 +1475,7 @@ def get_admin_history_cards(
     model: str | None = None,
     prompt: str | None = None,
     status: str | None = None,
+    exclude_failed: bool = False,
     used_fallback_api: bool | None = None,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
@@ -1613,6 +1614,10 @@ def get_admin_history_cards(
             ))
             if prompt_optimize_query is not None:
                 prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.status == status)
+    if exclude_failed and status != "failed":
+        task_query = task_query.filter(Task.status != "failed")
+        if prompt_optimize_query is not None:
+            prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.status != "failed")
     if start_date:
         task_query = task_query.filter(Task.created_at >= start_date)
         if prompt_reverse_query is not None:
@@ -1628,6 +1633,8 @@ def get_admin_history_cards(
 
     start_index = (page - 1) * page_size
     fetch_limit = start_index + page_size + 1
+    if exclude_failed and status == "failed":
+        return {"total": 0, "items": []}
     prompt_reverse_rows = (
         prompt_reverse_query
         .order_by(PromptHistory.created_at.desc(), PromptHistory.id.desc())
@@ -1691,6 +1698,8 @@ def get_admin_history_cards(
                 key=lambda image: image.id,
                 reverse=True,
             )
+            if exclude_failed:
+                visible_images = [image for image in visible_images if image.status != "failed"]
             if status in {"processing", "pending"}:
                 if not task.is_deleted:
                     running_tasks.append(task)
@@ -1717,7 +1726,7 @@ def get_admin_history_cards(
                     running_tasks.append(task)
             elif visible_images:
                 images.extend(visible_images)
-            else:
+            elif not exclude_failed or task.status != "failed":
                 tasks_without_images.append(task)
 
         task_item_count = len(images) + len(running_tasks) + len(tasks_without_images)

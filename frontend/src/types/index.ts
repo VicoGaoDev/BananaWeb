@@ -125,6 +125,7 @@ export interface HistoryFilter {
   model?: string;
   prompt?: string;
   status?: string;
+  exclude_failed?: boolean;
   user_id?: string;
   canvas_task_filter?: "all" | "canvas" | "non_canvas";
   include_unsafe_tasks?: boolean;

@@ -48,17 +48,18 @@ onMounted(() => {
 
 <template>
   <a-tooltip title="通知中心">
-    <a-badge :count="unreadNoticeCount" :overflow-count="99" :offset="[-2, 4]">
-      <button
-        type="button"
-        class="update-log-entry-btn"
-        :class="{ 'is-recent': hasNoticeHighlight }"
-        aria-label="打开通知中心"
-        @click="openDialog"
-      >
-        <BellOutlined />
-      </button>
-    </a-badge>
+    <button
+      type="button"
+      class="update-log-entry-btn"
+      :class="{ 'is-recent': hasNoticeHighlight }"
+      aria-label="打开通知中心"
+      @click="openDialog"
+    >
+      <BellOutlined />
+      <span v-if="unreadNoticeCount > 0" class="update-log-entry-count">
+        {{ unreadNoticeCount > 99 ? "99+" : unreadNoticeCount }}
+      </span>
+    </button>
   </a-tooltip>
 
   <NotificationCenterDialog v-model:open="dialogOpen" @read-state-change="loadHighlightState" />
@@ -66,6 +67,7 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .update-log-entry-btn {
+  position: relative;
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
@@ -98,5 +100,24 @@ onMounted(() => {
 .update-log-entry-btn.is-recent:hover {
   color: #ff7f27;
   opacity: 0.92;
+}
+
+.update-log-entry-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #ff7f27;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 6px 12px rgba(255, 127, 39, 0.28);
 }
 </style>
