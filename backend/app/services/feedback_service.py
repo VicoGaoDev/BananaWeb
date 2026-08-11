@@ -5,12 +5,13 @@ import json
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.feedback import Feedback
+from app.models.feedback import Feedback, FeedbackMessage
 from app.models.task import Task
 from app.models.user import User
 from app.services.image_delivery_service import get_optional_cos_config, serialize_asset_urls, serialize_image
 from app.services.business_id_service import (
     feedback_external_id,
+    feedback_message_external_id,
     get_feedback_by_business_id,
     get_task_by_business_id,
     task_external_id,
@@ -220,6 +221,7 @@ def _serialize_feedback(
         "handler_id": user_external_id(handler) if handler else None,
         "handler_name": handler.username if handler else "",
         "handled_at": item.handled_at,
+        "last_message_at": item.last_message_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
         "task_user_id": user_external_id(task_user),
@@ -244,6 +246,51 @@ def _serialize_feedback(
         ),
     }
 
+
+
+def _validate_feedback_message_payload(content: str | None, attachments: list[str] | None) -> tuple[str, list[str]]:
+    normalized_content = (content or "").strip()
+    if len(normalized_content) > 1500:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="回复内容不能超过 1500 个字符")
+    normalized_attachments = _validate_feedback_attachments(attachments)
+    if len(normalized_attachments) > 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="每条回复最多上传 1 张图片")
+    if not normalized_content and not normalized_attachments:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="回复内容或图片不能为空")
+    return normalized_content, normalized_attachments
+
+
+def _serialize_feedback_message(message: FeedbackMessage) -> dict:
+    sender = message.sender
+    return {
+        "message_id": feedback_message_external_id(message),
+        "feedback_id": feedback_external_id(message.feedback),
+        "sender_role": message.sender_role or "user",
+        "sender_id": user_external_id(sender) if sender else None,
+        "sender_name": sender.username if sender else ("系统" if message.sender_role == "system" else ""),
+        "content": message.content or "",
+        "attachments": _parse_feedback_attachments(message.attachments_json),
+        "created_at": message.created_at,
+    }
+
+
+def _send_feedback_message_notification(db: Session, item: Feedback, message: FeedbackMessage, *, user: User) -> None:
+    if message.sender_role != "user":
+        return
+    content = (message.content or "").strip()
+    content_preview = content if len(content) <= 200 else content[:200] + "..."
+    attachment_count = len(_parse_feedback_attachments(message.attachments_json))
+    username = (user.username or "").strip() or f"ID {user.id}"
+    email = (user.email or "").strip()
+    user_label = f"{username} ({email})" if email else username
+    send_wecom_markdown(
+        "## 用户追加反馈消息\n"
+        f"> 反馈单号: `{feedback_external_id(item)}`\n"
+        f"> 用户: **{user_label}**\n"
+        f"> 发送时间: {now_local().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"> 图片数量: **{attachment_count}**\n"
+        f"> 消息内容: {content_preview or '已上传图片'}"
+    )
 
 def _send_feedback_created_notification(db: Session, item: Feedback, *, user: User) -> None:
     content = (item.content or "").strip()
@@ -285,15 +332,28 @@ def create_feedback(
 
     normalized_feedback_type = _validate_feedback_type(feedback_type)
     normalized_attachments = _validate_feedback_attachments(attachments)
+    normalized_content = _validate_feedback_content(content)
+    now = now_local()
     item = Feedback(
         user_id=user.id,
         task_id=task.id if task else None,
-        content=_validate_feedback_content(content),
+        content=normalized_content,
         feedback_type=normalized_feedback_type,
         attachments_json=json.dumps(normalized_attachments, ensure_ascii=False),
         status="pending",
+        last_message_at=now,
+        user_last_read_at=now,
     )
     db.add(item)
+    db.flush()
+    db.add(FeedbackMessage(
+        feedback_id=item.id,
+        sender_role="user",
+        sender_id=user.id,
+        content=normalized_content,
+        attachments_json=json.dumps(normalized_attachments, ensure_ascii=False),
+        created_at=now,
+    ))
     db.commit()
     db.refresh(item)
     _send_feedback_created_notification(db, item, user=user)
@@ -340,7 +400,7 @@ def list_feedbacks(
 
     total = query.count()
     rows = (
-        query.order_by(Feedback.created_at.desc(), Feedback.id.desc())
+        query.order_by(Feedback.last_message_at.desc(), Feedback.created_at.desc(), Feedback.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -368,11 +428,27 @@ def count_unresolved_feedbacks(
 
 def count_user_unread_feedbacks(db: Session, *, user_id: int) -> int:
     return (
-        db.query(Feedback)
+        db.query(Feedback.id)
+        .join(FeedbackMessage, FeedbackMessage.feedback_id == Feedback.id)
         .filter(
             Feedback.user_id == user_id,
-            Feedback.is_read.is_(False),
+            FeedbackMessage.sender_role.in_(["admin", "system"]),
+            (Feedback.user_last_read_at.is_(None)) | (FeedbackMessage.created_at > Feedback.user_last_read_at),
         )
+        .distinct()
+        .count()
+    )
+
+
+def count_admin_unread_feedbacks(db: Session) -> int:
+    return (
+        db.query(Feedback.id)
+        .join(FeedbackMessage, FeedbackMessage.feedback_id == Feedback.id)
+        .filter(
+            FeedbackMessage.sender_role == "user",
+            (Feedback.admin_last_read_at.is_(None)) | (FeedbackMessage.created_at > Feedback.admin_last_read_at),
+        )
+        .distinct()
         .count()
     )
 
@@ -440,6 +516,109 @@ def update_feedback(
     return _serialize_feedback(detail, db=db, include_task=True, include_task_images=True)
 
 
+
+def list_feedback_messages(
+    db: Session,
+    feedback_id: str,
+    *,
+    user_id: int | None = None,
+) -> dict:
+    item = get_feedback_by_business_id(db, feedback_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    if user_id is not None and item.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+
+    messages = (
+        db.query(FeedbackMessage)
+        .options(selectinload(FeedbackMessage.feedback), selectinload(FeedbackMessage.sender))
+        .filter(FeedbackMessage.feedback_id == item.id)
+        .order_by(FeedbackMessage.created_at.asc(), FeedbackMessage.id.asc())
+        .all()
+    )
+    return {"items": [_serialize_feedback_message(message) for message in messages]}
+
+
+def create_feedback_message(
+    db: Session,
+    feedback_id: str,
+    *,
+    sender: User,
+    sender_role: str,
+    content: str | None = None,
+    attachments: list[str] | None = None,
+    user_id: int | None = None,
+) -> dict:
+    item = get_feedback_by_business_id(db, feedback_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    if user_id is not None and item.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    if item.status == "completed":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="反馈已关闭，不能继续回复")
+    if sender_role not in {"user", "admin"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的发送方")
+
+    normalized_content, normalized_attachments = _validate_feedback_message_payload(content, attachments)
+    now = now_local()
+    message = FeedbackMessage(
+        feedback_id=item.id,
+        sender_role=sender_role,
+        sender_id=sender.id,
+        content=normalized_content,
+        attachments_json=json.dumps(normalized_attachments, ensure_ascii=False),
+        created_at=now,
+    )
+    db.add(message)
+    item.last_message_at = now
+    if sender_role == "user":
+        item.user_last_read_at = now
+        _send_feedback_message_notification(db, item, message, user=sender)
+    else:
+        item.handled_by = sender.id
+        item.is_read = False
+        if item.status == "pending":
+            item.status = "processing"
+    db.add(item)
+    db.commit()
+
+    created = (
+        db.query(FeedbackMessage)
+        .options(selectinload(FeedbackMessage.feedback), selectinload(FeedbackMessage.sender))
+        .filter(FeedbackMessage.id == message.id)
+        .first()
+    )
+    if not created:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="回复发送失败")
+    return _serialize_feedback_message(created)
+
+
+def mark_feedback_as_admin_read(db: Session, feedback_id: str) -> dict:
+    item = get_feedback_by_business_id(db, feedback_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    item.admin_last_read_at = now_local()
+    db.add(item)
+    db.commit()
+    return {"count": count_admin_unread_feedbacks(db)}
+
+
+def close_feedback(db: Session, feedback_id: str, *, admin: User) -> dict:
+    item = get_feedback_by_business_id(db, feedback_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    item.status = "completed"
+    item.handled_by = admin.id
+    item.handled_at = now_local()
+    db.add(item)
+    db.commit()
+
+    detail = _feedback_base_query(db, include_task=True).filter(Feedback.id == item.id).first()
+    if not detail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
+    return _serialize_feedback(detail, db=db, include_task=True, include_task_images=True)
+
+
 def mark_feedback_as_read(
     db: Session,
     feedback_id: str,
@@ -451,6 +630,7 @@ def mark_feedback_as_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="反馈不存在")
 
     item.is_read = True
+    item.user_last_read_at = now_local()
     db.add(item)
     db.commit()
 
@@ -476,8 +656,10 @@ def mark_all_feedbacks_as_read(
     if not unread_items:
         return 0
 
+    now = now_local()
     for item in unread_items:
         item.is_read = True
+        item.user_last_read_at = now
         db.add(item)
 
     db.commit()

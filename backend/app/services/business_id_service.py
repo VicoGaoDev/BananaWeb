@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.feedback import Feedback
+from app.models.feedback import Feedback, FeedbackMessage
 from app.models.system_message import SystemMessage
 from app.models.task import Task
 from app.models.update_log import UpdateLog
@@ -27,6 +27,12 @@ def feedback_external_id(feedback: Feedback | None) -> str:
     if not feedback:
         return ""
     return (feedback.business_id or "").strip() or str(feedback.id)
+
+
+def feedback_message_external_id(message: FeedbackMessage | None) -> str:
+    if not message:
+        return ""
+    return (message.business_id or "").strip() or str(message.id)
 
 
 def system_message_external_id(message: SystemMessage | None) -> str:

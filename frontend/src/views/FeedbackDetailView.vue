@@ -10,6 +10,7 @@ import { getGenerationModels } from "@/api/config";
 import { getMyFeedbackDetail } from "@/api/feedback";
 import { getPreviewImageSrc } from "@/api/images";
 import { getTask } from "@/api/tasks";
+import { copyText as copyToClipboard } from "@/lib/clipboard";
 import type { FeedbackDetail, FeedbackStatus, GenerationModelOption, TaskResult, UserHistoryCard } from "@/types";
 
 const route = useRoute();
@@ -68,7 +69,7 @@ async function copyText(value?: string | null, label = "内容") {
     return;
   }
   try {
-    await navigator.clipboard.writeText(normalized);
+    await copyToClipboard(normalized);
     message.success(`${label}已复制`);
   } catch {
     message.error("复制失败，请重试");

@@ -4,6 +4,9 @@ import type {
   FeedbackDetail,
   FeedbackListQuery,
   FeedbackListResponse,
+  FeedbackMessage,
+  FeedbackMessageCreatePayload,
+  FeedbackMessageListResponse,
   FeedbackReadCountResponse,
 } from "@/types";
 
@@ -49,4 +52,15 @@ export function markMyFeedbackAsRead(feedbackId: string): Promise<FeedbackDetail
 
 export function markAllMyFeedbackAsRead(): Promise<FeedbackReadCountResponse> {
   return client.post("/feedback/read-all");
+}
+
+export function listMyFeedbackMessages(feedbackId: string): Promise<FeedbackMessageListResponse> {
+  return client.get(`/feedback/${feedbackId}/messages`);
+}
+
+export function sendMyFeedbackMessage(
+  feedbackId: string,
+  payload: FeedbackMessageCreatePayload,
+): Promise<FeedbackMessage> {
+  return client.post(`/feedback/${feedbackId}/messages`, payload);
 }

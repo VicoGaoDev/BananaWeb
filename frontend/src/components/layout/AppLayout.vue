@@ -16,7 +16,7 @@ import {
 import { validateInviteCode } from "@/api/inviteRewards";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
-import { getAdminUnresolvedFeedbackCount } from "@/api/admin";
+import { getAdminUnreadFeedbackCount } from "@/api/admin";
 import UserSuggestionDialog from "@/components/feedback/UserSuggestionDialog.vue";
 import NotificationCenterDialog from "@/components/update-log/NotificationCenterDialog.vue";
 import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
@@ -76,6 +76,7 @@ import {
   SearchOutlined,
   HighlightOutlined,
   ShareAltOutlined,
+  CloseOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -100,6 +101,14 @@ const SUGGESTION_FAB_DESKTOP_GAP = 24;
 const SUGGESTION_FAB_MOBILE_GAP = 16;
 const SUGGESTION_FAB_DESKTOP_SIZE = 40;
 const SUGGESTION_FAB_MOBILE_SIZE = 36;
+const USER_NOTICE_CARD_STYLE = {
+  cursor: "pointer",
+  borderRadius: "20px",
+  background: "linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft))",
+  border: "1px solid var(--theme-border-accent)",
+  boxShadow: "0 16px 28px var(--theme-shadow-soft)",
+  color: "var(--theme-title)",
+} as const;
 const mobileDrawerOpen = ref(false);
 const routeTransitionName = ref("route-page-forward");
 const canManagePromoCodes = computed(() => auth.user?.is_whitelisted === true);
@@ -114,6 +123,61 @@ let suggestionFabDragState: {
   originY: number;
   moved: boolean;
 } | null = null;
+
+function renderUserNoticeIcon(icon: Component) {
+  return h(
+    "span",
+    {
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "34px",
+        height: "34px",
+        borderRadius: "50%",
+        border: "1px solid var(--theme-border-accent)",
+        background: "var(--theme-accent)",
+        boxShadow: "0 10px 20px var(--theme-shadow-soft)",
+      },
+    },
+    [
+      h(icon, {
+        style: {
+          fontSize: "20px",
+          color: "var(--theme-accent-contrast)",
+        },
+      }),
+    ],
+  );
+}
+
+function openUserNoticeNotification(options: {
+  key: string;
+  title: string;
+  description: string;
+  icon: Component;
+  duration?: number;
+  onClick: () => void;
+}) {
+  notification.info({
+    key: options.key,
+    class: "app-user-notice-card",
+    message: options.title,
+    description: options.description,
+    icon: renderUserNoticeIcon(options.icon),
+    closeIcon: h(CloseOutlined, {
+      style: {
+        color: "var(--theme-accent-text)",
+        fontSize: "18px",
+      },
+    }),
+    placement: "topRight",
+    duration: options.duration ?? 5,
+    style: USER_NOTICE_CARD_STYLE,
+    onClick: options.onClick,
+  });
+}
+
 const suggestionFabWrapStyle = computed(() => {
   if (!suggestionFabPosition.value) return {};
   return {
@@ -181,6 +245,7 @@ let unsubscribeSystemMessageCount: (() => void) | null = null;
 let systemMessagePollTimer: number | null = null;
 let unsubscribeAuthSessionExpired: (() => void) | null = null;
 const UNRESOLVED_FEEDBACK_NOTIFICATION_KEY = "global-admin-unresolved-feedback";
+const USER_UNREAD_FEEDBACK_NOTIFICATION_KEY = "global-user-unread-feedback";
 const USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY = "global-user-unread-system-message";
 const notifiedUnreadSystemMessageIdsByUser = new Map<string, Set<string>>();
 
@@ -649,13 +714,13 @@ function handleUserMenu({ key }: { key: string }) {
 async function syncAdminUnresolvedFeedbackCount(options?: { showToast?: boolean }) {
   if (!auth.isLoggedIn || !auth.isAdmin) return;
   try {
-    const { count } = await getAdminUnresolvedFeedbackCount();
+    const { count } = await getAdminUnreadFeedbackCount();
     adminUnresolvedFeedbackCount.value = setStoredAdminUnresolvedFeedbackCount(count);
     if (options?.showToast && count > 0) {
       notification.warning({
         key: UNRESOLVED_FEEDBACK_NOTIFICATION_KEY,
-        message: "有用户反馈未处理",
-        description: `当前有 ${count} 条未完成的用户反馈，点击前往处理。`,
+        message: "有用户反馈新消息",
+        description: `当前有 ${count} 条反馈包含用户新回复，点击前往处理。`,
         placement: "topRight",
         duration: 5,
         style: { cursor: "pointer" },
@@ -672,12 +737,29 @@ async function syncAdminUnresolvedFeedbackCount(options?: { showToast?: boolean 
   }
 }
 
-async function syncUserCompletedUnreadFeedbackCount() {
+async function syncUserCompletedUnreadFeedbackCount(options?: { showToast?: boolean; forceToast?: boolean }) {
   if (!auth.isLoggedIn) return;
   if (!shouldSyncUserNoticeCounts.value) return;
   try {
+    const previous = userCompletedUnreadFeedbackCount.value;
     const { count } = await getMyUnreadFeedbackCount();
     userCompletedUnreadFeedbackCount.value = setStoredUserCompletedUnreadFeedbackCount(count);
+    if (options?.showToast && count > 0 && (options.forceToast || count > previous)) {
+      openUserNoticeNotification({
+        key: USER_UNREAD_FEEDBACK_NOTIFICATION_KEY,
+        title: "您的反馈有新回复",
+        description: `当前有 ${count} 条反馈待查看，点击前往查看详情。`,
+        icon: MessageOutlined,
+        onClick: () => {
+          notification.close(USER_UNREAD_FEEDBACK_NOTIFICATION_KEY);
+          router.push("/feedbacks");
+        },
+      });
+      return;
+    }
+    if (count <= 0) {
+      notification.close(USER_UNREAD_FEEDBACK_NOTIFICATION_KEY);
+    }
   } catch {
     // ignore user unread feedback count failures
   }
@@ -712,13 +794,12 @@ async function notifyLatestUnreadSystemMessage(unreadCount: number) {
 
   notifiedIds.add(latestUnread.message_id);
   notifiedUnreadSystemMessageIdsByUser.set(userKey, notifiedIds);
-  notification.info({
+  openUserNoticeNotification({
     key: USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY,
-    message: latestUnread.subject || "新的系统消息",
+    title: latestUnread.subject || "新的系统消息",
     description: unreadCount > 1 ? `你有 ${unreadCount} 条未读系统消息，点击查看详情。` : "你有新的系统消息，点击查看详情。",
-    placement: "topRight",
+    icon: MailOutlined,
     duration: 6,
-    style: { cursor: "pointer" },
     onClick: () => {
       notification.close(USER_UNREAD_SYSTEM_MESSAGE_NOTIFICATION_KEY);
       router.push(`/system-messages/${latestUnread.message_id}`);
@@ -735,6 +816,8 @@ function startSystemMessagePolling() {
   if (!shouldSyncUserNoticeCounts.value) return;
   if (typeof window === "undefined" || systemMessagePollTimer) return;
   systemMessagePollTimer = window.setInterval(() => {
+    void syncAdminUnresolvedFeedbackCount({ showToast: true });
+    void syncUserCompletedUnreadFeedbackCount({ showToast: true });
     void syncUserUnreadSystemMessageCount({ showToast: true });
   }, 60000);
 }
@@ -1003,6 +1086,7 @@ async function handleLoginSubmit() {
     resetAuthForms();
     await nextTick();
     await checkAnnouncement();
+    await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
     await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
     startSystemMessagePolling();
     if (redirectPath && redirectPath !== route.fullPath) {
@@ -1182,6 +1266,7 @@ async function handleRegisterSubmit() {
     resetAuthForms();
     await nextTick();
     await checkAnnouncement();
+    await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
     await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
     startSystemMessagePolling();
   } catch (err: any) {
@@ -1460,7 +1545,7 @@ onMounted(async () => {
     // ignore sync failures for stale sessions
   }
   await syncAdminUnresolvedFeedbackCount();
-  await syncUserCompletedUnreadFeedbackCount();
+  await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
   await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
   startSystemMessagePolling();
 });
@@ -5155,5 +5240,61 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 .warm-dropdown .ant-dropdown-menu-item-divider {
   margin: 8px 2px;
   background: var(--theme-border);
+}
+
+.app-user-notice-card.ant-notification-notice {
+  overflow: hidden;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-content {
+  margin-right: 8px;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-with-icon {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 15px;
+  align-items: start;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-icon {
+  position: static;
+  margin: 2px 0 0;
+  line-height: 1;
+  grid-row: 1 / span 2;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-message {
+  margin-bottom: 10px;
+  margin-inline-start: 0;
+  padding-right: 36px;
+  color: var(--theme-title);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-description {
+  margin-inline-start: 0;
+  padding-right: 36px;
+  color: var(--theme-text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-close {
+  top: 20px;
+  inset-inline-end: 18px;
+  color: var(--theme-accent-text);
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-close:hover {
+  color: var(--theme-accent-text-hover);
+}
+
+.app-user-notice-card.ant-notification-notice .ant-notification-notice-close-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

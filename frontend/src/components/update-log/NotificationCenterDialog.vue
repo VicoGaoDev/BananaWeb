@@ -16,6 +16,7 @@ import {
   markAllMySystemMessagesAsRead,
 } from "@/api/systemMessages";
 import { listUpdateLogs } from "@/api/updateLogs";
+import FeedbackDetailDrawer from "@/components/feedback/FeedbackDetailDrawer.vue";
 import { useAuthStore } from "@/stores/auth";
 import type { FeedbackItem, FeedbackStatus, SystemMessageItem, UpdateLogItem, UpdateLogTagType } from "@/types";
 
@@ -42,6 +43,8 @@ const feedbackPage = ref(1);
 const feedbackPageSize = ref(10);
 const feedbackUnreadCount = ref(0);
 const feedbackMarkingAllRead = ref(false);
+const feedbackDetailDrawerOpen = ref(false);
+const activeFeedbackId = ref<string | null>(null);
 
 const systemLoading = ref(false);
 const systemItems = ref<SystemMessageItem[]>([]);
@@ -275,8 +278,13 @@ async function openFeedbackDetail(item: FeedbackItem) {
       // Reading the detail is still allowed if the read-state update fails.
     }
   }
-  closeDialog();
-  void router.push(`/feedbacks/${item.feedback_id}`);
+  activeFeedbackId.value = item.feedback_id;
+  feedbackDetailDrawerOpen.value = true;
+}
+
+async function handleFeedbackDrawerChanged() {
+  emit("read-state-change");
+  await Promise.all([loadUnreadCounts(), loadFeedbacks()]);
 }
 
 function openSystemMessageDetail(item: SystemMessageItem) {
@@ -473,6 +481,13 @@ watch(activeTab, () => {
       </div>
     </div>
   </a-modal>
+
+  <FeedbackDetailDrawer
+    v-model:open="feedbackDetailDrawerOpen"
+    mode="user"
+    :feedback-id="activeFeedbackId"
+    @changed="handleFeedbackDrawerChanged"
+  />
 </template>
 
 <style scoped lang="scss">

@@ -15,6 +15,7 @@ import {
 } from "@/api/admin";
 import { getPreviewImageSrc } from "@/api/images";
 import { setStoredAdminUnresolvedFeedbackCount } from "@/lib/adminFeedbackNotice";
+import { copyText as copyToClipboard } from "@/lib/clipboard";
 import type { FeedbackDetail, FeedbackStatus, FeedbackType, GenerationModelOption, UserHistoryCard } from "@/types";
 
 const route = useRoute();
@@ -98,7 +99,7 @@ async function copyText(value?: string | null, label = "内容") {
     return;
   }
   try {
-    await navigator.clipboard.writeText(normalized);
+    await copyToClipboard(normalized);
     message.success(`${label}已复制`);
   } catch {
     message.error("复制失败，请重试");

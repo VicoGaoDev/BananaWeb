@@ -44,6 +44,10 @@ import type {
   AdminDailyReportRangePayload,
   FeedbackDetail,
   FeedbackListResponse,
+  FeedbackMessage,
+  FeedbackMessageCreatePayload,
+  FeedbackMessageListResponse,
+  FeedbackReadCountResponse,
   FeedbackUnresolvedCountResponse,
   AdminFeedbackQuery,
   FeedbackUpdatePayload,
@@ -403,6 +407,29 @@ export function getAdminUnresolvedFeedbackCount(): Promise<FeedbackUnresolvedCou
   return client.get("/admin/feedback/unresolved-count");
 }
 
+
+export function getAdminUnreadFeedbackCount(): Promise<FeedbackReadCountResponse> {
+  return client.get("/admin/feedback/unread-count");
+}
+
+export function listAdminFeedbackMessages(feedbackId: string): Promise<FeedbackMessageListResponse> {
+  return client.get(`/admin/feedback/${feedbackId}/messages`);
+}
+
+export function sendAdminFeedbackMessage(
+  feedbackId: string,
+  payload: FeedbackMessageCreatePayload,
+): Promise<FeedbackMessage> {
+  return client.post(`/admin/feedback/${feedbackId}/messages`, payload);
+}
+
+export function markAdminFeedbackAsRead(feedbackId: string): Promise<FeedbackReadCountResponse> {
+  return client.patch(`/admin/feedback/${feedbackId}/read`);
+}
+
+export function closeAdminFeedback(feedbackId: string): Promise<FeedbackDetail> {
+  return client.post(`/admin/feedback/${feedbackId}/close`);
+}
 
 export function getAdminFeedbackDetail(feedbackId: string): Promise<FeedbackDetail> {
   return client.get(`/admin/feedback/${feedbackId}`);

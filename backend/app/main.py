@@ -1981,6 +1981,7 @@ def _ensure_feedback_schema():
     if "feedback" not in inspector.get_table_names():
         return
 
+    table_names = set(inspector.get_table_names())
     feedback_columns = {col["name"] for col in inspector.get_columns("feedback")}
     feedback_indexes = {index["name"] for index in inspector.get_indexes("feedback")}
 
@@ -2011,6 +2012,12 @@ def _ensure_feedback_schema():
             conn.execute(text("ALTER TABLE feedback ADD COLUMN handled_by INTEGER"))
         if "handled_at" not in feedback_columns:
             conn.execute(text("ALTER TABLE feedback ADD COLUMN handled_at DATETIME"))
+        if "last_message_at" not in feedback_columns:
+            conn.execute(text("ALTER TABLE feedback ADD COLUMN last_message_at DATETIME"))
+        if "user_last_read_at" not in feedback_columns:
+            conn.execute(text("ALTER TABLE feedback ADD COLUMN user_last_read_at DATETIME"))
+        if "admin_last_read_at" not in feedback_columns:
+            conn.execute(text("ALTER TABLE feedback ADD COLUMN admin_last_read_at DATETIME"))
         if "created_at" not in feedback_columns:
             conn.execute(text("ALTER TABLE feedback ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
         if "updated_at" not in feedback_columns:
@@ -2022,6 +2029,7 @@ def _ensure_feedback_schema():
         conn.execute(text("UPDATE feedback SET attachments_json = '[]' WHERE attachments_json IS NULL OR attachments_json = ''"))
         conn.execute(text("UPDATE feedback SET status = 'pending' WHERE status IS NULL OR status = ''"))
         conn.execute(text("UPDATE feedback SET is_read = 0 WHERE is_read IS NULL"))
+        conn.execute(text("UPDATE feedback SET last_message_at = created_at WHERE last_message_at IS NULL"))
 
         if "ix_feedback_user_id" not in feedback_indexes:
             conn.execute(text("CREATE INDEX ix_feedback_user_id ON feedback (user_id)"))
@@ -2035,9 +2043,22 @@ def _ensure_feedback_schema():
             conn.execute(text("CREATE INDEX ix_feedback_is_read ON feedback (is_read)"))
         if "ix_feedback_handled_by" not in feedback_indexes:
             conn.execute(text("CREATE INDEX ix_feedback_handled_by ON feedback (handled_by)"))
+        if "ix_feedback_last_message_at" not in feedback_indexes:
+            conn.execute(text("CREATE INDEX ix_feedback_last_message_at ON feedback (last_message_at)"))
+
+    if "feedback_messages" not in table_names:
+        from app.models.feedback import FeedbackMessage
+
+        FeedbackMessage.__table__.create(bind=engine)
+        inspector = inspect(engine)
+
+    message_indexes = {index["name"] for index in inspector.get_indexes("feedback_messages")}
+    with engine.begin() as conn:
+        if "ix_feedback_messages_feedback_created" not in message_indexes:
+            conn.execute(text("CREATE INDEX ix_feedback_messages_feedback_created ON feedback_messages (feedback_id, created_at)"))
 
     from app.database import SessionLocal
-    from app.models.feedback import Feedback
+    from app.models.feedback import Feedback, FeedbackMessage
 
     db = SessionLocal()
     try:
@@ -2046,6 +2067,25 @@ def _ensure_feedback_schema():
         for row in rows:
             row.business_id = generate_business_id()
             changed = True
+
+        all_feedback = db.query(Feedback).all()
+        for row in all_feedback:
+            if row.last_message_at is None:
+                row.last_message_at = row.created_at
+                changed = True
+            existing_message = db.query(FeedbackMessage.id).filter(FeedbackMessage.feedback_id == row.id).first()
+            if not existing_message:
+                db.add(FeedbackMessage(
+                    feedback_id=row.id,
+                    sender_role="user",
+                    sender_id=row.user_id,
+                    content=row.content or "",
+                    attachments_json=row.attachments_json or "[]",
+                    created_at=row.created_at,
+                ))
+                if row.user_last_read_at is None:
+                    row.user_last_read_at = row.created_at
+                changed = True
         if changed:
             db.commit()
     finally:

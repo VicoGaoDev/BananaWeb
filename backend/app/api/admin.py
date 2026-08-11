@@ -20,6 +20,10 @@ from app.schemas.canvas import CanvasListResponse
 from app.schemas.feedback import (
     FeedbackDetail,
     FeedbackListResponse,
+    FeedbackMessageCreateRequest,
+    FeedbackMessageListResponse,
+    FeedbackMessageOut,
+    FeedbackReadCountResponse,
     FeedbackUnresolvedCountResponse,
     FeedbackUpdateRequest,
 )
@@ -42,9 +46,14 @@ from app.services.admin_service import (
 from app.services.credit_redeem_service import create_redeem_key_batch, list_redeem_keys, update_redeem_key_status
 from app.services.promo_service import get_user_promo_dashboard_for_admin
 from app.services.feedback_service import (
+    close_feedback,
+    count_admin_unread_feedbacks,
     count_unresolved_feedbacks,
+    create_feedback_message,
     get_feedback_detail,
+    list_feedback_messages,
     list_feedbacks,
+    mark_feedback_as_admin_read,
     update_feedback,
 )
 from app.services.history_service import get_admin_history_cards, get_admin_history_detail, get_all_history
@@ -929,6 +938,14 @@ def admin_feedback_unresolved_count(
     return {"count": count_unresolved_feedbacks(db)}
 
 
+@router.get("/feedback/unread-count", response_model=FeedbackReadCountResponse)
+def admin_feedback_unread_count(
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return {"count": count_admin_unread_feedbacks(db)}
+
+
 @router.get("/feedback/{feedback_id}", response_model=FeedbackDetail)
 def admin_feedback_detail(
     feedback_id: str,
@@ -936,6 +953,50 @@ def admin_feedback_detail(
     db: Session = Depends(get_db),
 ):
     return get_feedback_detail(db, feedback_id)
+
+
+@router.get("/feedback/{feedback_id}/messages", response_model=FeedbackMessageListResponse)
+def admin_feedback_messages(
+    feedback_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_feedback_messages(db, feedback_id)
+
+
+@router.post("/feedback/{feedback_id}/messages", response_model=FeedbackMessageOut)
+def admin_send_feedback_message(
+    feedback_id: str,
+    body: FeedbackMessageCreateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return create_feedback_message(
+        db,
+        feedback_id,
+        sender=admin,
+        sender_role="admin",
+        content=body.content,
+        attachments=body.attachments,
+    )
+
+
+@router.patch("/feedback/{feedback_id}/read", response_model=FeedbackReadCountResponse)
+def admin_mark_feedback_read(
+    feedback_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return mark_feedback_as_admin_read(db, feedback_id)
+
+
+@router.post("/feedback/{feedback_id}/close", response_model=FeedbackDetail)
+def admin_close_feedback(
+    feedback_id: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return close_feedback(db, feedback_id, admin=admin)
 
 
 @router.patch("/feedback/{feedback_id}", response_model=FeedbackDetail)

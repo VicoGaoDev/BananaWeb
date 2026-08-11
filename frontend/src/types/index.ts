@@ -538,6 +538,7 @@ export interface FeedbackItem {
   handler_id?: string | null;
   handler_name: string;
   handled_at?: string | null;
+  last_message_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   task: FeedbackTaskSummary;
@@ -558,6 +559,26 @@ export interface FeedbackUnresolvedCountResponse {
 
 export interface FeedbackReadCountResponse {
   count: number;
+}
+
+export interface FeedbackMessage {
+  message_id: string;
+  feedback_id: string;
+  sender_role: "user" | "admin" | "system";
+  sender_id?: string | null;
+  sender_name: string;
+  content: string;
+  attachments: string[];
+  created_at?: string | null;
+}
+
+export interface FeedbackMessageListResponse {
+  items: FeedbackMessage[];
+}
+
+export interface FeedbackMessageCreatePayload {
+  content?: string;
+  attachments?: string[];
 }
 
 export interface FeedbackListQuery {

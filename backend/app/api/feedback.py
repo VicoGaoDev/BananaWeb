@@ -8,12 +8,17 @@ from app.schemas.feedback import (
     FeedbackCreateRequest,
     FeedbackDetail,
     FeedbackListResponse,
+    FeedbackMessageCreateRequest,
+    FeedbackMessageListResponse,
+    FeedbackMessageOut,
     FeedbackReadCountResponse,
 )
 from app.services.feedback_service import (
     count_user_unread_feedbacks,
     create_feedback,
+    create_feedback_message,
     get_feedback_detail,
+    list_feedback_messages,
     list_feedbacks,
     mark_all_feedbacks_as_read,
     mark_feedback_as_read,
@@ -93,6 +98,33 @@ def mark_my_feedbacks_read_all(
     db: Session = Depends(get_db),
 ):
     return {"count": mark_all_feedbacks_as_read(db, user_id=user.id)}
+
+
+@router.get("/{feedback_id}/messages", response_model=FeedbackMessageListResponse)
+def list_my_feedback_messages(
+    feedback_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_feedback_messages(db, feedback_id, user_id=user.id)
+
+
+@router.post("/{feedback_id}/messages", response_model=FeedbackMessageOut)
+def send_my_feedback_message(
+    feedback_id: str,
+    body: FeedbackMessageCreateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_feedback_message(
+        db,
+        feedback_id,
+        sender=user,
+        sender_role="user",
+        content=body.content,
+        attachments=body.attachments,
+        user_id=user.id,
+    )
 
 
 @router.get("/{feedback_id}", response_model=FeedbackDetail)

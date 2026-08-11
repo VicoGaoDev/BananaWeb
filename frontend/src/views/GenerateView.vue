@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, defineComponent, h, inject, nextTick, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
-import { message, Modal, notification } from "ant-design-vue";
+import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRoute, useRouter } from "vue-router";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
@@ -55,7 +55,6 @@ import {
   uploadReferenceImage,
 } from "@/api/upload";
 import { getMe } from "@/api/auth";
-import { getMyUnreadFeedbackCount } from "@/api/feedback";
 import { useAuthStore } from "@/stores/auth";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
@@ -77,7 +76,6 @@ import {
   formatGenerationTaskFailureMessage,
   getPreferredGenerationErrorMessage,
 } from "@/lib/generationErrors";
-import { setStoredUserCompletedUnreadFeedbackCount } from "@/lib/userFeedbackNotice";
 import {
   GENERATE_RESULT_COLUMN_COUNT_KEY,
   readStoredGridColumnCount,
@@ -98,7 +96,6 @@ const router = useRouter();
 const route = useRoute();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
-const COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY = "user-completed-unread-feedback";
 const AUTH_USER_REFRESH_INTERVAL_MS = 60_000;
 let lastAuthUserRefreshAt = 0;
 let authUserRefreshPromise: Promise<void> | null = null;
@@ -3212,37 +3209,6 @@ async function loadTaskSceneConfigs() {
   }
 }
 
-async function notifyCompletedUnreadFeedbacks() {
-  if (!auth.isLoggedIn) return;
-  try {
-    const { count } = await getMyUnreadFeedbackCount();
-    setStoredUserCompletedUnreadFeedbackCount(count);
-    if (count > 1) {
-      notification.info({
-        key: COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY,
-        message: "您的反馈有新进展，点击前往查看！",
-        placement: "topRight",
-        duration: 5,
-        style: {
-          cursor: "pointer",
-          borderRadius: "18px",
-          background: "linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(255, 245, 225, 0.98))",
-          border: "1px solid rgba(240, 210, 150, 0.95)",
-          boxShadow: "0 16px 28px rgba(228, 174, 74, 0.18)",
-        },
-        onClick: () => {
-          notification.close(COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY);
-          router.push("/feedbacks");
-        },
-      });
-      return;
-    }
-    notification.close(COMPLETED_UNREAD_FEEDBACK_NOTIFICATION_KEY);
-  } catch {
-    // ignore unread feedback reminder failures
-  }
-}
-
 onMounted(async () => {
   syncViewportWidth();
   window.addEventListener("resize", syncViewportWidth);
@@ -3251,7 +3217,7 @@ onMounted(async () => {
   window.addEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
   document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
-  await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus(), notifyCompletedUnreadFeedbacks()]);
+  await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus()]);
   applyDraft(
     localStorage.getItem(HISTORY_DRAFT_KEY),
     "已回填历史任务参数，可继续编辑后重新生成",
@@ -3274,7 +3240,6 @@ onActivated(async () => {
   await loadBoardsForGenerate();
   void loadRecentGeneratedTasks();
   void loadGlobalActiveGenerationStatus();
-  void notifyCompletedUnreadFeedbacks();
 });
 
 onBeforeUnmount(() => {
@@ -3649,7 +3614,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
                           <template #icon><ThunderboltOutlined /></template>
-                          提示词优化（限时免费）
+                          提示词优化
                         </a-button>
                       </span>
                     </a-tooltip>
@@ -4016,7 +3981,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
                           <template #icon><ThunderboltOutlined /></template>
-                          提示词优化（限时免费）
+                          提示词优化
                         </a-button>
                       </span>
                     </a-tooltip>
@@ -4437,7 +4402,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
                           <template #icon><ThunderboltOutlined /></template>
-                          提示词优化（限时免费）
+                          提示词优化
                         </a-button>
                       </span>
                     </a-tooltip>

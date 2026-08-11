@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { CopyOutlined, MessageOutlined, UndoOutlined } from "@ant-design/icons-vue";
+import FeedbackDetailDrawer from "@/components/feedback/FeedbackDetailDrawer.vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import { listMyFeedbacks, markAllMyFeedbackAsRead, markMyFeedbackAsRead } from "@/api/feedback";
+import { copyText as copyToClipboard } from "@/lib/clipboard";
 import { setStoredUserCompletedUnreadFeedbackCount } from "@/lib/userFeedbackNotice";
 import type { FeedbackItem, FeedbackStatus } from "@/types";
 
@@ -14,6 +16,8 @@ const page = ref(1);
 const pageSize = ref(20);
 const readSubmitting = ref<string | null>(null);
 const readAllLoading = ref(false);
+const detailDrawerOpen = ref(false);
+const activeFeedbackId = ref<string | null>(null);
 
 const filters = reactive<{
   status: FeedbackStatus | undefined;
@@ -60,7 +64,7 @@ function formatTime(value?: string | null) {
 
 async function copyFeedbackId(feedbackId: string) {
   try {
-    await navigator.clipboard.writeText(feedbackId);
+    await copyToClipboard(feedbackId);
     message.success("反馈编号已复制");
   } catch {
     message.error("复制失败，请重试");
@@ -80,6 +84,15 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function openDetail(feedbackId: string) {
+  activeFeedbackId.value = feedbackId;
+  detailDrawerOpen.value = true;
+}
+
+function handleDrawerChanged() {
+  void load();
 }
 
 async function handleMarkRead(record: FeedbackItem) {
@@ -220,20 +233,29 @@ onMounted(load);
             {{ formatTime(record.updated_at) }}
           </template>
           <template v-else-if="column.key === 'actions'">
-            <a-button
-              v-if="!record.is_read"
-              type="link"
-              class="mark-read-btn"
-              :loading="readSubmitting === record.feedback_id"
-              @click="handleMarkRead(record)"
-            >
-              已读
-            </a-button>
-            <span v-else class="action-placeholder">-</span>
+            <div class="action-group">
+              <a-button type="link" class="mark-read-btn" @click="openDetail(record.feedback_id)">详情</a-button>
+              <a-button
+                v-if="!record.is_read"
+                type="link"
+                class="mark-read-btn"
+                :loading="readSubmitting === record.feedback_id"
+                @click="handleMarkRead(record)"
+              >
+                已读
+              </a-button>
+            </div>
           </template>
         </template>
       </a-table>
     </div>
+
+    <FeedbackDetailDrawer
+      v-model:open="detailDrawerOpen"
+      :feedback-id="activeFeedbackId"
+      mode="user"
+      @changed="handleDrawerChanged"
+    />
   </div>
 </template>
 

@@ -35,6 +35,7 @@ class FeedbackListItem(BaseModel):
     handler_id: str | None = None
     handler_name: str = ""
     handled_at: datetime | None = None
+    last_message_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     task: FeedbackTaskSummary
@@ -55,6 +56,26 @@ class FeedbackUnresolvedCountResponse(BaseModel):
 
 class FeedbackReadCountResponse(BaseModel):
     count: int
+
+
+class FeedbackMessageOut(BaseModel):
+    message_id: str
+    feedback_id: str
+    sender_role: str
+    sender_id: str | None = None
+    sender_name: str = ""
+    content: str = ""
+    attachments: list[str] = []
+    created_at: datetime | None = None
+
+
+class FeedbackMessageListResponse(BaseModel):
+    items: list[FeedbackMessageOut]
+
+
+class FeedbackMessageCreateRequest(BaseModel):
+    content: str = ""
+    attachments: list[str] = Field(default_factory=list)
 
 
 class FeedbackCreateRequest(BaseModel):

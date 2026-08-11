@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 import { CopyOutlined, MessageOutlined, SearchOutlined, UndoOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import { listAdminFeedbacks } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
+import FeedbackDetailDrawer from "@/components/feedback/FeedbackDetailDrawer.vue";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminUser, FeedbackItem, FeedbackStatus, FeedbackType } from "@/types";
 
-const router = useRouter();
 const loading = ref(false);
 const items = ref<FeedbackItem[]>([]);
 const users = ref<AdminUser[]>([]);
@@ -18,6 +17,8 @@ const page = ref(1);
 const pageSize = ref(20);
 const userInfoOpen = ref(false);
 const userInfoTarget = ref<AdminUser | null>(null);
+const detailDrawerOpen = ref(false);
+const activeFeedbackId = ref<string | null>(null);
 
 const filters = reactive<{
   feedback_id: string;
@@ -133,7 +134,12 @@ function handlePageChange(nextPage: number, nextPageSize: number) {
 }
 
 function openDetail(feedbackId: string) {
-  router.push(`/admin/feedbacks/${feedbackId}`);
+  activeFeedbackId.value = feedbackId;
+  detailDrawerOpen.value = true;
+}
+
+function handleDrawerChanged() {
+  void load();
 }
 
 function openUserInfo(record: FeedbackItem) {
@@ -291,6 +297,12 @@ onMounted(async () => {
     </div>
 
     <AdminUserInfoDialog v-model:open="userInfoOpen" :user="userInfoTarget" />
+    <FeedbackDetailDrawer
+      v-model:open="detailDrawerOpen"
+      :feedback-id="activeFeedbackId"
+      mode="admin"
+      @changed="handleDrawerChanged"
+    />
   </div>
 </template>
 

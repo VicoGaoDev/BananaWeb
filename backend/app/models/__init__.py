@@ -33,7 +33,7 @@ from app.models.prompt_history import PromptHistory
 from app.models.prompt_optimize_style import PromptOptimizeStyle
 from app.models.prompt_optimize_task import PromptOptimizeTask
 from app.models.history_pin import HistoryPin
-from app.models.feedback import Feedback
+from app.models.feedback import Feedback, FeedbackMessage
 from app.models.system_message import SystemMessage, SystemMessageRecipient
 from app.models.update_log import UpdateLog
 from app.models.admin_ledger import AdminLedger, AdminLedgerExpense, AdminLedgerLog
@@ -82,6 +82,7 @@ __all__ = [
     "PromptOptimizeTask",
     "HistoryPin",
     "Feedback",
+    "FeedbackMessage",
     "SystemMessage",
     "SystemMessageRecipient",
     "UpdateLog",
