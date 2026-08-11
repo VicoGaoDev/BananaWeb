@@ -75,23 +75,6 @@ SYNC_GENERATION_MAX_WORKERS = max(int(settings.SYNC_GENERATION_MAX_WORKERS or 0)
 _sync_generation_semaphore = threading.BoundedSemaphore(SYNC_GENERATION_MAX_WORKERS)
 _async_poll_recovery_lock = threading.Lock()
 _async_poll_recovery_started = False
-FALLBACK_HTTP_STATUSES = {502, 503, 504}
-FALLBACK_TRANSIENT_ERROR_KEYWORDS = (
-    "server is busy",
-    "please retry later",
-    "retry later",
-    "try again later",
-    "temporarily unavailable",
-    "too many requests",
-    "rate limit",
-    "read timed out",
-    "timed out",
-    "timeout",
-    "请求超时",
-    "响应读取超时",
-    "上游请求超时",
-    "连接超时",
-)
 
 
 @dataclass
@@ -189,46 +172,9 @@ def _format_elapsed_fragment(elapsed_seconds: float | None) -> str:
     return f"（实际耗时 {elapsed_seconds} 秒）"
 
 
-def _extract_fallback_http_status(error_message: str) -> int | None:
-    message = (error_message or "").strip()
-    if not message:
-        return None
-    patterns = (
-        r"http\D*(5\d{2})",
-        r"status(?:\s*code)?\D*(5\d{2})",
-        r"状态(?:码)?\D*(5\d{2})",
-        r"(?:错误码|错误|error|code|码)\D{0,20}(5\d{2})",
-        r"(?<![\dxX])(5\d{2})(?![\dxX])\s*(?:bad gateway|internal server error|service unavailable|gateway timeout|server error)",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, message, flags=re.IGNORECASE)
-        if not match:
-            continue
-        candidate = int(match.group(1))
-        if candidate in FALLBACK_HTTP_STATUSES:
-            return candidate
-    return None
-
-
-def _is_configured_image_path_missing_error(error_message: str) -> bool:
-    message = (error_message or "").strip()
-    return "生图接口返回内容缺少配置路径" in message and "对应的 base64 数据" in message
-
-
-def _is_transient_upstream_error(error_message: str) -> bool:
-    message = (error_message or "").strip().lower()
-    return bool(message) and any(keyword in message for keyword in FALLBACK_TRANSIENT_ERROR_KEYWORDS)
-
-
-def _should_use_fallback_api(http_status: int | None, error_message: str) -> bool:
-    if http_status is not None and int(http_status) in FALLBACK_HTTP_STATUSES:
-        return True
-    if _is_configured_image_path_missing_error(error_message):
-        return True
-    if _is_transient_upstream_error(error_message):
-        return True
-    detected_status = _extract_fallback_http_status(error_message)
-    return detected_status is not None
+def _should_use_fallback_api(_http_status: int | None, _error_message: str) -> bool:
+    """主接口任意失败都切换备用接口。"""
+    return True
 
 
 def _classify_generation_request_exception(
@@ -952,75 +898,6 @@ def _submit_async_generation_api_once(
         return AsyncSubmitResult(None, "", _clip_error_message(f"异步生图提交异常: {exc}"), None, _measure_elapsed_ms(request_started_perf), "")
 
 
-def _call_gemini_api(
-    prompt: str,
-    aspect_ratio: str,
-    image_size: str,
-    custom_size: str,
-    model_key: str = "",
-    reference_images: list[str] | None = None,
-    mode: str = "generate",
-    source_image: str = "",
-    mask_image: str = "",
-) -> ApiCallResult:
-    db = SessionLocal()
-    attempts: list[ApiAttemptRecord] = []
-    try:
-        scene_key = SCENE_INPAINT if mode == "inpaint" else model_key
-        primary_config, backup_config = resolve_scene_generation_configs(db, scene_key)
-        configs_to_try: list[tuple[ExternalApiConfig, bool]] = [(primary_config, False)]
-        if backup_config is not None:
-            configs_to_try.append((backup_config, True))
-
-        last_error_message = ""
-        last_http_status: int | None = None
-        for attempt_index, (config, is_fallback) in enumerate(configs_to_try, start=1):
-            result, error_message, http_status_code, duration_ms = _call_generation_api_once(
-                db,
-                config=config,
-                scene_key=scene_key,
-                prompt=prompt,
-                aspect_ratio=aspect_ratio,
-                image_size=image_size,
-                custom_size=custom_size,
-                reference_images=reference_images,
-                mode=mode,
-                source_image=source_image,
-                mask_image=mask_image,
-            )
-            attempts.append(ApiAttemptRecord(
-                api_config_id=config.id,
-                api_config_name=config.name or "",
-                attempt_index=attempt_index,
-                is_fallback=is_fallback,
-                status="success" if result else "failed",
-                http_status=http_status_code,
-                error_message="" if result else _clip_error_message(error_message),
-                duration_ms=duration_ms,
-            ))
-            if result:
-                return ApiCallResult(
-                    result=result,
-                    error_message="",
-                    http_status_code=None,
-                    attempts=attempts,
-                )
-
-            last_error_message = _clip_error_message(error_message or "生图失败")
-            last_http_status = http_status_code
-            if is_fallback or backup_config is None or not _should_use_fallback_api(http_status_code, last_error_message):
-                break
-
-        return ApiCallResult(
-            result=None,
-            error_message=last_error_message,
-            http_status_code=last_http_status,
-            attempts=attempts,
-        )
-    finally:
-        db.close()
-
-
 def _poll_async_generation_once(
     db,
     task: Task,
@@ -1231,20 +1108,7 @@ def _execute_task_generation(db, task: Task) -> tuple[ApiCallResult, list[ApiAtt
             attempts=[],
         ), attempts
 
-    call_mode = (primary_config.call_mode or "sync").strip().lower() or "sync"
-    if call_mode != "async":
-        return _call_gemini_api(
-            prompt=task.prompt,
-            aspect_ratio=task.size,
-            image_size=task.resolution,
-            custom_size=task.custom_size or "",
-            model_key=task.model or "",
-            reference_images=ref_urls,
-            mode=task_mode,
-            source_image=task.source_image or "",
-            mask_image=task.mask_image or "",
-        ), attempts
-
+    # 主/备各自按 call_mode 处理：支持主同步失败后切备用异步并轮询取结果
     configs_to_try: list[tuple[ExternalApiConfig, bool]] = [(primary_config, False)]
     if backup_config is not None:
         configs_to_try.append((backup_config, True))
@@ -1464,14 +1328,17 @@ def _submit_generation_with_configs(
             duration_ms=submit_result.duration_ms,
         ))
         if submit_result.provider_task_id:
+            provider_started_at = now_local()
             task.provider_api_config_id = config.id
             task.provider_task_id = submit_result.provider_task_id
             task.provider_status = submit_result.provider_status or "submitted"
             task.provider_error_message = ""
             task.provider_response_preview = submit_result.response_preview
+            task.request_started_at = provider_started_at
+            task.request_finished_at = None
             task.poll_count = 0
             task.last_polled_at = None
-            task.next_poll_at = now_local()
+            task.next_poll_at = provider_started_at
             db.commit()
             selected_config = config
             break
