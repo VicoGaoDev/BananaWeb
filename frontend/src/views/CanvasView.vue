@@ -1121,10 +1121,31 @@ function startGroupDrag(event: PointerEvent, group: CanvasGroup) {
   canvasStageRef.value?.setPointerCapture(event.pointerId);
 }
 
+function handleSelectionGroupDoubleClick(event: MouseEvent) {
+  event.stopPropagation();
+  event.preventDefault();
+  const node = selectionPrimaryNode.value;
+  if (!node || node.node_type !== "text") return;
+  lastTextNodePointerDown = null;
+  openTextNodeEditor(node);
+}
+
 function startSelectionGroupDrag(event: PointerEvent) {
   if (event.button !== 0 || canvasInteractionMode.value !== "select") return;
   event.stopPropagation();
   event.preventDefault();
+  const primaryNode = selectionPrimaryNode.value;
+  if (primaryNode?.node_type === "text") {
+    const now = Date.now();
+    if (lastTextNodePointerDown?.nodeId === primaryNode.id && now - lastTextNodePointerDown.time < 600) {
+      lastTextNodePointerDown = null;
+      openTextNodeEditor(primaryNode);
+      return;
+    }
+    lastTextNodePointerDown = { nodeId: primaryNode.id, time: now };
+  } else {
+    lastTextNodePointerDown = null;
+  }
   if (canvasReadOnly.value || !selectionActionNodes.value.length) return;
   clearBrowserTextSelection();
   selectedGroupId.value = null;
@@ -3248,9 +3269,10 @@ function openTextNodeEditor(node: CanvasNode) {
     message.warning("只读模式下不能编辑文本节点");
     return;
   }
+  clearCanvasSelection();
   textNodeEditTarget.value = node;
   textNodeEditContent.value = node.content || "";
-  focusCanvasNode(node, 1);
+  focusCanvasNode(node, 1, false);
   void nextTick(() => {
     const editor = canvasStageRef.value?.querySelector<HTMLTextAreaElement>(`[data-text-node-editor="${node.id}"]`);
     editor?.focus();
@@ -3276,7 +3298,6 @@ async function saveTextNodeContent() {
   try {
     const updated = await updateCanvasNode(projectId, node.id, { content: nextContent });
     nodes.value = nodes.value.map((item) => item.id === updated.id ? updated : item);
-    selectSingleNode(updated);
     textNodeEditTarget.value = null;
     message.success("文本节点已更新");
   } catch (err: any) {
@@ -4147,7 +4168,7 @@ function getNodeSearchThumbUrl(node: CanvasNode) {
   return getDisplayImageUrl(image);
 }
 
-function focusCanvasNode(node: CanvasNode, targetZoom = 1) {
+function focusCanvasNode(node: CanvasNode, targetZoom = 1, selectNode = true) {
   const rect = canvasStageRef.value?.getBoundingClientRect();
   if (!rect) return;
   const zoom = clampZoom(targetZoom);
@@ -4158,7 +4179,7 @@ function focusCanvasNode(node: CanvasNode, targetZoom = 1) {
     x: rect.width / 2 - nodeCenterX * zoom,
     y: rect.height / 2 - nodeCenterY * zoom,
   };
-  selectSingleNode(node);
+  if (selectNode) selectSingleNode(node);
   nodeSearchOpen.value = false;
   scheduleViewportSave();
 }
@@ -5213,7 +5234,7 @@ onBeforeUnmount(() => {
       ></div>
 
       <div
-        v-if="selectionActionNodes.length"
+        v-if="selectionActionNodes.length && !textNodeEditTarget"
         class="canvas-selection-action-toolbar canvas-panel"
         :style="selectionActionToolbarStyle"
         @pointerdown.stop
@@ -5221,6 +5242,15 @@ onBeforeUnmount(() => {
         @click.stop
       >
         <span class="canvas-selection-action-count">已选择 {{ selectionActionNodes.length }} 个</span>
+        <button
+          v-if="selectionPrimaryNode?.node_type === 'text'"
+          type="button"
+          :disabled="canvasReadOnly"
+          @click="openTextNodeEditor(selectionPrimaryNode)"
+        >
+          <EditOutlined />
+          <span>编辑文本</span>
+        </button>
         <button type="button" :disabled="canvasReadOnly" @click="createGroupFromSelection">
           <PlusOutlined />
           <span>添加分组</span>
@@ -5291,7 +5321,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="selectedNode && !selectionActionNodes.length && !nodeToolbarSuppressed"
+        v-if="selectedNode && !selectionActionNodes.length && !nodeToolbarSuppressed && !textNodeEditTarget"
         class="canvas-node-toolbar"
         :style="selectedNodeToolbarStyle"
         @pointerdown.stop
@@ -5326,7 +5356,12 @@ onBeforeUnmount(() => {
           </button>
         </template>
         <template v-else>
-          <button v-if="selectedNode.node_type === 'text'" type="button" @click="openTextNodeEditor(selectedNode)">
+          <button
+            v-if="selectedNode.node_type === 'text'"
+            type="button"
+            :disabled="canvasReadOnly"
+            @click="openTextNodeEditor(selectedNode)"
+          >
             <EditOutlined />
             <span>编辑文本</span>
           </button>
@@ -5464,6 +5499,7 @@ onBeforeUnmount(() => {
           class="canvas-selection-group"
           :style="selectionGroupStyle"
           @pointerdown="startSelectionGroupDrag"
+          @dblclick="handleSelectionGroupDoubleClick"
         ></div>
         <article
           v-for="node in nodes"
