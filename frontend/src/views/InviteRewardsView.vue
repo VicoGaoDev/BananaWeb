@@ -21,6 +21,7 @@ import {
   getInviteRewardOverview,
   getInviteRewardReferrals,
 } from "@/api/inviteRewards";
+import { copyText as copyToClipboard } from "@/lib/clipboard";
 import type {
   InviteRewardLogItem,
   InviteRewardOverviewResponse,
@@ -85,7 +86,7 @@ function sourceTypeLabel(value: string) {
 async function copyText(text: string, successText: string) {
   if (!text) return;
   try {
-    await navigator.clipboard.writeText(text);
+    await copyToClipboard(text);
     message.success(successText);
   } catch {
     message.error("复制失败，请重试");
