@@ -71,6 +71,8 @@ const generationModels = ref<GenerationModelOption[]>([]);
 const taskDetailOpen = ref(false);
 const taskDetailLoading = ref(false);
 const taskDetailItem = ref<UserHistoryCard | null>(null);
+const pendingOpenTaskDetail = ref(false);
+const reopenDrawerAfterTaskDetail = ref(false);
 let activeTaskDetailRequestKey = "";
 
 const isClosed = computed(() => detail.value?.status === "completed");
@@ -136,6 +138,13 @@ function closeDrawer() {
   emit("update:open", false);
 }
 
+function handleDrawerAfterOpenChange(nextOpen: boolean) {
+  if (!nextOpen && pendingOpenTaskDetail.value) {
+    pendingOpenTaskDetail.value = false;
+    taskDetailOpen.value = true;
+  }
+}
+
 function openPreview(url: string) {
   const previewUrl = getPreviewImageSrc(url);
   if (!previewUrl) return;
@@ -198,9 +207,10 @@ async function openTaskDetail() {
     return;
   }
 
-  taskDetailOpen.value = true;
   taskDetailLoading.value = true;
   taskDetailItem.value = null;
+  pendingOpenTaskDetail.value = false;
+  reopenDrawerAfterTaskDetail.value = false;
   activeTaskDetailRequestKey = taskId;
   await ensureGenerationModels();
 
@@ -217,9 +227,13 @@ async function openTaskDetail() {
       if (activeTaskDetailRequestKey !== taskId) return;
       taskDetailItem.value = convertTaskToHistoryCard(task);
     }
+    if (activeTaskDetailRequestKey !== taskId) return;
+    pendingOpenTaskDetail.value = true;
+    reopenDrawerAfterTaskDetail.value = true;
+    emit("update:open", false);
   } catch {
     if (activeTaskDetailRequestKey !== taskId) return;
-    taskDetailOpen.value = false;
+    pendingOpenTaskDetail.value = false;
     message.error("获取任务详情失败");
   } finally {
     if (activeTaskDetailRequestKey === taskId) {
@@ -389,19 +403,27 @@ function handleCloseFeedback() {
   });
 }
 
+watch(taskDetailOpen, (nextOpen, prevOpen) => {
+  if (!nextOpen && prevOpen && reopenDrawerAfterTaskDetail.value) {
+    reopenDrawerAfterTaskDetail.value = false;
+    emit("update:open", true);
+  }
+});
+
 watch(
   () => [props.open, props.feedbackId, props.mode] as const,
   () => {
     if (props.open) {
       void load();
     } else {
-      detail.value = null;
-      messages.value = [];
-      resetComposer();
-      taskDetailOpen.value = false;
-      taskDetailLoading.value = false;
-      taskDetailItem.value = null;
-      activeTaskDetailRequestKey = "";
+      if (!pendingOpenTaskDetail.value && !taskDetailOpen.value) {
+        detail.value = null;
+        messages.value = [];
+        resetComposer();
+        taskDetailLoading.value = false;
+        taskDetailItem.value = null;
+        activeTaskDetailRequestKey = "";
+      }
     }
   },
   { immediate: true },
@@ -415,6 +437,7 @@ watch(
     root-class-name="feedback-detail-drawer"
     class="feedback-detail-drawer"
     :body-style="{ padding: 0 }"
+    @after-open-change="handleDrawerAfterOpenChange"
     @update:open="(value: boolean) => emit('update:open', value)"
     @close="closeDrawer"
   >

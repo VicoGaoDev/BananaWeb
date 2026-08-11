@@ -971,12 +971,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
   <div v-if="previewVisible" style="display: none">
     <a-image
       :src="previewSrc"
-      :preview="{
-        visible: previewVisible,
-        // 高于任务详情浮层，避免从反馈抽屉打开时预览仍被盖住
-        zIndex: 1200,
-        onVisibleChange: (v: boolean) => (previewVisible = v),
-      }"
+      :preview="{ visible: previewVisible, onVisibleChange: (v: boolean) => (previewVisible = v) }"
     />
   </div>
 </template>
@@ -987,8 +982,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
   top: 0;
   right: 0;
   bottom: 0;
-  /* 高于 ant-drawer 默认 1000，避免反馈详情抽屉盖住任务详情 */
-  z-index: 1100;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   background: var(--theme-panel-bg, #fffaf2);
