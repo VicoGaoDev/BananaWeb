@@ -16,6 +16,9 @@ export default defineConfig({
       "^/api(/|$)": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
+        // 对话等同步上游调用可能超过默认代理超时
+        timeout: 630_000,
+        proxyTimeout: 630_000,
       },
       "/uploads": {
         target: "http://127.0.0.1:8000",

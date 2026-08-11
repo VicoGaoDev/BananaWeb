@@ -17,6 +17,10 @@ from app.models.external_api_config import ExternalApiConfig
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.video_external_api_config import VideoExternalApiConfig
 from app.models.video_external_api_scene_binding import VideoExternalApiSceneBinding
+from app.models.chat_external_api_config import ChatExternalApiConfig
+from app.models.chat_external_api_scene_binding import ChatExternalApiSceneBinding
+from app.models.chat_session import ChatSession
+from app.models.chat_message import ChatMessage
 from app.models.credit_log import CreditLog
 from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.offline_order import OfflineOrder
@@ -61,6 +65,10 @@ __all__ = [
     "ExternalApiSceneBinding",
     "VideoExternalApiConfig",
     "VideoExternalApiSceneBinding",
+    "ChatExternalApiConfig",
+    "ChatExternalApiSceneBinding",
+    "ChatSession",
+    "ChatMessage",
     "CreditLog",
     "CreditRedeemKey",
     "OfflineOrder",

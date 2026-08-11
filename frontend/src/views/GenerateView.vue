@@ -410,6 +410,7 @@ const sceneConfigLoading = ref(true);
 const submittingGenerate = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
+const CHAT_DRAFT_KEY = "generateDraftFromChat";
 const ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY = "generateAspectRatioAutoDetectEnabled";
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
@@ -3260,6 +3261,11 @@ onMounted(async () => {
     localStorage.getItem(TEMPLATE_DRAFT_KEY),
     "已套用创意模版参数，可继续编辑后生成",
     TEMPLATE_DRAFT_KEY
+  );
+  applyDraft(
+    localStorage.getItem(CHAT_DRAFT_KEY),
+    "已从 AI 对话回填提示词，可继续编辑后生成",
+    CHAT_DRAFT_KEY
   );
   applyRouteGenerateMode();
 });

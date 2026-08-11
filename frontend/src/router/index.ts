@@ -29,6 +29,12 @@ const router = createRouter({
           component: () => import("@/views/VideoGenerateView.vue"),
         },
         {
+          path: "chat/:sessionId?",
+          name: "Chat",
+          meta: { requiresAuth: true },
+          component: () => import("@/views/ChatView.vue"),
+        },
+        {
           path: "canvas",
           name: "Canvas",
           meta: { requiresAuth: true },
@@ -302,6 +308,12 @@ const router = createRouter({
           name: "VideoApiConfigManage",
           meta: { requiresSuperAdmin: true },
           component: () => import("@/views/admin/VideoApiConfigView.vue"),
+        },
+        {
+          path: "admin/chat-api-configs",
+          name: "ChatApiConfigManage",
+          meta: { requiresSuperAdmin: true },
+          component: () => import("@/views/admin/ChatApiConfigView.vue"),
         },
       ],
     },

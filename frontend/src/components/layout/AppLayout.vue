@@ -126,46 +126,48 @@ const suggestionFabWrapStyle = computed(() => {
 
 const routeOrder = new Map<string, number>([
   ["/", 0],
-  ["/templates", 1],
+  ["/chat", 1],
   ["/generate", 2],
   ["/video-generate", 3],
   ["/canvas", 4],
-  ["/history", 5],
-  ["/profile", 6],
-  ["/api-keys", 7],
-  ["/system-messages", 8],
-  ["/system-messages/:messageId", 9],
-  ["/settings", 10],
-  ["/credit-logs", 11],
-  ["/invite-rewards", 12],
-  ["/promo-codes", 13],
-  ["/feedbacks", 14],
-  ["/feedbacks/:feedbackId", 15],
-  ["/admin/templates", 16],
-  ["/admin/prompt-optimize", 16.5],
-  ["/admin/example-canvases", 17],
-  ["/admin/users", 18],
-  ["/admin/user-tasks", 19],
-  ["/admin/user-videos", 20],
-  ["/admin/user-canvases", 21],
-  ["/admin/dashboard", 22],
-  ["/admin/image-dashboard", 23],
-  ["/admin/video-dashboard", 24],
-  ["/admin/error-analytics", 25],
-  ["/admin/general-settings", 26],
-  ["/admin/redeem-keys", 27],
-  ["/admin/ledger", 28],
-  ["/admin/revenue", 29],
-  ["/admin/invite-rewards", 30],
-  ["/admin/promo-stats", 31],
-  ["/admin/payment-orders", 32],
-  ["/admin/feedbacks", 33],
-  ["/admin/feedbacks/:feedbackId", 34],
-  ["/admin/system-messages", 35],
-  ["/admin/update-logs", 35],
-  ["/admin/cos-config", 36],
-  ["/admin/external-api-configs", 37],
-  ["/admin/video-api-configs", 38],
+  ["/templates", 5],
+  ["/history", 6],
+  ["/profile", 7],
+  ["/api-keys", 8],
+  ["/system-messages", 9],
+  ["/system-messages/:messageId", 10],
+  ["/settings", 11],
+  ["/credit-logs", 12],
+  ["/invite-rewards", 13],
+  ["/promo-codes", 14],
+  ["/feedbacks", 15],
+  ["/feedbacks/:feedbackId", 16],
+  ["/admin/templates", 17],
+  ["/admin/prompt-optimize", 17.5],
+  ["/admin/example-canvases", 18],
+  ["/admin/users", 19],
+  ["/admin/user-tasks", 20],
+  ["/admin/user-videos", 21],
+  ["/admin/user-canvases", 22],
+  ["/admin/dashboard", 23],
+  ["/admin/image-dashboard", 24],
+  ["/admin/video-dashboard", 25],
+  ["/admin/error-analytics", 26],
+  ["/admin/general-settings", 27],
+  ["/admin/redeem-keys", 28],
+  ["/admin/ledger", 29],
+  ["/admin/revenue", 30],
+  ["/admin/invite-rewards", 31],
+  ["/admin/promo-stats", 32],
+  ["/admin/payment-orders", 33],
+  ["/admin/feedbacks", 34],
+  ["/admin/feedbacks/:feedbackId", 35],
+  ["/admin/system-messages", 36],
+  ["/admin/update-logs", 36],
+  ["/admin/cos-config", 37],
+  ["/admin/external-api-configs", 38],
+  ["/admin/video-api-configs", 39],
+  ["/admin/chat-api-configs", 40],
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
@@ -194,7 +196,7 @@ type PrimaryMenuItem = {
 type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
 const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
 const SHOW_PRIMARY_MENU_BADGES = true;
-const INVITE_REWARDS_BADGE_TEXT = "新";
+const INVITE_REWARDS_BADGE_TEXT = "";
 const ADMIN_BADGE_OFFSET: [number, number] = [-8, 2];
 
 const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
@@ -204,15 +206,34 @@ const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; ico
   { key: "promptReverse", label: "提示词反推", icon: SearchOutlined },
 ];
 
+type VideoEntryMode = "textGenerate" | "imageToVideo" | "firstLastFrame";
+type VideoEntryMenuKey = "video-textGenerate" | "video-imageToVideo" | "video-firstLastFrame";
+const videoEntryMenuItems: Array<{ key: VideoEntryMenuKey; mode: VideoEntryMode; label: string; icon: Component }> = [
+  { key: "video-textGenerate", mode: "textGenerate", label: "文生视频", icon: FontSizeOutlined },
+  { key: "video-imageToVideo", mode: "imageToVideo", label: "图生视频", icon: PictureOutlined },
+  { key: "video-firstLastFrame", mode: "firstLastFrame", label: "首尾帧视频", icon: VideoCameraOutlined },
+];
+
+type MoreFeatureMenuKey = "templates" | "history";
+const moreFeatureMenuItems: Array<{ key: MoreFeatureMenuKey; label: string; icon: Component; iconSrc: string }> = [
+  { key: "templates", label: "创意模版", icon: BulbOutlined, iconSrc: withBaseUrl("nav-templates.svg") },
+  { key: "history", label: "历史图片", icon: ClockCircleOutlined, iconSrc: withBaseUrl("nav-history.svg") },
+];
+
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
-  { key: "templates", label: "创意模版", iconSrc: withBaseUrl("nav-templates.svg"), icon: BulbOutlined },
+  {
+    key: "chat",
+    label: "AI 对话",
+    iconSrc: withBaseUrl("nav-generate.svg"),
+    icon: MessageOutlined,
+    badgeText: SHOW_PRIMARY_MENU_BADGES ? "新" : undefined,
+  },
   { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: ThunderboltFilled },
   {
     key: "video-generate",
     label: "AI 视频",
     iconSrc: withBaseUrl("nav-generate.svg"),
     icon: VideoCameraOutlined,
-    badgeText: SHOW_PRIMARY_MENU_BADGES ? "新" : undefined,
   },
   ...(canAccessCanvasMenu.value
     ? [{
@@ -220,10 +241,14 @@ const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
         label: "无限画布",
         iconSrc: withBaseUrl("nav-canvas.svg"),
         icon: NumberOutlined,
-        badgeText: SHOW_PRIMARY_MENU_BADGES ? "火热" : undefined,
       }]
     : []),
-  { key: "history", label: "历史图片", iconSrc: withBaseUrl("nav-history.svg"), icon: ClockCircleOutlined },
+  {
+    key: "more",
+    label: "更多",
+    iconSrc: withBaseUrl("nav-templates.svg"),
+    icon: MenuOutlined,
+  },
 ]);
 
 function getPrimaryMenuIconSrc(item: PrimaryMenuItem) {
@@ -265,6 +290,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/cos-config", label: "COS 配置", icon: CloudUploadOutlined, superAdminOnly: true },
     { key: "/admin/external-api-configs", label: "生图接口", icon: KeyOutlined, superAdminOnly: true },
     { key: "/admin/video-api-configs", label: "视频接口", icon: VideoCameraOutlined, superAdminOnly: true },
+    { key: "/admin/chat-api-configs", label: "对话接口", icon: MessageOutlined, superAdminOnly: true },
   ].filter((item) => !item.superAdminOnly || isSuperAdmin.value)
 );
 const adminMenuTemplateItems = computed(() =>
@@ -324,6 +350,7 @@ const isAdminThirdPartyRoute = computed(() =>
   route.path.startsWith("/admin/cos-config")
   || route.path.startsWith("/admin/external-api-configs")
   || route.path.startsWith("/admin/video-api-configs")
+  || route.path.startsWith("/admin/chat-api-configs")
 );
 const isAdminNoticeRoute = computed(() =>
   route.path.startsWith("/admin/feedbacks")
@@ -376,7 +403,12 @@ const adminMenuNoticeItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/feedbacks", "/admin/system-messages", "/admin/update-logs"].includes(item.key))
 );
 const adminMenuConfigItems = computed(() =>
-  adminMenuItems.value.filter((item) => ["/admin/cos-config", "/admin/external-api-configs", "/admin/video-api-configs"].includes(item.key))
+  adminMenuItems.value.filter((item) => [
+    "/admin/cos-config",
+    "/admin/external-api-configs",
+    "/admin/video-api-configs",
+    "/admin/chat-api-configs",
+  ].includes(item.key))
 );
 
 const hasAdminUnresolvedFeedback = computed(() => adminUnresolvedFeedbackCount.value > 0);
@@ -413,20 +445,28 @@ function getRouteRank(path: string) {
   if (path.startsWith("/feedbacks/")) return routeOrder.get("/feedbacks/:feedbackId") ?? 0;
   if (path.startsWith("/system-messages/")) return routeOrder.get("/system-messages/:messageId") ?? 0;
   if (path.startsWith("/admin/feedbacks/")) return routeOrder.get("/admin/feedbacks/:feedbackId") ?? 0;
+  if (path.startsWith("/chat")) return routeOrder.get("/chat") ?? 0;
   if (path.startsWith("/canvas")) return routeOrder.get("/canvas") ?? 0;
   if (path.startsWith("/history")) return routeOrder.get("/history") ?? 0;
   return routeOrder.get(path) ?? 0;
+}
+
+/** 同页内参数切换（如对话 session）使用稳定 key，避免整页淡出重挂载 */
+function getRoutePageKey(currentRoute: { path: string; name?: string | symbol | null }) {
+  if (currentRoute.path.startsWith("/chat")) return "chat";
+  return currentRoute.path;
 }
 
 const selectedKeys = computed(() => {
   const p = route.path;
   if (p.startsWith("/admin")) return ["admin"];
   if (p === "/") return [];
-  if (p === "/templates") return ["templates"];
+  if (p === "/templates") return ["more", "templates"];
   if (p === "/video-generate") return ["video-generate"];
+  if (p.startsWith("/chat")) return ["chat"];
   if (p.startsWith("/canvas")) return ["canvas"];
   if (p === "/batch-generate") return ["batch-generate"];
-  if (p.startsWith("/history")) return ["history"];
+  if (p.startsWith("/history")) return ["more", "history"];
   if (
     p === "/profile" ||
     p === "/settings" ||
@@ -440,6 +480,12 @@ const selectedKeys = computed(() => {
   return ["generate"];
 });
 
+const activeMoreFeatureKey = computed<MoreFeatureMenuKey | "">(() => {
+  if (route.path === "/templates") return "templates";
+  if (route.path.startsWith("/history")) return "history";
+  return "";
+});
+
 const activeGenerateEntryMode = computed<GenerateEntryMode>(() => {
   if (route.path !== "/generate") return "imageEdit";
   const mode = Array.isArray(route.query.mode) ? route.query.mode[0] : route.query.mode;
@@ -447,6 +493,15 @@ const activeGenerateEntryMode = computed<GenerateEntryMode>(() => {
     return mode;
   }
   return "imageEdit";
+});
+
+const activeVideoEntryMenuKey = computed<VideoEntryMenuKey | "">(() => {
+  if (route.path !== "/video-generate") return "";
+  const mode = Array.isArray(route.query.mode) ? route.query.mode[0] : route.query.mode;
+  if (mode === "textGenerate") return "video-textGenerate";
+  if (mode === "imageToVideo") return "video-imageToVideo";
+  if (mode === "firstLastFrame") return "video-firstLastFrame";
+  return "video-imageToVideo";
 });
 
 const adminSelectedKeys = computed(() => {
@@ -477,12 +532,27 @@ watch(
 
 function handleMenuClick({ key }: { key: string }) {
   mobileDrawerOpen.value = false;
+  if (key === "more") return;
   if (key === "templates") router.push("/templates");
   else if (key === "generate") {
     window.dispatchEvent(new CustomEvent(GENERATE_MENU_ENTRY_EVENT));
     router.push("/generate");
   }
   else if (key === "video-generate") router.push("/video-generate");
+  else if (
+    key === "video-textGenerate"
+    || key === "video-imageToVideo"
+    || key === "video-firstLastFrame"
+  ) {
+    openVideoEntryByMenuKey(key);
+  }
+  else if (key === "chat") {
+    if (!auth.isLoggedIn) {
+      loginModalVisible.value = true;
+      return;
+    }
+    router.push("/chat");
+  }
   else if (key === "canvas") {
     if (!auth.isLoggedIn) {
       loginModalVisible.value = true;
@@ -499,6 +569,12 @@ function handleMenuClick({ key }: { key: string }) {
   }
 }
 
+function handleMoreFeatureMenu({ key }: { key: string }) {
+  if (key === "templates" || key === "history") {
+    handleMenuClick({ key });
+  }
+}
+
 function openGenerateEntry(mode: GenerateEntryMode) {
   mobileDrawerOpen.value = false;
   window.dispatchEvent(new CustomEvent(GENERATE_MENU_ENTRY_EVENT, { detail: { mode } }));
@@ -511,6 +587,29 @@ function openGenerateEntry(mode: GenerateEntryMode) {
 function handleGenerateEntryMenu({ key }: { key: string }) {
   if (key === "textGenerate" || key === "imageEdit" || key === "inpaint" || key === "promptReverse") {
     openGenerateEntry(key);
+  }
+}
+
+function openVideoEntry(mode: VideoEntryMode) {
+  mobileDrawerOpen.value = false;
+  router.push({
+    path: "/video-generate",
+    query: { mode },
+  });
+}
+
+function openVideoEntryByMenuKey(key: VideoEntryMenuKey) {
+  const item = videoEntryMenuItems.find((entry) => entry.key === key);
+  if (item) openVideoEntry(item.mode);
+}
+
+function handleVideoEntryMenu({ key }: { key: string }) {
+  if (
+    key === "video-textGenerate"
+    || key === "video-imageToVideo"
+    || key === "video-firstLastFrame"
+  ) {
+    openVideoEntryByMenuKey(key);
   }
 }
 
@@ -1722,11 +1821,35 @@ watch(
           class="header-menu"
           @click="handleMenuClick"
         >
-          <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-            <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
-            <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
-            <span>{{ item.label }}</span>
-          </a-menu-item>
+          <template v-for="item in primaryMenuItems" :key="item.key">
+            <a-sub-menu v-if="item.key === 'more'" key="more" popup-class-name="warm-dropdown">
+              <template #icon>
+                <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              </template>
+              <template #title>{{ item.label }}</template>
+              <a-menu-item v-for="subItem in moreFeatureMenuItems" :key="subItem.key">
+                <template #icon><component :is="subItem.icon" /></template>
+                {{ subItem.label }}
+              </a-menu-item>
+            </a-sub-menu>
+            <a-sub-menu v-else-if="item.key === 'video-generate'" key="video-generate" popup-class-name="warm-dropdown">
+              <template #icon>
+                <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              </template>
+              <template #title>{{ item.label }}</template>
+              <a-menu-item v-for="subItem in videoEntryMenuItems" :key="subItem.key">
+                <template #icon><component :is="subItem.icon" /></template>
+                {{ subItem.label }}
+              </a-menu-item>
+            </a-sub-menu>
+            <a-menu-item v-else :key="item.key">
+              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              <span>{{ item.label }}</span>
+            </a-menu-item>
+          </template>
         </a-menu>
 
         <div class="header-actions">
@@ -1877,6 +2000,65 @@ watch(
               </a-menu>
             </template>
           </a-dropdown>
+          <a-dropdown
+            v-else-if="item.key === 'video-generate'"
+            :trigger="['hover']"
+            placement="rightTop"
+            :auto-adjust-overflow="false"
+            :align="{ offset: [16, 0], overflow: { adjustX: false, adjustY: false } }"
+            :get-popup-container="getDropdownPopupContainer"
+            overlay-class-name="warm-dropdown"
+          >
+            <button
+              type="button"
+              class="canvas-side-nav-item"
+              :class="{ active: selectedKeys.includes(item.key) }"
+              @click="handleMenuClick({ key: item.key })"
+            >
+              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              <span>{{ item.label }}</span>
+              <span v-if="item.badgeText" class="nav-menu-new-badge">{{ item.badgeText }}</span>
+            </button>
+            <template #overlay>
+              <a-menu
+                :selected-keys="activeVideoEntryMenuKey ? [activeVideoEntryMenuKey] : []"
+                @click="handleVideoEntryMenu"
+              >
+                <a-menu-item v-for="subItem in videoEntryMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+          <a-dropdown
+            v-else-if="item.key === 'more'"
+            :trigger="['hover']"
+            placement="rightTop"
+            :auto-adjust-overflow="false"
+            :align="{ offset: [16, 0], overflow: { adjustX: false, adjustY: false } }"
+            :get-popup-container="getDropdownPopupContainer"
+            overlay-class-name="warm-dropdown"
+          >
+            <button
+              type="button"
+              class="canvas-side-nav-item"
+              :class="{ active: selectedKeys.includes(item.key) }"
+            >
+              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+              <span>{{ item.label }}</span>
+            </button>
+            <template #overlay>
+              <a-menu :selected-keys="activeMoreFeatureKey ? [activeMoreFeatureKey] : []" @click="handleMoreFeatureMenu">
+                <a-menu-item v-for="subItem in moreFeatureMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
           <button
             v-else
             type="button"
@@ -1909,7 +2091,7 @@ watch(
         <template v-if="!auth.isLoggedIn">
           <span class="canvas-side-nav-divider"></span>
           <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
-            <MessageOutlined />
+            <CustomerServiceOutlined />
             <span>联系我们</span>
           </button>
         </template>
@@ -2107,7 +2289,7 @@ watch(
       <div class="content-inner">
         <router-view v-slot="{ Component, route: currentRoute }">
           <transition :name="routeTransitionName" mode="out-in">
-            <div :key="currentRoute.path" class="route-page-shell">
+            <div :key="getRoutePageKey(currentRoute)" class="route-page-shell">
               <component :is="Component" />
             </div>
           </transition>
@@ -2162,12 +2344,36 @@ watch(
             class="mobile-drawer-menu"
             @click="handleMenuClick"
           >
-            <a-menu-item v-for="item in primaryMenuItems" :key="item.key">
-              <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
-              <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
-              <span>{{ item.label }}</span>
-              <span v-if="item.badgeText" class="nav-menu-new-badge nav-menu-new-badge-mobile">{{ item.badgeText }}</span>
-            </a-menu-item>
+            <template v-for="item in primaryMenuItems" :key="item.key">
+              <a-sub-menu v-if="item.key === 'more'" key="more">
+                <template #icon>
+                  <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                  <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                </template>
+                <template #title>{{ item.label }}</template>
+                <a-menu-item v-for="subItem in moreFeatureMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-sub-menu>
+              <a-sub-menu v-else-if="item.key === 'video-generate'" key="video-generate">
+                <template #icon>
+                  <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                  <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                </template>
+                <template #title>{{ item.label }}</template>
+                <a-menu-item v-for="subItem in videoEntryMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-sub-menu>
+              <a-menu-item v-else :key="item.key">
+                <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                <span>{{ item.label }}</span>
+                <span v-if="item.badgeText" class="nav-menu-new-badge nav-menu-new-badge-mobile">{{ item.badgeText }}</span>
+              </a-menu-item>
+            </template>
           </a-menu>
         </div>
 
@@ -2353,6 +2559,7 @@ watch(
           </div>
           <div v-else class="mobile-auth-actions">
             <a-button block class="mobile-drawer-guest-contact" @click="openCreditsContact">
+              <template #icon><CustomerServiceOutlined /></template>
               联系我们
             </a-button>
             <a-button type="primary" class="login-header-btn" block @click="openAuthModal('login')">
@@ -4749,7 +4956,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   z-index: 1300;
 }
 
-.app-layout-desktop-side-nav .generate-page {
+.app-layout-desktop-side-nav .generate-page,
+.app-layout-desktop-side-nav .chat-page {
   min-height: calc(100dvh - 44px) !important;
   height: calc(100dvh - 44px) !important;
 }

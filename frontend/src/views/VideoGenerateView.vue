@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { message, Modal } from "ant-design-vue";
 import { consumeVideoGenerateDraft } from "@/lib/videoGenerateDraft";
 import {
@@ -58,6 +59,7 @@ interface UploadPreviewItem {
   savedToAsset?: boolean;
 }
 
+const route = useRoute();
 const auth = useAuthStore();
 const DEFAULT_MAX_VIDEO_REFERENCE_IMAGES = 1;
 const DEFAULT_DURATION_SECONDS = "3";
@@ -905,6 +907,22 @@ function promptSwitchToTextGenerate(messageText: string) {
   });
 }
 
+function normalizeRouteVideoMode(value: unknown): VideoGenerateMode | null {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (normalized === "textGenerate" || normalized === "imageToVideo" || normalized === "firstLastFrame") {
+    return normalized;
+  }
+  return null;
+}
+
+function applyRouteVideoMode() {
+  const nextMode = normalizeRouteVideoMode(route.query.mode);
+  if (!nextMode) return;
+  if (generateMode.value !== nextMode) {
+    generateMode.value = nextMode;
+  }
+}
+
 function applyIncomingVideoDraft() {
   const draft = consumeVideoGenerateDraft();
   if (!draft) return;
@@ -1156,6 +1174,13 @@ watch(generateMode, () => {
   ensureSceneDefaults();
 });
 
+watch(
+  () => route.query.mode,
+  () => {
+    applyRouteVideoMode();
+  },
+);
+
 watch(videoTasks, (tasks) => {
   if (!detailOpen.value || !detailTask.value) return;
   const latest = tasks.find((item) => item.id === detailTask.value?.id);
@@ -1196,6 +1221,7 @@ onMounted(() => {
     document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   }
   void loadSceneConfigs().then(() => {
+    applyRouteVideoMode();
     applyIncomingVideoDraft();
   });
   void loadRecentTasks();
