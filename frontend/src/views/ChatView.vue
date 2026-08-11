@@ -67,6 +67,9 @@ const MESSAGE_CACHE_LIMIT = 8;
 /** 逐字输出间隔 */
 const STREAM_CHAR_INTERVAL_MS = 10;
 let streamTimer: number | null = null;
+let streamWorker: Worker | null = null;
+let streamWorkerObjectUrl: string | null = null;
+let streamVisibilityHandler: (() => void) | null = null;
 let lastMessageListScrollTop = 0;
 let ignoreMessageListScrollSync = false;
 let sendAbortController: AbortController | null = null;
@@ -298,11 +301,37 @@ function findPreviousUserMessage(assistant: ChatMessage): ChatMessage | null {
   return null;
 }
 
-function stopAssistantStreaming() {
+function clearAssistantStreamScheduler() {
   if (streamTimer != null) {
     window.clearTimeout(streamTimer);
+    window.clearInterval(streamTimer);
     streamTimer = null;
   }
+  if (streamWorker) {
+    try {
+      streamWorker.postMessage("stop");
+    } catch {
+      // ignore
+    }
+    streamWorker.terminate();
+    streamWorker = null;
+  }
+  if (streamWorkerObjectUrl) {
+    URL.revokeObjectURL(streamWorkerObjectUrl);
+    streamWorkerObjectUrl = null;
+  }
+}
+
+function detachAssistantStreamVisibilityHandler() {
+  if (streamVisibilityHandler) {
+    document.removeEventListener("visibilitychange", streamVisibilityHandler);
+    streamVisibilityHandler = null;
+  }
+}
+
+function stopAssistantStreaming() {
+  clearAssistantStreamScheduler();
+  detachAssistantStreamVisibilityHandler();
   streamingMessageId.value = null;
   streamingVisibleText.value = "";
 }
@@ -320,6 +349,31 @@ function renderAssistantHtml(item: ChatMessage) {
   return renderSimpleMarkdown(text) || `<p>${text}</p>`;
 }
 
+function createAssistantStreamWorker(): Worker | null {
+  let objectUrl: string | null = null;
+  try {
+    const source = [
+      "let timer = null;",
+      "onmessage = (e) => {",
+      "  if (e.data === 'start') {",
+      "    if (timer != null) clearInterval(timer);",
+      `    timer = setInterval(() => postMessage('tick'), ${STREAM_CHAR_INTERVAL_MS});`,
+      "  } else if (e.data === 'stop') {",
+      "    if (timer != null) clearInterval(timer);",
+      "    timer = null;",
+      "  }",
+      "};",
+    ].join("\n");
+    objectUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    const worker = new Worker(objectUrl);
+    streamWorkerObjectUrl = objectUrl;
+    return worker;
+  } catch {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    return null;
+  }
+}
+
 function streamAssistantMessage(item: ChatMessage): Promise<void> {
   const fullText = messagePlainText(item);
   stopAssistantStreaming();
@@ -329,26 +383,62 @@ function streamAssistantMessage(item: ChatMessage): Promise<void> {
   const chars = Array.from(fullText);
   streamingMessageId.value = item.id;
   streamingVisibleText.value = "";
-  let index = 0;
+  // 按真实时间推进 + Worker 节拍：切走 tab/应用时进度不冻结，回来立刻对齐
+  const startedAt = performance.now();
+  let settled = false;
+  let lastPaintedIndex = 0;
 
   return new Promise((resolve) => {
-    const tick = () => {
-      index += 1;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearAssistantStreamScheduler();
+      detachAssistantStreamVisibilityHandler();
+      streamingMessageId.value = null;
+      streamingVisibleText.value = "";
+      resolve();
+    };
+
+    const paint = () => {
+      if (settled) return;
+      const elapsed = Math.max(0, performance.now() - startedAt);
+      const index = Math.min(
+        chars.length,
+        Math.max(1, Math.floor(elapsed / STREAM_CHAR_INTERVAL_MS) + 1),
+      );
+      if (index === lastPaintedIndex && index < chars.length) return;
+      lastPaintedIndex = index;
       streamingVisibleText.value = chars.slice(0, index).join("");
       // 仅在用户仍停留底部时跟随；上滑后不再强拉回底部
       if (stickToBottom.value) {
         void scrollToBottom(false);
       }
       if (index >= chars.length) {
-        streamTimer = null;
-        streamingMessageId.value = null;
-        streamingVisibleText.value = "";
-        resolve();
-        return;
+        finish();
       }
-      streamTimer = window.setTimeout(tick, STREAM_CHAR_INTERVAL_MS);
     };
-    streamTimer = window.setTimeout(tick, STREAM_CHAR_INTERVAL_MS);
+
+    streamVisibilityHandler = () => {
+      if (settled) return;
+      // 隐藏/显示都按墙钟补帧，避免后台节流导致停住
+      paint();
+    };
+    document.addEventListener("visibilitychange", streamVisibilityHandler);
+
+    const worker = createAssistantStreamWorker();
+    if (worker) {
+      streamWorker = worker;
+      worker.onmessage = () => paint();
+      worker.onerror = () => {
+        // Worker 异常时回退到主线程 interval
+        clearAssistantStreamScheduler();
+        streamTimer = window.setInterval(paint, STREAM_CHAR_INTERVAL_MS);
+      };
+      worker.postMessage("start");
+    } else {
+      streamTimer = window.setInterval(paint, STREAM_CHAR_INTERVAL_MS);
+    }
+    paint();
   });
 }
 
