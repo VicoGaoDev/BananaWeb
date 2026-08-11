@@ -271,7 +271,7 @@ def _classify_generation_request_exception(
 
 
 def _mark_task_request_started(task: Task) -> bool:
-    if task.request_started_at is not None:
+    if task.request_started_at is not None and task.request_finished_at is None:
         return False
     task.request_started_at = now_local()
     task.request_finished_at = None
@@ -1500,6 +1500,17 @@ def _is_async_provider_task_still_polling(db, task: Task) -> bool:
     return started_at > now_local() - timedelta(seconds=allowed_seconds)
 
 
+def _is_sync_request_in_flight(task: Task, *, now_value=None) -> bool:
+    """同步主/备接口调用进行中时，避免按 updated_at 误杀任务。"""
+    if task.request_started_at is None or task.request_finished_at is not None:
+        return False
+    if (task.provider_task_id or "").strip():
+        return False
+    current_time = now_value or now_local()
+    allowed_seconds = max(int(settings.AI_TIMEOUT or 0), 1) + ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS
+    return task.request_started_at > current_time - timedelta(seconds=allowed_seconds)
+
+
 def _expire_processing_task(
     db,
     task: Task,
@@ -1507,7 +1518,7 @@ def _expire_processing_task(
     *,
     reason: str = PROCESSING_TASK_TIMEOUT_ERROR,
 ) -> bool:
-    if _is_async_provider_task_still_polling(db, task):
+    if _is_async_provider_task_still_polling(db, task) or _is_sync_request_in_flight(task):
         return False
     if not _is_task_processing_timed_out(task):
         return False

@@ -255,6 +255,23 @@ def _is_async_provider_task_still_polling(db: Session, task: Task, *, now_value)
     return started_at > now_value - timedelta(seconds=allowed_seconds)
 
 
+def _is_sync_request_in_flight(task: Task, *, now_value) -> bool:
+    """同步主/备接口调用进行中时，避免按 updated_at 误杀任务。"""
+    if task.request_started_at is None or task.request_finished_at is not None:
+        return False
+    if (task.provider_task_id or "").strip():
+        return False
+    allowed_seconds = max(int(settings.AI_TIMEOUT or 0), 1) + ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS
+    return task.request_started_at > now_value - timedelta(seconds=allowed_seconds)
+
+
+def _is_provider_request_still_active(db: Session, task: Task, *, now_value) -> bool:
+    return _is_async_provider_task_still_polling(db, task, now_value=now_value) or _is_sync_request_in_flight(
+        task,
+        now_value=now_value,
+    )
+
+
 def _expire_stale_processing_tasks(
     db: Session,
     *,
@@ -281,7 +298,7 @@ def _expire_stale_processing_tasks(
     stale_tasks = [
         task
         for task in query.all()
-        if not _is_async_provider_task_still_polling(db, task, now_value=now_value)
+        if not _is_provider_request_still_active(db, task, now_value=now_value)
     ]
     if not stale_tasks:
         return
