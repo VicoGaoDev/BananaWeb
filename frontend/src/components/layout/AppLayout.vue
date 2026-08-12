@@ -350,7 +350,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/ledger", label: "账本", icon: MoneyCollectOutlined, superAdminOnly: false },
     { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/invite-rewards", label: "邀请奖励", icon: ShareAltOutlined, superAdminOnly: false },
-    { key: "/admin/promo-stats", label: "推广返利", icon: GiftOutlined, superAdminOnly: false },
+    { key: "/admin/promo-stats", label: "推广返利", icon: UsergroupAddOutlined, superAdminOnly: false },
     { key: "/admin/feedbacks", label: "用户反馈", icon: MessageOutlined, superAdminOnly: false },
     { key: "/admin/system-messages", label: "系统邮件", icon: MailOutlined, superAdminOnly: false },
     { key: "/admin/update-logs", label: "更新日志", icon: BellOutlined, superAdminOnly: false },
