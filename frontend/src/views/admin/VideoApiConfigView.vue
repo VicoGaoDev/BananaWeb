@@ -1426,12 +1426,19 @@ onMounted(load);
                 :value="record.api_config_id ?? undefined"
                 class="warm-select"
                 allow-clear
+                show-search
+                option-filter-prop="label"
                 placeholder="请选择主接口"
                 style="width: 280px"
                 :loading="bindingSavingKey === record.scene_key"
                 @change="(value: number | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { api_config_id: value ?? null }))"
               >
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
@@ -1441,13 +1448,20 @@ onMounted(load);
                 :value="toBackupApiSelectValue(record.backup_api_config_id)"
                 class="warm-select"
                 allow-clear
+                show-search
+                option-filter-prop="label"
                 placeholder="请选择备用接口"
                 style="width: 280px"
                 :loading="bindingSavingKey === record.scene_key"
                 @change="(value: number | string | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { backup_api_config_id: fromBackupApiSelectValue(value) }))"
               >
-                <a-select-option :value="EMPTY_BACKUP_API_OPTION">无</a-select-option>
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
@@ -1637,8 +1651,22 @@ onMounted(load);
           </a-select>
         </a-form-item>
         <a-form-item label="默认绑定接口">
-          <a-select v-model:value="sceneForm.api_config_id" class="warm-select" allow-clear placeholder="可选，创建后也可在列表中再绑定">
-            <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">{{ option.label }}</a-select-option>
+          <a-select
+            v-model:value="sceneForm.api_config_id"
+            class="warm-select"
+            allow-clear
+            show-search
+            option-filter-prop="label"
+            placeholder="可选，创建后也可在列表中再绑定"
+          >
+            <a-select-option
+              v-for="option in getBindingOptions()"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+            >
+              {{ option.label }}
+            </a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="备用接口">
@@ -1646,11 +1674,20 @@ onMounted(load);
             :value="toBackupApiSelectValue(sceneForm.backup_api_config_id)"
             class="warm-select"
             allow-clear
+            show-search
+            option-filter-prop="label"
             placeholder="可选，主接口失败时自动切换"
             @update:value="(value: number | string | undefined) => { sceneForm.backup_api_config_id = fromBackupApiSelectValue(value); }"
           >
-            <a-select-option :value="EMPTY_BACKUP_API_OPTION">无</a-select-option>
-            <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">{{ option.label }}</a-select-option>
+            <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
+            <a-select-option
+              v-for="option in getBindingOptions()"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+            >
+              {{ option.label }}
+            </a-select-option>
           </a-select>
         </a-form-item>
         <a-row :gutter="16">

@@ -931,12 +931,19 @@ onMounted(loadData);
               <a-select
                 :value="record.api_config_id ?? undefined"
                 class="warm-select"
+                show-search
+                option-filter-prop="label"
                 placeholder="请选择主接口"
                 style="width: 240px"
                 :loading="bindingSavingKey === record.scene_key"
                 @change="(value: number) => handleBindingChange(record.scene_key, buildBindingPayload(record, { api_config_id: value }))"
               >
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
@@ -946,13 +953,20 @@ onMounted(loadData);
                 :value="toBackupApiSelectValue(record.backup_api_config_id)"
                 class="warm-select"
                 allow-clear
+                show-search
+                option-filter-prop="label"
                 placeholder="请选择备用接口"
                 style="width: 240px"
                 :loading="bindingSavingKey === record.scene_key"
                 @change="(value: number | string | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { backup_api_config_id: fromBackupApiSelectValue(value) }))"
               >
-                <a-select-option :value="EMPTY_BACKUP_API_OPTION">无</a-select-option>
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
@@ -1157,10 +1171,17 @@ onMounted(loadData);
               <a-select
                 v-model:value="sceneForm.api_config_id"
                 class="warm-select"
+                show-search
+                option-filter-prop="label"
                 placeholder="请选择主接口"
                 style="width: 100%"
               >
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
@@ -1173,12 +1194,19 @@ onMounted(loadData);
                 :value="toBackupApiSelectValue(sceneForm.backup_api_config_id)"
                 class="warm-select"
                 allow-clear
+                show-search
+                option-filter-prop="label"
                 placeholder="可选备用接口"
                 style="width: 100%"
                 @change="(value: number | string | undefined) => { sceneForm.backup_api_config_id = fromBackupApiSelectValue(value); }"
               >
-                <a-select-option :value="EMPTY_BACKUP_API_OPTION">无</a-select-option>
-                <a-select-option v-for="option in getBindingOptions()" :key="option.value" :value="option.value">
+                <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
+                <a-select-option
+                  v-for="option in getBindingOptions()"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
