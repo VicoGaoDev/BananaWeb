@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import {
-  GiftOutlined,
+  UsergroupAddOutlined,
   CopyOutlined,
   UserAddOutlined,
   UndoOutlined,
@@ -302,7 +302,7 @@ onMounted(async () => {
     <div class="warm-page-header motion-fade-up" style="--motion-delay: 40ms">
       <div class="warm-page-heading">
         <div class="warm-page-icon">
-          <GiftOutlined />
+          <UsergroupAddOutlined />
         </div>
         <div>
           <div class="warm-page-title">我的推广码</div>

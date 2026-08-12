@@ -65,6 +65,7 @@ import {
   MessageOutlined,
   CustomerServiceOutlined,
   GiftOutlined,
+  UsergroupAddOutlined,
   AccountBookOutlined,
   MoneyCollectOutlined,
   BellOutlined,
@@ -485,7 +486,7 @@ const hasUserUnreadNotice = computed(() => hasUserUnreadFeedback.value || hasUse
 const userMenuItems = computed(() => [
   { key: "profile", label: "个人主页", icon: UserOutlined, danger: false },
   { key: "credits", label: "积分明细", icon: ThunderboltOutlined, danger: false },
-  ...(canManagePromoCodes.value ? [{ key: "promo-codes", label: "我的推广码", icon: GiftOutlined, danger: false }] : []),
+  ...(canManagePromoCodes.value ? [{ key: "promo-codes", label: "我的推广码", icon: UsergroupAddOutlined, danger: false }] : []),
   { key: "api-keys", label: "API 调用", icon: KeyOutlined, danger: false },
   { key: "my-feedback", label: "我的反馈", icon: MessageOutlined, danger: false },
   { key: "system-messages", label: "系统消息", icon: MailOutlined, danger: false },
