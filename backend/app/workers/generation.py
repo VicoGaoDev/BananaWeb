@@ -679,7 +679,9 @@ def _call_generation_api_once(
         render_variables["generation_config"] = generation_config
         rendered = render_config(config, render_variables)
         request_kwargs = build_external_request_kwargs(rendered)
-        db.close()
+        # End the read transaction before the slow HTTP call without detaching
+        # task/image ORM objects that the caller still needs to update.
+        db.commit()
 
         auth_value = rendered.headers.get("Authorization", "")
         logger.info(
