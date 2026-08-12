@@ -202,33 +202,43 @@ def update_profile(
     return _user_brief(db, user)
 
 
+def _request_frontend_base_url(request: Request) -> str:
+    base_url = (request.headers.get("origin") or "").strip()
+    if not base_url:
+        base_url = f"{request.url.scheme}://{request.url.netloc}"
+    return base_url
+
+
 @router.get("/promo-codes/me", response_model=PromoCodeListResponse)
 def list_my_promo_codes(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_my_promo_codes(db, user)
+    return get_my_promo_codes(db, user, base_url=_request_frontend_base_url(request))
 
 
 @router.post("/promo-codes", response_model=PromoCodeListResponse)
 def create_my_promo_code(
     body: CreatePromoCodeRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     create_promo_code(db, user, body.platform_name)
-    return get_my_promo_codes(db, user)
+    return get_my_promo_codes(db, user, base_url=_request_frontend_base_url(request))
 
 
 @router.patch("/promo-codes/{promo_code_id}", response_model=PromoCodeListResponse)
 def update_my_promo_code(
     promo_code_id: int,
     body: UpdatePromoCodeRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     update_promo_code_platform(db, user, promo_code_id, body.platform_name)
-    return get_my_promo_codes(db, user)
+    return get_my_promo_codes(db, user, base_url=_request_frontend_base_url(request))
 
 
 @router.get("/promo-referrals", response_model=PromoReferralListResponse)
@@ -301,10 +311,7 @@ def get_my_invite_reward_overview(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    base_url = (request.headers.get("origin") or "").strip()
-    if not base_url:
-        base_url = f"{request.url.scheme}://{request.url.netloc}"
-    payload = get_invite_reward_overview(db, user, base_url=base_url)
+    payload = get_invite_reward_overview(db, user, base_url=_request_frontend_base_url(request))
     db.commit()
     return payload
 

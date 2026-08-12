@@ -97,6 +97,7 @@ const showSuggestionFab = computed(() =>
 );
 const SUGGESTION_FAB_POSITION_KEY = "userSuggestionFabPosition";
 const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
+const PROMO_CODE_SESSION_KEY = "bananaPromoCode";
 const SUGGESTION_FAB_DESKTOP_GAP = 24;
 const SUGGESTION_FAB_MOBILE_GAP = 16;
 const SUGGESTION_FAB_DESKTOP_SIZE = 40;
@@ -973,6 +974,16 @@ function getStoredInviteCode() {
   }
 }
 
+function getStoredPromoCode() {
+  try {
+    const code = normalizeInviteCode(sessionStorage.getItem(PROMO_CODE_SESSION_KEY));
+    if (!code || isPersonalInviteCodeValue(code)) return "";
+    return code;
+  } catch {
+    return "";
+  }
+}
+
 function clearStoredInviteCode() {
   try {
     sessionStorage.removeItem(INVITE_CODE_SESSION_KEY);
@@ -981,10 +992,24 @@ function clearStoredInviteCode() {
   }
 }
 
-function applyStoredInviteCodeToRegisterForm() {
-  const storedCode = getStoredInviteCode();
-  if (storedCode && !registerForm.promoCode.trim()) {
-    registerForm.promoCode = storedCode;
+function clearStoredPromoCode() {
+  try {
+    sessionStorage.removeItem(PROMO_CODE_SESSION_KEY);
+  } catch {
+    // Ignore storage errors in restricted browser modes.
+  }
+}
+
+function applyStoredInviteOrPromoCodeToRegisterForm() {
+  if (registerForm.promoCode.trim()) return;
+  const storedInviteCode = getStoredInviteCode();
+  if (storedInviteCode) {
+    registerForm.promoCode = storedInviteCode;
+    return;
+  }
+  const storedPromoCode = getStoredPromoCode();
+  if (storedPromoCode) {
+    registerForm.promoCode = storedPromoCode;
   }
 }
 
@@ -995,6 +1020,7 @@ function captureInviteCodeFromRoute() {
   if (!isPersonalInviteCodeValue(inviteCode)) return;
   try {
     sessionStorage.setItem(INVITE_CODE_SESSION_KEY, inviteCode);
+    sessionStorage.removeItem(PROMO_CODE_SESSION_KEY);
   } catch {
     // Ignore storage errors in restricted browser modes.
   }
@@ -1003,9 +1029,30 @@ function captureInviteCodeFromRoute() {
   }
 }
 
+function capturePromoCodeFromRoute() {
+  if (auth.isLoggedIn) return;
+  const rawPromo = Array.isArray(route.query.promo) ? route.query.promo[0] : route.query.promo;
+  const promoCode = normalizeInviteCode(typeof rawPromo === "string" ? rawPromo : "");
+  if (!promoCode || isPersonalInviteCodeValue(promoCode)) return;
+  try {
+    sessionStorage.setItem(PROMO_CODE_SESSION_KEY, promoCode);
+    sessionStorage.removeItem(INVITE_CODE_SESSION_KEY);
+  } catch {
+    // Ignore storage errors in restricted browser modes.
+  }
+  if (authTab.value === "register" || loginModalVisible.value) {
+    registerForm.promoCode = promoCode;
+  }
+}
+
 watch(
-  () => route.query.invite,
+  () => [route.query.invite, route.query.promo] as const,
   () => {
+    // promo 与 invite 不是同一套码；同时出现时优先使用 promo 查询参数。
+    if (route.query.promo) {
+      capturePromoCodeFromRoute();
+      return;
+    }
     captureInviteCodeFromRoute();
   },
   { immediate: true },
@@ -1013,7 +1060,7 @@ watch(
 
 watch(authTab, (tab) => {
   if (tab === "register") {
-    applyStoredInviteCodeToRegisterForm();
+    applyStoredInviteOrPromoCodeToRegisterForm();
   }
 });
 
@@ -1021,7 +1068,7 @@ function openAuthModal(tab: "login" | "register") {
   mobileDrawerOpen.value = false;
   authTab.value = tab;
   if (tab === "register") {
-    applyStoredInviteCodeToRegisterForm();
+    applyStoredInviteOrPromoCodeToRegisterForm();
   }
   loginModalVisible.value = true;
 }
@@ -1251,6 +1298,8 @@ async function handleRegisterSubmit() {
     message.success("注册成功");
     if (isPersonalInviteRegistration) {
       clearStoredInviteCode();
+    } else if (normalizedInviteOrPromoCode) {
+      clearStoredPromoCode();
     }
     notification.success({
       message: "赠送积分已到账",

@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { GiftOutlined, CopyOutlined, UserAddOutlined, UndoOutlined } from "@ant-design/icons-vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import {
+  GiftOutlined,
+  CopyOutlined,
+  UserAddOutlined,
+  UndoOutlined,
+  ShareAltOutlined,
+  QrcodeOutlined,
+  DownloadOutlined,
+} from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRouter } from "vue-router";
@@ -12,6 +20,12 @@ import {
   getMyPromoReferralActivities,
   updatePromoCodePlatform,
 } from "@/api/auth";
+import {
+  copyImageDataUrlToClipboard,
+  createBrandedQrDataUrl,
+  downloadDataUrl,
+} from "@/lib/brandedQrCode";
+import { copyText as copyToClipboard } from "@/lib/clipboard";
 import { useAuthStore } from "@/stores/auth";
 import type {
   PromoCodeItem,
@@ -28,6 +42,10 @@ const createLoading = ref(false);
 const editingPromoId = ref<number | null>(null);
 const editPlatformName = ref("");
 const saveEditingLoading = ref(false);
+const shareModalOpen = ref(false);
+const sharingPromo = ref<PromoCodeItem | null>(null);
+const shareQrDataUrl = ref("");
+const shareQrLoading = ref(false);
 const summary = ref<PromoCodeSummary>({
   total_referrals: 0,
   used_code_count: 0,
@@ -71,8 +89,16 @@ const promoColumns = [
   { title: "使用人数", dataIndex: "referral_count", width: 120 },
   { title: "状态", dataIndex: "status", width: 120 },
   { title: "创建时间", dataIndex: "created_at", width: 180 },
-  { title: "操作", key: "actions", width: 180, fixed: "right" as const },
+  { title: "操作", key: "actions", width: 260, fixed: "right" as const },
 ];
+
+const sharingPromoLink = computed(() => {
+  const item = sharingPromo.value;
+  if (!item) return "";
+  if (item.promo_link) return item.promo_link;
+  if (!item.code || typeof window === "undefined") return "";
+  return `${window.location.origin}/?promo=${encodeURIComponent(item.code)}`;
+});
 
 const referralColumns = [
   { title: "用户", key: "user", width: "22%" },
@@ -95,14 +121,80 @@ function formatTime(value?: string | null) {
   return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-";
 }
 
-async function copyPromoCode(code: string) {
+async function copyText(text: string, successText: string) {
+  if (!text) return;
   try {
-    await navigator.clipboard.writeText(code);
-    message.success("推广码已复制");
+    await copyToClipboard(text);
+    message.success(successText);
   } catch {
     message.error("复制失败，请重试");
   }
 }
+
+async function copyPromoCode(code: string) {
+  await copyText(code, "推广码已复制");
+}
+
+async function refreshShareQrCode(link: string) {
+  shareQrDataUrl.value = "";
+  if (!link) return;
+  shareQrLoading.value = true;
+  try {
+    shareQrDataUrl.value = await createBrandedQrDataUrl(link);
+  } catch {
+    message.error("推广二维码生成失败");
+  } finally {
+    shareQrLoading.value = false;
+  }
+}
+
+async function openSharePromo(record: PromoCodeItem) {
+  sharingPromo.value = record;
+  shareModalOpen.value = true;
+  await refreshShareQrCode(
+    record.promo_link
+      || (typeof window !== "undefined" ? `${window.location.origin}/?promo=${encodeURIComponent(record.code)}` : ""),
+  );
+}
+
+function closeSharePromo() {
+  shareModalOpen.value = false;
+  sharingPromo.value = null;
+  shareQrDataUrl.value = "";
+}
+
+async function copyShareQrCode() {
+  if (!shareQrDataUrl.value) {
+    message.warning("二维码还未生成，请稍后重试");
+    return;
+  }
+  try {
+    await copyImageDataUrlToClipboard(shareQrDataUrl.value);
+    message.success("推广二维码已复制");
+  } catch (err: any) {
+    if (err?.message === "clipboard-image-unsupported") {
+      await copyText(sharingPromoLink.value, "当前浏览器不支持复制图片，已复制推广链接");
+      return;
+    }
+    await copyText(sharingPromoLink.value, "复制二维码失败，已复制推广链接");
+  }
+}
+
+function downloadShareQrCode() {
+  if (!shareQrDataUrl.value) {
+    message.warning("二维码还未生成，请稍后重试");
+    return;
+  }
+  const code = sharingPromo.value?.code || "qrcode";
+  downloadDataUrl(shareQrDataUrl.value, `promo-${code}.png`);
+}
+
+watch(shareModalOpen, (open) => {
+  if (!open) {
+    sharingPromo.value = null;
+    shareQrDataUrl.value = "";
+  }
+});
 
 function startEditPromo(record: PromoCodeItem) {
   editingPromoId.value = record.id;
@@ -214,7 +306,7 @@ onMounted(async () => {
         </div>
         <div>
           <div class="warm-page-title">我的推广码</div>
-          <div class="warm-page-desc">按不同平台创建推广码，查看推广用户和基础转化数据。</div>
+          <div class="warm-page-desc">按不同平台创建推广码，生成推广链接与二维码，查看推广用户和基础转化数据。</div>
         </div>
       </div>
     </div>
@@ -266,7 +358,7 @@ onMounted(async () => {
           :loading="loading"
           row-key="id"
           :pagination="false"
-          :scroll="{ x: 920 }"
+          :scroll="{ x: 1040 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'status'">
@@ -304,6 +396,10 @@ onMounted(async () => {
                   </a-button>
                 </template>
                 <template v-else>
+                  <a-button type="link" class="promo-link-btn" @click="openSharePromo(record)">
+                    <template #icon><ShareAltOutlined /></template>
+                    推广链接
+                  </a-button>
                   <a-button type="link" class="promo-link-btn" @click="startEditPromo(record)">
                     编辑平台
                   </a-button>
@@ -317,6 +413,77 @@ onMounted(async () => {
           </template>
         </a-table>
       </div>
+
+      <a-modal
+        v-model:open="shareModalOpen"
+        title="推广链接与二维码"
+        :footer="null"
+        :width="520"
+        destroy-on-close
+        class="promo-share-modal"
+        @cancel="closeSharePromo"
+      >
+        <div v-if="sharingPromo" class="promo-share-body">
+          <div class="promo-share-tip">
+            这是<strong>推广码</strong>专属链接，与邀请奖励的邀请链接不是同一套码。好友通过链接或扫码打开后，注册时可自动带上该推广码。
+          </div>
+
+          <div class="promo-share-field">
+            <span class="promo-share-label">推广码</span>
+            <div class="promo-share-value">
+              <code>{{ sharingPromo.code }}</code>
+              <a-button type="link" class="promo-link-btn" @click="copyText(sharingPromo.code, '推广码已复制')">
+                <template #icon><CopyOutlined /></template>
+                复制
+              </a-button>
+            </div>
+          </div>
+
+          <div class="promo-share-field">
+            <span class="promo-share-label">推广链接</span>
+            <div class="promo-share-value promo-share-link-value">
+              <span>{{ sharingPromoLink || "-" }}</span>
+              <a-button type="link" class="promo-link-btn" @click="copyText(sharingPromoLink, '推广链接已复制')">
+                <template #icon><CopyOutlined /></template>
+                复制
+              </a-button>
+            </div>
+          </div>
+
+          <div class="promo-share-qr-block">
+            <div class="promo-share-qr-head">
+              <QrcodeOutlined />
+              <span>推广二维码</span>
+            </div>
+            <div class="promo-share-qr-wrap promo-share-qr-wrap--clickable" @click="copyShareQrCode">
+              <img v-if="shareQrDataUrl" :src="shareQrDataUrl" alt="推广二维码">
+              <div v-else class="promo-share-qr-placeholder">
+                {{ shareQrLoading ? "生成中..." : "暂无二维码" }}
+              </div>
+            </div>
+            <div class="promo-share-qr-actions">
+              <a-button
+                type="link"
+                class="promo-link-btn"
+                :disabled="!shareQrDataUrl"
+                @click="copyShareQrCode"
+              >
+                <template #icon><CopyOutlined /></template>
+                复制二维码
+              </a-button>
+              <a-button
+                type="link"
+                class="promo-link-btn"
+                :disabled="!shareQrDataUrl"
+                @click="downloadShareQrCode"
+              >
+                <template #icon><DownloadOutlined /></template>
+                下载二维码
+              </a-button>
+            </div>
+          </div>
+        </div>
+      </a-modal>
 
       <div class="warm-card warm-table-card promo-table-card motion-fade-up motion-card-lift" style="--motion-delay: 300ms">
         <div class="promo-filter-bar">
@@ -562,6 +729,129 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.promo-share-body {
+  display: grid;
+  gap: 16px;
+}
+
+.promo-share-tip {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--theme-panel-bg);
+  border: 1px solid var(--theme-panel-border);
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+
+  strong {
+    color: var(--theme-title);
+  }
+}
+
+.promo-share-field {
+  display: grid;
+  gap: 8px;
+}
+
+.promo-share-label {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.promo-share-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--theme-panel-bg);
+  border: 1px solid var(--theme-panel-border);
+
+  code {
+    flex: 1;
+    min-width: 0;
+    color: var(--theme-accent-text);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+}
+
+.promo-share-link-value span {
+  flex: 1;
+  min-width: 0;
+  color: var(--theme-text);
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.promo-share-qr-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 14px;
+  border-radius: 14px;
+  background: var(--theme-panel-bg);
+  border: 1px solid var(--theme-panel-border);
+}
+
+.promo-share-qr-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 700;
+
+  :deep(.anticon) {
+    color: var(--theme-text-secondary);
+  }
+}
+
+.promo-share-qr-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--theme-panel-border);
+
+  img {
+    width: 192px;
+    height: 192px;
+  }
+}
+
+.promo-share-qr-wrap--clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+}
+
+.promo-share-qr-placeholder {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+}
+
+.promo-share-qr-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 @media (max-width: 960px) {

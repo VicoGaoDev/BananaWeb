@@ -76,6 +76,7 @@ class PromoCodeItem(BaseModel):
     status: str
     created_at: datetime | None = None
     referral_count: int = 0
+    promo_link: str = ""
 
 
 class PromoCodeSummary(BaseModel):

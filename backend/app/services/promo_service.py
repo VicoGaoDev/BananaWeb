@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime
+from urllib.parse import urlencode
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
@@ -21,6 +22,17 @@ PROMO_CODE_REWARD_CREDITS = 20
 
 def normalize_promo_code(code: str | None) -> str:
     return "".join((code or "").strip().upper().split())
+
+
+def build_promo_link(base_url: str, promo_code: str) -> str:
+    normalized_base = (base_url or "").strip().rstrip("/")
+    if not normalized_base:
+        normalized_base = "/"
+    code = normalize_promo_code(promo_code)
+    if not code:
+        return normalized_base
+    separator = "&" if "?" in normalized_base else "?"
+    return f"{normalized_base}{separator}{urlencode({'promo': code})}"
 
 
 def ensure_promo_access(user: User) -> None:
@@ -101,7 +113,7 @@ def update_promo_code_platform(db: Session, user: User, promo_code_id: int, plat
     return promo
 
 
-def _build_promo_codes_payload(db: Session, owner: User) -> dict:
+def _build_promo_codes_payload(db: Session, owner: User, *, base_url: str = "") -> dict:
     promo_codes = (
         db.query(UserPromoCode)
         .filter(UserPromoCode.user_id == owner.id)
@@ -142,6 +154,7 @@ def _build_promo_codes_payload(db: Session, owner: User) -> dict:
                 "status": promo.status,
                 "created_at": promo.created_at,
                 "referral_count": referral_counts.get(promo.id, 0),
+                "promo_link": build_promo_link(base_url, promo.code) if base_url else "",
             }
             for promo in promo_codes
         ],
@@ -236,9 +249,9 @@ def _build_promo_referrals_payload(
     }
 
 
-def get_my_promo_codes(db: Session, user: User) -> dict:
+def get_my_promo_codes(db: Session, user: User, *, base_url: str = "") -> dict:
     ensure_promo_access(user)
-    return _build_promo_codes_payload(db, user)
+    return _build_promo_codes_payload(db, user, base_url=base_url)
 
 
 def get_my_promo_referrals(

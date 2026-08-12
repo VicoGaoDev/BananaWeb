@@ -814,6 +814,7 @@ export interface PromoCodeItem {
   status: string;
   created_at?: string | null;
   referral_count: number;
+  promo_link?: string;
 }
 
 export interface PromoCodeListResponse {
