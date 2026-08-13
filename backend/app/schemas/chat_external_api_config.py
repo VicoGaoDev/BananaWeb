@@ -299,3 +299,4 @@ class ChatGenerationModelOptionOut(BaseModel):
     credit_cost: int = 0
     opening_greeting: str = ""
     starter_prompts: list[ChatStarterPromptItem] = Field(default_factory=list)
+    stream: bool = False

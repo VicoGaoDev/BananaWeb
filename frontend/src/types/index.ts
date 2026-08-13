@@ -1834,6 +1834,7 @@ export interface ChatGenerationModelOption {
   credit_cost: number;
   opening_greeting: string;
   starter_prompts: ChatStarterPrompt[];
+  stream?: boolean;
 }
 
 export interface ChatSession {

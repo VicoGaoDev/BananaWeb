@@ -21,12 +21,13 @@ import {
   listChatMessages,
   listChatSessions,
   sendChatMessage,
+  sendChatMessageStream,
   updateChatSession,
 } from "@/api/chat";
 import { getChatModels } from "@/api/chatConfig";
 import { withBaseUrl } from "@/lib/assets";
 import { extractGeneratePrompt, renderSimpleMarkdown } from "@/lib/simpleMarkdown";
-import type { ChatGenerationModelOption, ChatMessage, ChatSession } from "@/types";
+import type { ChatGenerationModelOption, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const CHAT_DRAFT_KEY = "generateDraftFromChat";
@@ -61,6 +62,7 @@ const sessionSearchOpen = ref(false);
 const sessionSearchKeyword = ref("");
 const sessionSearchInputRef = ref<HTMLInputElement | null>(null);
 const streamingMessageId = ref<number | null>(null);
+const streamingAssistantMessage = ref<ChatMessage | null>(null);
 const streamingVisibleText = ref("");
 const SESSION_PANEL_FADE_MS = 180;
 const MESSAGE_CACHE_LIMIT = 8;
@@ -73,6 +75,7 @@ let streamVisibilityHandler: (() => void) | null = null;
 let lastMessageListScrollTop = 0;
 let ignoreMessageListScrollSync = false;
 let sendAbortController: AbortController | null = null;
+const liveStreaming = ref(false);
 
 function isRequestAborted(err: any) {
   return (
@@ -286,7 +289,49 @@ function messagePlainText(item: ChatMessage) {
 }
 
 function isBrokenAssistantMessage(item: ChatMessage) {
-  return item.role === "assistant" && !messagePlainText(item);
+  if (item.role !== "assistant") return false;
+  if (item.status === "pending" || streamingMessageId.value === item.id || liveStreaming.value) {
+    return false;
+  }
+  return !messagePlainText(item);
+}
+
+function modelWantsStream(modelKey: string) {
+  return models.value.some((item) => item.model_key === modelKey && item.stream === true);
+}
+
+function applyChatBalance(balance?: number | null) {
+  if (typeof balance !== "number" || !auth.user) return;
+  auth.updateUser({ ...auth.user, credits: balance });
+}
+
+function upsertSendResultMessages(
+  result: Pick<ChatSendMessageResponse, "user_message" | "assistant_message" | "session">,
+  options: { skipOptimisticUser?: boolean; tempUserMessageId: number; clientMessageId: string },
+) {
+  if (!options.skipOptimisticUser) {
+    const tempIndex = messages.value.findIndex(
+      (item) => item.id === options.tempUserMessageId || item.client_message_id === options.clientMessageId,
+    );
+    if (tempIndex >= 0) {
+      messages.value.splice(tempIndex, 1, result.user_message);
+    } else if (!messages.value.some((item) => item.id === result.user_message.id)) {
+      messages.value.push(result.user_message);
+    }
+  } else if (!messages.value.some((item) => item.id === result.user_message.id)) {
+    messages.value.push(result.user_message);
+  }
+  messages.value = messages.value.filter((item) => !isBrokenAssistantMessage(item));
+  const assistantIndex = messages.value.findIndex((item) => item.id === result.assistant_message.id);
+  if (assistantIndex >= 0) {
+    messages.value.splice(assistantIndex, 1, result.assistant_message);
+  } else {
+    messages.value.push(result.assistant_message);
+  }
+  sessions.value = [
+    result.session,
+    ...sessions.value.filter((item) => item.id !== result.session.id),
+  ];
 }
 
 function findPreviousUserMessage(assistant: ChatMessage): ChatMessage | null {
@@ -333,6 +378,7 @@ function stopAssistantStreaming() {
   clearAssistantStreamScheduler();
   detachAssistantStreamVisibilityHandler();
   streamingMessageId.value = null;
+  streamingAssistantMessage.value = null;
   streamingVisibleText.value = "";
 }
 
@@ -814,6 +860,10 @@ async function ensureActiveSession() {
 }
 
 function handleStopSending() {
+  if (liveStreaming.value) {
+    sendAbortController?.abort();
+    return;
+  }
   if (streamingMessageId.value != null) {
     stopAssistantStreaming();
     sending.value = false;
@@ -872,60 +922,206 @@ async function handleSend(
     if (controller.signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const result = await sendChatMessage(
-      sessionId,
-      {
-        content,
-        model,
-        client_message_id: clientMessageId,
-      },
-      controller.signal,
-    );
-    if (!options.skipOptimisticUser) {
-      const tempIndex = messages.value.findIndex(
-        (item) => item.id === tempUserMessageId || item.client_message_id === clientMessageId,
+    const sendPayload = {
+      content,
+      model,
+      client_message_id: clientMessageId,
+    };
+    const resultOptions = {
+      skipOptimisticUser: options.skipOptimisticUser,
+      tempUserMessageId,
+      clientMessageId,
+    };
+    if (modelWantsStream(model)) {
+      liveStreaming.value = true;
+      await sendChatMessageStream(
+        sessionId,
+        sendPayload,
+        {
+          onMeta(meta) {
+            upsertSendResultMessages(meta, resultOptions);
+            streamingMessageId.value = meta.assistant_message.id;
+            streamingAssistantMessage.value = meta.assistant_message;
+            streamingVisibleText.value = meta.assistant_message.content || "";
+            if (!streamingVisibleText.value.trim()) {
+              messages.value = messages.value.filter((item) => item.id !== meta.assistant_message.id);
+            }
+            void scrollToBottom(true);
+          },
+          onDelta(text) {
+            streamingVisibleText.value += text;
+            const assistantId = streamingMessageId.value;
+            if (assistantId != null) {
+              const exists = messages.value.some((item) => item.id === assistantId);
+              const nextAssistant: ChatMessage = {
+                ...(streamingAssistantMessage.value || {
+                  id: assistantId,
+                  session_id: sessionId,
+                  role: "assistant" as const,
+                  model,
+                  client_message_id: null,
+                  credit_cost: 0,
+                  created_at: new Date().toISOString(),
+                }),
+                content: streamingVisibleText.value,
+                status: "pending",
+                error_message: "",
+              };
+              if (exists) {
+                messages.value = messages.value.map((item) => (
+                  item.id === assistantId ? nextAssistant : item
+                ));
+              } else {
+                messages.value.push(nextAssistant);
+              }
+            }
+            if (stickToBottom.value) {
+              void scrollToBottom(false);
+            }
+          },
+          onDone(result) {
+            liveStreaming.value = false;
+            stopAssistantStreaming();
+            upsertSendResultMessages(result, resultOptions);
+            applyChatBalance(result.balance);
+            if (result.assistant_message.status === "failed") {
+              message.error(result.assistant_message.error_message || "对话失败");
+            }
+            putMessageCache(sessionId, {
+              items: messages.value,
+              hasMore: messagesHasMore.value,
+              nextBeforeId: messagesNextBeforeId.value,
+            });
+            void scrollToBottom(true);
+          },
+          onErrorEvent(errEvent) {
+            const streamed = streamingVisibleText.value.trim();
+            if (streamed) {
+              liveStreaming.value = false;
+              const assistantId = streamingMessageId.value;
+              stopAssistantStreaming();
+              messages.value = messages.value.map((item) => (
+                assistantId != null && item.id === assistantId
+                  ? {
+                      ...item,
+                      content: streamed,
+                      status: "success" as const,
+                      error_message: "",
+                    }
+                  : item
+              ));
+              putMessageCache(sessionId, {
+                items: messages.value,
+                hasMore: messagesHasMore.value,
+                nextBeforeId: messagesNextBeforeId.value,
+              });
+              return;
+            }
+            liveStreaming.value = false;
+            const failedAssistant = errEvent.assistant_message || {
+              id: streamingMessageId.value || Date.now(),
+              session_id: sessionId,
+              role: "assistant" as const,
+              content: streamingVisibleText.value || errEvent.message || "对话失败",
+              model,
+              credit_cost: 0,
+              status: "failed",
+              error_message: errEvent.message || "对话失败",
+              created_at: new Date().toISOString(),
+            };
+            stopAssistantStreaming();
+            const assistantIndex = messages.value.findIndex((item) => item.id === failedAssistant.id);
+            if (assistantIndex >= 0) {
+              messages.value.splice(assistantIndex, 1, failedAssistant);
+            } else {
+              messages.value.push(failedAssistant);
+            }
+            if (errEvent.session) {
+              sessions.value = [
+                errEvent.session,
+                ...sessions.value.filter((item) => item.id !== errEvent.session?.id),
+              ];
+            }
+            applyChatBalance(errEvent.balance);
+            message.error(errEvent.message || "对话失败");
+            putMessageCache(sessionId, {
+              items: messages.value,
+              hasMore: messagesHasMore.value,
+              nextBeforeId: messagesNextBeforeId.value,
+            });
+          },
+        },
+        controller.signal,
       );
-      if (tempIndex >= 0) {
-        messages.value.splice(tempIndex, 1, result.user_message);
-      } else if (!messages.value.some((item) => item.id === result.user_message.id)) {
-        messages.value.push(result.user_message);
+    } else {
+      const result = await sendChatMessage(sessionId, sendPayload, controller.signal);
+      upsertSendResultMessages(result, resultOptions);
+      applyChatBalance(result.balance);
+      if (result.assistant_message.status === "failed") {
+        message.error(result.assistant_message.error_message || "对话失败");
+      } else if (isBrokenAssistantMessage(result.assistant_message)) {
+        message.error("系统出错，可进行重试");
+      }
+      putMessageCache(sessionId, {
+        items: messages.value,
+        hasMore: messagesHasMore.value,
+        nextBeforeId: messagesNextBeforeId.value,
+      });
+      await scrollToBottom(true);
+      if (
+        result.assistant_message.status !== "failed"
+        && !isBrokenAssistantMessage(result.assistant_message)
+      ) {
+        await streamAssistantMessage(result.assistant_message);
       }
     }
-    // 重试时不重复插入用户气泡，仅更新助手回复
-    // 清理本地残留的空助手气泡，再挂上最新回复
-    messages.value = messages.value.filter((item) => !isBrokenAssistantMessage(item));
-    if (!messages.value.some((item) => item.id === result.assistant_message.id)) {
-      messages.value.push(result.assistant_message);
-    }
-    sessions.value = [
-      result.session,
-      ...sessions.value.filter((item) => item.id !== result.session.id),
-    ];
-    if (result.assistant_message.status === "failed") {
-      message.error(result.assistant_message.error_message || "对话失败");
-    } else if (isBrokenAssistantMessage(result.assistant_message)) {
-      message.error("系统出错，可进行重试");
-    }
-    putMessageCache(sessionId, {
-      items: messages.value,
-      hasMore: messagesHasMore.value,
-      nextBeforeId: messagesNextBeforeId.value,
-    });
-    await scrollToBottom(true);
-    if (
-      result.assistant_message.status !== "failed"
-      && !isBrokenAssistantMessage(result.assistant_message)
-    ) {
-      await streamAssistantMessage(result.assistant_message);
-    }
   } catch (err: any) {
+    liveStreaming.value = false;
     if (isRequestAborted(err)) {
-      // 中断时保留用户消息，不回填输入框
-      messages.value = messages.value.map((item) => (
-        item.id === tempUserMessageId
-          ? { ...item, status: "success" as const }
-          : item
-      ));
+      const interruptedAssistantId = streamingMessageId.value;
+      const interruptedAssistantSeed = streamingAssistantMessage.value;
+      const interruptedContent = streamingVisibleText.value || "已中断";
+      messages.value = messages.value.map((item) => {
+        if (item.id === tempUserMessageId) {
+          return { ...item, status: "success" as const };
+        }
+        if (interruptedAssistantId != null && item.id === interruptedAssistantId) {
+          return {
+            ...item,
+            content: interruptedContent || item.content,
+            status: "failed" as const,
+            error_message: "已中断",
+          };
+        }
+        return item;
+      });
+      if (
+        interruptedAssistantId != null
+        && !messages.value.some((item) => item.id === interruptedAssistantId)
+      ) {
+        messages.value.push({
+          ...(interruptedAssistantSeed || {
+            id: interruptedAssistantId,
+            session_id: activeSessionId.value || "",
+            role: "assistant" as const,
+            model,
+            client_message_id: null,
+            credit_cost: 0,
+            created_at: new Date().toISOString(),
+          }),
+          content: interruptedContent,
+          status: "failed",
+          error_message: "已中断",
+        });
+      }
+      stopAssistantStreaming();
+      if (activeSessionId.value) {
+        putMessageCache(activeSessionId.value, {
+          items: messages.value,
+          hasMore: messagesHasMore.value,
+          nextBeforeId: messagesNextBeforeId.value,
+        });
+      }
       message.info("已中断");
       return;
     }
@@ -942,6 +1138,7 @@ async function handleSend(
       message.error(detail || err?.message || "发送失败");
     }
   } finally {
+    liveStreaming.value = false;
     if (sendAbortController === controller) {
       sendAbortController = null;
     }
@@ -1206,7 +1403,7 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                   <div
-                    v-else-if="item.role === 'assistant' && item.status !== 'failed'"
+                    v-else-if="item.role === 'assistant' && (item.content || '').trim()"
                     class="message-content md-body"
                     :class="{ 'is-streaming': streamingMessageId === item.id }"
                     v-html="renderAssistantHtml(item)"
@@ -1233,7 +1430,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <div v-if="sending && streamingMessageId == null" class="message-row is-assistant">
+            <div v-if="sending && !streamingVisibleText.trim()" class="message-row is-assistant">
               <div class="message-bubble loading-bubble">
                 <LoadingOutlined />
                 <span>正在思考...</span>

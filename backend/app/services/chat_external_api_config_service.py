@@ -54,6 +54,15 @@ def _extract_text_value(payload: object, field_path: str) -> str:
     return str(raw_value or "").strip()
 
 
+def payload_json_wants_stream(raw: str | None) -> bool:
+    """仅当请求体 JSON 显式写了布尔 true 才走真流式。"""
+    try:
+        payload = json.loads(raw or "")
+    except Exception:
+        return False
+    return isinstance(payload, dict) and payload.get("stream") is True
+
+
 def _parse_starter_prompts(raw: str | None) -> list[ChatStarterPromptItem]:
     if not (raw or "").strip():
         return []
@@ -360,6 +369,7 @@ def list_chat_generation_models(db: Session) -> list[ChatGenerationModelOptionOu
             credit_cost=int(item.credit_cost or 0),
             opening_greeting=item.opening_greeting or "",
             starter_prompts=_parse_starter_prompts(getattr(item, "starter_prompts_json", None)),
+            stream=payload_json_wants_stream(configs[item.api_config_id].payload_json),
         )
         for item in bindings
         if item.api_config_id
@@ -419,6 +429,9 @@ def test_chat_external_api_config(
         "user_message": "ping",
     }
     rendered = render_config(config, variables)
+    payload = rendered.payload
+    if isinstance(payload, dict) and payload.get("stream") is True:
+        rendered = rendered.model_copy(update={"payload": {**payload, "stream": False}})
     request_kwargs = build_external_request_kwargs(rendered)
     with httpx.Client(timeout=15, trust_env=False) as client:
         response = client.post(rendered.request_url, **request_kwargs)

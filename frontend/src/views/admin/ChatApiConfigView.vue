@@ -1032,6 +1032,15 @@ onMounted(loadData);
               </div>
             </div>
           </a-collapse-panel>
+          <a-collapse-panel key="stream" header="流式返回 stream">
+            <div class="doc-block">
+              <div>第三方支持 SSE 时，在请求 JSON 中显式加上布尔值：</div>
+              <pre>"stream": true</pre>
+              <div class="scene-desc">
+                仅当值为 JSON 布尔 true 时，用户对话走端到端真流式；不写或 false 仍为一次性 JSON + 前端打字机。测试连接会强制 stream=false。
+              </div>
+            </div>
+          </a-collapse-panel>
         </a-collapse>
       </a-card>
     </a-space>
@@ -1078,6 +1087,7 @@ onMounted(loadData);
           <a-textarea v-model:value="form.payload_json" class="warm-textarea" :rows="10" />
           <div class="scene-desc" style="margin-top: 6px">
             `messages` 必须写成完整占位符：<code v-pre>"messages": "{{messages}}"</code>，才能保留 JSON 数组。
+            需要真流式时在请求体里加上 <code>"stream": true</code>（JSON 布尔）；不写或 false 则仍走一次性 JSON。测试连接会强制非流式。
           </div>
         </a-form-item>
         <a-form-item label="响应 JSON 示例">

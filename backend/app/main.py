@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 from sqlalchemy import func, inspect, text
 from app.database import engine, Base
 from app.config import settings
@@ -22,6 +23,62 @@ setup_logging(level=settings.LOG_LEVEL, json_logs=settings.LOG_JSON)
 access_logger = logging.getLogger("app.access")
 error_logger = logging.getLogger("app.error")
 
+class RequestLoggingASGIMiddleware:
+    """纯 ASGI 中间件：不要用 BaseHTTPMiddleware，否则会把 SSE 整段攒完再发给浏览器。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = MutableHeaders(scope=scope)
+        request_id = headers.get("x-request-id") or str(uuid.uuid4())
+        state = scope.setdefault("state", {})
+        state["request_id"] = request_id
+        state.setdefault("user_id", None)
+        set_request_context(request_id)
+        start = time.perf_counter()
+        status_code = 500
+
+        async def send_wrapper(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = int(message.get("status") or 500)
+                response_headers = MutableHeaders(scope=message)
+                response_headers["X-Request-ID"] = request_id
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = round((time.perf_counter() - start) * 1000, 2)
+            user_id = (scope.get("state") or {}).get("user_id")
+            set_request_context(request_id, user_id)
+            client = scope.get("client")
+            header_list = scope.get("headers") or []
+            user_agent = ""
+            for key, value in header_list:
+                if key == b"user-agent":
+                    user_agent = value.decode("latin-1", errors="replace")
+                    break
+            access_logger.info(
+                "request completed",
+                extra={
+                    "event": "http.request.completed",
+                    "method": scope.get("method") or "",
+                    "path": scope.get("path") or "",
+                    "status_code": status_code,
+                    "duration_ms": duration_ms,
+                    "client_ip": client[0] if client else "",
+                    "user_agent": user_agent,
+                },
+            )
+            clear_request_context()
+
+
 app = FastAPI(title="Banana Web - AI 绘图系统", version="1.0.0")
 
 app.add_middleware(
@@ -31,38 +88,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    request.state.request_id = request_id
-    request.state.user_id = None
-    set_request_context(request_id)
-    start = time.perf_counter()
-    response = None
-    try:
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-    finally:
-        duration_ms = round((time.perf_counter() - start) * 1000, 2)
-        status_code = response.status_code if response else 500
-        user_id = getattr(request.state, "user_id", None)
-        set_request_context(request_id, user_id)
-        access_logger.info(
-            "request completed",
-            extra={
-                "event": "http.request.completed",
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": status_code,
-                "duration_ms": duration_ms,
-                "client_ip": request.client.host if request.client else "",
-                "user_agent": request.headers.get("user-agent", ""),
-            },
-        )
-        clear_request_context()
+app.add_middleware(RequestLoggingASGIMiddleware)
 
 
 @app.exception_handler(Exception)
