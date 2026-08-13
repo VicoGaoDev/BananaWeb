@@ -1,4 +1,4 @@
-import type { ImageResult } from "@/types";
+import type { ImageResult, TaskApiAttempt } from "@/types";
 
 export const IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！";
 export const PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试";
@@ -7,7 +7,8 @@ export const INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请�
 export const INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试";
 export const CREDIT_REFUNDED_SUFFIX = "（积分已返还）";
 
-const PROMPT_MODERATION_ERROR_PATTERN = /prompt moderation precheck|request was rejected by prompt moderation|提示词未通过安全审核/i;
+const PROMPT_MODERATION_ERROR_PATTERN =
+  /prompt moderation precheck|request was rejected by prompt moderation|request was rejected by the safety system|提示词未通过安全审核|请求被审核拒绝|审核拒绝/i;
 const IMAGE_SAFETY_ERROR_PATTERN = /unsafe|image_unsafe|content blocked/i;
 const INVALID_ASPECT_RATIO_PATTERN = /n?put\.aspect_ratio is invalid|aspect_ratio is invalid/i;
 const INVALID_REFERENCE_IMAGE_PATTERN =
@@ -67,6 +68,23 @@ function withCreditRefundedSuffix(message: string) {
   return message.endsWith(CREDIT_REFUNDED_SUFFIX) ? message : `${message}${CREDIT_REFUNDED_SUFFIX}`;
 }
 
+function formatMaybeRefundedMessage(message: string, creditRefunded: boolean) {
+  return creditRefunded ? withCreditRefundedSuffix(message) : message;
+}
+
+function getFailedFallbackAttemptError(apiAttempts?: TaskApiAttempt[]) {
+  const attempts = Array.isArray(apiAttempts) ? apiAttempts : [];
+  const failedFallbackAttempts = attempts
+    .filter((attempt) => attempt.is_fallback && attempt.status === "failed" && String(attempt.error_message || "").trim())
+    .sort((left, right) => {
+      const leftIndex = Number(left.attempt_index || 0);
+      const rightIndex = Number(right.attempt_index || 0);
+      if (leftIndex !== rightIndex) return rightIndex - leftIndex;
+      return Number(right.id || 0) - Number(left.id || 0);
+    });
+  return String(failedFallbackAttempts[0]?.error_message || "").trim();
+}
+
 export function formatGenerationTaskFailureMessage(rawMessage?: string, creditRefunded = false) {
   const detail = String(rawMessage || "").trim();
   const message = isPromptModerationError(detail)
@@ -78,22 +96,53 @@ export function formatGenerationTaskFailureMessage(rawMessage?: string, creditRe
       : isInvalidReferenceImageError(detail)
         ? formatInvalidReferenceImageMessage(detail)
         : GENERATION_TASK_FAILURE_MESSAGE;
-  return creditRefunded ? withCreditRefundedSuffix(message) : message;
+  return formatMaybeRefundedMessage(message, creditRefunded);
 }
 
 export function getPreferredGenerationErrorMessage(
   taskError?: string,
   imageError?: string,
   creditRefunded = false,
-  _fallback = "生成失败，请重试"
+  fallback = "生成失败，请重试",
+  usedFallbackApi = false,
+  apiAttempts?: TaskApiAttempt[],
+  providerError?: string,
 ) {
+  const failedFallbackError = usedFallbackApi ? getFailedFallbackAttemptError(apiAttempts) : "";
+  if (failedFallbackError) {
+    return formatMaybeRefundedMessage(
+      formatGenerationErrorMessage(failedFallbackError, fallback),
+      creditRefunded,
+    );
+  }
+  const fallbackFinalError = usedFallbackApi ? String(providerError || imageError || taskError || "").trim() : "";
+  if (fallbackFinalError) {
+    return formatMaybeRefundedMessage(
+      formatGenerationErrorMessage(fallbackFinalError, fallback),
+      creditRefunded,
+    );
+  }
   return formatGenerationTaskFailureMessage(imageError || taskError, creditRefunded);
 }
 
 export function getTaskImageFailureMessage(
-  task: { error_message?: string; credit_refunded?: boolean } | null | undefined,
+  task: {
+    error_message?: string;
+    provider_error_message?: string;
+    credit_refunded?: boolean;
+    used_fallback_api?: boolean;
+    api_attempts?: TaskApiAttempt[];
+  } | null | undefined,
   image: Pick<ImageResult, "error_message"> | null | undefined,
   fallback = "生成失败，请重试"
 ) {
-  return getPreferredGenerationErrorMessage(task?.error_message, image?.error_message, Boolean(task?.credit_refunded), fallback);
+  return getPreferredGenerationErrorMessage(
+    task?.error_message,
+    image?.error_message,
+    Boolean(task?.credit_refunded),
+    fallback,
+    Boolean(task?.used_fallback_api),
+    task?.api_attempts,
+    task?.provider_error_message,
+  );
 }

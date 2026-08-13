@@ -36,6 +36,22 @@ class ImageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TaskApiAttemptOut(BaseModel):
+    id: int | None = None
+    image_id: int | None = None
+    image_index: int | None = None
+    api_config_id: int | None = None
+    api_config_name: str = ""
+    attempt_index: int = 1
+    is_fallback: bool = False
+    status: str = "failed"
+    http_status: int | None = None
+    error_message: str = ""
+    duration_ms: int | None = None
+    created_at: datetime | None = None
+    request_preview: dict | None = None
+
+
 class TaskOut(BaseModel):
     id: str
     canvas_id: int | None = None
@@ -56,12 +72,15 @@ class TaskOut(BaseModel):
     credit_cost: int = 0
     credit_refunded: bool = False
     failure_refund_remaining_count: int | None = None
+    used_fallback_api: bool = False
     status: str
     error_message: str = ""
+    provider_error_message: str = ""
     created_at: datetime | None = None
     enqueued_at: datetime | None = None
     request_started_at: datetime | None = None
     request_finished_at: datetime | None = None
     images: list[ImageOut] = []
+    api_attempts: list[TaskApiAttemptOut] = []
 
     model_config = {"from_attributes": True}

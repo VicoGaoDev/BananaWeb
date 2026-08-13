@@ -74,13 +74,16 @@ export interface TaskResult {
   credit_cost: number;
   credit_refunded?: boolean;
   failure_refund_remaining_count?: number | null;
+  used_fallback_api?: boolean;
   status: "pending" | "queued" | "processing" | "success" | "failed";
   error_message?: string;
+  provider_error_message?: string;
   created_at: string;
   enqueued_at?: string | null;
   request_started_at?: string | null;
   request_finished_at?: string | null;
   images: ImageResult[];
+  api_attempts?: TaskApiAttempt[];
 }
 
 export interface HistoryItem {

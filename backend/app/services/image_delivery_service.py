@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.image import Image
 from app.models.task import Task
+from app.models.task_api_attempt import TaskApiAttempt
 from app.services.business_id_service import task_external_id
 from app.services.cos_service import CosRuntimeConfig, build_cos_public_url, get_cos_config
 from app.services.task_service import is_task_generation_failure_credit_refunded
@@ -141,6 +142,37 @@ def serialize_image(image: Image, *, cos_config: CosRuntimeConfig | None = None)
     }
 
 
+def _serialize_task_api_attempts(attempts: list[TaskApiAttempt] | None) -> list[dict]:
+    if not attempts:
+        return []
+    serialized: list[dict] = []
+    for attempt in sorted(
+        attempts,
+        key=lambda item: (
+            item.image_index or 0,
+            item.image_id or 0,
+            item.attempt_index or 0,
+            item.id or 0,
+        ),
+    ):
+        serialized.append({
+            "id": attempt.id,
+            "image_id": attempt.image_id,
+            "image_index": attempt.image_index,
+            "api_config_id": attempt.api_config_id,
+            "api_config_name": attempt.api_config_name or "",
+            "attempt_index": int(attempt.attempt_index or 1),
+            "is_fallback": bool(attempt.is_fallback),
+            "status": attempt.status or "failed",
+            "http_status": attempt.http_status,
+            "error_message": attempt.error_message or "",
+            "duration_ms": attempt.duration_ms,
+            "created_at": attempt.created_at,
+            "request_preview": None,
+        })
+    return serialized
+
+
 def _parse_reference_images(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -189,11 +221,14 @@ def serialize_task(
         "credit_cost": task_credit_cost,
         "credit_refunded": resolved_credit_refunded,
         "failure_refund_remaining_count": failure_refund_remaining_count,
+        "used_fallback_api": bool(task.used_fallback_api),
         "status": task.status,
         "error_message": task.error_message or "",
+        "provider_error_message": task.provider_error_message or "",
         "created_at": task.created_at,
         "enqueued_at": task.enqueued_at,
         "request_started_at": task.request_started_at,
         "request_finished_at": task.request_finished_at,
         "images": [serialize_image(image, cos_config=cos_config) for image in task.images],
+        "api_attempts": _serialize_task_api_attempts(list(task.api_attempts or [])),
     }

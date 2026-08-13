@@ -73,7 +73,6 @@ import { withBaseUrl } from "@/lib/assets";
 import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import {
   formatGenerationErrorMessage,
-  formatGenerationTaskFailureMessage,
   getPreferredGenerationErrorMessage,
 } from "@/lib/generationErrors";
 import {
@@ -89,7 +88,7 @@ import {
   readStoredBoardKey,
   writeStoredBoardKey,
 } from "@/lib/boardPreference";
-import type { BoardKey, GenerationModelOption, ImageResult, PublicPromptOptimizeStyle, SceneOptionItem, TaskResult, TaskSceneConfig, TaskSource, TaskType, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
+import type { BoardKey, GenerationModelOption, ImageResult, PublicPromptOptimizeStyle, SceneOptionItem, TaskApiAttempt, TaskResult, TaskSceneConfig, TaskSource, TaskType, TemplateTag, UserAsset, UserBoardSummary, UserHistoryCard, UserPrompt } from "@/types";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -232,8 +231,11 @@ interface GeneratedTaskItem {
   createdAt: string;
   status: GeneratedTaskStatus;
   errorMessage?: string;
+  providerErrorMessage?: string;
   creditRefunded?: boolean;
   failureRefundRemainingCount?: number | null;
+  usedFallbackApi?: boolean;
+  apiAttempts?: TaskApiAttempt[];
   images: ImageResult[];
 }
 
@@ -1012,8 +1014,11 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
     ...task,
     status: data.status,
     errorMessage: nextErrorMessage,
+    providerErrorMessage: data.provider_error_message || task.providerErrorMessage,
     creditRefunded: Boolean(data.credit_refunded),
     failureRefundRemainingCount: data.failure_refund_remaining_count ?? task.failureRefundRemainingCount ?? null,
+    usedFallbackApi: Boolean(data.used_fallback_api),
+    apiAttempts: Array.isArray(data.api_attempts) ? data.api_attempts : (task.apiAttempts || []),
     createdAt: data.created_at || task.createdAt,
     model: data.model || task.model,
     size: data.size || task.size,
@@ -1035,7 +1040,15 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
   if (previousStatus !== data.status && (data.status === "success" || data.status === "failed")) {
     data.status === "success"
       ? message.success(`任务 #${taskId} 已完成`)
-      : message.warning(formatGenerationTaskFailureMessage(nextErrorMessage, Boolean(data.credit_refunded)));
+      : message.warning(getPreferredGenerationErrorMessage(
+        data.error_message,
+        data.images.find((image) => image.status === "failed" && image.error_message)?.error_message,
+        Boolean(data.credit_refunded),
+        "生成失败，请重试",
+        Boolean(data.used_fallback_api),
+        data.api_attempts,
+        data.provider_error_message,
+      ));
   }
 }
 
@@ -1092,14 +1105,25 @@ function convertHistoryCardToGeneratedTask(item: UserHistoryCard): GeneratedTask
     createdAt: item.created_at,
     status: item.status as GeneratedTaskStatus,
     errorMessage: item.error_message || item.images.find((image) => image.status === "failed" && image.error_message)?.error_message || "",
+    providerErrorMessage: item.provider_error_message || "",
     creditRefunded: Boolean(item.credit_refunded),
     failureRefundRemainingCount: null,
+    usedFallbackApi: Boolean(item.used_fallback_api),
+    apiAttempts: item.api_attempts || [],
     images: item.images.length ? item.images : createPendingImages(fallbackImageCount),
   };
 }
 
 function getGeneratedTaskFailureMessage(task: GeneratedTaskItem, image: ImageResult) {
-  return getPreferredGenerationErrorMessage(task.errorMessage, image.error_message, Boolean(task.creditRefunded), "生成失败，请重试");
+  return getPreferredGenerationErrorMessage(
+    task.errorMessage,
+    image.error_message,
+    Boolean(task.creditRefunded),
+    "生成失败，请重试",
+    Boolean(task.usedFallbackApi),
+    task.apiAttempts,
+    task.providerErrorMessage,
+  );
 }
 
 function isGeneratedResultFailed(task: GeneratedTaskItem, image: ImageResult) {
@@ -2752,9 +2776,12 @@ function convertGeneratedTaskToHistoryCard(task: GeneratedTaskItem, focusedImage
     custom_size: task.customSize || "",
     credit_cost: 0,
     credit_refunded: Boolean(task.creditRefunded),
+    used_fallback_api: Boolean(task.usedFallbackApi),
     created_at: task.createdAt,
     error_message: task.errorMessage || "",
+    provider_error_message: task.providerErrorMessage || "",
     images: task.images.length ? task.images : [],
+    api_attempts: task.apiAttempts || [],
   };
 }
 

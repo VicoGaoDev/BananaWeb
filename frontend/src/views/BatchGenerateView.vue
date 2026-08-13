@@ -1950,6 +1950,9 @@ function applyTaskResultToCard(card: BatchGenerateCard, task: TaskResult) {
       task.images?.[0]?.error_message,
       Boolean(task.credit_refunded),
       "生成失败，请重试",
+      Boolean(task.used_fallback_api),
+      task.api_attempts,
+      task.provider_error_message,
     );
     return;
   }
