@@ -666,7 +666,14 @@ function handleGenerateVideo(item: UserHistoryCard) {
                       />
                     </div>
                   </div>
-                  <div v-else class="detail-result-grid" :class="{ 'is-single': item.images.length === 1 }">
+                  <div
+                    v-else
+                    class="detail-result-grid"
+                    :class="{
+                      'is-single': item.images.length === 1,
+                      'is-scrollable': item.images.length > 4,
+                    }"
+                  >
                     <div
                       v-for="img in item.images"
                       :key="img.id"
@@ -1500,21 +1507,35 @@ function handleGenerateVideo(item: UserHistoryCard) {
 }
 
 .detail-result-grid {
+  --detail-result-gap: 12px;
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  align-content: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: calc((100% - var(--detail-result-gap)) / 2);
+  gap: var(--detail-result-gap);
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: hidden;
 
   &.is-single {
     grid-template-columns: 1fr;
+    grid-auto-rows: minmax(0, 1fr);
+    align-content: stretch;
+    overflow: hidden;
+  }
+
+  &.is-scrollable {
+    overflow-y: auto;
+    padding-right: 2px;
   }
 }
 
 .detail-result-card {
+  min-width: 0;
   min-height: 0;
   height: 100%;
+  box-sizing: border-box;
   border-radius: 0;
   overflow: hidden;
   border: 0;
@@ -1533,6 +1554,12 @@ function handleGenerateVideo(item: UserHistoryCard) {
     inset: 0;
     object-fit: contain;
     display: block;
+    background: var(--theme-panel-bg);
+  }
+
+  &:not(.single) {
+    border: 1px solid var(--theme-border);
+    border-radius: 10px;
     background: var(--theme-panel-bg);
   }
 
