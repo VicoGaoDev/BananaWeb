@@ -36,6 +36,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean;
   showActions?: boolean;
   showErrorMessage?: boolean;
+  hideCreditCost?: boolean;
   requestPreviewLoading?: boolean;
   hasPrev?: boolean;
   hasNext?: boolean;
@@ -46,6 +47,7 @@ const props = withDefaults(defineProps<{
   loading: false,
   showActions: false,
   showErrorMessage: false,
+  hideCreditCost: false,
   requestPreviewLoading: false,
   hasPrev: false,
   hasNext: false,
@@ -283,7 +285,7 @@ function detailMetaList(item: UserHistoryCard) {
     `来源：${sourceLabel(item.source)}`,
     `类型：${modeLabel(item.task_type)}`,
     `模型：${getModelLabel(item.model)}`,
-    item.item_type === "task" ? `消耗积分：${getDetailCreditCost(item)}` : "",
+    item.item_type === "task" && !props.hideCreditCost ? `消耗积分：${getDetailCreditCost(item)}` : "",
     item.style_name ? `风格：${item.style_name}` : "",
     `比例：${item.size || "-"}`,
     item.resolution ? `分辨率：${item.resolution}` : "",
