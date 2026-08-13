@@ -48,6 +48,7 @@ def list_history(
         end_date=end_date,
         board_id=board_id,
         board_scope=board_scope,
+        include_provider_diagnostics=False,
     )
 
 

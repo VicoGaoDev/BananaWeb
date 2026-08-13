@@ -36,6 +36,7 @@ from app.services.task_type_service import (
     resolve_task_type_for_task,
 )
 from app.services.image_delivery_service import (
+    format_generation_public_error_message,
     get_optional_cos_config,
     serialize_asset_urls,
     serialize_image,
@@ -156,12 +157,13 @@ def _serialize_history_images(
     *,
     cos_config,
     include_deleted: bool = False,
+    public_error_message: bool = False,
 ) -> list[dict]:
     result: list[dict] = []
     for img in sorted(images, key=lambda item: item.id, reverse=True):
         if not include_deleted and img.is_deleted:
             continue
-        result.append(serialize_image(img, cos_config=cos_config))
+        result.append(serialize_image(img, cos_config=cos_config, public_error_message=public_error_message))
     return result
 
 
@@ -508,12 +510,17 @@ def _serialize_task_history_detail(
     scene_type_map: dict[str, str] | None = None,
     api_attempts: list[TaskApiAttempt] | None = None,
     include_request_previews: bool = False,
+    include_provider_diagnostics: bool = True,
 ) -> dict:
     primary_image = next(
         (img for img in sorted(task.images, key=lambda item: item.id, reverse=True) if not img.is_deleted),
         None,
     )
-    primary_image_payload = serialize_image(primary_image, cos_config=cos_config) if primary_image else {
+    primary_image_payload = serialize_image(
+        primary_image,
+        cos_config=cos_config,
+        public_error_message=not include_provider_diagnostics,
+    ) if primary_image else {
         "id": None,
         "image_url": "",
         "preview_url": "",
@@ -525,7 +532,11 @@ def _serialize_task_history_detail(
     source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
     mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
     reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
-    visible_images = _serialize_history_images(task.images, cos_config=cos_config)
+    visible_images = _serialize_history_images(
+        task.images,
+        cos_config=cos_config,
+        public_error_message=not include_provider_diagnostics,
+    )
     task_credit_cost = int(task.credit_cost or 0)
     credit_refunded = False
     if task.status == "failed" and task_credit_cost > 0:
@@ -595,12 +606,20 @@ def _serialize_task_history_detail(
         "request_started_at": task.request_started_at,
         "request_finished_at": task.request_finished_at,
         "run_time": _calculate_task_run_time(task),
-        "error_message": task.error_message or "",
-        "provider_error_message": task.provider_error_message or "",
+        "error_message": (
+            (task.error_message or "")
+            if include_provider_diagnostics
+            else format_generation_public_error_message(task.error_message)
+        ),
+        "provider_error_message": (task.provider_error_message or "") if include_provider_diagnostics else "",
         "images": visible_images,
-        "api_attempts": _serialize_task_api_attempts(
-            resolved_attempts or [],
-            request_previews=request_previews,
+        "api_attempts": (
+            _serialize_task_api_attempts(
+                resolved_attempts or [],
+                request_previews=request_previews,
+            )
+            if include_provider_diagnostics
+            else []
         ),
     }
 
@@ -938,10 +957,14 @@ def get_user_history(
                     and task_credit_cost > 0
                     and task_id in refunded_task_ids
                 ),
-                "visible_images": _serialize_history_images(task.images, cos_config=cos_config),
+                "visible_images": _serialize_history_images(
+                    task.images,
+                    cos_config=cos_config,
+                    public_error_message=True,
+                ),
             }
             task_shared_payloads[task_id] = shared_payload
-        image_payload = serialize_image(image, cos_config=cos_config)
+        image_payload = serialize_image(image, cos_config=cos_config, public_error_message=True)
         is_pinned, pinned_at = _serialize_history_pin(history_pin_map.get(_build_history_pin_key("task", image_id=image.id)))
         items.append({
             "history_id": None,
@@ -982,8 +1005,8 @@ def get_user_history(
             "credit_cost": shared_payload["task_credit_cost"],
             "credit_refunded": shared_payload["credit_refunded"],
             "created_at": task.created_at,
-            "error_message": task.error_message or "",
-            "provider_error_message": task.provider_error_message or "",
+            "error_message": format_generation_public_error_message(task.error_message),
+            "provider_error_message": "",
             "images": shared_payload["visible_images"],
         })
 
@@ -1481,6 +1504,7 @@ def get_admin_history_cards(
     end_date: datetime | None = None,
     board_id: int | None = None,
     board_scope: str | None = None,
+    include_provider_diagnostics: bool = True,
 ):
     cos_config = get_optional_cos_config(db)
     scene_type_map = get_task_scene_type_map(db)
@@ -1771,7 +1795,11 @@ def get_admin_history_cards(
         source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
         mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
         reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
-        visible_images = _serialize_history_images(task.images, cos_config=cos_config)
+        visible_images = _serialize_history_images(
+            task.images,
+            cos_config=cos_config,
+            public_error_message=not include_provider_diagnostics,
+        )
         items.append({
             "history_id": None,
             "item_type": "task",
@@ -1816,10 +1844,14 @@ def get_admin_history_cards(
             "request_started_at": task.request_started_at,
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
-            "error_message": task.error_message or "",
-            "provider_error_message": task.provider_error_message or "",
+            "error_message": (
+                (task.error_message or "")
+                if include_provider_diagnostics
+                else format_generation_public_error_message(task.error_message)
+            ),
+            "provider_error_message": (task.provider_error_message or "") if include_provider_diagnostics else "",
             "images": visible_images,
-            "api_attempts": [],
+            "api_attempts": [] if not include_provider_diagnostics else [],
         })
 
     for task in running_tasks:
@@ -1827,7 +1859,11 @@ def get_admin_history_cards(
         source_asset = serialize_asset_urls(task.source_image or "", cos_config=cos_config)
         mask_asset = serialize_asset_urls(task.mask_image or "", cos_config=cos_config)
         reference_assets = [serialize_asset_urls(ref, cos_config=cos_config) for ref in _parse_refs(task.reference_images)]
-        visible_images = _serialize_history_images(task.images, cos_config=cos_config)
+        visible_images = _serialize_history_images(
+            task.images,
+            cos_config=cos_config,
+            public_error_message=not include_provider_diagnostics,
+        )
         primary_image = next((image for image in visible_images if not image.get("is_deleted")), None)
         items.append({
             "history_id": None,
@@ -1873,10 +1909,14 @@ def get_admin_history_cards(
             "request_started_at": task.request_started_at,
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
-            "error_message": task.error_message or "",
-            "provider_error_message": task.provider_error_message or "",
+            "error_message": (
+                (task.error_message or "")
+                if include_provider_diagnostics
+                else format_generation_public_error_message(task.error_message)
+            ),
+            "provider_error_message": (task.provider_error_message or "") if include_provider_diagnostics else "",
             "images": visible_images,
-            "api_attempts": [],
+            "api_attempts": [] if not include_provider_diagnostics else [],
         })
 
     for task in tasks_without_images:
@@ -1930,10 +1970,14 @@ def get_admin_history_cards(
             "request_started_at": task.request_started_at,
             "request_finished_at": task.request_finished_at,
             "run_time": _calculate_task_run_time(task),
-            "error_message": task.error_message or "",
-            "provider_error_message": task.provider_error_message or "",
+            "error_message": (
+                (task.error_message or "")
+                if include_provider_diagnostics
+                else format_generation_public_error_message(task.error_message)
+            ),
+            "provider_error_message": (task.provider_error_message or "") if include_provider_diagnostics else "",
             "images": [],
-            "api_attempts": [],
+            "api_attempts": [] if not include_provider_diagnostics else [],
         })
 
     for row in prompt_reverse_rows:

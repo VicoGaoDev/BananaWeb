@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlparse, urlunparse
 
 from fastapi import HTTPException
@@ -13,6 +14,38 @@ from app.models.task_api_attempt import TaskApiAttempt
 from app.services.business_id_service import task_external_id
 from app.services.cos_service import CosRuntimeConfig, build_cos_public_url, get_cos_config
 from app.services.task_service import is_task_generation_failure_credit_refunded
+
+IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！"
+PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试"
+GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理"
+INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！"
+INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试"
+
+PROMPT_MODERATION_ERROR_PATTERN = re.compile(
+    r"prompt moderation precheck|request was rejected by prompt moderation|request was rejected by the safety system|提示词未通过安全审核|请求被审核拒绝|审核拒绝",
+    re.IGNORECASE,
+)
+IMAGE_SAFETY_ERROR_PATTERN = re.compile(r"unsafe|image_unsafe|content blocked", re.IGNORECASE)
+INVALID_ASPECT_RATIO_PATTERN = re.compile(r"n?put\.aspect_ratio is invalid|aspect_ratio is invalid", re.IGNORECASE)
+INVALID_REFERENCE_IMAGE_PATTERN = re.compile(
+    r"invalid image file or mode|provider_request_invalid|bad request to openai|poll rejected: 400|image \d+",
+    re.IGNORECASE,
+)
+
+
+def format_generation_public_error_message(error_message: str | None) -> str:
+    detail = (error_message or "").strip()
+    if not detail:
+        return ""
+    if PROMPT_MODERATION_ERROR_PATTERN.search(detail):
+        return PROMPT_MODERATION_ERROR_MESSAGE
+    if IMAGE_SAFETY_ERROR_PATTERN.search(detail):
+        return IMAGE_SAFETY_ERROR_MESSAGE
+    if INVALID_ASPECT_RATIO_PATTERN.search(detail):
+        return INVALID_ASPECT_RATIO_MESSAGE
+    if INVALID_REFERENCE_IMAGE_PATTERN.search(detail):
+        return INVALID_REFERENCE_IMAGE_MESSAGE
+    return GENERATION_TASK_FAILURE_MESSAGE
 
 
 def get_optional_cos_config(db: Session) -> CosRuntimeConfig | None:
@@ -125,7 +158,12 @@ def serialize_asset_urls(
     }
 
 
-def serialize_image(image: Image, *, cos_config: CosRuntimeConfig | None = None) -> dict:
+def serialize_image(
+    image: Image,
+    *,
+    cos_config: CosRuntimeConfig | None = None,
+    public_error_message: bool = False,
+) -> dict:
     image_url = _normalize_url(image.image_url)
     preview_url = _normalize_url(image.preview_url)
     exposed_preview_url = "" if image_url else preview_url
@@ -135,7 +173,11 @@ def serialize_image(image: Image, *, cos_config: CosRuntimeConfig | None = None)
         "preview_url": exposed_preview_url,
         "thumb_url": build_thumb_url(image_url, preview_url=preview_url, cos_config=cos_config),
         "status": image.status,
-        "error_message": image.error_message or "",
+        "error_message": (
+            format_generation_public_error_message(image.error_message)
+            if public_error_message
+            else (image.error_message or "")
+        ),
         "image_format": image.image_format or "",
         "image_size_bytes": int(image.image_size_bytes or 0),
         "is_deleted": bool(image.is_deleted),
@@ -189,6 +231,7 @@ def serialize_task(
     cos_config: CosRuntimeConfig | None = None,
     credit_refunded: bool | None = None,
     failure_refund_remaining_count: int | None = None,
+    include_provider_diagnostics: bool = False,
 ) -> dict:
     task_credit_cost = int(task.credit_cost or 0)
     resolved_credit_refunded = False
@@ -223,12 +266,27 @@ def serialize_task(
         "failure_refund_remaining_count": failure_refund_remaining_count,
         "used_fallback_api": bool(task.used_fallback_api),
         "status": task.status,
-        "error_message": task.error_message or "",
-        "provider_error_message": task.provider_error_message or "",
+        "error_message": (
+            (task.error_message or "")
+            if include_provider_diagnostics
+            else format_generation_public_error_message(task.error_message)
+        ),
+        "provider_error_message": (task.provider_error_message or "") if include_provider_diagnostics else "",
         "created_at": task.created_at,
         "enqueued_at": task.enqueued_at,
         "request_started_at": task.request_started_at,
         "request_finished_at": task.request_finished_at,
-        "images": [serialize_image(image, cos_config=cos_config) for image in task.images],
-        "api_attempts": _serialize_task_api_attempts(list(task.api_attempts or [])),
+        "images": [
+            serialize_image(
+                image,
+                cos_config=cos_config,
+                public_error_message=not include_provider_diagnostics,
+            )
+            for image in task.images
+        ],
+        "api_attempts": (
+            _serialize_task_api_attempts(list(task.api_attempts or []))
+            if include_provider_diagnostics
+            else []
+        ),
     }

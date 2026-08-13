@@ -72,6 +72,10 @@ function formatMaybeRefundedMessage(message: string, creditRefunded: boolean) {
   return creditRefunded ? withCreditRefundedSuffix(message) : message;
 }
 
+function formatPublicGenerationFailureMessage(message: string, creditRefunded: boolean) {
+  return formatGenerationTaskFailureMessage(message, creditRefunded);
+}
+
 function getFailedFallbackAttemptError(apiAttempts?: TaskApiAttempt[]) {
   const attempts = Array.isArray(apiAttempts) ? apiAttempts : [];
   const failedFallbackAttempts = attempts
@@ -103,24 +107,18 @@ export function getPreferredGenerationErrorMessage(
   taskError?: string,
   imageError?: string,
   creditRefunded = false,
-  fallback = "生成失败，请重试",
+  _fallback = "生成失败，请重试",
   usedFallbackApi = false,
   apiAttempts?: TaskApiAttempt[],
   providerError?: string,
 ) {
   const failedFallbackError = usedFallbackApi ? getFailedFallbackAttemptError(apiAttempts) : "";
   if (failedFallbackError) {
-    return formatMaybeRefundedMessage(
-      formatGenerationErrorMessage(failedFallbackError, fallback),
-      creditRefunded,
-    );
+    return formatPublicGenerationFailureMessage(failedFallbackError, creditRefunded);
   }
   const fallbackFinalError = usedFallbackApi ? String(providerError || imageError || taskError || "").trim() : "";
   if (fallbackFinalError) {
-    return formatMaybeRefundedMessage(
-      formatGenerationErrorMessage(fallbackFinalError, fallback),
-      creditRefunded,
-    );
+    return formatPublicGenerationFailureMessage(fallbackFinalError, creditRefunded);
   }
   return formatGenerationTaskFailureMessage(imageError || taskError, creditRefunded);
 }

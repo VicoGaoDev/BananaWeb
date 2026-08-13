@@ -2774,7 +2774,7 @@ function convertGeneratedTaskToHistoryCard(task: GeneratedTaskItem, focusedImage
     size: task.size || "",
     resolution: task.resolution || "",
     custom_size: task.customSize || "",
-    credit_cost: 0,
+    credit_cost: getTaskDraftCreditCost(task),
     credit_refunded: Boolean(task.creditRefunded),
     used_fallback_api: Boolean(task.usedFallbackApi),
     created_at: task.createdAt,

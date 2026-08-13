@@ -31,6 +31,36 @@ _PROVIDER_CONTEXT_PARENS_PATTERNS = (
     re.compile(r"[（(]\s*轮询地址=[^）)]*[）)]"),
 )
 _UPSTREAM_URL_PATTERN = re.compile(r"https?://[^\s）)]+", re.I)
+IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！"
+PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试"
+GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理"
+INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！"
+INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试"
+PROMPT_MODERATION_ERROR_PATTERN = re.compile(
+    r"prompt moderation precheck|request was rejected by prompt moderation|request was rejected by the safety system|提示词未通过安全审核|请求被审核拒绝|审核拒绝",
+    re.I,
+)
+IMAGE_SAFETY_ERROR_PATTERN = re.compile(r"unsafe|image_unsafe|content blocked", re.I)
+INVALID_ASPECT_RATIO_PATTERN = re.compile(r"n?put\.aspect_ratio is invalid|aspect_ratio is invalid", re.I)
+INVALID_REFERENCE_IMAGE_PATTERN = re.compile(
+    r"invalid image file or mode|provider_request_invalid|bad request to openai|poll rejected: 400|image \d+",
+    re.I,
+)
+
+
+def format_generation_public_error_message(error_message: str | None) -> str:
+    detail = (error_message or "").strip()
+    if not detail:
+        return ""
+    if PROMPT_MODERATION_ERROR_PATTERN.search(detail):
+        return PROMPT_MODERATION_ERROR_MESSAGE
+    if IMAGE_SAFETY_ERROR_PATTERN.search(detail):
+        return IMAGE_SAFETY_ERROR_MESSAGE
+    if INVALID_ASPECT_RATIO_PATTERN.search(detail):
+        return INVALID_ASPECT_RATIO_MESSAGE
+    if INVALID_REFERENCE_IMAGE_PATTERN.search(detail):
+        return INVALID_REFERENCE_IMAGE_MESSAGE
+    return GENERATION_TASK_FAILURE_MESSAGE
 
 
 def sanitize_api_public_message(text: str | None) -> str:
@@ -45,7 +75,7 @@ def sanitize_api_public_message(text: str | None) -> str:
     sanitized = _UPSTREAM_URL_PATTERN.sub("[已隐藏]", sanitized)
     sanitized = re.sub(r"\s+", " ", sanitized).strip()
     sanitized = re.sub(r"\s+([,，:：;；。！？])", r"\1", sanitized)
-    return sanitized
+    return format_generation_public_error_message(sanitized)
 
 
 def get_optional_cos_config(db: Session) -> CosRuntimeConfig | None:
