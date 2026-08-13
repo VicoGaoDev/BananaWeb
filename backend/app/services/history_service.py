@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session, lazyload, selectinload
+from sqlalchemy.orm import Session, lazyload, load_only, selectinload
 from app.models.credit_log import CreditLog
 from app.models.external_api_config import ExternalApiConfig
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
@@ -76,7 +76,18 @@ PROMPT_OPTIMIZE_IMAGE_ID_OFFSET = 1_000_000_000
 
 
 def _exclude_example_template_seed_task_clause():
-    return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
+    return Task.is_example_template_seed.is_(False)
+
+
+def _get_restricted_user_ids(db: Session) -> list[int]:
+    return [
+        int(user_id)
+        for (user_id,) in (
+            db.query(User.id)
+            .filter(or_(User.role == "superadmin", User.is_whitelisted.is_(True)))
+            .all()
+        )
+    ]
 
 
 def _parse_refs(raw: str | None) -> list[str]:
@@ -1509,19 +1520,19 @@ def get_admin_history_cards(
     cos_config = get_optional_cos_config(db)
     scene_type_map = get_task_scene_type_map(db)
     running_statuses = ["pending", "queued", "processing"]
+    restricted_user_ids = _get_restricted_user_ids(db) if not include_restricted_users else []
     task_query = (
         db.query(Task)
-        .join(User, User.id == Task.user_id)
         .options(
             selectinload(Task.images),
-            selectinload(Task.user),
             selectinload(Task.canvas),
             lazyload(Task.api_attempts),
         )
         .filter(_exclude_example_template_seed_task_clause())
     )
     if not include_restricted_users:
-        task_query = task_query.filter(User.role != "superadmin").filter(User.is_whitelisted.is_(False))
+        if restricted_user_ids:
+            task_query = task_query.filter(Task.user_id.notin_(restricted_user_ids))
     if not include_deleted_tasks:
         task_query = task_query.filter(Task.is_deleted.is_(False))
     prompt_reverse_query = None
@@ -1529,19 +1540,19 @@ def get_admin_history_cards(
     if include_prompt_reverse:
         prompt_reverse_query = (
             db.query(PromptHistory)
-            .join(User, User.id == PromptHistory.user_id)
             .filter(
                 PromptHistory.mode == PROMPT_REVERSE_MODE,
             )
         )
         if not include_restricted_users:
-            prompt_reverse_query = prompt_reverse_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+            if restricted_user_ids:
+                prompt_reverse_query = prompt_reverse_query.filter(PromptHistory.user_id.notin_(restricted_user_ids))
         prompt_optimize_query = (
             db.query(PromptOptimizeTask)
-            .join(User, User.id == PromptOptimizeTask.user_id)
         )
         if not include_restricted_users:
-            prompt_optimize_query = prompt_optimize_query.filter(User.role != "superadmin", User.is_whitelisted.is_(False))
+            if restricted_user_ids:
+                prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.user_id.notin_(restricted_user_ids))
 
     if user_id is not None:
         task_query = task_query.filter(Task.user_id == user_id)
@@ -1701,8 +1712,34 @@ def get_admin_history_cards(
             for task in (
                 db.query(Task)
                 .options(
+                    load_only(
+                        Task.id,
+                        Task.business_id,
+                        Task.user_id,
+                        Task.board_id,
+                        Task.canvas_id,
+                        Task.model,
+                        Task.source,
+                        Task.mode,
+                        Task.prompt,
+                        Task.num_images,
+                        Task.size,
+                        Task.resolution,
+                        Task.custom_size,
+                        Task.reference_images,
+                        Task.source_image,
+                        Task.mask_image,
+                        Task.credit_cost,
+                        Task.status,
+                        Task.error_message,
+                        Task.provider_error_message,
+                        Task.used_fallback_api,
+                        Task.is_deleted,
+                        Task.created_at,
+                        Task.request_started_at,
+                        Task.request_finished_at,
+                    ),
                     selectinload(Task.images),
-                    selectinload(Task.user),
                     selectinload(Task.canvas),
                     lazyload(Task.api_attempts),
                 )
