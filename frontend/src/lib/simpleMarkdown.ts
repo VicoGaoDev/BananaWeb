@@ -1,3 +1,5 @@
+import MarkdownIt from "markdown-it";
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -38,6 +40,26 @@ export function stripMarkdownDecorations(text: string): string {
     .trim();
 }
 
+const markdownRenderer = new MarkdownIt({
+  html: false,
+  breaks: true,
+  linkify: true,
+});
+
+const defaultLinkOpen =
+  markdownRenderer.renderer.rules.link_open
+  || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+
+markdownRenderer.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx];
+  token.attrSet("target", "_blank");
+  token.attrSet("rel", "noopener noreferrer nofollow");
+  return defaultLinkOpen(tokens, idx, options, env, self);
+};
+
+markdownRenderer.renderer.rules.table_open = () => '<div class="md-table-wrap"><table class="md-table">';
+markdownRenderer.renderer.rules.table_close = () => "</table></div>";
+
 /** Prefer the pasteable prompt section from assistant replies; fallback to full text. */
 export function extractGeneratePrompt(content: string): string {
   const text = (content || "").trim();
@@ -65,124 +87,5 @@ export function extractGeneratePrompt(content: string): string {
 export function renderSimpleMarkdown(markdown: string): string {
   const source = (markdown || "").replace(/\r\n/g, "\n");
   if (!source.trim()) return "";
-
-  const lines = source.split("\n");
-  const parts: string[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
-  let orderedItems: string[] = [];
-  let inCode = false;
-  let codeLang = "";
-  let codeLines: string[] = [];
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    parts.push(`<p>${formatInline(paragraph.join(" "))}</p>`);
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!listItems.length) return;
-    parts.push(`<ul>${listItems.map((item) => `<li>${formatInline(item)}</li>`).join("")}</ul>`);
-    listItems = [];
-  };
-
-  const flushOrdered = () => {
-    if (!orderedItems.length) return;
-    parts.push(`<ol>${orderedItems.map((item) => `<li>${formatInline(item)}</li>`).join("")}</ol>`);
-    orderedItems = [];
-  };
-
-  const flushCode = () => {
-    if (!inCode) return;
-    parts.push(
-      `<pre class="md-code"${codeLang ? ` data-lang="${escapeHtml(codeLang)}"` : ""}><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
-    );
-    inCode = false;
-    codeLang = "";
-    codeLines = [];
-  };
-
-  for (const rawLine of lines) {
-    const fence = /^```([\w-]*)\s*$/.exec(rawLine);
-    if (fence) {
-      flushParagraph();
-      flushList();
-      flushOrdered();
-      if (inCode) {
-        flushCode();
-      } else {
-        inCode = true;
-        codeLang = fence[1] || "";
-        codeLines = [];
-      }
-      continue;
-    }
-
-    if (inCode) {
-      codeLines.push(rawLine);
-      continue;
-    }
-
-    const line = rawLine.trimEnd();
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      flushOrdered();
-      continue;
-    }
-
-    if (/^---+$/.test(trimmed)) {
-      flushParagraph();
-      flushList();
-      flushOrdered();
-      parts.push("<hr />");
-      continue;
-    }
-
-    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      flushOrdered();
-      const level = heading[1].length;
-      parts.push(`<h${level}>${formatInline(heading[2])}</h${level}>`);
-      continue;
-    }
-
-    if (/^>\s?/.test(trimmed)) {
-      flushParagraph();
-      flushList();
-      flushOrdered();
-      parts.push(`<blockquote>${formatInline(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
-      continue;
-    }
-
-    const unordered = /^[-*]\s+(.+)$/.exec(trimmed);
-    if (unordered) {
-      flushParagraph();
-      flushOrdered();
-      listItems.push(unordered[1]);
-      continue;
-    }
-
-    const ordered = /^\d+\.\s+(.+)$/.exec(trimmed);
-    if (ordered) {
-      flushParagraph();
-      flushList();
-      orderedItems.push(ordered[1]);
-      continue;
-    }
-
-    flushList();
-    flushOrdered();
-    paragraph.push(trimmed);
-  }
-
-  flushCode();
-  flushParagraph();
-  flushList();
-  flushOrdered();
-  return parts.join("");
+  return markdownRenderer.render(source);
 }

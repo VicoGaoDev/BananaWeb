@@ -2231,6 +2231,24 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.md-body :deep(a) {
+  color: var(--theme-link, #d38a12);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body :deep(a:hover) {
+  color: var(--theme-link-hover, #b26c04);
+}
+
+.md-body :deep(img) {
+  display: block;
+  max-width: min(100%, 560px);
+  height: auto;
+  margin: 0 0 12px;
+  border-radius: 12px;
+}
+
 .md-body :deep(code) {
   padding: 1px 6px;
   border-radius: 6px;
@@ -2239,7 +2257,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.md-body :deep(pre.md-code) {
+.md-body :deep(pre) {
   margin: 0 0 12px;
   padding: 12px;
   overflow: auto;
@@ -2248,18 +2266,53 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--theme-title, #3d2f22) 5%, transparent);
 }
 
-.md-body :deep(pre.md-code code) {
+.md-body :deep(pre code) {
   padding: 0;
   background: transparent;
   font-size: 12px;
   white-space: pre-wrap;
 }
 
+.md-body :deep(.md-table-wrap) {
+  width: 100%;
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.md-body :deep(table.md-table) {
+  min-width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  background: color-mix(in srgb, var(--theme-panel-bg, #fff9f0) 82%, #fff);
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+}
+
+.md-body :deep(table.md-table th),
+.md-body :deep(table.md-table td) {
+  padding: 8px 10px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.md-body :deep(table.md-table th) {
+  font-weight: 800;
+  background: var(--theme-table-head-bg, #fff5df);
+}
+
+.md-body :deep(table.md-table tbody tr:nth-child(even) td) {
+  background: var(--theme-table-row-bg, rgba(255, 255, 255, 0.5));
+}
+
 .md-body :deep(p:last-child),
 .md-body :deep(ul:last-child),
 .md-body :deep(ol:last-child),
-.md-body :deep(pre.md-code:last-child),
-.md-body :deep(blockquote:last-child) {
+.md-body :deep(pre:last-child),
+.md-body :deep(blockquote:last-child),
+.md-body :deep(img:last-child),
+.md-body :deep(.md-table-wrap:last-child) {
   margin-bottom: 0;
 }
 
