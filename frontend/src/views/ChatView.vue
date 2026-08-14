@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message, Modal } from "ant-design-vue";
 import {
@@ -26,12 +26,12 @@ import {
 } from "@/api/chat";
 import { getChatModels } from "@/api/chatConfig";
 import { withBaseUrl } from "@/lib/assets";
-import { extractGeneratePrompt, renderSimpleMarkdown } from "@/lib/simpleMarkdown";
 import type { ChatGenerationModelOption, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const CHAT_DRAFT_KEY = "generateDraftFromChat";
 const xiaobaAvatarSrc = withBaseUrl("chat-xiaoba-avatar.png");
+const MarkdownMessage = defineAsyncComponent(() => import("@/components/chat/MarkdownMessage.vue"));
 
 const route = useRoute();
 const router = useRouter();
@@ -389,12 +389,6 @@ function assistantDisplayText(item: ChatMessage) {
   return messagePlainText(item);
 }
 
-function renderAssistantHtml(item: ChatMessage) {
-  const text = assistantDisplayText(item);
-  if (!text) return "";
-  return renderSimpleMarkdown(text) || `<p>${text}</p>`;
-}
-
 function createAssistantStreamWorker(): Worker | null {
   let objectUrl: string | null = null;
   try {
@@ -502,7 +496,8 @@ async function handleCopyMessage(item: ChatMessage) {
   }
 }
 
-function handleJumpGenerate(item: ChatMessage) {
+async function handleJumpGenerate(item: ChatMessage) {
+  const { extractGeneratePrompt } = await import("@/lib/simpleMarkdown");
   const prompt = extractGeneratePrompt(messagePlainText(item));
   if (!prompt) {
     message.warning("没有可回填的提示词");
@@ -1402,12 +1397,11 @@ onBeforeUnmount(() => {
                       <span>重试</span>
                     </button>
                   </div>
-                  <div
+                  <MarkdownMessage
                     v-else-if="item.role === 'assistant' && (item.content || '').trim()"
-                    class="message-content md-body"
-                    :class="{ 'is-streaming': streamingMessageId === item.id }"
-                    v-html="renderAssistantHtml(item)"
-                  ></div>
+                    :content="assistantDisplayText(item)"
+                    :streaming="streamingMessageId === item.id"
+                  />
                   <div v-else class="message-content is-plain">{{ item.content || item.error_message || "系统出错，可进行重试" }}</div>
                   <div
                     v-if="item.status === 'failed' && !isBrokenAssistantMessage(item)"

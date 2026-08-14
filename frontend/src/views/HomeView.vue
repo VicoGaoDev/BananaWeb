@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  type ComponentPublicInstance,
+} from "vue";
 import {
   AppstoreOutlined,
   PictureOutlined,
@@ -9,11 +18,11 @@ import { useRouter } from "vue-router";
 import { getGenerationModels } from "@/api/config";
 import { resolveImageUrl } from "@/api/images";
 import { getTemplateDetail, listTemplates } from "@/api/templates";
-import TemplateDetailDialog from "@/components/templates/TemplateDetailDialog.vue";
 import type { CreativeTemplate, GenerationModelOption } from "@/types";
 
 const router = useRouter();
 const openCreditsContact = inject<(() => void) | undefined>("openCreditsContact", undefined);
+const TemplateDetailDialog = defineAsyncComponent(() => import("@/components/templates/TemplateDetailDialog.vue"));
 const showcaseItems = ref<CreativeTemplate[]>([]);
 const loadingShowcase = ref(true);
 const generationModels = ref<GenerationModelOption[]>([]);
@@ -33,6 +42,8 @@ type CanvasRect = { left: number; top: number; width: number; height: number };
 
 const canvasShellRef = ref<HTMLElement | null>(null);
 const canvasSvgRef = ref<SVGSVGElement | null>(null);
+const canvasVideoCardRef = ref<HTMLElement | null>(null);
+const shouldLoadCanvasVideo = ref(false);
 const canvasNodeRefs = {
   note: ref<HTMLElement | null>(null),
   source: ref<HTMLElement | null>(null),
@@ -49,7 +60,10 @@ const canvasFlowPaths = ref({
   jacket: "",
 });
 let canvasResizeObserver: ResizeObserver | null = null;
+let heroMediaObserver: IntersectionObserver | null = null;
 let canvasFlowFrame = 0;
+let nonCriticalLoadTimer: number | null = null;
+let nonCriticalIdleCallbackId: number | null = null;
 
 const capabilityCards = [
   {
@@ -130,6 +144,10 @@ const footerLegalLinks = [
 ] as const;
 
 const marqueeItems = computed(() => [...showcaseItems.value, ...showcaseItems.value]);
+const idleWindow = window as Window & typeof globalThis & {
+  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
 
 async function loadShowcase() {
   loadingShowcase.value = true;
@@ -149,6 +167,55 @@ async function loadModels() {
   } catch {
     generationModels.value = [];
   }
+}
+
+function scheduleNonCriticalHomeLoads() {
+  requestAnimationFrame(() => {
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      nonCriticalIdleCallbackId = idleWindow.requestIdleCallback(() => {
+        nonCriticalIdleCallbackId = null;
+        void loadModels();
+        void loadShowcase();
+      }, { timeout: 1500 });
+      return;
+    }
+
+    nonCriticalLoadTimer = window.setTimeout(() => {
+      nonCriticalLoadTimer = null;
+      void loadModels();
+      void loadShowcase();
+    }, 180);
+  });
+}
+
+function setCanvasVideoNodeRef(element: Element | ComponentPublicInstance | null) {
+  const node = element instanceof HTMLElement ? element : null;
+  canvasNodeRefs.video.value = node;
+  canvasVideoCardRef.value = node;
+}
+
+function setupHeroMediaObserver() {
+  const videoCard = canvasVideoCardRef.value;
+  if (!videoCard) {
+    shouldLoadCanvasVideo.value = true;
+    return;
+  }
+
+  if (typeof IntersectionObserver !== "function") {
+    shouldLoadCanvasVideo.value = true;
+    return;
+  }
+
+  heroMediaObserver = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    shouldLoadCanvasVideo.value = true;
+    heroMediaObserver?.disconnect();
+    heroMediaObserver = null;
+  }, {
+    rootMargin: "160px 0px",
+    threshold: 0.01,
+  });
+  heroMediaObserver.observe(videoCard);
 }
 
 async function openDetail(id: number) {
@@ -290,10 +357,10 @@ function openFooterContact() {
 }
 
 onMounted(() => {
-  loadModels();
-  loadShowcase();
+  scheduleNonCriticalHomeLoads();
   nextTick(() => {
     updateCanvasFlowPaths();
+    setupHeroMediaObserver();
     canvasResizeObserver = new ResizeObserver(scheduleCanvasFlowUpdate);
     const observedNodes = [
       canvasShellRef.value,
@@ -307,8 +374,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   canvasResizeObserver?.disconnect();
+  heroMediaObserver?.disconnect();
   window.removeEventListener("resize", scheduleCanvasFlowUpdate);
   if (canvasFlowFrame) cancelAnimationFrame(canvasFlowFrame);
+  if (nonCriticalLoadTimer !== null) window.clearTimeout(nonCriticalLoadTimer);
+  if (nonCriticalIdleCallbackId !== null && typeof idleWindow.cancelIdleCallback === "function") {
+    idleWindow.cancelIdleCallback(nonCriticalIdleCallbackId);
+  }
 });
 </script>
 
@@ -413,18 +485,18 @@ onBeforeUnmount(() => {
           </div>
         </article>
 
-        <article :ref="canvasNodeRefs.video" class="canvas-video-card canvas-card">
+        <article :ref="setCanvasVideoNodeRef" class="canvas-video-card canvas-card">
           <div class="canvas-result-badge canvas-video-badge">生视频</div>
           <span class="canvas-card-label">视频结果</span>
           <div class="fashion-frame fashion-frame-video">
             <video
               class="canvas-video-player"
-              :src="canvasResultVideo"
+              :src="shouldLoadCanvasVideo ? canvasResultVideo : undefined"
               autoplay
               muted
               loop
               playsinline
-              preload="metadata"
+              preload="none"
               aria-label="图片生成视频结果预览"
             />
           </div>
@@ -524,6 +596,7 @@ onBeforeUnmount(() => {
     </footer>
 
     <TemplateDetailDialog
+      v-if="detailOpen"
       v-model:open="detailOpen"
       :loading="detailLoading"
       :detail="detail"

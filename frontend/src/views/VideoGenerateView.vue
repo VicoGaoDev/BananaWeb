@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { message, Modal } from "ant-design-vue";
 import { consumeVideoGenerateDraft } from "@/lib/videoGenerateDraft";
@@ -22,18 +22,9 @@ import {
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
-import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
-import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
-import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
-import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { getMe } from "@/api/auth";
 import { createUserPrompt } from "@/api/userPrompts";
-import {
-  isImageUploadTooLarge,
-  MAX_IMAGE_UPLOAD_SIZE_TEXT,
-  uploadReferenceImage,
-} from "@/api/upload";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
@@ -61,7 +52,13 @@ interface UploadPreviewItem {
 
 const route = useRoute();
 const auth = useAuthStore();
+const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
+const FeedbackDialog = defineAsyncComponent(() => import("@/components/feedback/FeedbackDialog.vue"));
+const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
+const VideoTaskDetailDialog = defineAsyncComponent(() => import("@/components/video/VideoTaskDetailDialog.vue"));
 const DEFAULT_MAX_VIDEO_REFERENCE_IMAGES = 1;
+const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_SIZE_TEXT = "20MB";
 const DEFAULT_DURATION_SECONDS = "3";
 const DEFAULT_VIDEO_TASK_COUNT = 1;
 const VIDEO_TASK_COUNT_MARKS: Record<number, string> = {
@@ -109,6 +106,10 @@ const preferredResultColumnCount = ref<ResultColumnOption>(DEFAULT_RESULT_COLUMN
 const playingVideoTaskIds = ref<Set<string>>(new Set());
 const videoPlayerRefs = new Map<string, HTMLVideoElement>();
 const { uploadFiles: uploadUserAssetFiles } = useUserAssets();
+
+function isImageUploadTooLarge(file: File) {
+  return file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES;
+}
 
 function isSceneAvailableForGenerateMode(scene: VideoTaskSceneConfig, mode: VideoGenerateMode) {
   const availabilityModes = scene.availability_modes?.length
@@ -636,6 +637,7 @@ async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = nu
     };
     setFrameReferenceItem(frameSlot, item);
     try {
+      const { uploadReferenceImage } = await import("@/api/upload");
       const uploaded = await uploadReferenceImage(file, "ref");
       updateReferenceItem(item.id, {
         remoteUrl: uploaded.url,
@@ -658,6 +660,8 @@ async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = nu
   if (acceptedFiles.length < files.length) {
     message.warning(`当前最多上传 ${maxReferenceImages.value} 张参考图`);
   }
+
+  const { uploadReferenceImage } = await import("@/api/upload");
 
   for (const file of acceptedFiles) {
     if (isImageUploadTooLarge(file)) {
@@ -1742,16 +1746,19 @@ onBeforeUnmount(() => {
       </section>
     </div>
     <UserAssetPicker
+      v-if="assetPickerOpen"
       v-model:open="assetPickerOpen"
       title="我的素材"
       @select-asset="handlePickUserAsset"
       @select-assets="handlePickUserAssets"
     />
     <UserPromptLibraryModal
+      v-if="promptLibraryVisible"
       v-model:open="promptLibraryVisible"
       @select-prompt="useLibraryPrompt"
     />
     <FeedbackDialog
+      v-if="feedbackDialogOpen"
       v-model:open="feedbackDialogOpen"
       title="视频任务反馈"
       :task-id="feedbackTarget?.id"
@@ -1761,6 +1768,7 @@ onBeforeUnmount(() => {
       feedback-type="video_task"
     />
     <VideoTaskDetailDialog
+      v-if="detailOpen"
       v-model:open="detailOpen"
       :item="detailTask"
       :model-options="detailModelOptions"

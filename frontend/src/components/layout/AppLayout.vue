@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTick, watch, type Component } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, h, provide, nextTick, watch, defineAsyncComponent, type Component } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message, notification } from "ant-design-vue";
@@ -17,9 +17,6 @@ import { validateInviteCode } from "@/api/inviteRewards";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnreadFeedbackCount } from "@/api/admin";
-import UserSuggestionDialog from "@/components/feedback/UserSuggestionDialog.vue";
-import NotificationCenterDialog from "@/components/update-log/NotificationCenterDialog.vue";
-import { registerCloudbaseAccount, sendPasswordResetEmailCode, sendRegisterEmailCode } from "@/lib/cloudbase";
 import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import {
   getStoredAdminUnresolvedFeedbackCount,
@@ -83,6 +80,8 @@ import {
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
+const UserSuggestionDialog = defineAsyncComponent(() => import("@/components/feedback/UserSuggestionDialog.vue"));
+const NotificationCenterDialog = defineAsyncComponent(() => import("@/components/update-log/NotificationCenterDialog.vue"));
 const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const hideTopMenu = computed(() => route.meta.hideTopMenu === true);
@@ -1158,6 +1157,7 @@ async function handleSendForgotPasswordCode() {
   }
   forgotPasswordCodeLoading.value = true;
   try {
+    const { sendPasswordResetEmailCode } = await import("@/lib/cloudbase");
     forgotPasswordForm.verificationId = await sendPasswordResetEmailCode(forgotPasswordForm.email.trim());
     message.success("验证码已发送，请检查邮箱");
   } catch (err: any) {
@@ -1230,6 +1230,7 @@ async function handleSendRegisterCode() {
   }
   registerCodeLoading.value = true;
   try {
+    const { sendRegisterEmailCode } = await import("@/lib/cloudbase");
     await sendRegisterEmailCode(registerForm.email.trim());
     message.success("验证码已发送，请检查邮箱");
   } catch (err: any) {
@@ -1284,6 +1285,7 @@ async function handleRegisterSubmit() {
   }
   registerLoading.value = true;
   try {
+    const { registerCloudbaseAccount } = await import("@/lib/cloudbase");
     await registerCloudbaseAccount(
       registerForm.email.trim(),
       registerForm.verificationCode.trim(),
@@ -2724,8 +2726,9 @@ watch(
       </a-tooltip>
     </div>
 
-    <UserSuggestionDialog v-model:open="suggestionDialogOpen" />
+    <UserSuggestionDialog v-if="suggestionDialogOpen" v-model:open="suggestionDialogOpen" />
     <NotificationCenterDialog
+      v-if="notificationCenterDialogOpen"
       v-model:open="notificationCenterDialogOpen"
       :default-tab="notificationCenterDefaultTab"
     />

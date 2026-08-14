@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, defineComponent, h, inject, nextTick, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
+import { ref, computed, defineAsyncComponent, defineComponent, h, inject, nextTick, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRoute, useRouter } from "vue-router";
@@ -49,23 +49,11 @@ import {
 import { optimizePrompt } from "@/api/promptOptimize";
 import { reversePrompt } from "@/api/promptReverse";
 import { createUserPrompt } from "@/api/userPrompts";
-import {
-  isImageUploadTooLarge,
-  MAX_IMAGE_UPLOAD_SIZE_TEXT,
-  uploadReferenceImage,
-} from "@/api/upload";
 import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
-import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
-import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
-import UserPromptLibraryModal from "@/components/prompts/UserPromptLibraryModal.vue";
-import PromptOptimizeStyleDialog from "@/components/generate/PromptOptimizeStyleDialog.vue";
-import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
-import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
-import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { useUserAssets } from "@/composables/useUserAssets";
@@ -95,6 +83,13 @@ const router = useRouter();
 const route = useRoute();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
+const RepaintCanvas = defineAsyncComponent(() => import("@/components/generate/RepaintCanvas.vue"));
+const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
+const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
+const PromptOptimizeStyleDialog = defineAsyncComponent(() => import("@/components/generate/PromptOptimizeStyleDialog.vue"));
+const FeedbackDialog = defineAsyncComponent(() => import("@/components/feedback/FeedbackDialog.vue"));
+const HistoryDetailDialog = defineAsyncComponent(() => import("@/components/history/HistoryDetailDialog.vue"));
+const TemplateFormDialog = defineAsyncComponent(() => import("@/components/templates/TemplateFormDialog.vue"));
 const AUTH_USER_REFRESH_INTERVAL_MS = 60_000;
 let lastAuthUserRefreshAt = 0;
 let authUserRefreshPromise: Promise<void> | null = null;
@@ -106,6 +101,10 @@ function getBodyPopupContainer() {
 function isInsufficientCreditsError(err: any) {
   const detail = String(err?.response?.data?.detail || err?.message || "");
   return detail.includes("积分不足");
+}
+
+function isImageUploadTooLarge(file: File) {
+  return file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES;
 }
 
 function showInsufficientCreditsPurchase(detail?: string) {
@@ -121,6 +120,8 @@ type GeneratedTaskDatePreset = "today" | "yesterday" | "week" | "custom";
 type ResultCardAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "16:9" | "9:16";
 const GENERATED_TASK_HISTORY_PAGE_SIZE = 20;
 const GENERATED_TASK_RETENTION_DAYS = 15;
+const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_SIZE_TEXT = "20MB";
 const MAX_ACTIVE_GENERATION_IMAGES = 12;
 const RESULT_CARD_ASPECT_OPTIONS: Array<{ label: string; value: ResultCardAspectRatio }> = [
   { label: "1:1", value: "1:1" },
@@ -1901,6 +1902,7 @@ async function uploadReferenceFiles(files: File[]) {
   let failedCount = 0;
   let oversizedCount = 0;
   let shouldAutoDetectFirstReference = referenceItems.value.length === 0;
+  const { uploadReferenceImage } = await import("@/api/upload");
 
   for (const file of referenceLimitedFiles) {
     if (isImageUploadTooLarge(file)) {
@@ -2097,6 +2099,7 @@ async function handleSourceFileChange(e: Event) {
   sourceImageUrl.value = "";
   sourceUploading.value = true;
   try {
+    const { uploadReferenceImage } = await import("@/api/upload");
     const res = await uploadReferenceImage(file, "source");
     sourceImageUrl.value = res.url;
     repaintMaskUrl.value = "";
@@ -2150,6 +2153,7 @@ async function handleReverseFileChange(e: Event) {
 
   reverseUploading.value = true;
   try {
+    const { uploadReferenceImage } = await import("@/api/upload");
     const res = await uploadReferenceImage(file, "reverse");
     reverseImageUrl.value = res.url;
     reversePromptResult.value = "";
@@ -2537,6 +2541,7 @@ async function handleGenerate() {
       const maskFile = new File([maskBlob], `mask-${Date.now()}.png`, { type: "image/png" });
       let maskUploadUrl = "";
       try {
+        const { uploadReferenceImage } = await import("@/api/upload");
         const uploaded = await uploadReferenceImage(maskFile, "mask");
         maskUploadUrl = uploaded.url;
       } catch {
@@ -5081,6 +5086,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       />
     </div>
     <HistoryDetailDialog
+      v-if="detailOpen"
       v-model:open="detailOpen"
       :item="detailItem"
       :preloaded-media-keys="detailPreloadedMediaKeys"
@@ -5111,6 +5117,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       />
     </a-modal>
     <FeedbackDialog
+      v-if="feedbackDialogOpen"
       v-model:open="feedbackDialogOpen"
       :task-id="feedbackTarget?.taskId"
       :model="feedbackTarget?.model"
@@ -5118,16 +5125,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       :created-at="feedbackTarget?.createdAt"
     />
     <UserPromptLibraryModal
+      v-if="promptLibraryVisible"
       v-model:open="promptLibraryVisible"
       @select-prompt="useLibraryPrompt"
     />
     <UserAssetPicker
+      v-if="assetPickerOpen"
       v-model:open="assetPickerOpen"
       title="我的素材"
       @select-asset="handlePickUserAsset"
       @select-assets="handlePickUserAssets"
     />
     <TemplateFormDialog
+      v-if="templateDialogOpen"
       v-model:open="templateDialogOpen"
       title="新增模版"
       ok-text="确认创建"
@@ -5138,6 +5148,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       @save="handleSaveGeneratedTemplate"
     />
     <PromptOptimizeStyleDialog
+      v-if="promptOptimizeStyleDialogOpen"
       v-model:open="promptOptimizeStyleDialogOpen"
       @confirm="handlePromptOptimizeStyleConfirm"
       @update:open="(value) => { if (!value) closePromptOptimizeStyleDialog(); }"
