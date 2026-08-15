@@ -1845,6 +1845,10 @@ export interface ChatSession {
   last_message_at?: string | null;
   created_at: string;
   updated_at?: string | null;
+  user_id?: string;
+  username?: string;
+  avatar_url?: string;
+  credit_cost?: number;
 }
 
 export interface ChatSessionListResponse {
@@ -1853,6 +1857,7 @@ export interface ChatSessionListResponse {
   page: number;
   page_size: number;
   has_more: boolean;
+  next_before_session_id?: string | null;
 }
 
 export interface ChatImage {

@@ -60,6 +60,22 @@ class ChatSessionListOut(BaseModel):
     has_more: bool
 
 
+class ChatSessionAdminOut(ChatSessionOut):
+    user_id: str = ""
+    username: str = ""
+    avatar_url: str = ""
+    credit_cost: int = 0
+
+
+class ChatSessionAdminListOut(BaseModel):
+    items: list[ChatSessionAdminOut]
+    total: int = 0
+    page: int = 1
+    page_size: int
+    has_more: bool
+    next_before_session_id: str | None = None
+
+
 MAX_CHAT_IMAGES = 4
 
 

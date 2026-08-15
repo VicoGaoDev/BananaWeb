@@ -221,6 +221,12 @@ const router = createRouter({
           props: { adminCanvases: true },
         },
         {
+          path: "admin/user-conversations/:sessionId?",
+          name: "AdminUserConversations",
+          meta: { requiresAdmin: true },
+          component: () => import("@/views/admin/AdminUserConversationsView.vue"),
+        },
+        {
           path: "admin/example-canvases",
           name: "AdminExampleCanvases",
           meta: { requiresAdmin: true },

@@ -44,6 +44,7 @@ import {
   SettingOutlined,
   TeamOutlined,
   NumberOutlined,
+  CommentOutlined,
   BarChartOutlined,
   BugOutlined,
   KeyOutlined,
@@ -226,6 +227,7 @@ const routeOrder = new Map<string, number>([
   ["/admin/user-tasks", 20],
   ["/admin/user-videos", 21],
   ["/admin/user-canvases", 22],
+  ["/admin/user-conversations", 22.5],
   ["/admin/dashboard", 23],
   ["/admin/image-dashboard", 24],
   ["/admin/video-dashboard", 25],
@@ -352,6 +354,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/user-tasks", label: "用户图片", icon: PictureOutlined, superAdminOnly: false },
     { key: "/admin/user-videos", label: "用户视频", icon: VideoCameraOutlined, superAdminOnly: false },
     { key: "/admin/user-canvases", label: "用户画布", icon: NumberOutlined, superAdminOnly: false },
+    { key: "/admin/user-conversations", label: "用户对话", icon: CommentOutlined, superAdminOnly: false },
     { key: "/admin/dashboard", label: "数据总览", icon: BarChartOutlined, superAdminOnly: false },
     { key: "/admin/image-dashboard", label: "图片数据", icon: PictureOutlined, superAdminOnly: false },
     { key: "/admin/video-dashboard", label: "视频数据", icon: VideoCameraOutlined, superAdminOnly: false },
@@ -380,6 +383,7 @@ const adminMenuUserDataItems = computed(() =>
     "/admin/user-tasks",
     "/admin/user-videos",
     "/admin/user-canvases",
+    "/admin/user-conversations",
   ].includes(item.key))
 );
 const adminMenuAnalyticsItems = computed(() =>
@@ -411,6 +415,7 @@ const isAdminUserDataRoute = computed(() =>
   || route.path.startsWith("/admin/user-tasks")
   || route.path.startsWith("/admin/user-videos")
   || route.path.startsWith("/admin/user-canvases")
+  || route.path.startsWith("/admin/user-conversations")
 );
 const isAdminAnalyticsRoute = computed(() =>
   route.path.startsWith("/admin/dashboard")
@@ -532,6 +537,7 @@ function getRouteRank(path: string) {
 /** 同页内参数切换（如对话 session）使用稳定 key，避免整页淡出重挂载 */
 function getRoutePageKey(currentRoute: { path: string; name?: string | symbol | null }) {
   if (currentRoute.path.startsWith("/chat")) return "chat";
+  if (currentRoute.path.startsWith("/admin/user-conversations")) return "admin-user-conversations";
   return currentRoute.path;
 }
 
@@ -586,6 +592,7 @@ const adminSelectedKeys = computed(() => {
   if (!route.path.startsWith("/admin")) return [];
   if (route.path.startsWith("/admin/feedbacks")) return ["/admin/feedbacks"];
   if (route.path.startsWith("/admin/user-canvases")) return ["/admin/user-canvases"];
+  if (route.path.startsWith("/admin/user-conversations")) return ["/admin/user-conversations"];
   return [route.path];
 });
 

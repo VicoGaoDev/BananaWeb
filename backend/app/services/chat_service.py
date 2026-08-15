@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,11 +31,14 @@ from app.schemas.chat import (
     ChatMessageOut,
     ChatSendMessageRequest,
     ChatSendMessageResponse,
+    ChatSessionAdminListOut,
+    ChatSessionAdminOut,
     ChatSessionCreate,
     ChatSessionListOut,
     ChatSessionOut,
     ChatSessionUpdate,
 )
+from app.services.business_id_service import user_external_id
 from app.services.chat_external_api_config_service import (
     get_chat_scene_credit_cost,
     list_chat_generation_models,
@@ -61,6 +64,7 @@ DEFAULT_MESSAGE_PAGE_SIZE = 50
 SYNTHETIC_STREAM_DELAY_SECONDS = 0.001
 PUBLIC_SESSION_ID_RE = re.compile(r"^[0-9]{12}[a-z0-9]{4}$")
 _SESSION_ID_RANDOM_ALPHABET = string.ascii_lowercase + string.digits
+ADMIN_VIEWER_EXCLUDED_ROLES = ("admin", "superadmin")
 
 
 def _is_credit_exempt_user(user: User | None) -> bool:
@@ -198,6 +202,55 @@ def _require_session(db: Session, user_id: int, session_id: str) -> ChatSession:
     return session
 
 
+def _require_session_any_user(db: Session, session_id: str) -> ChatSession:
+    public_id = _normalize_public_session_id(session_id)
+    session = (
+        db.query(ChatSession)
+        .join(User, User.id == ChatSession.user_id)
+        .filter(
+            ChatSession.session_id == public_id,
+            ChatSession.is_deleted.is_(False),
+            User.role.notin_(ADMIN_VIEWER_EXCLUDED_ROLES),
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+    return session
+
+
+def _session_credit_costs(db: Session, session_ids: list[int]) -> dict[int, int]:
+    if not session_ids:
+        return {}
+    rows = (
+        db.query(ChatMessage.session_id, func.coalesce(func.sum(ChatMessage.credit_cost), 0))
+        .filter(ChatMessage.session_id.in_(session_ids))
+        .group_by(ChatMessage.session_id)
+        .all()
+    )
+    return {int(session_id): int(total or 0) for session_id, total in rows}
+
+
+def _serialize_admin_session(
+    session: ChatSession,
+    user: User | None,
+    *,
+    credit_cost: int = 0,
+) -> ChatSessionAdminOut:
+    return ChatSessionAdminOut(
+        id=(session.session_id or "").strip(),
+        title=session.title or "",
+        model=session.model or "",
+        last_message_at=session.last_message_at,
+        created_at=session.created_at or now_local(),
+        updated_at=session.updated_at,
+        user_id=user_external_id(user) if user else "",
+        username=(user.username if user else "") or "",
+        avatar_url=(user.avatar_url if user else "") or "",
+        credit_cost=max(int(credit_cost or 0), 0),
+    )
+
+
 def _ensure_model_available(db: Session, model: str) -> str:
     normalized = (model or "").strip().lower()
     if not normalized:
@@ -260,6 +313,7 @@ def create_session(db: Session, user_id: int, body: ChatSessionCreate) -> ChatSe
             user_id=user_id,
             title=body.title or "",
             model=model,
+            last_message_at=now,
         )
         try:
             db.add(session)
@@ -304,6 +358,110 @@ def list_messages(
     page_size: int = DEFAULT_MESSAGE_PAGE_SIZE,
 ) -> ChatMessageListOut:
     session = _require_session(db, user_id, session_id)
+    public_session_id = (session.session_id or "").strip()
+    normalized_page_size = min(max(int(page_size or DEFAULT_MESSAGE_PAGE_SIZE), 1), 100)
+    query = db.query(ChatMessage).filter(ChatMessage.session_id == session.id)
+    if before_id is not None:
+        query = query.filter(ChatMessage.id < int(before_id))
+    rows = (
+        query.order_by(ChatMessage.id.desc())
+        .limit(normalized_page_size + 1)
+        .all()
+    )
+    has_more = len(rows) > normalized_page_size
+    page_rows = rows[:normalized_page_size]
+    page_rows.reverse()
+    return ChatMessageListOut(
+        items=[_serialize_message(item, public_session_id=public_session_id) for item in page_rows],
+        has_more=has_more,
+        next_before_id=page_rows[0].id if has_more and page_rows else None,
+    )
+
+
+def _session_sort_at(session: ChatSession):
+    return session.last_message_at or session.updated_at or session.created_at or now_local()
+
+
+def _load_session_cursor(db: Session, session_id: str | None) -> ChatSession | None:
+    if not session_id:
+        return None
+    try:
+        public_id = _normalize_public_session_id(session_id)
+    except HTTPException:
+        return None
+    return db.query(ChatSession).filter(ChatSession.session_id == public_id).first()
+
+
+def list_admin_sessions(
+    db: Session,
+    *,
+    page_size: int = DEFAULT_SESSION_PAGE_SIZE,
+    user_id: int | None = None,
+    keyword: str | None = None,
+    before_session_id: str | None = None,
+) -> ChatSessionAdminListOut:
+    normalized_page_size = min(max(int(page_size or DEFAULT_SESSION_PAGE_SIZE), 1), 100)
+    sort_at = ChatSession.last_message_at
+    query = (
+        db.query(ChatSession, User)
+        .join(User, User.id == ChatSession.user_id)
+        .filter(
+            ChatSession.is_deleted.is_(False),
+            User.role.notin_(ADMIN_VIEWER_EXCLUDED_ROLES),
+        )
+    )
+    if user_id is not None:
+        query = query.filter(ChatSession.user_id == user_id)
+    cleaned_keyword = (keyword or "").strip()[:50]
+    if cleaned_keyword:
+        like = f"%{cleaned_keyword}%"
+        query = query.filter(or_(ChatSession.title.ilike(like), User.username.ilike(like)))
+    cursor = _load_session_cursor(db, before_session_id)
+    if cursor is not None:
+        cursor_time = _session_sort_at(cursor)
+        query = query.filter(
+            or_(
+                sort_at < cursor_time,
+                and_(sort_at == cursor_time, ChatSession.id < int(cursor.id)),
+            )
+        )
+    rows = (
+        query.order_by(sort_at.desc(), ChatSession.id.desc())
+        .limit(normalized_page_size + 1)
+        .all()
+    )
+    has_more = len(rows) > normalized_page_size
+    page_rows = rows[:normalized_page_size]
+    credit_costs = _session_credit_costs(db, [int(session.id) for session, _user in page_rows])
+    last_public_id = (page_rows[-1][0].session_id or "").strip() if page_rows else ""
+    return ChatSessionAdminListOut(
+        items=[
+            _serialize_admin_session(session, user, credit_cost=credit_costs.get(int(session.id), 0))
+            for session, user in page_rows
+        ],
+        total=len(page_rows) + (1 if has_more else 0),
+        page=1,
+        page_size=normalized_page_size,
+        has_more=has_more,
+        next_before_session_id=last_public_id if has_more and last_public_id else None,
+    )
+
+
+def get_admin_session(db: Session, session_id: str) -> ChatSessionAdminOut:
+    session = _require_session_any_user(db, session_id)
+    user = db.query(User).filter(User.id == session.user_id).first()
+    credit_cost = _session_credit_costs(db, [int(session.id)]).get(int(session.id), 0)
+    return _serialize_admin_session(session, user, credit_cost=credit_cost)
+
+
+def list_admin_messages(
+    db: Session,
+    session_id: str,
+    *,
+    before_id: int | None = None,
+    page_size: int = DEFAULT_MESSAGE_PAGE_SIZE,
+) -> ChatMessageListOut:
+    session = _require_session_any_user(db, session_id)
     public_session_id = (session.session_id or "").strip()
     normalized_page_size = min(max(int(page_size or DEFAULT_MESSAGE_PAGE_SIZE), 1), 100)
     query = db.query(ChatMessage).filter(ChatMessage.session_id == session.id)

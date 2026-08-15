@@ -56,6 +56,9 @@ import type {
   UserHistoryCard,
   AdminUserPromoDashboard,
   CreateOfflineOrderPayload,
+  ChatMessageListResponse,
+  ChatSession,
+  ChatSessionListResponse,
   UserCanvasListResponse,
   AdminVideoTaskListResponse,
   VideoStats,
@@ -146,6 +149,26 @@ export function getAdminCanvases(
       user_id: filters?.userId || undefined,
     },
   });
+}
+
+export function listAdminChatSessions(params?: {
+  page_size?: number;
+  keyword?: string;
+  user_id?: string;
+  before_session_id?: string;
+}): Promise<ChatSessionListResponse> {
+  return client.get("/admin/chat/sessions", { params });
+}
+
+export function getAdminChatSession(sessionId: string): Promise<ChatSession> {
+  return client.get(`/admin/chat/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function listAdminChatMessages(
+  sessionId: string,
+  params?: { before_id?: number; page_size?: number },
+): Promise<ChatMessageListResponse> {
+  return client.get(`/admin/chat/sessions/${encodeURIComponent(sessionId)}/messages`, { params });
 }
 
 export function createUser(data: { username: string; password: string; role?: string }): Promise<AdminUser> {

@@ -24,27 +24,38 @@ import {
   sendChatMessageStream,
   updateChatSession,
 } from "@/api/chat";
+import { getAdminChatSession, listAdminChatMessages, listAdminChatSessions } from "@/api/admin";
 import { getChatModels } from "@/api/chatConfig";
 import { getPreviewImageSrc } from "@/api/images";
 import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
-import { withBaseUrl } from "@/lib/assets";
+import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import { applyChatGenerateDraftInPlace, requestCloseAiAssistantDock, saveChatGenerateDraft } from "@/lib/chatGenerateDraft";
-import type { ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
+import type { AdminUser, ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
 import { useAuthStore } from "@/stores/auth";
+import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 
 const props = withDefaults(defineProps<{
   embedded?: boolean;
   syncRoute?: boolean;
+  readonly?: boolean;
+  adminViewer?: boolean;
 }>(), {
   embedded: false,
   syncRoute: true,
+  readonly: false,
+  adminViewer: false,
 });
 
 const emit = defineEmits<{
   "update:sessionId": [value: string | null];
 }>();
 
+const isReadOnly = computed(() => props.readonly || props.adminViewer);
 const xiaobaAvatarSrc = withBaseUrl("chat-xiaoba-avatar.png");
+const userInfoDialogOpen = ref(false);
+const userInfoDialogUser = ref<AdminUser | null>(null);
+let adminSearchTimer = 0;
+let sessionsRequestSeq = 0;
 const MarkdownMessage = defineAsyncComponent(() => import("@/components/chat/MarkdownMessage.vue"));
 
 const route = useRoute();
@@ -74,6 +85,7 @@ const loadingMessages = ref(false);
 const loadingOlder = ref(false);
 const sendingSessionIds = ref<string[]>([]);
 const sessionsPage = ref(1);
+const sessionsNextBeforeId = ref<string | null>(null);
 const sessionsHasMore = ref(false);
 const messagesHasMore = ref(false);
 const messagesNextBeforeId = ref<number | null>(null);
@@ -411,10 +423,11 @@ function toggleSidebar() {
 
 const filteredSessions = computed(() => {
   const keyword = sessionSearchKeyword.value.trim().toLowerCase();
-  if (!keyword) return sessions.value;
+  if (!keyword || props.adminViewer) return sessions.value;
   return sessions.value.filter((item) => {
     const title = (item.title || "新对话").toLowerCase();
-    return title.includes(keyword);
+    const username = (item.username || "").toLowerCase();
+    return title.includes(keyword) || username.includes(keyword);
   });
 });
 
@@ -462,20 +475,85 @@ function parseRouteSessionId(raw: unknown = route.params.sessionId): string | nu
   return PUBLIC_SESSION_ID_RE.test(id) ? id : null;
 }
 
+function sessionRoutePath(sessionId: string | null) {
+  if (props.adminViewer) {
+    return sessionId ? `/admin/user-conversations/${sessionId}` : "/admin/user-conversations";
+  }
+  return sessionId ? `/chat/${sessionId}` : "/chat";
+}
+
+function listSessionsRequest(params: {
+  page?: number;
+  page_size?: number;
+  keyword?: string;
+  before_session_id?: string;
+}) {
+  if (props.adminViewer) {
+    return listAdminChatSessions({
+      page_size: params.page_size,
+      keyword: params.keyword,
+      before_session_id: params.before_session_id,
+    });
+  }
+  return listChatSessions({
+    page: params.page,
+    page_size: params.page_size,
+  });
+}
+
+function getSessionRequest(sessionId: string) {
+  if (props.adminViewer) return getAdminChatSession(sessionId);
+  return getChatSession(sessionId);
+}
+
+function listMessagesRequest(sessionId: string, params?: { before_id?: number; page_size?: number }) {
+  if (props.adminViewer) return listAdminChatMessages(sessionId, params);
+  return listChatMessages(sessionId, params);
+}
+
+function sessionOwnerName(session?: ChatSession | null) {
+  return (session?.username || "").trim() || "未知用户";
+}
+
+function sessionOwnerAvatar(session?: ChatSession | null) {
+  return withApiBaseUrl(session?.avatar_url || "") || "";
+}
+
+function sessionOwnerInitial(session?: ChatSession | null) {
+  return sessionOwnerName(session).charAt(0).toUpperCase() || "?";
+}
+
+function openSessionUserInfo(session: ChatSession, event?: Event) {
+  event?.stopPropagation();
+  if (!props.adminViewer || !session.user_id) return;
+  userInfoDialogUser.value = {
+    id: session.user_id,
+    username: sessionOwnerName(session),
+    avatar_url: session.avatar_url || "",
+    role: "user",
+    status: "active",
+    is_whitelisted: false,
+    credits: 0,
+    consumed_credits: 0,
+    created_at: session.created_at,
+  };
+  userInfoDialogOpen.value = true;
+}
+
 function syncSessionRoute(sessionId: string | null) {
   emit("update:sessionId", sessionId);
   if (!props.syncRoute) return;
   const current = parseRouteSessionId();
   if (sessionId && current === sessionId) return;
   if (!sessionId && current == null) return;
-  void router.replace(sessionId ? `/chat/${sessionId}` : "/chat");
+  void router.replace(sessionRoutePath(sessionId));
 }
 
 async function ensureSessionInList(sessionId: string): Promise<ChatSession | null> {
   const existing = sessions.value.find((item) => item.id === sessionId);
   if (existing) return existing;
   try {
-    const session = await getChatSession(sessionId);
+    const session = await getSessionRequest(sessionId);
     sessions.value = [session, ...sessions.value.filter((item) => item.id !== session.id)];
     return session;
   } catch {
@@ -489,6 +567,11 @@ const selectedModelOption = computed(
 );
 const openingGreeting = computed(() => selectedModelOption.value?.opening_greeting || "");
 const emptyChatTitle = computed(() => {
+  if (isReadOnly.value) {
+    return activeSession.value
+      ? `${sessionOwnerName(activeSession.value)} 的对话`
+      : "选择左侧会话查看用户对话";
+  }
   const username = (auth.user?.username || "").trim();
   return username ? `👋你好，${username}` : "👋你好";
 });
@@ -517,7 +600,7 @@ const starterPrompts = computed(() => {
 });
 
 function handleStarterPrompt(prompt: StarterPrompt) {
-  if (isActiveSessionSending.value || !prompt?.text) return;
+  if (isReadOnly.value || isActiveSessionSending.value || !prompt?.text) return;
   void handleSend(prompt.text, {
     images: prompt.image_url ? [{ url: prompt.image_url }] : [],
   });
@@ -769,6 +852,7 @@ async function handleCopyMessage(item: ChatMessage) {
 }
 
 async function handleJumpGenerate(item: ChatMessage) {
+  if (isReadOnly.value) return;
   const { extractGeneratePrompt } = await import("@/lib/simpleMarkdown");
   const prompt = extractGeneratePrompt(messagePlainText(item));
   if (!prompt) {
@@ -779,6 +863,7 @@ async function handleJumpGenerate(item: ChatMessage) {
 }
 
 function handleBlockJumpGenerate(prompt: string) {
+  if (isReadOnly.value) return;
   jumpGenerateWithPrompt(prompt);
 }
 
@@ -879,21 +964,37 @@ async function loadModels() {
 async function loadSessions(reset = true, preferredSessionId?: string | null) {
   if (reset) {
     sessionsPage.value = 1;
+    sessionsNextBeforeId.value = null;
   }
+  const requestSeq = ++sessionsRequestSeq;
   loadingSessions.value = true;
   try {
-    const result = await listChatSessions({
+    const keyword = props.adminViewer ? sessionSearchKeyword.value.trim() : "";
+    const result = await listSessionsRequest({
       page: sessionsPage.value,
       page_size: 50,
+      keyword: keyword || undefined,
+      before_session_id: reset || !props.adminViewer
+        ? undefined
+        : sessionsNextBeforeId.value || undefined,
     });
+    if (requestSeq !== sessionsRequestSeq) return;
     sessions.value = reset ? result.items : [...sessions.value, ...result.items];
     sessionsHasMore.value = result.has_more;
+    if (props.adminViewer) {
+      sessionsNextBeforeId.value = result.next_before_session_id || null;
+    }
     if (!reset) return;
 
-    const targetId = preferredSessionId
-      || (props.syncRoute ? parseRouteSessionId() : null)
-      || sessions.value[0]?.id
-      || null;
+    const preferredInResults = preferredSessionId
+      ? result.items.some((item) => item.id === preferredSessionId)
+      : false;
+    const targetId = (keyword && preferredSessionId && !preferredInResults)
+      ? (result.items[0]?.id ?? null)
+      : preferredSessionId
+        || (props.syncRoute ? parseRouteSessionId() : null)
+        || sessions.value[0]?.id
+        || null;
     if (targetId) {
       const session = await ensureSessionInList(targetId);
       if (session) {
@@ -911,15 +1012,21 @@ async function loadSessions(reset = true, preferredSessionId?: string | null) {
     syncSessionRoute(null);
     ensureDefaultModel();
   } catch (err: any) {
+    if (requestSeq !== sessionsRequestSeq) return;
     message.error(err?.response?.data?.detail || "加载会话失败");
   } finally {
-    loadingSessions.value = false;
+    if (requestSeq === sessionsRequestSeq) {
+      loadingSessions.value = false;
+    }
   }
 }
 
 async function loadMoreSessions() {
   if (!sessionsHasMore.value || loadingSessions.value) return;
-  sessionsPage.value += 1;
+  if (props.adminViewer && !sessionsNextBeforeId.value) return;
+  if (!props.adminViewer) {
+    sessionsPage.value += 1;
+  }
   await loadSessions(false);
 }
 
@@ -990,7 +1097,7 @@ function applyMessagePage(
 }
 
 async function fetchLatestMessages(sessionId: string) {
-  return listChatMessages(sessionId, { page_size: 50 });
+  return listMessagesRequest(sessionId, { page_size: 50 });
 }
 
 async function loadMessages(sessionId: string) {
@@ -1020,7 +1127,7 @@ async function loadOlderMessages() {
   loadingOlder.value = true;
   const prevHeight = messageListRef.value?.scrollHeight || 0;
   try {
-    const result = await listChatMessages(activeSessionId.value, {
+    const result = await listMessagesRequest(activeSessionId.value, {
       before_id: beforeId,
       page_size: 50,
     });
@@ -1045,6 +1152,7 @@ async function loadOlderMessages() {
 }
 
 async function handleCreateSession() {
+  if (isReadOnly.value) return;
   if (!selectedModel.value) {
     message.warning("请先配置可用的对话场景");
     return;
@@ -1073,6 +1181,7 @@ async function handleCreateSession() {
 }
 
 function handleDeleteSession(session: ChatSession, event?: Event) {
+  if (isReadOnly.value) return;
   event?.stopPropagation();
   Modal.confirm({
     title: "删除会话",
@@ -1114,6 +1223,7 @@ function handleDocumentPointerDown(event: PointerEvent) {
 }
 
 async function handleModelChange(modelKey: string) {
+  if (isReadOnly.value) return;
   selectedModel.value = modelKey;
   composerPopoverOpen.value = false;
   if (!activeSessionId.value) return;
@@ -1126,6 +1236,9 @@ async function handleModelChange(modelKey: string) {
 }
 
 async function ensureActiveSession() {
+  if (isReadOnly.value) {
+    throw new Error("当前为只读查看");
+  }
   if (activeSessionId.value) return activeSessionId.value;
   if (!selectedModel.value) {
     throw new Error("请先选择对话场景");
@@ -1149,6 +1262,7 @@ async function handleSend(
   contentOverride?: string,
   options: { model?: string; skipOptimisticUser?: boolean; images?: ChatImage[] } = {},
 ) {
+  if (isReadOnly.value) return;
   // @click 可能把事件对象传进来，只接受真正的字符串覆盖
   const overrideText = typeof contentOverride === "string" ? contentOverride : undefined;
   const content = (overrideText ?? draft.value).trim();
@@ -1438,6 +1552,7 @@ async function handleSend(
 }
 
 function canRetryAssistant(item: ChatMessage) {
+  if (isReadOnly.value) return false;
   return item.role === "assistant" && (item.status === "failed" || isBrokenAssistantMessage(item));
 }
 
@@ -1507,6 +1622,14 @@ watch(
   },
 );
 
+watch(sessionSearchKeyword, (value) => {
+  if (!props.adminViewer) return;
+  window.clearTimeout(adminSearchTimer);
+  adminSearchTimer = window.setTimeout(() => {
+    void loadSessions(true, activeSessionId.value);
+  }, value.trim() ? 300 : 0);
+});
+
 onMounted(async () => {
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
   await loadModels();
@@ -1514,6 +1637,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.clearTimeout(adminSearchTimer);
   sendAbortControllers.forEach((controller) => controller.abort());
   sendAbortControllers.clear();
   sendingSessionIds.value = [];
@@ -1531,15 +1655,22 @@ onBeforeUnmount(() => {
       'sidebar-collapsed': sidebarCollapsed,
       'has-draft-images': draftImages.length,
       'is-embedded': embedded,
+      'is-readonly': isReadOnly,
+      'is-admin-viewer': adminViewer,
     }"
   >
     <aside class="chat-sidebar">
       <div class="chat-assistant-brand">
         <img :src="xiaobaAvatarSrc" alt="小八" class="chat-assistant-avatar" />
-        <span class="chat-assistant-name">小八</span>
+        <span class="chat-assistant-name">{{ adminViewer ? "用户对话" : "小八" }}</span>
       </div>
       <div class="sidebar-toolbar">
-        <button class="new-chat-btn" :disabled="!models.length" @click="handleCreateSession">
+        <button
+          v-if="!isReadOnly"
+          class="new-chat-btn"
+          :disabled="!models.length"
+          @click="handleCreateSession"
+        >
           <PlusOutlined />
           <span>新建对话</span>
         </button>
@@ -1560,7 +1691,7 @@ onBeforeUnmount(() => {
           v-model="sessionSearchKeyword"
           class="session-search-input"
           type="search"
-          placeholder="搜索对话标题"
+          :placeholder="adminViewer ? '搜索用户或对话标题' : '搜索对话标题'"
           enterkeyhint="search"
         />
         <button type="button" class="session-search-close" title="关闭搜索" @click="closeSessionSearch">
@@ -1580,15 +1711,37 @@ onBeforeUnmount(() => {
           :class="{ active: session.id === activeSessionId }"
           @click="selectSession(session.id)"
         >
+          <span
+            v-if="adminViewer"
+            class="session-user-avatar"
+            :title="sessionOwnerName(session)"
+            @click="openSessionUserInfo(session, $event)"
+          >
+            <img
+              v-if="sessionOwnerAvatar(session)"
+              :src="sessionOwnerAvatar(session)"
+              alt=""
+            />
+            <span v-else>{{ sessionOwnerInitial(session) }}</span>
+          </span>
           <div class="session-main">
             <div class="session-title">{{ session.title || "新对话" }}</div>
-            <div class="session-time">{{ formatTime(session.last_message_at || session.updated_at || session.created_at) }}</div>
+            <div class="session-time">
+              <template v-if="adminViewer">{{ sessionOwnerName(session) }} · </template>
+              {{ formatTime(session.last_message_at || session.updated_at || session.created_at) }}
+            </div>
           </div>
-          <span class="session-delete" @click="handleDeleteSession(session, $event)">
+          <span
+            v-if="!isReadOnly"
+            class="session-delete"
+            @click="handleDeleteSession(session, $event)"
+          >
             <DeleteOutlined />
           </span>
         </button>
-        <div v-if="!loadingSessions && !sessions.length" class="empty-tip">暂无会话，点击上方新建</div>
+        <div v-if="!loadingSessions && !sessions.length" class="empty-tip">
+          {{ isReadOnly ? "暂无用户会话" : "暂无会话，点击上方新建" }}
+        </div>
         <div
           v-else-if="!loadingSessions && sessions.length && !filteredSessions.length"
           class="empty-tip"
@@ -1610,6 +1763,28 @@ onBeforeUnmount(() => {
           <path d="M8.2 4.2v15.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
         </svg>
       </button>
+      <div v-if="adminViewer && activeSession" class="admin-session-owner">
+        <button
+          type="button"
+          class="session-user-avatar"
+          :title="sessionOwnerName(activeSession)"
+          @click="openSessionUserInfo(activeSession)"
+        >
+          <img
+            v-if="sessionOwnerAvatar(activeSession)"
+            :src="sessionOwnerAvatar(activeSession)"
+            alt=""
+          />
+          <span v-else>{{ sessionOwnerInitial(activeSession) }}</span>
+        </button>
+        <div class="admin-session-owner-copy">
+          <strong>{{ sessionOwnerName(activeSession) }}</strong>
+          <span>{{ activeSession.title || "新对话" }}</span>
+        </div>
+        <div class="admin-session-credit">
+          消耗 {{ Number(activeSession.credit_cost || 0) }} 积分
+        </div>
+      </div>
       <div class="message-stage">
         <div v-if="sessionPanelLoading" class="message-panel-loading">
           <LoadingOutlined />
@@ -1627,9 +1802,12 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="!messages.length && !sessionPanelLoading" class="empty-state">
               <div class="empty-title">{{ emptyChatTitle }}</div>
-              <div v-if="openingGreeting" class="greeting-card">{{ openingGreeting }}</div>
+              <div v-if="!isReadOnly && openingGreeting" class="greeting-card">{{ openingGreeting }}</div>
+              <div v-else-if="isReadOnly" class="empty-desc">
+                {{ activeSession ? "此会话暂无消息，仅支持查看。" : "从左侧历史对话中选择一个会话。" }}
+              </div>
               <div v-else class="empty-desc">在下方输入内容，选择场景后发送。</div>
-              <div v-if="starterPrompts.length" class="starter-prompts">
+              <div v-if="!isReadOnly && starterPrompts.length" class="starter-prompts">
                 <div class="starter-prompts-title">试试这样问</div>
                 <div class="starter-prompt-list">
                   <button
@@ -1692,7 +1870,7 @@ onBeforeUnmount(() => {
                           <ReloadOutlined />
                         </button>
                         <button
-                          v-if="item.status !== 'failed' && !isBrokenAssistantMessage(item)"
+                          v-if="!isReadOnly && item.status !== 'failed' && !isBrokenAssistantMessage(item)"
                           type="button"
                           class="message-action-btn"
                           title="跳转生图"
@@ -1784,7 +1962,7 @@ onBeforeUnmount(() => {
         <ArrowDownOutlined />
       </button>
 
-      <div class="composer-dock" @click="composerPopoverOpen = false">
+      <div v-if="!isReadOnly" class="composer-dock" @click="composerPopoverOpen = false">
         <section
           class="chat-composer-shell"
           :class="{ 'is-drag-over': composerDragActive }"
@@ -1924,6 +2102,11 @@ onBeforeUnmount(() => {
         :preview="{ visible: previewVisible, onVisibleChange: (visible: boolean) => (previewVisible = visible) }"
       />
     </div>
+    <AdminUserInfoDialog
+      v-if="adminViewer"
+      v-model:open="userInfoDialogOpen"
+      :user="userInfoDialogUser"
+    />
   </div>
 </template>
 
@@ -1951,6 +2134,82 @@ onBeforeUnmount(() => {
 
 .chat-page.is-embedded .composer-prompt-input {
   min-height: 72px;
+}
+
+.chat-page.is-readonly .chat-main {
+  --chat-composer-reserve: 24px;
+}
+
+.chat-page.is-readonly :deep(.md-code-generate) {
+  display: none;
+}
+
+.chat-page.is-readonly .sidebar-toolbar {
+  justify-content: flex-end;
+}
+
+.session-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: #f3e6d2;
+  color: #8b5a1a;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.session-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-session-owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 8px 16px 8px 56px;
+  border-bottom: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.06));
+  background: var(--theme-page-base, #fffaf3);
+}
+
+.admin-session-owner-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.admin-session-credit {
+  flex-shrink: 0;
+  color: var(--theme-title, #3d2f22);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-session-owner-copy strong {
+  color: var(--theme-title, #3d2f22);
+  font-size: 14px;
+}
+
+.admin-session-owner-copy span {
+  color: var(--theme-text-secondary, #7a614a);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-sidebar {

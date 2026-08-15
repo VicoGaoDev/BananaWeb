@@ -17,6 +17,7 @@ from app.schemas.admin import (
     VideoStatsOut,
 )
 from app.schemas.canvas import CanvasListResponse
+from app.schemas.chat import ChatMessageListOut, ChatSessionAdminListOut, ChatSessionAdminOut
 from app.schemas.feedback import (
     FeedbackDetail,
     FeedbackListResponse,
@@ -58,6 +59,7 @@ from app.services.feedback_service import (
 )
 from app.services.history_service import get_admin_history_cards, get_admin_history_detail, get_all_history
 from app.services.canvas_service import list_all_canvases
+from app.services.chat_service import get_admin_session, list_admin_messages, list_admin_sessions
 from app.services.daily_report_service import DailyReportSendResult, send_previous_day_report, send_range_report
 from app.services.video_task_service import (
     expire_stale_video_tasks,
@@ -166,6 +168,49 @@ def admin_list_canvases(
         page_size=page_size,
         keyword=keyword,
         owner_user_id=_resolve_optional_user_id(db, user_id),
+    )
+
+
+@router.get("/chat/sessions", response_model=ChatSessionAdminListOut)
+def admin_list_chat_sessions(
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str | None = Query(None),
+    user_id: str | None = Query(None),
+    before_session_id: str | None = Query(None),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_admin_sessions(
+        db,
+        page_size=page_size,
+        keyword=keyword,
+        user_id=_resolve_optional_user_id(db, user_id),
+        before_session_id=before_session_id,
+    )
+
+
+@router.get("/chat/sessions/{session_id}", response_model=ChatSessionAdminOut)
+def admin_get_chat_session(
+    session_id: str,
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_admin_session(db, session_id)
+
+
+@router.get("/chat/sessions/{session_id}/messages", response_model=ChatMessageListOut)
+def admin_list_chat_messages(
+    session_id: str,
+    before_id: int | None = Query(None, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_admin_messages(
+        db,
+        session_id,
+        before_id=before_id,
+        page_size=page_size,
     )
 
 
