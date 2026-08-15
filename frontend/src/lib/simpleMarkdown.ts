@@ -60,14 +60,28 @@ markdownRenderer.renderer.rules.link_open = (tokens, idx, options, env, self) =>
 markdownRenderer.renderer.rules.table_open = () => '<div class="md-table-wrap"><table class="md-table">';
 markdownRenderer.renderer.rules.table_close = () => "</table></div>";
 
-const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="4" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
-const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const GENERATE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.6" cy="10" r="1.5" fill="currentColor"/><path d="M6.2 16.6 10 12.8l2.3 2.2 3.1-3.4 4.4 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const COPY_ICON = '<svg viewBox="64 64 896 896" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M832 64H296c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h496v688c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V96c0-17.7-14.3-32-32-32zM704 192H192c-17.7 0-32 14.3-32 32v530.7c0 8.5 3.4 16.6 9.4 22.6l173.3 173.3c2.2 2.2 4.7 4 7.4 5.5v1.9h4.2c3.5 1.3 7.2 2 11 2H704c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM350 856.2L263.9 770H350v86.2zM664 888H414V746c0-22.1-17.9-40-40-40H232V264h432v624z"/></svg>';
+const CHECK_ICON = '<svg viewBox="64 64 896 896" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M912 190h-69.9c-9.8 0-19.1 4.5-25.1 12.2L404.7 724.5 207 474a32 32 0 00-25.1-12.2H112c-6.7 0-10.4 7.7-6.3 12.9l273.9 347c12.8 16.2 37.4 16.2 50.3 0l488.4-618.9c4.1-5.1.4-12.8-6.3-12.8z"/></svg>';
+const GENERATE_ICON = '<svg viewBox="64 64 896 896" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M928 160H96c-17.7 0-32 14.3-32 32v640c0 17.7 14.3 32 32 32h832c17.7 0 32-14.3 32-32V192c0-17.7-14.3-32-32-32zm-40 632H136v-39.9l138.5-164.3 150.1 178L658.1 489 888 761.6V792zm0-129.8L664.2 396.8c-3.2-3.8-9-3.8-12.2 0L424.6 666.4l-144-170.7c-3.2-3.8-9-3.8-12.2 0L136 652.7V232h752v430.2zM304 456a88 88 0 100-176 88 88 0 000 176zm0-116c15.5 0 28 12.5 28 28s-12.5 28-28 28-28-12.5-28-28 12.5-28 28-28z"/></svg>';
+
+function fenceInfoName(info: string): string {
+  return (info || "").trim().split(/\s+/)[0] || "";
+}
+
+function isPromptFence(info: string): boolean {
+  const raw = fenceInfoName(info);
+  return raw === "提示词" || raw.toLowerCase() === "prompt";
+}
 
 function normalizeLang(info: string): string {
-  const raw = (info || "").trim().split(/\s+/)[0] || "";
-  const lang = raw.toLowerCase().replace(/[^a-z0-9_+#-]/g, "");
+  if (isPromptFence(info)) return "plaintext";
+  const lang = fenceInfoName(info).toLowerCase().replace(/[^a-z0-9_+#-]/g, "");
   return lang || "plaintext";
+}
+
+function fenceToolbarLabel(info: string): string {
+  if (isPromptFence(info)) return "提示词";
+  return normalizeLang(info);
 }
 
 function highlightJson(code: string): string {
@@ -131,22 +145,27 @@ function highlightCode(code: string, lang: string): string {
 function renderCopyActions(): string {
   return [
     `<div class="md-code-actions">`,
-    `<button type="button" class="md-code-copy" title="复制" aria-label="复制">`,
+    `<button type="button" class="md-code-copy" data-tooltip="复制" aria-label="复制">`,
     `<span class="md-code-copy-icon">${COPY_ICON}</span>`,
     `<span class="md-code-copy-done">${CHECK_ICON}</span>`,
     `</button>`,
-    `<button type="button" class="md-code-generate" title="复制并去生图" aria-label="复制并去生图">`,
-    GENERATE_ICON,
+    `<button type="button" class="md-code-generate" data-tooltip="复制并去生图" aria-label="复制并去生图">`,
+    `<span class="md-code-generate-icon">${GENERATE_ICON}</span>`,
     `</button>`,
     `</div>`,
   ].join("");
 }
 
+function isCodeLangLabel(label: string): boolean {
+  return /^[a-z0-9_+#-]+$/i.test(label) && !/^(plaintext|text|txt)$/i.test(label);
+}
+
 function renderCopyToolbar(label: string): string {
+  const langClass = isCodeLangLabel(label) ? "md-code-lang" : "md-code-lang is-plain";
   return [
     `<div class="md-code-block md-copyable">`,
     `<div class="md-code-toolbar">`,
-    `<span class="md-code-lang">${escapeHtml(label)}</span>`,
+    `<span class="${langClass}">${escapeHtml(label)}</span>`,
     renderCopyActions(),
     `</div>`,
   ].join("");
@@ -156,7 +175,7 @@ function renderCodeBlock(code: string, lang: string): string {
   const language = normalizeLang(lang);
   const body = highlightCode(code.replace(/\n$/, ""), language);
   return [
-    renderCopyToolbar(language),
+    renderCopyToolbar(fenceToolbarLabel(lang)),
     `<pre data-md-copy-source><code class="language-${escapeHtml(language)}">${body}</code></pre>`,
     `</div>`,
   ].join("");
@@ -171,13 +190,18 @@ markdownRenderer.renderer.rules.code_block = (tokens, idx) => (
   renderCodeBlock(tokens[idx].content, "plaintext")
 );
 
-markdownRenderer.renderer.rules.blockquote_open = () => (
-  `${renderCopyToolbar("引用")}<blockquote data-md-copy-source>`
-);
+const STRONG_HEADING_MAX = 24;
 
-markdownRenderer.renderer.rules.blockquote_close = () => "</blockquote></div>";
-
-const INLINE_STRONG_COPY_MIN = 40;
+function shouldRenderStrongAsTitle(text: string): boolean {
+  const value = (text || "").trim();
+  if (!value || value.includes("\n")) return false;
+  return (
+    value.length <= STRONG_HEADING_MAX
+    || /^\d+[\.、．]/.test(value)
+    || /^[一二三四五六七八九十]+[、.．]/.test(value)
+    || /[：:]$/.test(value)
+  );
+}
 
 type MdInlineToken = {
   type: string;
@@ -209,40 +233,37 @@ function findStrongSpan(tokens: MdInlineToken[], openIdx: number): { closeIdx: n
   return null;
 }
 
-function renderStrongCopyBlock(text: string): string {
-  return [
-    renderCopyToolbar("文本"),
-    `<div class="md-strong-body" data-md-copy-source>${escapeHtml(text)}</div>`,
-    `</div>`,
-  ].join("");
+function renderSectionTitle(text: string): string {
+  return `<p class="md-section-title">${escapeHtml(text)}</p>\n`;
 }
 
-function renderStrongCopyInline(text: string): string {
-  return [
-    `<span class="md-copyable md-strong-inline">`,
-    `<strong data-md-copy-source>${escapeHtml(text)}</strong>`,
-    renderCopyActions(),
-    `</span>`,
-  ].join("");
-}
-
-function isInsideListItem(tokens: Array<{ type: string }>, idx: number): boolean {
+function isInsideContainer(
+  tokens: Array<{ type: string }>,
+  idx: number,
+  openType: string,
+  closeType: string,
+): boolean {
   let depth = 0;
   for (let i = idx - 1; i >= 0; i -= 1) {
     const type = tokens[i].type;
-    if (type === "list_item_close") depth += 1;
-    if (type !== "list_item_open") continue;
+    if (type === closeType) depth += 1;
+    if (type !== openType) continue;
     if (depth === 0) return true;
     depth -= 1;
   }
   return false;
 }
 
-markdownRenderer.core.ruler.after("inline", "copyable_strong", (state) => {
+markdownRenderer.core.ruler.after("inline", "strong_section_title", (state) => {
   const tokens = state.tokens;
   for (let i = 0; i < tokens.length; i += 1) {
     if (tokens[i].type !== "paragraph_open") continue;
-    if (isInsideListItem(tokens, i)) continue;
+    if (
+      isInsideContainer(tokens, i, "list_item_open", "list_item_close")
+      || isInsideContainer(tokens, i, "blockquote_open", "blockquote_close")
+    ) {
+      continue;
+    }
     const inline = tokens[i + 1];
     const close = tokens[i + 2];
     if (!inline || inline.type !== "inline" || !close || close.type !== "paragraph_close") continue;
@@ -253,43 +274,15 @@ markdownRenderer.core.ruler.after("inline", "copyable_strong", (state) => {
     while (start < end && isIgnorableInline(children[start])) start += 1;
     while (end > start && isIgnorableInline(children[end - 1])) end -= 1;
 
-    if (children[start]?.type === "strong_open") {
-      const span = findStrongSpan(children, start);
-      if (span && span.closeIdx === end - 1) {
-        const text = collectInlineText(span.inner).trim();
-        if (text) {
-          const htmlToken = new state.Token("html_block", "", 0);
-          htmlToken.content = renderStrongCopyBlock(text);
-          tokens.splice(i, 3, htmlToken);
-          continue;
-        }
-      }
-    }
+    if (children[start]?.type !== "strong_open") continue;
+    const span = findStrongSpan(children, start);
+    if (!span || span.closeIdx !== end - 1) continue;
+    const text = collectInlineText(span.inner).trim();
+    if (!shouldRenderStrongAsTitle(text)) continue;
 
-    const nextChildren: MdInlineToken[] = [];
-    let changed = false;
-    for (let j = 0; j < children.length; j += 1) {
-      if (children[j].type !== "strong_open") {
-        nextChildren.push(children[j]);
-        continue;
-      }
-      const span = findStrongSpan(children, j);
-      if (!span) {
-        nextChildren.push(children[j]);
-        continue;
-      }
-      const text = collectInlineText(span.inner).trim();
-      if (text.length >= INLINE_STRONG_COPY_MIN) {
-        const html = new state.Token("html_inline", "", 0);
-        html.content = renderStrongCopyInline(text);
-        nextChildren.push(html as MdInlineToken);
-        changed = true;
-      } else {
-        nextChildren.push(...children.slice(j, span.closeIdx + 1));
-      }
-      j = span.closeIdx;
-    }
-    if (changed) inline.children = nextChildren as typeof inline.children;
+    const htmlToken = new state.Token("html_block", "", 0);
+    htmlToken.content = renderSectionTitle(text);
+    tokens.splice(i, 3, htmlToken);
   }
 });
 

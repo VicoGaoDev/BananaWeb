@@ -851,17 +851,6 @@ async function handleCopyMessage(item: ChatMessage) {
   }
 }
 
-async function handleJumpGenerate(item: ChatMessage) {
-  if (isReadOnly.value) return;
-  const { extractGeneratePrompt } = await import("@/lib/simpleMarkdown");
-  const prompt = extractGeneratePrompt(messagePlainText(item));
-  if (!prompt) {
-    message.warning("没有可回填的提示词");
-    return;
-  }
-  jumpGenerateWithPrompt(prompt);
-}
-
 function handleBlockJumpGenerate(prompt: string) {
   if (isReadOnly.value) return;
   jumpGenerateWithPrompt(prompt);
@@ -1850,34 +1839,27 @@ onBeforeUnmount(() => {
                     <div class="message-meta-right">
                       <span>{{ formatTime(item.created_at) }}</span>
                       <div v-if="messagePlainText(item) || canRetryAssistant(item)" class="message-actions">
-                        <button
-                          v-if="messagePlainText(item)"
-                          type="button"
-                          class="message-action-btn"
-                          title="复制"
-                          @click="handleCopyMessage(item)"
-                        >
-                          <CopyOutlined />
-                        </button>
-                        <button
-                          v-if="canRetryAssistant(item)"
-                          type="button"
-                          class="message-action-btn"
-                          title="重试"
-                          :disabled="isActiveSessionSending"
-                          @click="handleRetryAssistant(item)"
-                        >
-                          <ReloadOutlined />
-                        </button>
-                        <button
-                          v-if="!isReadOnly && item.status !== 'failed' && !isBrokenAssistantMessage(item)"
-                          type="button"
-                          class="message-action-btn"
-                          title="跳转生图"
-                          @click="handleJumpGenerate(item)"
-                        >
-                          <PictureOutlined />
-                        </button>
+                        <a-tooltip v-if="messagePlainText(item)" title="复制">
+                          <button
+                            type="button"
+                            class="message-action-btn"
+                            aria-label="复制"
+                            @click="handleCopyMessage(item)"
+                          >
+                            <CopyOutlined />
+                          </button>
+                        </a-tooltip>
+                        <a-tooltip v-if="canRetryAssistant(item)" title="重试">
+                          <button
+                            type="button"
+                            class="message-action-btn"
+                            aria-label="重试"
+                            :disabled="isActiveSessionSending"
+                            @click="handleRetryAssistant(item)"
+                          >
+                            <ReloadOutlined />
+                          </button>
+                        </a-tooltip>
                       </div>
                     </div>
                   </div>
@@ -1930,15 +1912,16 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="item.role === 'user'" class="message-footer">
                   <span class="message-footer-time">{{ formatTime(item.created_at) }}</span>
-                  <button
-                    v-if="messagePlainText(item)"
-                    type="button"
-                    class="message-action-btn"
-                    title="复制"
-                    @click="handleCopyMessage(item)"
-                  >
-                    <CopyOutlined />
-                  </button>
+                  <a-tooltip v-if="messagePlainText(item)" title="复制">
+                    <button
+                      type="button"
+                      class="message-action-btn"
+                      aria-label="复制"
+                      @click="handleCopyMessage(item)"
+                    >
+                      <CopyOutlined />
+                    </button>
+                  </a-tooltip>
                 </div>
               </div>
             </div>
@@ -2887,11 +2870,23 @@ onBeforeUnmount(() => {
 
 .md-body :deep(h1),
 .md-body :deep(h2),
-.md-body :deep(h3) {
+.md-body :deep(h3),
+.md-body :deep(h4),
+.md-body :deep(h5),
+.md-body :deep(h6),
+.md-body :deep(.md-section-title) {
   margin: 14px 0 8px;
   color: var(--theme-title, #3d2f22);
   font-weight: 800;
   line-height: 1.35;
+}
+
+.md-body :deep(h1:first-child),
+.md-body :deep(h2:first-child),
+.md-body :deep(h3:first-child),
+.md-body :deep(h4:first-child),
+.md-body :deep(.md-section-title:first-child) {
+  margin-top: 0;
 }
 
 .md-body :deep(h1) {
@@ -2902,8 +2897,15 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.md-body :deep(h3) {
+.md-body :deep(h3),
+.md-body :deep(.md-section-title) {
   font-size: 15px;
+}
+
+.md-body :deep(h4),
+.md-body :deep(h5),
+.md-body :deep(h6) {
+  font-size: 14px;
 }
 
 .md-body :deep(p) {
@@ -2918,6 +2920,14 @@ onBeforeUnmount(() => {
 
 .md-body :deep(li) {
   margin: 4px 0;
+}
+
+.md-body :deep(li > p) {
+  margin-bottom: 6px;
+}
+
+.md-body :deep(li > p:last-child) {
+  margin-bottom: 0;
 }
 
 .md-body :deep(hr) {
@@ -2940,6 +2950,25 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.md-body :deep(blockquote p:last-child),
+.md-body :deep(.md-copyable > blockquote > :last-child) {
+  margin-bottom: 0;
+}
+
+.md-body :deep(.md-copyable .md-copyable) {
+  margin: 8px 0 0;
+  border: 0;
+  background: transparent;
+}
+
+.md-body :deep(.md-copyable .md-copyable > .md-code-toolbar) {
+  display: none;
+}
+
+.md-body :deep(.md-copyable .md-copyable pre) {
+  padding: 0;
 }
 
 .md-body :deep(strong) {
@@ -3016,6 +3045,11 @@ onBeforeUnmount(() => {
   text-transform: lowercase;
 }
 
+.md-body :deep(.md-code-lang.is-plain) {
+  font-family: inherit;
+  text-transform: none;
+}
+
 .md-body :deep(.md-code-actions) {
   display: inline-flex;
   align-items: center;
@@ -3024,6 +3058,7 @@ onBeforeUnmount(() => {
 
 .md-body :deep(.md-code-copy),
 .md-body :deep(.md-code-generate) {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3034,7 +3069,45 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: transparent;
   color: var(--theme-text-secondary, #8b7457);
+  line-height: 0;
   cursor: pointer;
+}
+
+.md-body :deep(.md-code-copy-icon),
+.md-body :deep(.md-code-copy-done),
+.md-body :deep(.md-code-generate-icon),
+.md-body :deep(.md-code-copy svg),
+.md-body :deep(.md-code-generate svg) {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.md-body :deep(.md-code-copy[data-tooltip]::after),
+.md-body :deep(.md-code-generate[data-tooltip]::after) {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(61, 47, 34, 0.88);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.md-body :deep(.md-code-copy:hover[data-tooltip]::after),
+.md-body :deep(.md-code-generate:hover[data-tooltip]::after) {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .md-body :deep(.md-code-copy:hover),
@@ -3053,8 +3126,7 @@ onBeforeUnmount(() => {
   color: #16a34a;
 }
 
-.md-body :deep(.md-code-block pre),
-.md-body :deep(.md-strong-body) {
+.md-body :deep(.md-code-block pre) {
   margin: 0;
   padding: 12px 14px 14px;
   border: 0;
@@ -3064,29 +3136,6 @@ onBeforeUnmount(() => {
 
 .md-body :deep(.md-code-block pre code) {
   font-size: 12px;
-}
-
-.md-body :deep(.md-strong-body) {
-  font-size: 13px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.md-body :deep(.md-strong-inline) {
-  display: inline;
-}
-
-.md-body :deep(.md-strong-inline .md-code-actions) {
-  display: inline-flex;
-  margin-left: 4px;
-  vertical-align: -4px;
-}
-
-.md-body :deep(.md-strong-inline .md-code-copy),
-.md-body :deep(.md-strong-inline .md-code-generate) {
-  width: 22px;
-  height: 22px;
 }
 
 .md-body :deep(.md-tok-key) {
@@ -3112,25 +3161,40 @@ onBeforeUnmount(() => {
 .md-body :deep(.md-table-wrap) {
   width: 100%;
   margin: 0 0 12px;
+  overflow: hidden;
   overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  background: color-mix(in srgb, var(--theme-panel-bg, #fff9f0) 70%, #fff);
+  box-shadow: 0 1px 2px rgba(61, 47, 34, 0.04);
 }
 
 .md-body :deep(table.md-table) {
   min-width: 100%;
   border-collapse: collapse;
   border-spacing: 0;
-  background: color-mix(in srgb, var(--theme-panel-bg, #fff9f0) 82%, #fff);
-  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
+  background: transparent;
 }
 
 .md-body :deep(table.md-table th),
 .md-body :deep(table.md-table td) {
-  padding: 8px 10px;
-  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  padding: 10px 14px;
+  border: 0;
+  border-right: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border-bottom: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
   text-align: left;
   vertical-align: top;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.md-body :deep(table.md-table th:last-child),
+.md-body :deep(table.md-table td:last-child) {
+  border-right: 0;
+}
+
+.md-body :deep(table.md-table tbody tr:last-child td) {
+  border-bottom: 0;
 }
 
 .md-body :deep(table.md-table th) {
@@ -3139,7 +3203,11 @@ onBeforeUnmount(() => {
 }
 
 .md-body :deep(table.md-table tbody tr:nth-child(even) td) {
-  background: var(--theme-table-row-bg, rgba(255, 255, 255, 0.5));
+  background: var(--theme-table-row-bg, rgba(255, 255, 255, 0.45));
+}
+
+.md-body :deep(table.md-table tbody tr:hover td) {
+  background: color-mix(in srgb, var(--theme-accent, #f7a831) 10%, #fff);
 }
 
 .md-body :deep(p:last-child),
@@ -3149,7 +3217,8 @@ onBeforeUnmount(() => {
 .md-body :deep(blockquote:last-child),
 .md-body :deep(img:last-child),
 .md-body :deep(.md-table-wrap:last-child),
-.md-body :deep(.md-code-block:last-child) {
+.md-body :deep(.md-code-block:last-child),
+.md-body :deep(.md-section-title:last-child) {
   margin-bottom: 0;
 }
 

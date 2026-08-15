@@ -30,12 +30,12 @@ function readCopyableText(button: HTMLElement): string {
 function markCopied(button: HTMLButtonElement) {
   button.classList.add("is-copied");
   button.setAttribute("aria-label", "已复制");
-  button.setAttribute("title", "已复制");
+  button.setAttribute("data-tooltip", "已复制");
   if (copiedTimer !== null) window.clearTimeout(copiedTimer);
   copiedTimer = window.setTimeout(() => {
     button.classList.remove("is-copied");
     button.setAttribute("aria-label", "复制");
-    button.setAttribute("title", "复制");
+    button.setAttribute("data-tooltip", "复制");
     copiedTimer = null;
   }, 1600);
 }
