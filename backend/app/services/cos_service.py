@@ -18,6 +18,7 @@ MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 USER_ASSET_PREFIX = "user_assets"
 UPLOAD_PURPOSE_PREFIXES = {
     "ref": "ref",
+    "chat": "chat",
     "source": "source",
     "mask": "mask",
     "reverse": "reverse",

@@ -2,6 +2,8 @@
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import { getPreviewImageSrc } from "@/api/images";
+import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
 import {
   createChatExternalApiConfig,
   createChatExternalApiSceneBinding,
@@ -56,6 +58,7 @@ function cloneStarterPrompts(items?: ChatStarterPrompt[] | null): ChatStarterPro
     .map((item) => ({
       tag: String(item?.tag || "").trim(),
       text: String(item?.text || "").trim(),
+      image_url: String(item?.image_url || "").trim(),
     }))
     .filter((item) => item.text);
 }
@@ -64,6 +67,7 @@ function normalizeStarterPromptsInput(items?: ChatStarterPrompt[] | null): ChatS
   return (items || []).slice(0, MAX_STARTER_PROMPTS).map((item) => ({
     tag: String(item?.tag || ""),
     text: String(item?.text || ""),
+    image_url: String(item?.image_url || ""),
   }));
 }
 
@@ -401,7 +405,57 @@ function addStarterPrompt(target: { starter_prompts: ChatStarterPrompt[] }) {
     message.warning(`最多添加 ${MAX_STARTER_PROMPTS} 条内置问题`);
     return;
   }
-  target.starter_prompts.push({ tag: "", text: "" });
+  target.starter_prompts.push({ tag: "", text: "", image_url: "" });
+}
+
+const starterImageInputRef = ref<HTMLInputElement | null>(null);
+const starterImageUploadingKey = ref("");
+const starterImageTarget = ref<{ list: ChatStarterPrompt[]; index: number } | null>(null);
+
+function starterImageKey(list: ChatStarterPrompt[], index: number) {
+  return list === sceneMetaForm.starter_prompts ? `meta-${index}` : `scene-${index}`;
+}
+
+function triggerStarterImageUpload(list: ChatStarterPrompt[], index: number) {
+  starterImageTarget.value = { list, index };
+  starterImageInputRef.value?.click();
+}
+
+function clearStarterImage(list: ChatStarterPrompt[], index: number) {
+  if (!list[index]) return;
+  list[index].image_url = "";
+}
+
+async function handleStarterImageChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const target = starterImageTarget.value;
+  input.value = "";
+  starterImageTarget.value = null;
+  if (!file || !target || !target.list[target.index]) return;
+  if (!file.type.startsWith("image/")) {
+    message.warning("仅支持上传图片");
+    return;
+  }
+  if (isImageUploadTooLarge(file)) {
+    message.warning(`图片不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
+    return;
+  }
+  const uploadKey = starterImageKey(target.list, target.index);
+  starterImageUploadingKey.value = uploadKey;
+  try {
+    const uploaded = await uploadReferenceImage(file, "chat");
+    if (target.list[target.index]) {
+      target.list[target.index].image_url = uploaded.url;
+    }
+    message.success("图片已上传");
+  } catch (err: any) {
+    message.error(err?.response?.data?.detail || err?.message || "图片上传失败");
+  } finally {
+    if (starterImageUploadingKey.value === uploadKey) {
+      starterImageUploadingKey.value = "";
+    }
+  }
 }
 
 function removeStarterPrompt(target: { starter_prompts: ChatStarterPrompt[] }, index: number) {
@@ -767,6 +821,13 @@ onMounted(loadData);
 
 <template>
   <div class="page warm-page motion-page-enter">
+    <input
+      ref="starterImageInputRef"
+      type="file"
+      accept="image/jpeg,image/png,image/webp,image/gif"
+      hidden
+      @change="handleStarterImageChange"
+    />
     <a-space direction="vertical" :size="16" style="width: 100%">
       <a-card title="接口配置" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 40ms">
         <template #extra>
@@ -1259,14 +1320,31 @@ onMounted(loadData);
         </a-form-item>
         <a-form-item label="内置问题">
           <div class="starter-prompt-editor">
-            <div class="scene-desc">空会话欢迎区展示，最多 {{ MAX_STARTER_PROMPTS }} 条；标签可选，问题必填。</div>
+            <div class="scene-desc">空会话欢迎区展示，最多 {{ MAX_STARTER_PROMPTS }} 条；标签可选，问题必填，图片可选。</div>
             <div
               v-for="(item, index) in sceneForm.starter_prompts"
               :key="`scene-starter-${index}`"
               class="starter-prompt-row"
             >
+              <button
+                type="button"
+                class="starter-prompt-image-btn"
+                :disabled="starterImageUploadingKey === starterImageKey(sceneForm.starter_prompts, index)"
+                @click="triggerStarterImageUpload(sceneForm.starter_prompts, index)"
+              >
+                <img v-if="item.image_url" :src="getPreviewImageSrc(item.image_url)" alt="" />
+                <span v-else>{{ starterImageUploadingKey === starterImageKey(sceneForm.starter_prompts, index) ? "上传中" : "配图" }}</span>
+              </button>
               <a-input v-model:value="item.tag" class="warm-input starter-prompt-tag-input" placeholder="标签，如生图" :maxlength="20" />
               <a-input v-model:value="item.text" class="warm-input starter-prompt-text-input" placeholder="问题内容" :maxlength="500" />
+              <a-button
+                v-if="item.image_url"
+                class="api-secondary-btn"
+                title="移除配图"
+                @click="clearStarterImage(sceneForm.starter_prompts, index)"
+              >
+                去图
+              </a-button>
               <a-button class="api-secondary-btn" @click="removeStarterPrompt(sceneForm, index)">
                 <template #icon><DeleteOutlined /></template>
               </a-button>
@@ -1343,14 +1421,31 @@ onMounted(loadData);
         </a-form-item>
         <a-form-item label="内置问题">
           <div class="starter-prompt-editor">
-            <div class="scene-desc">空会话欢迎区展示，最多 {{ MAX_STARTER_PROMPTS }} 条；标签可选，问题必填。</div>
+            <div class="scene-desc">空会话欢迎区展示，最多 {{ MAX_STARTER_PROMPTS }} 条；标签可选，问题必填，图片可选。</div>
             <div
               v-for="(item, index) in sceneMetaForm.starter_prompts"
               :key="`meta-starter-${index}`"
               class="starter-prompt-row"
             >
+              <button
+                type="button"
+                class="starter-prompt-image-btn"
+                :disabled="starterImageUploadingKey === starterImageKey(sceneMetaForm.starter_prompts, index)"
+                @click="triggerStarterImageUpload(sceneMetaForm.starter_prompts, index)"
+              >
+                <img v-if="item.image_url" :src="getPreviewImageSrc(item.image_url)" alt="" />
+                <span v-else>{{ starterImageUploadingKey === starterImageKey(sceneMetaForm.starter_prompts, index) ? "上传中" : "配图" }}</span>
+              </button>
               <a-input v-model:value="item.tag" class="warm-input starter-prompt-tag-input" placeholder="标签，如生图" :maxlength="20" />
               <a-input v-model:value="item.text" class="warm-input starter-prompt-text-input" placeholder="问题内容" :maxlength="500" />
+              <a-button
+                v-if="item.image_url"
+                class="api-secondary-btn"
+                title="移除配图"
+                @click="clearStarterImage(sceneMetaForm.starter_prompts, index)"
+              >
+                去图
+              </a-button>
               <a-button class="api-secondary-btn" @click="removeStarterPrompt(sceneMetaForm, index)">
                 <template #icon><DeleteOutlined /></template>
               </a-button>
@@ -1510,6 +1605,31 @@ onMounted(loadData);
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.starter-prompt-image-btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px dashed #e4c89a;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff8ee;
+  color: #8b7457;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.starter-prompt-image-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.starter-prompt-image-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .starter-prompt-tag-input {

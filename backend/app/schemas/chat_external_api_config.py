@@ -15,6 +15,7 @@ MAX_CHAT_STARTER_PROMPTS = 4
 class ChatStarterPromptItem(BaseModel):
     tag: str = ""
     text: str = ""
+    image_url: str = ""
 
     @field_validator("tag")
     @classmethod
@@ -32,6 +33,19 @@ class ChatStarterPromptItem(BaseModel):
             raise ValueError("内置问题内容不能为空")
         if len(cleaned) > 500:
             raise ValueError("内置问题内容最多 500 字")
+        return cleaned
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image_url(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            return ""
+        if len(cleaned) > 2000:
+            raise ValueError("内置问题图片地址过长")
+        lowered = cleaned.lower()
+        if not (lowered.startswith("http://") or lowered.startswith("https://")):
+            raise ValueError("内置问题图片地址必须是 http/https URL")
         return cleaned
 
 

@@ -1762,6 +1762,7 @@ export interface ChatExternalApiConfigPayload {
 export interface ChatStarterPrompt {
   tag: string;
   text: string;
+  image_url?: string;
 }
 
 export interface ChatExternalApiSceneBinding {
@@ -1854,11 +1855,16 @@ export interface ChatSessionListResponse {
   has_more: boolean;
 }
 
+export interface ChatImage {
+  url: string;
+}
+
 export interface ChatMessage {
   id: number;
   session_id: string;
   role: "user" | "assistant" | "system" | string;
   content: string;
+  images?: ChatImage[];
   model: string;
   client_message_id?: string | null;
   credit_cost: number;
@@ -2083,6 +2089,7 @@ export interface AdminLedgerPayload {
 
 export type UploadPurpose =
   | "ref"
+  | "chat"
   | "source"
   | "mask"
   | "reverse"

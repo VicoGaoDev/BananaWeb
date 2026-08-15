@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ChatSessionCreate(BaseModel):
@@ -60,11 +60,32 @@ class ChatSessionListOut(BaseModel):
     has_more: bool
 
 
+MAX_CHAT_IMAGES = 4
+
+
+class ChatImagePart(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise ValueError("图片地址不能为空")
+        if len(cleaned) > 2000:
+            raise ValueError("图片地址过长")
+        lowered = cleaned.lower()
+        if not (lowered.startswith("http://") or lowered.startswith("https://")):
+            raise ValueError("图片地址必须是 http/https URL")
+        return cleaned
+
+
 class ChatMessageOut(BaseModel):
     id: int
     session_id: str
     role: str
     content: str
+    images: list[ChatImagePart] = Field(default_factory=list)
     model: str
     client_message_id: str | None = None
     credit_cost: int = 0
@@ -80,7 +101,8 @@ class ChatMessageListOut(BaseModel):
 
 
 class ChatSendMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=10000)
+    content: str = Field(default="", max_length=10000)
+    images: list[ChatImagePart] = Field(default_factory=list)
     model: str | None = None
     client_message_id: str = Field(min_length=8, max_length=64)
 
@@ -88,11 +110,30 @@ class ChatSendMessageRequest(BaseModel):
     @classmethod
     def validate_content(cls, value: str) -> str:
         cleaned = (value or "").strip()
-        if not cleaned:
-            raise ValueError("消息内容不能为空")
         if len(cleaned) > 10000:
             raise ValueError("消息内容不能超过 10000 字符")
         return cleaned
+
+    @field_validator("images")
+    @classmethod
+    def validate_images(cls, value: list[ChatImagePart] | None) -> list[ChatImagePart]:
+        items = list(value or [])
+        if len(items) > MAX_CHAT_IMAGES:
+            raise ValueError(f"一次最多上传 {MAX_CHAT_IMAGES} 张图片")
+        seen: set[str] = set()
+        unique: list[ChatImagePart] = []
+        for item in items:
+            if item.url in seen:
+                continue
+            seen.add(item.url)
+            unique.append(item)
+        return unique
+
+    @model_validator(mode="after")
+    def validate_content_or_images(self) -> "ChatSendMessageRequest":
+        if not self.content and not self.images:
+            raise ValueError("请输入消息或上传图片")
+        return self
 
     @field_validator("model")
     @classmethod

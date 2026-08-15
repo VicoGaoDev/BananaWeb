@@ -25,8 +25,10 @@ import {
   updateChatSession,
 } from "@/api/chat";
 import { getChatModels } from "@/api/chatConfig";
+import { getPreviewImageSrc } from "@/api/images";
+import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
 import { withBaseUrl } from "@/lib/assets";
-import type { ChatGenerationModelOption, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
+import type { ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const CHAT_DRAFT_KEY = "generateDraftFromChat";
@@ -43,6 +45,18 @@ const messages = ref<ChatMessage[]>([]);
 const activeSessionId = ref<string | null>(null);
 const selectedModel = ref("");
 const draft = ref("");
+type DraftChatImage = {
+  id: string;
+  localUrl: string;
+  remoteUrl: string;
+  status: "uploading" | "success" | "failed";
+};
+const MAX_CHAT_IMAGES = 4;
+const draftImages = ref<DraftChatImage[]>([]);
+const chatImageInputRef = ref<HTMLInputElement | null>(null);
+const composerDragActive = ref(false);
+const previewVisible = ref(false);
+const previewSrc = ref("");
 const loadingSessions = ref(false);
 const loadingMessages = ref(false);
 const loadingOlder = ref(false);
@@ -96,7 +110,161 @@ type MessageCacheEntry = {
 const messageCache = new Map<string, MessageCacheEntry>();
 
 function cloneMessages(items: ChatMessage[]) {
-  return items.map((item) => ({ ...item }));
+  return items.map((item) => ({
+    ...item,
+    images: (item.images || []).map((img) => ({ ...img })),
+  }));
+}
+
+function messageImages(item: ChatMessage): ChatImage[] {
+  return (item.images || []).filter((img) => Boolean(img?.url));
+}
+
+function chatImageDisplaySrc(url: string) {
+  return getPreviewImageSrc((url || "").trim());
+}
+
+function openChatImagePreview(url: string) {
+  const src = chatImageDisplaySrc(url);
+  if (!src) return;
+  previewSrc.value = src;
+  previewVisible.value = true;
+}
+
+function revokeDraftImageUrl(item: DraftChatImage) {
+  if (item.localUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(item.localUrl);
+  }
+}
+
+function clearDraftImages() {
+  draftImages.value.forEach(revokeDraftImageUrl);
+  draftImages.value = [];
+}
+
+const canSend = computed(() => {
+  const hasText = Boolean(draft.value.trim());
+  const hasImage = draftImages.value.some((item) => item.status === "success" && item.remoteUrl);
+  const uploading = draftImages.value.some((item) => item.status === "uploading");
+  return (hasText || hasImage) && !uploading && Boolean(models.value.length);
+});
+
+function collectImageFiles(files: ArrayLike<File> | null | undefined): File[] {
+  return Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+}
+
+function getClipboardImageFiles(event: ClipboardEvent): File[] {
+  const itemFiles = Array.from(event.clipboardData?.items || [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file && file.type.startsWith("image/")));
+  if (itemFiles.length) return itemFiles;
+  return collectImageFiles(event.clipboardData?.files);
+}
+
+function isImageFileDragEvent(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+function openChatImagePicker() {
+  if (sending.value || !models.value.length) return;
+  if (draftImages.value.length >= MAX_CHAT_IMAGES) {
+    message.warning(`一次最多上传 ${MAX_CHAT_IMAGES} 张图片`);
+    return;
+  }
+  chatImageInputRef.value?.click();
+}
+
+async function addChatImageFiles(files: File[]) {
+  if (sending.value || !models.value.length) return;
+  const imageFiles = collectImageFiles(files);
+  if (!imageFiles.length) return;
+  if (!auth.isLoggedIn) {
+    message.warning("请先登录");
+    return;
+  }
+  const remain = MAX_CHAT_IMAGES - draftImages.value.length;
+  if (remain <= 0) {
+    message.warning(`一次最多上传 ${MAX_CHAT_IMAGES} 张图片`);
+    return;
+  }
+  const selected = imageFiles.slice(0, remain);
+  if (imageFiles.length > remain) {
+    message.warning(`一次最多上传 ${MAX_CHAT_IMAGES} 张图片`);
+  }
+  for (const file of selected) {
+    if (isImageUploadTooLarge(file)) {
+      message.warning(`图片不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
+      continue;
+    }
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const localUrl = URL.createObjectURL(file);
+    const draftItem: DraftChatImage = {
+      id,
+      localUrl,
+      remoteUrl: "",
+      status: "uploading",
+    };
+    draftImages.value.push(draftItem);
+    try {
+      const uploaded = await uploadReferenceImage(file, "chat");
+      const current = draftImages.value.find((item) => item.id === id);
+      if (!current) {
+        URL.revokeObjectURL(localUrl);
+        continue;
+      }
+      current.remoteUrl = uploaded.url;
+      current.status = "success";
+    } catch (err: any) {
+      const current = draftImages.value.find((item) => item.id === id);
+      if (current) current.status = "failed";
+      message.error(err?.response?.data?.detail || err?.message || "图片上传失败");
+    }
+  }
+}
+
+async function handleChatImageChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files || []);
+  input.value = "";
+  await addChatImageFiles(files);
+}
+
+async function handleComposerPaste(event: ClipboardEvent) {
+  if (sending.value || !models.value.length) return;
+  const files = getClipboardImageFiles(event);
+  if (!files.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await addChatImageFiles(files);
+}
+
+function handleComposerDragOver(event: DragEvent) {
+  if (!isImageFileDragEvent(event) || sending.value || !models.value.length) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  composerDragActive.value = true;
+}
+
+function handleComposerDragLeave(event: DragEvent) {
+  const nextTarget = event.relatedTarget as Node | null;
+  if (nextTarget && (event.currentTarget as HTMLElement | null)?.contains(nextTarget)) return;
+  composerDragActive.value = false;
+}
+
+async function handleComposerDrop(event: DragEvent) {
+  event.preventDefault();
+  composerDragActive.value = false;
+  if (sending.value || !models.value.length) return;
+  const files = collectImageFiles(event.dataTransfer?.files);
+  if (!files.length) return;
+  await addChatImageFiles(files);
+}
+
+function removeDraftImage(id: string) {
+  const current = draftImages.value.find((item) => item.id === id);
+  if (current) revokeDraftImageUrl(current);
+  draftImages.value = draftImages.value.filter((item) => item.id !== id);
 }
 
 function putMessageCache(sessionId: string, entry: MessageCacheEntry) {
@@ -237,7 +405,7 @@ function sceneOptionLabel(item?: ChatGenerationModelOption | null) {
   return (item.model_label || item.display_name || item.model_key || "").trim();
 }
 
-type StarterPrompt = { id: string; tag: string; text: string };
+type StarterPrompt = { id: string; tag: string; text: string; image_url: string };
 
 const starterPrompts = computed(() => {
   const configured = (selectedModelOption.value?.starter_prompts || [])
@@ -245,6 +413,7 @@ const starterPrompts = computed(() => {
       id: `starter-${index}`,
       tag: String(item?.tag || "").trim(),
       text: String(item?.text || "").trim(),
+      image_url: String(item?.image_url || "").trim(),
     }))
     .filter((item) => item.text)
     .slice(0, 4);
@@ -253,7 +422,9 @@ const starterPrompts = computed(() => {
 
 function handleStarterPrompt(prompt: StarterPrompt) {
   if (sending.value || !prompt?.text) return;
-  void handleSend(prompt.text);
+  void handleSend(prompt.text, {
+    images: prompt.image_url ? [{ url: prompt.image_url }] : [],
+  });
 }
 
 const modelChipLabel = computed(() =>
@@ -339,7 +510,7 @@ function findPreviousUserMessage(assistant: ChatMessage): ChatMessage | null {
   if (index <= 0) return null;
   for (let i = index - 1; i >= 0; i -= 1) {
     const item = messages.value[i];
-    if (item.role === "user" && (item.content || "").trim()) {
+    if (item.role === "user" && ((item.content || "").trim() || messageImages(item).length)) {
       return item;
     }
   }
@@ -869,13 +1040,21 @@ function handleStopSending() {
 
 async function handleSend(
   contentOverride?: string,
-  options: { model?: string; skipOptimisticUser?: boolean } = {},
+  options: { model?: string; skipOptimisticUser?: boolean; images?: ChatImage[] } = {},
 ) {
   // @click 可能把事件对象传进来，只接受真正的字符串覆盖
   const overrideText = typeof contentOverride === "string" ? contentOverride : undefined;
   const content = (overrideText ?? draft.value).trim();
   const model = (options.model || selectedModel.value || "").trim();
-  if (!content || sending.value) return;
+  const sendingImages = (options.images || draftImages.value
+    .filter((item) => item.status === "success" && item.remoteUrl)
+    .map((item) => ({ url: item.remoteUrl })));
+  if (sending.value) return;
+  if (overrideText == null && draftImages.value.some((item) => item.status === "uploading")) {
+    message.warning("图片还在上传，请稍候");
+    return;
+  }
+  if (!content && !sendingImages.length) return;
   if (!model) {
     message.warning("请先选择对话场景");
     return;
@@ -889,8 +1068,10 @@ async function handleSend(
   sendAbortController = controller;
   sending.value = true;
   composerPopoverOpen.value = false;
+  const snapshotDraftImages = overrideText == null ? draftImages.value.slice() : [];
   if (overrideText == null) {
     draft.value = "";
+    draftImages.value = [];
   }
   if (!selectedModel.value) selectedModel.value = model;
   const clientMessageId = createClientMessageId();
@@ -901,6 +1082,7 @@ async function handleSend(
       session_id: activeSessionId.value || "",
       role: "user",
       content,
+      images: sendingImages,
       model,
       client_message_id: clientMessageId,
       credit_cost: 0,
@@ -919,6 +1101,7 @@ async function handleSend(
     }
     const sendPayload = {
       content,
+      images: sendingImages,
       model,
       client_message_id: clientMessageId,
     };
@@ -1070,6 +1253,7 @@ async function handleSend(
         await streamAssistantMessage(result.assistant_message);
       }
     }
+    snapshotDraftImages.forEach(revokeDraftImageUrl);
   } catch (err: any) {
     liveStreaming.value = false;
     if (isRequestAborted(err)) {
@@ -1117,6 +1301,7 @@ async function handleSend(
           nextBeforeId: messagesNextBeforeId.value,
         });
       }
+      snapshotDraftImages.forEach(revokeDraftImageUrl);
       message.info("已中断");
       return;
     }
@@ -1125,6 +1310,9 @@ async function handleSend(
     }
     if (overrideText == null) {
       draft.value = content;
+      if (!draftImages.value.length && snapshotDraftImages.length) {
+        draftImages.value = snapshotDraftImages;
+      }
     }
     const detail = err?.response?.data?.detail;
     if (err?.code === "ECONNABORTED" || /timeout/i.test(String(err?.message || ""))) {
@@ -1149,7 +1337,8 @@ async function handleRetryAssistant(item: ChatMessage) {
   if (sending.value || !canRetryAssistant(item)) return;
   const previousUser = findPreviousUserMessage(item);
   const content = (previousUser?.content || "").trim();
-  if (!content) {
+  const images = previousUser ? messageImages(previousUser) : [];
+  if (!content && !images.length) {
     message.warning("找不到可重试的用户消息");
     return;
   }
@@ -1157,6 +1346,7 @@ async function handleRetryAssistant(item: ChatMessage) {
   await handleSend(content, {
     model: previousUser?.model || item.model || selectedModel.value,
     skipOptimisticUser: true,
+    images,
   });
 }
 
@@ -1216,12 +1406,13 @@ onBeforeUnmount(() => {
   sendAbortController?.abort();
   sendAbortController = null;
   stopAssistantStreaming();
+  clearDraftImages();
   document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
 });
 </script>
 
 <template>
-  <div class="chat-page" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="chat-page" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'has-draft-images': draftImages.length }">
     <aside class="chat-sidebar">
       <div class="chat-assistant-brand">
         <img :src="xiaobaAvatarSrc" alt="小八" class="chat-assistant-avatar" />
@@ -1327,10 +1518,18 @@ onBeforeUnmount(() => {
                     :key="item.id"
                     type="button"
                     class="starter-prompt-btn"
+                    :class="{ 'has-image': Boolean(item.image_url) }"
                     :disabled="sending || !models.length"
                     @click="handleStarterPrompt(item)"
                   >
                     <span v-if="item.tag" class="starter-prompt-tag">{{ item.tag }}</span>
+                    <img
+                      v-if="item.image_url"
+                      :src="chatImageDisplaySrc(item.image_url)"
+                      alt=""
+                      class="starter-prompt-image"
+                      @click.stop="openChatImagePreview(item.image_url)"
+                    />
                     <span class="starter-prompt-text">{{ item.text }}</span>
                   </button>
                 </div>
@@ -1397,12 +1596,33 @@ onBeforeUnmount(() => {
                       <span>重试</span>
                     </button>
                   </div>
-                  <MarkdownMessage
-                    v-else-if="item.role === 'assistant' && (item.content || '').trim()"
-                    :content="assistantDisplayText(item)"
-                    :streaming="streamingMessageId === item.id"
-                  />
-                  <div v-else class="message-content is-plain">{{ item.content || item.error_message || "系统出错，可进行重试" }}</div>
+                  <template v-else>
+                    <div v-if="item.role === 'user' && messageImages(item).length" class="message-images">
+                      <button
+                        v-for="image in messageImages(item)"
+                        :key="image.url"
+                        type="button"
+                        class="message-image-link"
+                        title="预览图片"
+                        @click="openChatImagePreview(image.url)"
+                      >
+                        <img :src="chatImageDisplaySrc(image.url)" alt="" class="message-image" />
+                      </button>
+                    </div>
+                    <MarkdownMessage
+                      v-if="item.role === 'assistant' && (item.content || '').trim()"
+                      :content="assistantDisplayText(item)"
+                      :streaming="streamingMessageId === item.id"
+                    />
+                    <div
+                      v-else-if="(item.content || '').trim()"
+                      class="message-content is-plain"
+                    >{{ item.content }}</div>
+                    <div
+                      v-else-if="item.role !== 'user' || !messageImages(item).length"
+                      class="message-content is-plain"
+                    >{{ item.error_message || "系统出错，可进行重试" }}</div>
+                  </template>
                   <div
                     v-if="item.status === 'failed' && !isBrokenAssistantMessage(item)"
                     class="message-error"
@@ -1445,13 +1665,55 @@ onBeforeUnmount(() => {
       </button>
 
       <div class="composer-dock" @click="composerPopoverOpen = false">
-        <section class="chat-composer-shell" @click.stop>
+        <section
+          class="chat-composer-shell"
+          :class="{ 'is-drag-over': composerDragActive }"
+          @click.stop
+          @paste="handleComposerPaste"
+          @dragenter="handleComposerDragOver"
+          @dragover="handleComposerDragOver"
+          @dragleave="handleComposerDragLeave"
+          @drop="handleComposerDrop"
+        >
+          <input
+            ref="chatImageInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            hidden
+            @change="handleChatImageChange"
+          />
+          <div v-if="draftImages.length" class="composer-image-list">
+            <div
+              v-for="item in draftImages"
+              :key="item.id"
+              class="composer-image-thumb"
+              :class="{ failed: item.status === 'failed' }"
+              @click="openChatImagePreview(item.remoteUrl || item.localUrl)"
+            >
+              <img :src="item.remoteUrl ? chatImageDisplaySrc(item.remoteUrl) : item.localUrl" alt="" />
+              <div v-if="item.status !== 'success'" class="composer-image-mask">
+                <a-spin v-if="item.status === 'uploading'" size="small" />
+                <span v-else>失败</span>
+              </div>
+              <button
+                type="button"
+                class="composer-image-remove"
+                title="移除图片"
+                :disabled="sending"
+                @click.stop="removeDraftImage(item.id)"
+              >
+                <CloseOutlined />
+              </button>
+            </div>
+          </div>
           <textarea
             v-model="draft"
             class="composer-prompt-input"
             :disabled="sending || !models.length"
-            placeholder="描述你想聊的内容..."
+            placeholder="描述你想聊的内容，可粘贴或拖入图片..."
             @keydown="handleComposerKeydown"
+            @paste="handleComposerPaste"
             @focus="composerPopoverOpen = false"
           ></textarea>
           <div class="composer-footer">
@@ -1502,6 +1764,15 @@ onBeforeUnmount(() => {
                 </template>
               </button>
             </div>
+            <button
+              type="button"
+              class="composer-attach-btn"
+              title="添加图片"
+              :disabled="sending || !models.length || draftImages.length >= MAX_CHAT_IMAGES"
+              @click="openChatImagePicker"
+            >
+              <PictureOutlined />
+            </button>
             <a-button
               v-if="sending"
               type="primary"
@@ -1516,7 +1787,7 @@ onBeforeUnmount(() => {
               v-else
               type="primary"
               class="composer-generate-btn"
-              :disabled="!draft.trim() || !models.length"
+              :disabled="!canSend"
               @click="() => handleSend()"
             >
               <template #icon><ThunderboltOutlined /></template>
@@ -1527,6 +1798,12 @@ onBeforeUnmount(() => {
         <div v-if="!models.length" class="composer-hint">暂无可用对话场景，请联系管理员在「对话接口」中配置场景绑定。</div>
       </div>
     </section>
+    <div v-if="previewVisible" style="display: none">
+      <a-image
+        :src="previewSrc"
+        :preview="{ visible: previewVisible, onVisibleChange: (visible: boolean) => (previewVisible = visible) }"
+      />
+    </div>
   </div>
 </template>
 
@@ -1760,6 +2037,10 @@ onBeforeUnmount(() => {
   background: var(--theme-page-base, #f7f4ef);
 }
 
+.chat-page.has-draft-images .chat-main {
+  --chat-composer-reserve: 228px;
+}
+
 .sidebar-toggle-btn {
   position: absolute;
   top: 12px;
@@ -1924,7 +2205,7 @@ onBeforeUnmount(() => {
 
 .starter-prompt-btn {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   width: 100%;
   padding: 11px 12px;
@@ -1951,9 +2232,18 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+.starter-prompt-image {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
 .starter-prompt-tag {
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-top: 0;
   padding: 2px 7px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--theme-accent, #f7a831) 22%, #fff);
@@ -2145,6 +2435,35 @@ onBeforeUnmount(() => {
 .message-content.is-plain {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-images:last-child {
+  margin-bottom: 0;
+}
+
+.message-image-link {
+  display: block;
+  width: 88px;
+  height: 88px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: zoom-in;
+}
+
+.message-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .message-content.is-streaming::after {
@@ -2377,6 +2696,96 @@ onBeforeUnmount(() => {
   border: 1px solid var(--theme-panel-border, #ebd9c1);
   background: var(--theme-panel-bg, #fff9f0);
   box-shadow: 0 16px 34px var(--theme-card-shadow, rgba(90, 60, 20, 0.12));
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.chat-composer-shell.is-drag-over {
+  border-color: var(--theme-accent, #f7a831);
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--theme-accent, #f7a831) 24%, transparent);
+}
+
+.composer-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 12px 8px;
+}
+
+.composer-image-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--theme-panel-bg-muted, rgba(0, 0, 0, 0.04));
+  cursor: zoom-in;
+}
+
+.composer-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-image-thumb.failed {
+  outline: 1px solid #d4380d;
+}
+
+.composer-image-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 11px;
+}
+
+.composer-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  font-size: 10px;
+}
+
+.composer-image-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-attach-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--theme-panel-bg-muted, rgba(0, 0, 0, 0.05));
+  color: var(--theme-title, #3d2f22);
+  cursor: pointer;
+}
+
+.composer-attach-btn:hover:not(:disabled) {
+  background: var(--theme-panel-bg, #fff4e6);
+}
+
+.composer-attach-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .composer-prompt-input {
@@ -2592,6 +3001,10 @@ onBeforeUnmount(() => {
   .chat-main {
     --chat-composer-reserve: 160px;
     min-height: 480px;
+  }
+
+  .chat-page.has-draft-images .chat-main {
+    --chat-composer-reserve: 240px;
   }
 
   .sidebar-toggle-btn {

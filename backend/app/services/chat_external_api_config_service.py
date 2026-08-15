@@ -80,16 +80,29 @@ def _parse_starter_prompts(raw: str | None) -> list[ChatStarterPromptItem]:
         if not text:
             continue
         tag = str(entry.get("tag") or "").strip()[:20]
-        items.append(ChatStarterPromptItem(tag=tag, text=text[:500]))
+        image_url = str(entry.get("image_url") or "").strip()[:2000]
+        if image_url and not image_url.lower().startswith(("http://", "https://")):
+            image_url = ""
+        items.append(ChatStarterPromptItem(tag=tag, text=text[:500], image_url=image_url))
     return items
 
 
 def _dump_starter_prompts(items: list[ChatStarterPromptItem] | None) -> str:
-    normalized = [
-        {"tag": (item.tag or "").strip()[:20], "text": (item.text or "").strip()[:500]}
-        for item in (items or [])
-        if (item.text or "").strip()
-    ][:MAX_CHAT_STARTER_PROMPTS]
+    normalized = []
+    for item in (items or []):
+        text = (item.text or "").strip()[:500]
+        if not text:
+            continue
+        payload = {
+            "tag": (item.tag or "").strip()[:20],
+            "text": text,
+        }
+        image_url = (item.image_url or "").strip()[:2000]
+        if image_url:
+            payload["image_url"] = image_url
+        normalized.append(payload)
+        if len(normalized) >= MAX_CHAT_STARTER_PROMPTS:
+            break
     return json.dumps(normalized, ensure_ascii=False)
 
 

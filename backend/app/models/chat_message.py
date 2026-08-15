@@ -11,6 +11,7 @@ class ChatMessage(Base):
     reply_to_message_id = Column(Integer, ForeignKey("chat_messages.id"), nullable=True)
     role = Column(String(20), nullable=False, default="user", server_default="user")
     content = Column(Text, nullable=False, default="")
+    images_json = Column(Text, nullable=True, default="[]")
     model = Column(String(50), nullable=False, default="", server_default="")
     client_message_id = Column(String(64), nullable=True)
     credit_cost = Column(Integer, nullable=False, default=0, server_default="0")

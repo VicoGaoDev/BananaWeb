@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
@@ -25,6 +26,7 @@ from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.user import User
 from app.schemas.chat import (
+    ChatImagePart,
     ChatMessageListOut,
     ChatMessageOut,
     ChatSendMessageRequest,
@@ -47,6 +49,7 @@ from app.services.external_api_config_service import (
     read_value_by_path,
     render_config,
 )
+from app.services.image_delivery_service import build_webp_url
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_balance
 
 
@@ -107,12 +110,69 @@ def _serialize_session(session: ChatSession) -> ChatSessionOut:
     )
 
 
+def _parse_message_image_urls(raw: str | None) -> list[str]:
+    if not (raw or "").strip():
+        return []
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in payload:
+        url = ""
+        if isinstance(item, str):
+            url = item.strip()
+        elif isinstance(item, dict):
+            url = str(item.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        lowered = url.lower()
+        if not (lowered.startswith("http://") or lowered.startswith("https://")):
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def _dump_message_images_json(urls: list[str]) -> str:
+    return json.dumps(urls, ensure_ascii=False)
+
+
+def _request_image_urls(body: ChatSendMessageRequest) -> list[str]:
+    return [item.url for item in (body.images or []) if item.url]
+
+
+def _message_image_urls(message: ChatMessage) -> list[str]:
+    return _parse_message_image_urls(getattr(message, "images_json", None))
+
+
+def _message_images_out(message: ChatMessage) -> list[ChatImagePart]:
+    return [ChatImagePart(url=url) for url in _message_image_urls(message)]
+
+
+def _to_provider_content(text: str, image_urls: list[str] | None = None) -> str | list[dict[str, Any]]:
+    cleaned = (text or "").strip()
+    urls = [url for url in (image_urls or []) if (url or "").strip()]
+    if not urls:
+        return cleaned
+    parts: list[dict[str, Any]] = []
+    if cleaned:
+        parts.append({"type": "text", "text": cleaned})
+    for url in urls:
+        parts.append({"type": "image_url", "image_url": {"url": build_webp_url(url)}})
+    return parts
+
+
 def _serialize_message(message: ChatMessage, *, public_session_id: str) -> ChatMessageOut:
     return ChatMessageOut(
         id=int(message.id),
         session_id=public_session_id,
         role=message.role or "user",
         content=message.content or "",
+        images=_message_images_out(message),
         model=message.model or "",
         client_message_id=message.client_message_id,
         credit_cost=int(message.credit_cost or 0),
@@ -271,7 +331,8 @@ def _build_context_messages(
     system_prompt: str,
     context_message_limit: int,
     current_user_content: str,
-) -> list[dict[str, str]]:
+    current_image_urls: list[str] | None = None,
+) -> list[dict[str, Any]]:
     limit = max(2, int(context_message_limit or 10))
     history_rows = (
         db.query(ChatMessage)
@@ -285,16 +346,20 @@ def _build_context_messages(
         .all()
     )
     history_rows.reverse()
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, Any]] = []
     if (system_prompt or "").strip():
         messages.append({"role": "system", "content": system_prompt.strip()})
     for item in history_rows:
-        content = (item.content or "").strip()
-        if not content:
+        text = (item.content or "").strip()
+        image_urls = _message_image_urls(item)
+        if not text and not image_urls:
             continue
-        messages.append({"role": item.role, "content": content})
-    if not messages or messages[-1].get("content") != current_user_content:
-        messages.append({"role": "user", "content": current_user_content})
+        messages.append({"role": item.role, "content": _to_provider_content(text, image_urls)})
+    current_content = _to_provider_content(current_user_content, current_image_urls)
+    if not current_user_content.strip() and not (current_image_urls or []):
+        return messages
+    if not messages or messages[-1].get("content") != current_content:
+        messages.append({"role": "user", "content": current_content})
     return messages
 
 
@@ -345,6 +410,7 @@ def _plain_message_payload(message: ChatMessage, *, public_session_id: str, cont
         "session_id": public_session_id,
         "role": message.role or "user",
         "content": content_override if content_override is not None else (message.content or ""),
+        "images": [{"url": item.url} for item in _message_images_out(message)],
         "model": message.model or "",
         "client_message_id": message.client_message_id,
         "credit_cost": int(message.credit_cost or 0),
@@ -612,7 +678,7 @@ def _call_chat_provider_json(
     db: Session,
     config: ChatExternalApiConfig,
     *,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     system_prompt: str,
     user_message: str,
 ) -> tuple[str, str]:
@@ -855,7 +921,7 @@ def _iter_chat_provider_text(
     db: Session,
     config: ChatExternalApiConfig,
     *,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     system_prompt: str,
     user_message: str,
     preview_box: list[str] | None = None,
@@ -893,7 +959,7 @@ def _call_chat_provider(
     db: Session,
     config: ChatExternalApiConfig,
     *,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     system_prompt: str,
     user_message: str,
 ) -> tuple[str, str]:
@@ -937,7 +1003,7 @@ class _PreparedChatSend:
     primary_config: ChatExternalApiConfig | None = None
     backup_config: ChatExternalApiConfig | None = None
     credit_cost: int = 0
-    context_messages: list[dict[str, str]] | None = None
+    context_messages: list[dict[str, Any]] | None = None
     user_content: str = ""
 
 
@@ -999,10 +1065,12 @@ def _prepare_send_message(
         )
 
     now = now_local()
+    image_urls = _request_image_urls(body)
     user_message = ChatMessage(
         session_id=session.id,
         role="user",
         content=body.content,
+        images_json=_dump_message_images_json(image_urls),
         model=model,
         client_message_id=body.client_message_id,
         credit_cost=0,
@@ -1025,7 +1093,8 @@ def _prepare_send_message(
         assistant_message.reply_to_message_id = user_message.id
         db.add(assistant_message)
         if not (session.title or "").strip():
-            session.title = body.content[:30]
+            title_source = (body.content or "").strip() or ("图片对话" if image_urls else "")
+            session.title = title_source[:30]
         session.model = model
         session.last_message_at = now
         db.add(session)
@@ -1054,6 +1123,7 @@ def _prepare_send_message(
         system_prompt=binding.system_prompt or "",
         context_message_limit=int(binding.context_message_limit or 10),
         current_user_content=body.content,
+        current_image_urls=image_urls,
     )
     return _PreparedChatSend(
         session=session,
@@ -1224,7 +1294,7 @@ async def iter_prepared_send_message_sse(
     assistant_message_id: int,
     model: str,
     credit_cost: int,
-    context_messages: list[dict[str, str]],
+    context_messages: list[dict[str, Any]],
     user_content: str,
     system_prompt: str,
     scene_label: str,
@@ -1488,7 +1558,7 @@ def _finish_provider_round(
     primary_config: ChatExternalApiConfig,
     backup_config: ChatExternalApiConfig | None,
     credit_cost: int,
-    context_messages: list[dict[str, str]],
+    context_messages: list[dict[str, Any]],
     user_content: str,
 ) -> ChatSendMessageResponse:
     reply_text = ""

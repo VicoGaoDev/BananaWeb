@@ -56,6 +56,7 @@ export function sendChatMessage(
   sessionId: string,
   payload: {
     content: string;
+    images?: { url: string }[];
     model?: string;
     client_message_id: string;
   },
@@ -147,6 +148,7 @@ export async function sendChatMessageStream(
   sessionId: string,
   payload: {
     content: string;
+    images?: { url: string }[];
     model?: string;
     client_message_id: string;
   },

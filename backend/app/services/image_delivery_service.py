@@ -91,6 +91,9 @@ def _looks_like_cos_url(image_url: str, cos_config: CosRuntimeConfig | None) -> 
     return parsed.netloc == urlparse(cos_config.public_base_url).netloc
 
 
+COS_WEBP_FORMAT_RULE = "imageMogr2/format/webp"
+
+
 def _append_ci_rule(image_url: str, rule: str) -> str:
     cleaned_rule = rule.strip().lstrip("?&")
     if not cleaned_rule or cleaned_rule in image_url:
@@ -129,6 +132,16 @@ def _build_cos_thumb_url(image_url: str, rule: str) -> str:
     if style_name:
         return _append_style_suffix(image_url, style_name)
     return _append_ci_rule(image_url, rule)
+
+
+def build_webp_url(image_url: str | None) -> str:
+    canonical_url = _normalize_url(image_url)
+    if not canonical_url:
+        return ""
+    lowered = canonical_url.lower()
+    if lowered.startswith("data:") or lowered.startswith("blob:"):
+        return canonical_url
+    return _append_ci_rule(canonical_url, COS_WEBP_FORMAT_RULE)
 
 
 def build_thumb_url(
