@@ -3184,7 +3184,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
   if (!raw) return;
   try {
     const draft = JSON.parse(raw) as {
-      mode?: "generate" | "inpaint" | "promptReverse";
+      mode?: "generate" | "imageEdit" | "textGenerate" | "inpaint" | "promptReverse";
       prompt?: string;
       model?: string;
       reference_images?: string[];
@@ -3199,9 +3199,13 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       ? "inpaint"
       : draft.mode === "promptReverse"
         ? "promptReverse"
-        : Array.isArray(draft.reference_images) && draft.reference_images.length
+        : draft.mode === "imageEdit"
           ? "imageEdit"
-          : "textGenerate";
+          : draft.mode === "textGenerate"
+            ? "textGenerate"
+            : Array.isArray(draft.reference_images) && draft.reference_images.length
+              ? "imageEdit"
+              : "textGenerate";
     generateMode.value = draftMode;
     size.value = draft.size || sizeOptions.value[0]?.value || "1:1";
     resolution.value = draft.resolution || "2K";

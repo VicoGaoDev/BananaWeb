@@ -60,7 +60,7 @@ const previewSrc = ref("");
 const loadingSessions = ref(false);
 const loadingMessages = ref(false);
 const loadingOlder = ref(false);
-const sending = ref(false);
+const sendingSessionIds = ref<string[]>([]);
 const sessionsPage = ref(1);
 const sessionsHasMore = ref(false);
 const messagesHasMore = ref(false);
@@ -88,8 +88,66 @@ let streamWorkerObjectUrl: string | null = null;
 let streamVisibilityHandler: (() => void) | null = null;
 let lastMessageListScrollTop = 0;
 let ignoreMessageListScrollSync = false;
-let sendAbortController: AbortController | null = null;
+const sendAbortControllers = new Map<string, AbortController>();
+type SessionStreamState = {
+  messageId: number | null;
+  assistant: ChatMessage | null;
+  visibleText: string;
+  live: boolean;
+};
+const sessionStreamStates = new Map<string, SessionStreamState>();
 const liveStreaming = ref(false);
+const sending = computed(() => sendingSessionIds.value.length > 0);
+
+function isSessionSending(sessionId?: string | null) {
+  return Boolean(sessionId) && sendingSessionIds.value.includes(sessionId as string);
+}
+
+function beginSessionSend(sessionId: string, controller: AbortController) {
+  if (!sessionId) return;
+  sendAbortControllers.set(sessionId, controller);
+  if (!sendingSessionIds.value.includes(sessionId)) {
+    sendingSessionIds.value = [...sendingSessionIds.value, sessionId];
+  }
+}
+
+function endSessionSend(sessionId: string, controller: AbortController) {
+  if (!sessionId || sendAbortControllers.get(sessionId) !== controller) return;
+  sendAbortControllers.delete(sessionId);
+  sendingSessionIds.value = sendingSessionIds.value.filter((id) => id !== sessionId);
+}
+
+function abortSessionSend(sessionId?: string | null) {
+  if (!sessionId) return;
+  sendAbortControllers.get(sessionId)?.abort();
+}
+
+function getSessionStream(sessionId: string): SessionStreamState {
+  let state = sessionStreamStates.get(sessionId);
+  if (!state) {
+    state = { messageId: null, assistant: null, visibleText: "", live: false };
+    sessionStreamStates.set(sessionId, state);
+  }
+  return state;
+}
+
+function clearSessionStream(sessionId: string) {
+  sessionStreamStates.delete(sessionId);
+  if (activeSessionId.value === sessionId) {
+    streamingMessageId.value = null;
+    streamingAssistantMessage.value = null;
+    streamingVisibleText.value = "";
+    liveStreaming.value = false;
+  }
+}
+
+function syncActiveStreamDisplay() {
+  const state = activeSessionId.value ? sessionStreamStates.get(activeSessionId.value) : null;
+  streamingMessageId.value = state?.messageId ?? null;
+  streamingAssistantMessage.value = state?.assistant ?? null;
+  streamingVisibleText.value = state?.visibleText ?? "";
+  liveStreaming.value = state?.live ?? false;
+}
 
 function isRequestAborted(err: any) {
   return (
@@ -142,11 +200,13 @@ function clearDraftImages() {
   draftImages.value = [];
 }
 
+const isActiveSessionSending = computed(() => isSessionSending(activeSessionId.value));
+
 const canSend = computed(() => {
   const hasText = Boolean(draft.value.trim());
   const hasImage = draftImages.value.some((item) => item.status === "success" && item.remoteUrl);
   const uploading = draftImages.value.some((item) => item.status === "uploading");
-  return (hasText || hasImage) && !uploading && Boolean(models.value.length);
+  return (hasText || hasImage) && !uploading && Boolean(models.value.length) && !isActiveSessionSending.value;
 });
 
 function collectImageFiles(files: ArrayLike<File> | null | undefined): File[] {
@@ -167,7 +227,7 @@ function isImageFileDragEvent(event: DragEvent) {
 }
 
 function openChatImagePicker() {
-  if (sending.value || !models.value.length) return;
+  if (isActiveSessionSending.value || !models.value.length) return;
   if (draftImages.value.length >= MAX_CHAT_IMAGES) {
     message.warning(`一次最多上传 ${MAX_CHAT_IMAGES} 张图片`);
     return;
@@ -176,7 +236,7 @@ function openChatImagePicker() {
 }
 
 async function addChatImageFiles(files: File[]) {
-  if (sending.value || !models.value.length) return;
+  if (isActiveSessionSending.value || !models.value.length) return;
   const imageFiles = collectImageFiles(files);
   if (!imageFiles.length) return;
   if (!auth.isLoggedIn) {
@@ -231,7 +291,7 @@ async function handleChatImageChange(event: Event) {
 }
 
 async function handleComposerPaste(event: ClipboardEvent) {
-  if (sending.value || !models.value.length) return;
+  if (isActiveSessionSending.value || !models.value.length) return;
   const files = getClipboardImageFiles(event);
   if (!files.length) return;
   event.preventDefault();
@@ -240,7 +300,7 @@ async function handleComposerPaste(event: ClipboardEvent) {
 }
 
 function handleComposerDragOver(event: DragEvent) {
-  if (!isImageFileDragEvent(event) || sending.value || !models.value.length) return;
+  if (!isImageFileDragEvent(event) || isActiveSessionSending.value || !models.value.length) return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
   composerDragActive.value = true;
@@ -255,7 +315,7 @@ function handleComposerDragLeave(event: DragEvent) {
 async function handleComposerDrop(event: DragEvent) {
   event.preventDefault();
   composerDragActive.value = false;
-  if (sending.value || !models.value.length) return;
+  if (isActiveSessionSending.value || !models.value.length) return;
   const files = collectImageFiles(event.dataTransfer?.files);
   if (!files.length) return;
   await addChatImageFiles(files);
@@ -288,6 +348,28 @@ function snapshotCurrentMessagesToCache() {
     items: messages.value,
     hasMore: messagesHasMore.value,
     nextBeforeId: messagesNextBeforeId.value,
+  });
+}
+
+function mutateSessionMessages(
+  sessionId: string,
+  updater: (items: ChatMessage[]) => ChatMessage[],
+) {
+  if (!sessionId) return;
+  if (activeSessionId.value === sessionId) {
+    messages.value = updater(messages.value);
+    putMessageCache(sessionId, {
+      items: messages.value,
+      hasMore: messagesHasMore.value,
+      nextBeforeId: messagesNextBeforeId.value,
+    });
+    return;
+  }
+  const cached = messageCache.get(sessionId);
+  putMessageCache(sessionId, {
+    items: updater(cached?.items || []),
+    hasMore: cached?.hasMore ?? false,
+    nextBeforeId: cached?.nextBeforeId ?? null,
   });
 }
 
@@ -421,7 +503,7 @@ const starterPrompts = computed(() => {
 });
 
 function handleStarterPrompt(prompt: StarterPrompt) {
-  if (sending.value || !prompt?.text) return;
+  if (isActiveSessionSending.value || !prompt?.text) return;
   void handleSend(prompt.text, {
     images: prompt.image_url ? [{ url: prompt.image_url }] : [],
   });
@@ -480,25 +562,30 @@ function upsertSendResultMessages(
   result: Pick<ChatSendMessageResponse, "user_message" | "assistant_message" | "session">,
   options: { skipOptimisticUser?: boolean; tempUserMessageId: number; clientMessageId: string },
 ) {
-  if (!options.skipOptimisticUser) {
-    const tempIndex = messages.value.findIndex(
-      (item) => item.id === options.tempUserMessageId || item.client_message_id === options.clientMessageId,
-    );
-    if (tempIndex >= 0) {
-      messages.value.splice(tempIndex, 1, result.user_message);
-    } else if (!messages.value.some((item) => item.id === result.user_message.id)) {
-      messages.value.push(result.user_message);
+  const sessionId = result.session?.id || activeSessionId.value || "";
+  mutateSessionMessages(sessionId, (items) => {
+    const next = items.slice();
+    if (!options.skipOptimisticUser) {
+      const tempIndex = next.findIndex(
+        (item) => item.id === options.tempUserMessageId || item.client_message_id === options.clientMessageId,
+      );
+      if (tempIndex >= 0) {
+        next.splice(tempIndex, 1, result.user_message);
+      } else if (!next.some((item) => item.id === result.user_message.id)) {
+        next.push(result.user_message);
+      }
+    } else if (!next.some((item) => item.id === result.user_message.id)) {
+      next.push(result.user_message);
     }
-  } else if (!messages.value.some((item) => item.id === result.user_message.id)) {
-    messages.value.push(result.user_message);
-  }
-  messages.value = messages.value.filter((item) => !isBrokenAssistantMessage(item));
-  const assistantIndex = messages.value.findIndex((item) => item.id === result.assistant_message.id);
-  if (assistantIndex >= 0) {
-    messages.value.splice(assistantIndex, 1, result.assistant_message);
-  } else {
-    messages.value.push(result.assistant_message);
-  }
+    const cleaned = next.filter((item) => !isBrokenAssistantMessage(item));
+    const assistantIndex = cleaned.findIndex((item) => item.id === result.assistant_message.id);
+    if (assistantIndex >= 0) {
+      cleaned.splice(assistantIndex, 1, result.assistant_message);
+    } else {
+      cleaned.push(result.assistant_message);
+    }
+    return cleaned;
+  });
   sessions.value = [
     result.session,
     ...sessions.value.filter((item) => item.id !== result.session.id),
@@ -674,14 +761,22 @@ async function handleJumpGenerate(item: ChatMessage) {
     message.warning("没有可回填的提示词");
     return;
   }
+  jumpGenerateWithPrompt(prompt);
+}
+
+function handleBlockJumpGenerate(prompt: string) {
+  jumpGenerateWithPrompt(prompt);
+}
+
+function jumpGenerateWithPrompt(prompt: string) {
   localStorage.setItem(
     CHAT_DRAFT_KEY,
     JSON.stringify({
-      mode: "generate",
+      mode: "imageEdit",
       prompt,
     }),
   );
-  router.push("/generate");
+  router.push({ path: "/generate", query: { mode: "imageEdit" } });
 }
 
 function updateScrollToBottomVisibility() {
@@ -782,16 +877,16 @@ async function loadSessions(reset = true, preferredSessionId?: string | null) {
     sessionsHasMore.value = result.has_more;
     if (!reset) return;
 
-    // 仅在路由指定 session 时加载对话；打开 /chat 不自动选中第一个会话
-    const targetId = preferredSessionId ?? parseRouteSessionId();
+    const targetId = preferredSessionId ?? parseRouteSessionId() ?? sessions.value[0]?.id ?? null;
     if (targetId) {
       const session = await ensureSessionInList(targetId);
       if (session) {
         await selectSession(session.id, { syncRoute: true });
         return;
       }
-      message.warning("会话不存在或已删除");
-      syncSessionRoute(null);
+      if (preferredSessionId || parseRouteSessionId()) {
+        message.warning("会话不存在或已删除");
+      }
     }
     activeSessionId.value = null;
     messages.value = [];
@@ -817,7 +912,6 @@ async function selectSession(
   options: { syncRoute?: boolean } = {},
 ) {
   const { syncRoute = true } = options;
-  if (sending.value && activeSessionId.value !== sessionId) return;
   if (selectingSession.value && activeSessionId.value === sessionId) return;
   if (activeSessionId.value === sessionId && !selectingSession.value) return;
 
@@ -839,9 +933,12 @@ async function selectSession(
       if (syncRoute) {
         syncSessionRoute(sessionId);
       }
+      syncActiveStreamDisplay();
       if (cacheHit) {
         await scrollToBottom();
-        void refreshMessagesSilently(sessionId);
+        if (!isSessionSending(sessionId)) {
+          void refreshMessagesSilently(sessionId);
+        }
         return;
       }
       loadingMessages.value = true;
@@ -936,7 +1033,6 @@ async function handleCreateSession() {
     message.warning("请先配置可用的对话场景");
     return;
   }
-  if (sending.value) return;
   try {
     const session = await createChatSession({ model: selectedModel.value });
     sessions.value = [session, ...sessions.value.filter((item) => item.id !== session.id)];
@@ -953,6 +1049,7 @@ async function handleCreateSession() {
         nextBeforeId: null,
       });
       syncSessionRoute(session.id);
+      syncActiveStreamDisplay();
     }, { fadeOut: shouldFadeOut });
   } catch (err: any) {
     message.error(err?.response?.data?.detail || "创建会话失败");
@@ -988,7 +1085,7 @@ function handleDeleteSession(session: ChatSession, event?: Event) {
 }
 
 function toggleComposerPopover() {
-  if (sending.value || !models.value.length) return;
+  if (isActiveSessionSending.value || !models.value.length) return;
   composerPopoverOpen.value = !composerPopoverOpen.value;
 }
 
@@ -1026,16 +1123,10 @@ async function ensureActiveSession() {
 }
 
 function handleStopSending() {
-  if (liveStreaming.value) {
-    sendAbortController?.abort();
-    return;
-  }
-  if (streamingMessageId.value != null) {
+  abortSessionSend(activeSessionId.value);
+  if (!isActiveSessionSending.value && streamingMessageId.value != null) {
     stopAssistantStreaming();
-    sending.value = false;
-    return;
   }
-  sendAbortController?.abort();
 }
 
 async function handleSend(
@@ -1049,7 +1140,7 @@ async function handleSend(
   const sendingImages = (options.images || draftImages.value
     .filter((item) => item.status === "success" && item.remoteUrl)
     .map((item) => ({ url: item.remoteUrl })));
-  if (sending.value) return;
+  if (isActiveSessionSending.value) return;
   if (overrideText == null && draftImages.value.some((item) => item.status === "uploading")) {
     message.warning("图片还在上传，请稍候");
     return;
@@ -1065,8 +1156,6 @@ async function handleSend(
   }
 
   const controller = new AbortController();
-  sendAbortController = controller;
-  sending.value = true;
   composerPopoverOpen.value = false;
   const snapshotDraftImages = overrideText == null ? draftImages.value.slice() : [];
   if (overrideText == null) {
@@ -1094,8 +1183,12 @@ async function handleSend(
     await scrollToBottom(true);
   }
 
+  let sessionId = activeSessionId.value || "";
   try {
-    const sessionId = await ensureActiveSession();
+    if (!sessionId) {
+      sessionId = await ensureActiveSession();
+    }
+    beginSessionSend(sessionId, controller);
     if (controller.signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
@@ -1111,28 +1204,38 @@ async function handleSend(
       clientMessageId,
     };
     if (modelWantsStream(model)) {
-      liveStreaming.value = true;
+      const stream = getSessionStream(sessionId);
+      stream.live = true;
+      if (activeSessionId.value === sessionId) liveStreaming.value = true;
       await sendChatMessageStream(
         sessionId,
         sendPayload,
         {
           onMeta(meta) {
             upsertSendResultMessages(meta, resultOptions);
-            streamingMessageId.value = meta.assistant_message.id;
-            streamingAssistantMessage.value = meta.assistant_message;
-            streamingVisibleText.value = meta.assistant_message.content || "";
-            if (!streamingVisibleText.value.trim()) {
-              messages.value = messages.value.filter((item) => item.id !== meta.assistant_message.id);
+            stream.messageId = meta.assistant_message.id;
+            stream.assistant = meta.assistant_message;
+            stream.visibleText = meta.assistant_message.content || "";
+            if (activeSessionId.value === sessionId) {
+              streamingMessageId.value = stream.messageId;
+              streamingAssistantMessage.value = stream.assistant;
+              streamingVisibleText.value = stream.visibleText;
             }
-            void scrollToBottom(true);
+            if (!stream.visibleText.trim()) {
+              mutateSessionMessages(sessionId, (items) => (
+                items.filter((item) => item.id !== meta.assistant_message.id)
+              ));
+            }
+            if (activeSessionId.value === sessionId) {
+              void scrollToBottom(true);
+            }
           },
           onDelta(text) {
-            streamingVisibleText.value += text;
-            const assistantId = streamingMessageId.value;
+            stream.visibleText += text;
+            const assistantId = stream.messageId;
             if (assistantId != null) {
-              const exists = messages.value.some((item) => item.id === assistantId);
               const nextAssistant: ChatMessage = {
-                ...(streamingAssistantMessage.value || {
+                ...(stream.assistant || {
                   id: assistantId,
                   session_id: sessionId,
                   role: "assistant" as const,
@@ -1141,44 +1244,46 @@ async function handleSend(
                   credit_cost: 0,
                   created_at: new Date().toISOString(),
                 }),
-                content: streamingVisibleText.value,
+                content: stream.visibleText,
                 status: "pending",
                 error_message: "",
               };
-              if (exists) {
-                messages.value = messages.value.map((item) => (
-                  item.id === assistantId ? nextAssistant : item
-                ));
-              } else {
-                messages.value.push(nextAssistant);
-              }
+              stream.assistant = nextAssistant;
+              mutateSessionMessages(sessionId, (items) => {
+                const exists = items.some((item) => item.id === assistantId);
+                if (exists) {
+                  return items.map((item) => (item.id === assistantId ? nextAssistant : item));
+                }
+                return [...items, nextAssistant];
+              });
             }
-            if (stickToBottom.value) {
-              void scrollToBottom(false);
+            if (activeSessionId.value === sessionId) {
+              streamingVisibleText.value = stream.visibleText;
+              streamingAssistantMessage.value = stream.assistant;
+              streamingMessageId.value = stream.messageId;
+              if (stickToBottom.value) {
+                void scrollToBottom(false);
+              }
             }
           },
           onDone(result) {
-            liveStreaming.value = false;
-            stopAssistantStreaming();
+            stream.live = false;
+            clearSessionStream(sessionId);
             upsertSendResultMessages(result, resultOptions);
             applyChatBalance(result.balance);
             if (result.assistant_message.status === "failed") {
               message.error(result.assistant_message.error_message || "对话失败");
             }
-            putMessageCache(sessionId, {
-              items: messages.value,
-              hasMore: messagesHasMore.value,
-              nextBeforeId: messagesNextBeforeId.value,
-            });
-            void scrollToBottom(true);
+            if (activeSessionId.value === sessionId) {
+              void scrollToBottom(true);
+            }
           },
           onErrorEvent(errEvent) {
-            const streamed = streamingVisibleText.value.trim();
+            const streamed = stream.visibleText.trim();
             if (streamed) {
-              liveStreaming.value = false;
-              const assistantId = streamingMessageId.value;
-              stopAssistantStreaming();
-              messages.value = messages.value.map((item) => (
+              const assistantId = stream.messageId;
+              clearSessionStream(sessionId);
+              mutateSessionMessages(sessionId, (items) => items.map((item) => (
                 assistantId != null && item.id === assistantId
                   ? {
                       ...item,
@@ -1187,33 +1292,30 @@ async function handleSend(
                       error_message: "",
                     }
                   : item
-              ));
-              putMessageCache(sessionId, {
-                items: messages.value,
-                hasMore: messagesHasMore.value,
-                nextBeforeId: messagesNextBeforeId.value,
-              });
+              )));
               return;
             }
-            liveStreaming.value = false;
             const failedAssistant = errEvent.assistant_message || {
-              id: streamingMessageId.value || Date.now(),
+              id: stream.messageId || Date.now(),
               session_id: sessionId,
               role: "assistant" as const,
-              content: streamingVisibleText.value || errEvent.message || "对话失败",
+              content: stream.visibleText || errEvent.message || "对话失败",
               model,
               credit_cost: 0,
               status: "failed",
               error_message: errEvent.message || "对话失败",
               created_at: new Date().toISOString(),
             };
-            stopAssistantStreaming();
-            const assistantIndex = messages.value.findIndex((item) => item.id === failedAssistant.id);
-            if (assistantIndex >= 0) {
-              messages.value.splice(assistantIndex, 1, failedAssistant);
-            } else {
-              messages.value.push(failedAssistant);
-            }
+            clearSessionStream(sessionId);
+            mutateSessionMessages(sessionId, (items) => {
+              const assistantIndex = items.findIndex((item) => item.id === failedAssistant.id);
+              if (assistantIndex >= 0) {
+                const next = items.slice();
+                next.splice(assistantIndex, 1, failedAssistant);
+                return next;
+              }
+              return [...items, failedAssistant];
+            });
             if (errEvent.session) {
               sessions.value = [
                 errEvent.session,
@@ -1222,11 +1324,6 @@ async function handleSend(
             }
             applyChatBalance(errEvent.balance);
             message.error(errEvent.message || "对话失败");
-            putMessageCache(sessionId, {
-              items: messages.value,
-              hasMore: messagesHasMore.value,
-              nextBeforeId: messagesNextBeforeId.value,
-            });
           },
         },
         controller.signal,
@@ -1240,73 +1337,72 @@ async function handleSend(
       } else if (isBrokenAssistantMessage(result.assistant_message)) {
         message.error("系统出错，可进行重试");
       }
-      putMessageCache(sessionId, {
-        items: messages.value,
-        hasMore: messagesHasMore.value,
-        nextBeforeId: messagesNextBeforeId.value,
-      });
-      await scrollToBottom(true);
+      if (activeSessionId.value === sessionId) {
+        await scrollToBottom(true);
+      }
       if (
         result.assistant_message.status !== "failed"
         && !isBrokenAssistantMessage(result.assistant_message)
+        && activeSessionId.value === sessionId
       ) {
         await streamAssistantMessage(result.assistant_message);
       }
     }
     snapshotDraftImages.forEach(revokeDraftImageUrl);
   } catch (err: any) {
-    liveStreaming.value = false;
     if (isRequestAborted(err)) {
-      const interruptedAssistantId = streamingMessageId.value;
-      const interruptedAssistantSeed = streamingAssistantMessage.value;
-      const interruptedContent = streamingVisibleText.value || "已中断";
-      messages.value = messages.value.map((item) => {
-        if (item.id === tempUserMessageId) {
-          return { ...item, status: "success" as const };
-        }
-        if (interruptedAssistantId != null && item.id === interruptedAssistantId) {
-          return {
-            ...item,
-            content: interruptedContent || item.content,
-            status: "failed" as const,
+      const stream = sessionId ? sessionStreamStates.get(sessionId) : null;
+      const interruptedAssistantId = stream?.messageId ?? null;
+      const interruptedAssistantSeed = stream?.assistant ?? null;
+      const interruptedContent = stream?.visibleText || "已中断";
+      const interruptedSessionId = sessionId || activeSessionId.value || "";
+      mutateSessionMessages(interruptedSessionId, (items) => {
+        const next = items.map((item) => {
+          if (item.id === tempUserMessageId) {
+            return { ...item, status: "success" as const };
+          }
+          if (interruptedAssistantId != null && item.id === interruptedAssistantId) {
+            return {
+              ...item,
+              content: interruptedContent || item.content,
+              status: "failed" as const,
+              error_message: "已中断",
+            };
+          }
+          return item;
+        });
+        if (
+          interruptedAssistantId != null
+          && !next.some((item) => item.id === interruptedAssistantId)
+        ) {
+          next.push({
+            ...(interruptedAssistantSeed || {
+              id: interruptedAssistantId,
+              session_id: interruptedSessionId,
+              role: "assistant" as const,
+              model,
+              client_message_id: null,
+              credit_cost: 0,
+              created_at: new Date().toISOString(),
+            }),
+            content: interruptedContent,
+            status: "failed",
             error_message: "已中断",
-          };
+          });
         }
-        return item;
+        return next;
       });
-      if (
-        interruptedAssistantId != null
-        && !messages.value.some((item) => item.id === interruptedAssistantId)
-      ) {
-        messages.value.push({
-          ...(interruptedAssistantSeed || {
-            id: interruptedAssistantId,
-            session_id: activeSessionId.value || "",
-            role: "assistant" as const,
-            model,
-            client_message_id: null,
-            credit_cost: 0,
-            created_at: new Date().toISOString(),
-          }),
-          content: interruptedContent,
-          status: "failed",
-          error_message: "已中断",
-        });
-      }
-      stopAssistantStreaming();
-      if (activeSessionId.value) {
-        putMessageCache(activeSessionId.value, {
-          items: messages.value,
-          hasMore: messagesHasMore.value,
-          nextBeforeId: messagesNextBeforeId.value,
-        });
-      }
+      clearSessionStream(interruptedSessionId);
       snapshotDraftImages.forEach(revokeDraftImageUrl);
-      message.info("已中断");
+      if (activeSessionId.value === interruptedSessionId) {
+        message.info("已中断");
+      }
       return;
     }
     if (!options.skipOptimisticUser) {
-      messages.value = messages.value.filter((item) => item.id !== tempUserMessageId);
+      mutateSessionMessages(sessionId || activeSessionId.value || "", (items) => (
+        items.filter((item) => item.id !== tempUserMessageId)
+      ));
     }
     if (overrideText == null) {
       draft.value = content;
@@ -1321,11 +1417,7 @@ async function handleSend(
       message.error(detail || err?.message || "发送失败");
     }
   } finally {
-    liveStreaming.value = false;
-    if (sendAbortController === controller) {
-      sendAbortController = null;
-    }
-    sending.value = false;
+    endSessionSend(sessionId, controller);
   }
 }
 
@@ -1334,7 +1426,7 @@ function canRetryAssistant(item: ChatMessage) {
 }
 
 async function handleRetryAssistant(item: ChatMessage) {
-  if (sending.value || !canRetryAssistant(item)) return;
+  if (isActiveSessionSending.value || !canRetryAssistant(item)) return;
   const previousUser = findPreviousUserMessage(item);
   const content = (previousUser?.content || "").trim();
   const images = previousUser ? messageImages(previousUser) : [];
@@ -1353,6 +1445,7 @@ async function handleRetryAssistant(item: ChatMessage) {
 function handleComposerKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
+    if (isActiveSessionSending.value) return;
     void handleSend();
   }
 }
@@ -1403,8 +1496,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  sendAbortController?.abort();
-  sendAbortController = null;
+  sendAbortControllers.forEach((controller) => controller.abort());
+  sendAbortControllers.clear();
+  sendingSessionIds.value = [];
+  sessionStreamStates.clear();
   stopAssistantStreaming();
   clearDraftImages();
   document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
@@ -1419,7 +1514,7 @@ onBeforeUnmount(() => {
         <span class="chat-assistant-name">小八</span>
       </div>
       <div class="sidebar-toolbar">
-        <button class="new-chat-btn" :disabled="sending || !models.length" @click="handleCreateSession">
+        <button class="new-chat-btn" :disabled="!models.length" @click="handleCreateSession">
           <PlusOutlined />
           <span>新建对话</span>
         </button>
@@ -1458,7 +1553,6 @@ onBeforeUnmount(() => {
           :key="session.id"
           class="session-item"
           :class="{ active: session.id === activeSessionId }"
-          :disabled="sending"
           @click="selectSession(session.id)"
         >
           <div class="session-main">
@@ -1519,7 +1613,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="starter-prompt-btn"
                     :class="{ 'has-image': Boolean(item.image_url) }"
-                    :disabled="sending || !models.length"
+                    :disabled="isActiveSessionSending || !models.length"
                     @click="handleStarterPrompt(item)"
                   >
                     <span v-if="item.tag" class="starter-prompt-tag">{{ item.tag }}</span>
@@ -1567,7 +1661,7 @@ onBeforeUnmount(() => {
                           type="button"
                           class="message-action-btn"
                           title="重试"
-                          :disabled="sending"
+                          :disabled="isActiveSessionSending"
                           @click="handleRetryAssistant(item)"
                         >
                           <ReloadOutlined />
@@ -1589,7 +1683,7 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       class="message-retry-btn"
-                      :disabled="sending"
+                      :disabled="isActiveSessionSending"
                       @click="handleRetryAssistant(item)"
                     >
                       <ReloadOutlined />
@@ -1613,6 +1707,7 @@ onBeforeUnmount(() => {
                       v-if="item.role === 'assistant' && (item.content || '').trim()"
                       :content="assistantDisplayText(item)"
                       :streaming="streamingMessageId === item.id"
+                      @generate="handleBlockJumpGenerate"
                     />
                     <div
                       v-else-if="(item.content || '').trim()"
@@ -1644,7 +1739,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <div v-if="sending && !streamingVisibleText.trim()" class="message-row is-assistant">
+            <div v-if="isActiveSessionSending && !streamingVisibleText.trim()" class="message-row is-assistant">
               <div class="message-bubble loading-bubble">
                 <LoadingOutlined />
                 <span>正在思考...</span>
@@ -1700,7 +1795,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="composer-image-remove"
                 title="移除图片"
-                :disabled="sending"
+                :disabled="isActiveSessionSending"
                 @click.stop="removeDraftImage(item.id)"
               >
                 <CloseOutlined />
@@ -1710,7 +1805,7 @@ onBeforeUnmount(() => {
           <textarea
             v-model="draft"
             class="composer-prompt-input"
-            :disabled="sending || !models.length"
+            :disabled="!models.length"
             placeholder="描述你想聊的内容，可粘贴或拖入图片..."
             @keydown="handleComposerKeydown"
             @paste="handleComposerPaste"
@@ -1732,7 +1827,7 @@ onBeforeUnmount(() => {
                       type="button"
                       class="composer-scene-option"
                       :class="{ active: item.model_key === selectedModel }"
-                      :disabled="sending"
+                      :disabled="isActiveSessionSending"
                       @click="handleModelChange(item.model_key)"
                     >
                       <span class="composer-scene-option-title">{{ sceneOptionLabel(item) }}</span>
@@ -1749,7 +1844,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="composer-setting-group"
-                :disabled="sending || !models.length"
+                :disabled="isActiveSessionSending || !models.length"
                 @click.stop="toggleComposerPopover"
               >
                 <ThunderboltOutlined />
@@ -1768,13 +1863,13 @@ onBeforeUnmount(() => {
               type="button"
               class="composer-attach-btn"
               title="添加图片"
-              :disabled="sending || !models.length || draftImages.length >= MAX_CHAT_IMAGES"
+              :disabled="isActiveSessionSending || !models.length || draftImages.length >= MAX_CHAT_IMAGES"
               @click="openChatImagePicker"
             >
               <PictureOutlined />
             </button>
             <a-button
-              v-if="sending"
+              v-if="isActiveSessionSending"
               type="primary"
               class="composer-generate-btn composer-stop-btn"
               title="中断"
@@ -2540,6 +2635,14 @@ onBeforeUnmount(() => {
   border-radius: 0 10px 10px 0;
 }
 
+.md-body :deep(.md-copyable > blockquote) {
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .md-body :deep(strong) {
   font-weight: 800;
 }
@@ -2586,6 +2689,127 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
 }
 
+.md-body :deep(.md-code-block) {
+  margin: 0 0 12px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  background: rgb(247, 241, 233);
+  font-size: 13px;
+}
+
+.md-body :deep(.md-code-toolbar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.06));
+  background: rgb(247, 241, 233);
+}
+
+.md-body :deep(.md-code-lang) {
+  color: var(--theme-text-secondary, #8b7457);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.md-body :deep(.md-code-actions) {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.md-body :deep(.md-code-copy),
+.md-body :deep(.md-code-generate) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-text-secondary, #8b7457);
+  cursor: pointer;
+}
+
+.md-body :deep(.md-code-copy:hover),
+.md-body :deep(.md-code-generate:hover) {
+  background: color-mix(in srgb, var(--theme-title, #3d2f22) 8%, transparent);
+  color: var(--theme-title, #3d2f22);
+}
+
+.md-body :deep(.md-code-copy-done),
+.md-body :deep(.md-code-copy.is-copied .md-code-copy-icon) {
+  display: none;
+}
+
+.md-body :deep(.md-code-copy.is-copied .md-code-copy-done) {
+  display: inline-flex;
+  color: #16a34a;
+}
+
+.md-body :deep(.md-code-block pre),
+.md-body :deep(.md-strong-body) {
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.md-body :deep(.md-code-block pre code) {
+  font-size: 12px;
+}
+
+.md-body :deep(.md-strong-body) {
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-body :deep(.md-strong-inline) {
+  display: inline;
+}
+
+.md-body :deep(.md-strong-inline .md-code-actions) {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: -4px;
+}
+
+.md-body :deep(.md-strong-inline .md-code-copy),
+.md-body :deep(.md-strong-inline .md-code-generate) {
+  width: 22px;
+  height: 22px;
+}
+
+.md-body :deep(.md-tok-key) {
+  color: #b45309;
+}
+
+.md-body :deep(.md-tok-str) {
+  color: #15803d;
+}
+
+.md-body :deep(.md-tok-kw) {
+  color: #be185d;
+}
+
+.md-body :deep(.md-tok-num) {
+  color: #1d4ed8;
+}
+
+.md-body :deep(.md-tok-comment) {
+  color: #9a8870;
+}
+
 .md-body :deep(.md-table-wrap) {
   width: 100%;
   margin: 0 0 12px;
@@ -2625,7 +2849,8 @@ onBeforeUnmount(() => {
 .md-body :deep(pre:last-child),
 .md-body :deep(blockquote:last-child),
 .md-body :deep(img:last-child),
-.md-body :deep(.md-table-wrap:last-child) {
+.md-body :deep(.md-table-wrap:last-child),
+.md-body :deep(.md-code-block:last-child) {
   margin-bottom: 0;
 }
 
