@@ -68,6 +68,8 @@ const previewSrc = ref("");
 const viewportWidth = ref(typeof window === "undefined" ? 1280 : window.innerWidth);
 const loadedMediaKeys = ref<Set<string>>(new Set());
 const requestPreviewActiveKeys = ref<string[]>([]);
+const errorCollapseActiveKeys = ref<string[]>([]);
+const attemptCollapseActiveKeys = ref<string[]>([]);
 const detailResultImageLoad = useTransientImageLoad();
 const router = useRouter();
 const failedResultAsset = withBaseUrl("failed-result.svg");
@@ -112,6 +114,14 @@ const requestPreviewAttempts = computed(() => (
 ));
 const showRequestPreviewSection = computed(() => (
   props.requestPreviewLoading || requestPreviewAttempts.value.length > 0
+));
+const primaryAttemptErrors = computed(() => collectFailedAttemptErrors(false));
+const fallbackAttemptErrors = computed(() => collectFailedAttemptErrors(true));
+const showAttemptErrorSummary = computed(() => (
+  primaryAttemptErrors.value.length > 0 || fallbackAttemptErrors.value.length > 0
+));
+const showErrorCollapseSection = computed(() => (
+  (props.showErrorMessage && Boolean(detailErrorMessage.value)) || showAttemptErrorSummary.value
 ));
 
 function updateViewportWidth() {
@@ -174,6 +184,8 @@ watch(
     previewVisible.value = false;
     previewSrc.value = "";
     requestPreviewActiveKeys.value = [];
+    errorCollapseActiveKeys.value = [];
+    attemptCollapseActiveKeys.value = [];
     seedLoadedMediaKeys("reset");
     detailResultImageLoad.dispose();
     if (typeof document === "undefined") return;
@@ -314,6 +326,31 @@ function attemptTargetLabel(attempt: TaskApiAttempt) {
   if (attempt.image_index && attempt.image_index > 0) return `第 ${attempt.image_index} 张结果图`;
   if (attempt.image_id) return `图片 #${attempt.image_id}`;
   return "任务级";
+}
+
+function sortApiAttempts(left: TaskApiAttempt, right: TaskApiAttempt) {
+  return (left.image_index || 0) - (right.image_index || 0)
+    || (left.image_id || 0) - (right.image_id || 0)
+    || (left.attempt_index || 0) - (right.attempt_index || 0)
+    || (left.id || 0) - (right.id || 0);
+}
+
+function collectFailedAttemptErrors(isFallback: boolean) {
+  return (props.item?.api_attempts || [])
+    .filter((attempt) => Boolean(attempt.is_fallback) === isFallback)
+    .filter((attempt) => attempt.status !== "success")
+    .filter((attempt) => (attempt.error_message || "").trim())
+    .slice()
+    .sort(sortApiAttempts)
+    .map((attempt) => ({
+      key: `${attempt.id || "attempt"}-${attempt.image_id || 0}-${attempt.attempt_index}-${isFallback ? "fallback" : "primary"}`,
+      meta: [
+        attemptTargetLabel(attempt),
+        `第 ${attempt.attempt_index} 次尝试`,
+        attempt.api_config_name || "",
+      ].filter(Boolean).join(" · "),
+      errorMessage: (attempt.error_message || "").trim(),
+    }));
 }
 
 function formatDuration(durationMs?: number | null) {
@@ -831,34 +868,86 @@ function handleGenerateVideo(item: UserHistoryCard) {
                     </a-button>
                   </div>
                   <div class="detail-prompt">{{ item.prompt || "-" }}</div>
-                  <div v-if="showErrorMessage && detailErrorMessage" class="detail-error-block">
-                    <div class="detail-error-label">错误信息</div>
-                    <div class="detail-error-message">{{ detailErrorMessage }}</div>
+                  <div v-if="showErrorCollapseSection" class="detail-request-preview-section">
+                    <div class="detail-label-row detail-request-preview-title-row">
+                      <div class="detail-label">错误信息</div>
+                    </div>
+                    <a-collapse
+                      v-model:activeKey="errorCollapseActiveKeys"
+                      ghost
+                      class="detail-request-collapse"
+                    >
+                      <a-collapse-panel
+                        v-if="showErrorMessage && detailErrorMessage"
+                        key="task-error"
+                        header="任务错误"
+                      >
+                        <div class="detail-error-message">{{ detailErrorMessage }}</div>
+                      </a-collapse-panel>
+                      <a-collapse-panel
+                        v-if="primaryAttemptErrors.length"
+                        key="primary-error"
+                        header="主接口错误"
+                      >
+                        <div
+                          v-for="errorItem in primaryAttemptErrors"
+                          :key="errorItem.key"
+                          class="detail-error-message"
+                        >
+                          <div class="detail-error-meta">{{ errorItem.meta }}</div>
+                          <div>{{ errorItem.errorMessage }}</div>
+                        </div>
+                      </a-collapse-panel>
+                      <a-collapse-panel
+                        v-if="fallbackAttemptErrors.length"
+                        key="fallback-error"
+                        header="备用接口错误"
+                      >
+                        <div
+                          v-for="errorItem in fallbackAttemptErrors"
+                          :key="errorItem.key"
+                          class="detail-error-message"
+                        >
+                          <div class="detail-error-meta">{{ errorItem.meta }}</div>
+                          <div>{{ errorItem.errorMessage }}</div>
+                        </div>
+                      </a-collapse-panel>
+                    </a-collapse>
                   </div>
-                  <div v-if="item.api_attempts?.length" class="detail-attempt-section">
-                    <div class="detail-label detail-attempt-section-title">接口调用记录</div>
-                    <div class="detail-attempt-list">
-                      <div v-for="attempt in item.api_attempts" :key="`${attempt.id || 'attempt'}-${attempt.image_id || 0}-${attempt.attempt_index}`" class="detail-attempt-card">
-                        <div class="detail-attempt-header">
-                          <span class="detail-attempt-title">{{ attemptTargetLabel(attempt) }}</span>
-                          <a-space size="small">
-                            <a-tag class="api-tag" :class="attempt.is_fallback ? 'api-tag-group' : 'api-tag-muted'">
-                              {{ attemptRoleLabel(attempt) }}
-                            </a-tag>
-                            <a-tag class="api-tag" :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'">
+                  <div v-if="item.api_attempts?.length" class="detail-request-preview-section">
+                    <div class="detail-label-row detail-request-preview-title-row">
+                      <div class="detail-label">接口调用记录</div>
+                    </div>
+                    <a-collapse
+                      v-model:activeKey="attemptCollapseActiveKeys"
+                      ghost
+                      class="detail-request-collapse"
+                    >
+                      <a-collapse-panel
+                        v-for="attempt in item.api_attempts"
+                        :key="String(attempt.id || `${attempt.image_id || 0}-${attempt.attempt_index}`)"
+                      >
+                        <template #header>
+                          <div class="detail-attempt-collapse-header">
+                            <span class="detail-attempt-collapse-title">
+                              {{ attemptTargetLabel(attempt) }} · {{ attemptRoleLabel(attempt) }} · 第 {{ attempt.attempt_index }} 次尝试
+                            </span>
+                            <a-tag
+                              class="api-tag detail-attempt-status-tag"
+                              :class="attempt.status === 'success' ? 'api-tag-enabled' : 'api-tag-danger'"
+                            >
                               {{ attemptStatusLabel(attempt.status) }}
                             </a-tag>
-                          </a-space>
-                        </div>
+                          </div>
+                        </template>
                         <div class="detail-attempt-meta">
-                          <span>第 {{ attempt.attempt_index }} 次尝试</span>
                           <span>接口：{{ attempt.api_config_name || "-" }}</span>
                           <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
                           <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
                         </div>
                         <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
-                      </div>
-                    </div>
+                      </a-collapse-panel>
+                    </a-collapse>
                   </div>
                   <div v-if="showRequestPreviewSection" class="detail-request-preview-section">
                     <div class="detail-label-row detail-request-preview-title-row">
@@ -1089,43 +1178,10 @@ function handleGenerateVideo(item: UserHistoryCard) {
   margin-top: 18px;
 }
 
-.detail-attempt-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.detail-attempt-section {
-  margin-top: 12px;
-}
-
-.detail-attempt-section-title {
-  margin-bottom: 8px;
-}
-
-.detail-attempt-card {
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  padding: 12px 14px;
-  background: var(--bg-elevated, rgba(255, 255, 255, 0.64));
-}
-
-.detail-attempt-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.detail-attempt-title {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 .detail-attempt-meta {
-  margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px 14px;
   color: var(--text-secondary);
   font-size: 13px;
@@ -1185,6 +1241,32 @@ function handleGenerateVideo(item: UserHistoryCard) {
   color: var(--theme-title) !important;
   font-size: 12px;
   font-weight: 700;
+}
+
+.detail-request-collapse :deep(.ant-collapse-header-text) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.detail-attempt-collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.detail-attempt-collapse-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-attempt-status-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0 !important;
 }
 
 .detail-request-collapse :deep(.ant-collapse-content-box) {
@@ -1248,6 +1330,11 @@ function handleGenerateVideo(item: UserHistoryCard) {
 .api-tag-danger {
   color: #b42318;
   background: rgba(217, 45, 32, 0.12);
+}
+
+.api-tag-enabled {
+  color: #067647;
+  background: rgba(18, 183, 106, 0.12);
 }
 
 .detail-layout {
@@ -1443,17 +1530,6 @@ function handleGenerateVideo(item: UserHistoryCard) {
   scrollbar-width: thin;
 }
 
-.detail-error-block {
-  margin-top: 12px;
-}
-
-.detail-error-label {
-  margin-bottom: 8px;
-  color: #b85d47;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 .detail-error-message {
   padding: 12px 14px;
   border-radius: 12px;
@@ -1463,6 +1539,17 @@ function handleGenerateVideo(item: UserHistoryCard) {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.detail-error-message + .detail-error-message {
+  margin-top: 8px;
+}
+
+.detail-error-meta {
+  margin-bottom: 6px;
+  color: #9a4d3c;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .detail-thumb-row {
