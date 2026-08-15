@@ -31,6 +31,7 @@ import {
   DoubleRightOutlined,
   FilterOutlined,
   CalendarOutlined,
+  ExpandOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -87,6 +88,7 @@ const RepaintCanvas = defineAsyncComponent(() => import("@/components/generate/R
 const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
 const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
 const PromptOptimizeStyleDialog = defineAsyncComponent(() => import("@/components/generate/PromptOptimizeStyleDialog.vue"));
+const PromptExpandDialog = defineAsyncComponent(() => import("@/components/generate/PromptExpandDialog.vue"));
 const FeedbackDialog = defineAsyncComponent(() => import("@/components/feedback/FeedbackDialog.vue"));
 const HistoryDetailDialog = defineAsyncComponent(() => import("@/components/history/HistoryDetailDialog.vue"));
 const TemplateFormDialog = defineAsyncComponent(() => import("@/components/templates/TemplateFormDialog.vue"));
@@ -2288,6 +2290,32 @@ function getPromptOptimizeTarget(): PromptOptimizeTarget {
   return generateMode.value === "inpaint" ? "repaintPrompt" : "prompt";
 }
 
+const promptExpandOpen = ref(false);
+const promptExpandTarget = ref<PromptOptimizeTarget>("prompt");
+const promptExpandValue = computed(() => (
+  promptExpandTarget.value === "repaintPrompt" ? repaintPrompt.value : prompt.value
+));
+const promptExpandPlaceholder = computed(() => (
+  promptExpandTarget.value === "repaintPrompt"
+    ? "描述需要局部重绘后的效果..."
+    : "描述您想要生成的图片..."
+));
+
+function openPromptExpand(target: PromptOptimizeTarget) {
+  if (target === "prompt" && isPromptOptimizeOnMainPrompt.value) return;
+  if (target === "repaintPrompt" && isPromptOptimizeOnRepaintPrompt.value) return;
+  promptExpandTarget.value = target;
+  promptExpandOpen.value = true;
+}
+
+function applyExpandedPrompt(value: string) {
+  if (promptExpandTarget.value === "repaintPrompt") {
+    repaintPrompt.value = value;
+    return;
+  }
+  prompt.value = value;
+}
+
 async function runPromptOptimize(
   payload: PromptOptimizePayload,
   target: PromptOptimizeTarget,
@@ -3664,6 +3692,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     :readonly="isPromptOptimizeOnMainPrompt"
                     show-count
                   />
+                  <a-tooltip title="放大编辑">
+                    <span class="prompt-expand-btn-wrap">
+                      <button
+                        type="button"
+                        class="prompt-expand-btn"
+                        aria-label="放大编辑"
+                        :disabled="isPromptOptimizeOnMainPrompt"
+                        @click="openPromptExpand('prompt')"
+                      >
+                        <ExpandOutlined />
+                      </button>
+                    </span>
+                  </a-tooltip>
                   <div v-if="isPromptOptimizeOnMainPrompt" class="prompt-optimize-status">
                     <div class="prompt-optimize-status-text">
                       <LoadingOutlined spin />
@@ -4031,6 +4072,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     :readonly="isPromptOptimizeOnMainPrompt"
                     show-count
                   />
+                  <a-tooltip title="放大编辑">
+                    <span class="prompt-expand-btn-wrap">
+                      <button
+                        type="button"
+                        class="prompt-expand-btn"
+                        aria-label="放大编辑"
+                        :disabled="isPromptOptimizeOnMainPrompt"
+                        @click="openPromptExpand('prompt')"
+                      >
+                        <ExpandOutlined />
+                      </button>
+                    </span>
+                  </a-tooltip>
                   <div v-if="isPromptOptimizeOnMainPrompt" class="prompt-optimize-status">
                     <div class="prompt-optimize-status-text">
                       <LoadingOutlined spin />
@@ -4452,6 +4506,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     :readonly="isPromptOptimizeOnRepaintPrompt"
                     show-count
                   />
+                  <a-tooltip title="放大编辑">
+                    <span class="prompt-expand-btn-wrap">
+                      <button
+                        type="button"
+                        class="prompt-expand-btn"
+                        aria-label="放大编辑"
+                        :disabled="isPromptOptimizeOnRepaintPrompt"
+                        @click="openPromptExpand('repaintPrompt')"
+                      >
+                        <ExpandOutlined />
+                      </button>
+                    </span>
+                  </a-tooltip>
                   <div v-if="isPromptOptimizeOnRepaintPrompt" class="prompt-optimize-status">
                     <div class="prompt-optimize-status-text">
                       <LoadingOutlined spin />
@@ -5153,6 +5220,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       @confirm="handlePromptOptimizeStyleConfirm"
       @update:open="(value) => { if (!value) closePromptOptimizeStyleDialog(); }"
     />
+    <PromptExpandDialog
+      v-model:open="promptExpandOpen"
+      :value="promptExpandValue"
+      :draft-key="promptExpandTarget"
+      :maxlength="TASK_PROMPT_MAX_LENGTH"
+      :placeholder="promptExpandPlaceholder"
+      @confirm="applyExpandedPrompt"
+    />
   </div>
 </template>
 
@@ -5643,6 +5718,38 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .prompt-input-wrap {
   position: relative;
+}
+
+.prompt-expand-btn-wrap {
+  position: absolute;
+  right: 8px;
+  bottom: 28px;
+  z-index: 2;
+}
+
+.prompt-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-text-secondary, #8b7457);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.prompt-expand-btn:hover:not(:disabled) {
+  background: var(--theme-panel-bg-muted, rgba(0, 0, 0, 0.05));
+  color: var(--theme-title, #3d2f22);
+}
+
+.prompt-expand-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .prompt-optimize-status {

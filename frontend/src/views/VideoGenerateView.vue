@@ -18,6 +18,7 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
   VideoCameraOutlined,
+  ExpandOutlined,
 } from "@ant-design/icons-vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
@@ -55,6 +56,7 @@ const auth = useAuthStore();
 const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
 const FeedbackDialog = defineAsyncComponent(() => import("@/components/feedback/FeedbackDialog.vue"));
 const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
+const PromptExpandDialog = defineAsyncComponent(() => import("@/components/generate/PromptExpandDialog.vue"));
 const VideoTaskDetailDialog = defineAsyncComponent(() => import("@/components/video/VideoTaskDetailDialog.vue"));
 const DEFAULT_MAX_VIDEO_REFERENCE_IMAGES = 1;
 const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
@@ -93,6 +95,7 @@ const assetPickerFrameSlot = ref<0 | 1 | null>(null);
 const quickSavingReferenceIds = ref<string[]>([]);
 const quickSavingPromptKeys = ref<string[]>([]);
 const promptLibraryVisible = ref(false);
+const promptExpandOpen = ref(false);
 const detailOpen = ref(false);
 const detailTask = ref<VideoTaskResult | null>(null);
 const feedbackDialogOpen = ref(false);
@@ -582,6 +585,10 @@ function useLibraryPrompt(item: UserPrompt) {
   }
   prompt.value = content;
   message.success("已回填到编辑区");
+}
+
+function applyExpandedPrompt(value: string) {
+  prompt.value = value;
 }
 
 function hasVideoStarted(taskId: string) {
@@ -1506,6 +1513,18 @@ onBeforeUnmount(() => {
                         :placeholder="promptPlaceholder"
                         class="prompt-input"
                       />
+                      <a-tooltip title="放大编辑">
+                        <span class="prompt-expand-btn-wrap">
+                          <button
+                            type="button"
+                            class="prompt-expand-btn"
+                            aria-label="放大编辑"
+                            @click="promptExpandOpen = true"
+                          >
+                            <ExpandOutlined />
+                          </button>
+                        </span>
+                      </a-tooltip>
                     </div>
                   </div>
 
@@ -1756,6 +1775,14 @@ onBeforeUnmount(() => {
       v-if="promptLibraryVisible"
       v-model:open="promptLibraryVisible"
       @select-prompt="useLibraryPrompt"
+    />
+    <PromptExpandDialog
+      v-model:open="promptExpandOpen"
+      :value="prompt"
+      draft-key="video-prompt"
+      :maxlength="5000"
+      :placeholder="promptPlaceholder"
+      @confirm="applyExpandedPrompt"
     />
     <FeedbackDialog
       v-if="feedbackDialogOpen"
@@ -2070,6 +2097,33 @@ onBeforeUnmount(() => {
 
 .prompt-input-wrap {
   position: relative;
+}
+
+.prompt-expand-btn-wrap {
+  position: absolute;
+  right: 8px;
+  bottom: 28px;
+  z-index: 2;
+}
+
+.prompt-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-text-secondary, #8b7457);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.prompt-expand-btn:hover:not(:disabled) {
+  background: var(--theme-panel-bg-muted, rgba(0, 0, 0, 0.05));
+  color: var(--theme-title, #3d2f22);
 }
 
 .panel-hint {
