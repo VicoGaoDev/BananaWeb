@@ -3,6 +3,7 @@ import { ref, computed, defineAsyncComponent, defineComponent, h, inject, nextTi
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRoute, useRouter } from "vue-router";
+import { APPLY_CHAT_GENERATE_DRAFT_EVENT, CHAT_DRAFT_KEY } from "@/lib/chatGenerateDraft";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
 import {
   FontSizeOutlined,
@@ -166,6 +167,15 @@ function expandConfigPanelForEditing() {
 
 function handleGenerateMenuEntry() {
   expandConfigPanelForEditing();
+}
+
+function handleChatGenerateDraft() {
+  expandConfigPanelForEditing();
+  applyDraft(
+    localStorage.getItem(CHAT_DRAFT_KEY),
+    "已从 AI 对话回填提示词，可继续编辑后生成",
+    CHAT_DRAFT_KEY,
+  );
 }
 
 const failedResultAsset = withBaseUrl("failed-result.svg");
@@ -412,7 +422,6 @@ const sceneConfigLoading = ref(true);
 const submittingGenerate = ref(false);
 const HISTORY_DRAFT_KEY = "generateDraftFromHistory";
 const TEMPLATE_DRAFT_KEY = "generateDraftFromTemplate";
-const CHAT_DRAFT_KEY = "generateDraftFromChat";
 const ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY = "generateAspectRatioAutoDetectEnabled";
 const taskScenes = ref<TaskSceneConfig[]>([]);
 const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
@@ -3279,6 +3288,7 @@ onMounted(async () => {
   window.addEventListener("focus", handleFilePickerFocusReturn);
   window.addEventListener("paste", handleReferencePaste);
   window.addEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
+  window.addEventListener(APPLY_CHAT_GENERATE_DRAFT_EVENT, handleChatGenerateDraft);
   document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
   await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus()]);
@@ -3321,6 +3331,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", handleFilePickerFocusReturn);
   window.removeEventListener("paste", handleReferencePaste);
   window.removeEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
+  window.removeEventListener(APPLY_CHAT_GENERATE_DRAFT_EVENT, handleChatGenerateDraft);
   document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
   clearFilePickerRecoveryTimer();
   unbindReferenceDragHandlers?.();

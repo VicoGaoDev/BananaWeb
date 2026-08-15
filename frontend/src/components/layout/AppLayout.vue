@@ -95,6 +95,18 @@ const showSuggestionFab = computed(() =>
   && !isWorkbenchLayout.value
   && !isAdminRoute.value,
 );
+const showAiAssistantDock = computed(() => {
+  if (isAdminRoute.value) return false;
+  const path = route.path;
+  return (
+    path.startsWith("/generate")
+    || path.startsWith("/video-generate")
+    || path.startsWith("/canvas")
+    || path.startsWith("/history")
+    || path.startsWith("/templates")
+  );
+});
+const AiAssistantDock = defineAsyncComponent(() => import("@/components/chat/AiAssistantDock.vue"));
 const SUGGESTION_FAB_POSITION_KEY = "userSuggestionFabPosition";
 const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
 const PROMO_CODE_SESSION_KEY = "bananaPromoCode";
@@ -2726,6 +2738,8 @@ watch(
       </a-tooltip>
     </div>
 
+    <AiAssistantDock v-if="showAiAssistantDock" />
+
     <UserSuggestionDialog v-if="suggestionDialogOpen" v-model:open="suggestionDialogOpen" />
     <NotificationCenterDialog
       v-if="notificationCenterDialogOpen"
@@ -5095,7 +5109,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 }
 
 .app-layout-desktop-side-nav .generate-page,
-.app-layout-desktop-side-nav .chat-page {
+.app-layout-desktop-side-nav .content-inner .chat-page {
   min-height: calc(100dvh - 44px) !important;
   height: calc(100dvh - 44px) !important;
 }
