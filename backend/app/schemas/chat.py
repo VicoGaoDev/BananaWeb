@@ -96,12 +96,49 @@ class ChatImagePart(BaseModel):
         return cleaned
 
 
+class ChatGenerateOut(BaseModel):
+    status: str = ""
+    prompt: str = ""
+    num_images: int = 1
+    reference_images: list[str] = Field(default_factory=list)
+    mode_hint: str = "generate"
+    model: str = ""
+    size: str = ""
+    resolution: str = ""
+    custom_size: str = ""
+    task_ids: list[str] = Field(default_factory=list)
+    error_message: str = ""
+
+
+class ChatGenerateActionRequest(BaseModel):
+    action: str = "confirm"
+    model: str = ""
+    num_images: int = Field(default=1, ge=1, le=8)
+    size: str = ""
+    resolution: str = ""
+    custom_size: str = ""
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if cleaned not in {"confirm", "cancel"}:
+            raise ValueError("不支持的操作")
+        return cleaned
+
+    @field_validator("model", "size", "resolution", "custom_size")
+    @classmethod
+    def strip_optional(cls, value: str) -> str:
+        return (value or "").strip()
+
+
 class ChatMessageOut(BaseModel):
     id: int
     session_id: str
     role: str
     content: str
     images: list[ChatImagePart] = Field(default_factory=list)
+    generate: ChatGenerateOut | None = None
     model: str
     client_message_id: str | None = None
     credit_cost: int = 0

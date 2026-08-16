@@ -53,6 +53,11 @@ from app.services.external_api_config_service import (
     render_config,
 )
 from app.services.image_delivery_service import build_webp_url
+from app.services.chat_generate_service import (
+    GENERATE_IMAGE_SYSTEM_HINT,
+    apply_generate_proposal,
+    parse_generate_extra,
+)
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_balance
 
 
@@ -177,6 +182,7 @@ def _serialize_message(message: ChatMessage, *, public_session_id: str) -> ChatM
         role=message.role or "user",
         content=message.content or "",
         images=_message_images_out(message),
+        generate=parse_generate_extra(getattr(message, "extra_json", None)),
         model=message.model or "",
         client_message_id=message.client_message_id,
         credit_cost=int(message.credit_cost or 0),
@@ -505,8 +511,11 @@ def _build_context_messages(
     )
     history_rows.reverse()
     messages: list[dict[str, Any]] = []
-    if (system_prompt or "").strip():
-        messages.append({"role": "system", "content": system_prompt.strip()})
+    combined_system = "\n\n".join(
+        part for part in ((system_prompt or "").strip(), GENERATE_IMAGE_SYSTEM_HINT) if part
+    )
+    if combined_system:
+        messages.append({"role": "system", "content": combined_system})
     for item in history_rows:
         text = (item.content or "").strip()
         image_urls = _message_image_urls(item)
@@ -1389,6 +1398,18 @@ def _mark_assistant_result(
             session=_serialize_session(session),
         )
 
+    user_for_generate = (
+        db.get(ChatMessage, assistant_message.reply_to_message_id)
+        if assistant_message.reply_to_message_id
+        else None
+    )
+    reply_text = apply_generate_proposal(
+        db,
+        session=session,
+        assistant_message=assistant_message,
+        user_message=user_for_generate,
+        reply_text=reply_text,
+    )
     assistant_message.content = reply_text
     assistant_message.model = model
     assistant_message.credit_cost = 0
@@ -1767,6 +1788,13 @@ def _finish_provider_round(
             session=_serialize_session(session),
         )
 
+    reply_text = apply_generate_proposal(
+        db,
+        session=session,
+        assistant_message=assistant_message,
+        user_message=user_message,
+        reply_text=reply_text,
+    )
     assistant_message.content = reply_text
     assistant_message.model = model
     assistant_message.credit_cost = credit_cost if not _is_credit_exempt_user(user) else 0

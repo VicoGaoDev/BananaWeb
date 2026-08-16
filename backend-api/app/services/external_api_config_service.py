@@ -1020,15 +1020,30 @@ def _decode_data_url(value: str) -> tuple[bytes, str] | None:
         return None
 
 
+def _decode_base64_image_value(value: str) -> tuple[bytes, str] | None:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return None
+    if cleaned.startswith("data:"):
+        return _decode_data_url(cleaned)
+    try:
+        raw = base64.b64decode(cleaned, validate=False)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    return raw, _detect_image_mime(raw)
+
+
 def _decode_multipart_file_value(value: Any) -> tuple[bytes, str] | None:
     if isinstance(value, dict):
         base64_value = value.get("b64_json")
         if isinstance(base64_value, str) and base64_value.strip():
-            try:
-                raw = base64.b64decode(base64_value)
-            except Exception:
+            decoded = _decode_base64_image_value(base64_value)
+            if not decoded:
                 return None
-            mime_type = str(value.get("mime_type") or value.get("mimeType") or "").strip() or _detect_image_mime(raw)
+            raw, detected_mime = decoded
+            mime_type = str(value.get("mime_type") or value.get("mimeType") or "").strip() or detected_mime
             return raw, mime_type
 
         data_url_value = value.get("data_url")

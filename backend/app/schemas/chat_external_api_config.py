@@ -9,7 +9,7 @@ from app.schemas.external_api_config import _validate_integer_list_json, _valida
 StatusType = Literal["enabled", "disabled"]
 RequestFormatType = Literal["json"]
 CallModeType = Literal["sync"]
-MAX_CHAT_STARTER_PROMPTS = 4
+MAX_CHAT_STARTER_PROMPTS = 6
 
 
 class ChatStarterPromptItem(BaseModel):

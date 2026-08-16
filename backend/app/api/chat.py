@@ -6,13 +6,16 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import (
+    ChatGenerateActionRequest,
     ChatMessageListOut,
+    ChatMessageOut,
     ChatSendMessageRequest,
     ChatSessionCreate,
     ChatSessionListOut,
     ChatSessionOut,
     ChatSessionUpdate,
 )
+from app.services.chat_generate_service import confirm_or_cancel_chat_generate
 from app.services.chat_service import (
     chat_send_uses_sse,
     create_session,
@@ -136,3 +139,14 @@ async def post_chat_message(
         media_type="text/event-stream; charset=utf-8",
         headers=CHAT_SSE_HEADERS,
     )
+
+
+@router.post("/sessions/{session_id}/messages/{message_id}/generate", response_model=ChatMessageOut)
+def post_chat_message_generate(
+    session_id: str,
+    message_id: int,
+    body: ChatGenerateActionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return confirm_or_cancel_chat_generate(db, user, session_id, message_id, body)

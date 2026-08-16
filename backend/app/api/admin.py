@@ -18,6 +18,7 @@ from app.schemas.admin import (
 )
 from app.schemas.canvas import CanvasListResponse
 from app.schemas.chat import ChatMessageListOut, ChatSessionAdminListOut, ChatSessionAdminOut
+from app.schemas.task import TaskOut
 from app.schemas.feedback import (
     FeedbackDetail,
     FeedbackListResponse,
@@ -60,6 +61,8 @@ from app.services.feedback_service import (
 from app.services.history_service import get_admin_history_cards, get_admin_history_detail, get_all_history
 from app.services.canvas_service import list_all_canvases
 from app.services.chat_service import get_admin_session, list_admin_messages, list_admin_sessions
+from app.services.image_delivery_service import get_optional_cos_config, serialize_task
+from app.services.task_service import get_task_details
 from app.services.daily_report_service import DailyReportSendResult, send_previous_day_report, send_range_report
 from app.services.video_task_service import (
     expire_stale_video_tasks,
@@ -212,6 +215,17 @@ def admin_list_chat_messages(
         before_id=before_id,
         page_size=page_size,
     )
+
+
+@router.get("/tasks", response_model=list[TaskOut])
+def admin_get_tasks(
+    task_ids: list[str] = Query(default=[]),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    tasks = [task for task in get_task_details(db, task_ids) if not task.is_deleted]
+    cos_config = get_optional_cos_config(db)
+    return [serialize_task(task, cos_config=cos_config) for task in tasks]
 
 
 @router.put("/users/{user_id}/status", response_model=UserOut)

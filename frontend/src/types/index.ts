@@ -1864,12 +1864,27 @@ export interface ChatImage {
   url: string;
 }
 
+export interface ChatGenerateInfo {
+  status: "pending_confirm" | "running" | "success" | "failed" | "cancelled" | string;
+  prompt: string;
+  num_images: number;
+  reference_images: string[];
+  mode_hint: "generate" | "image_edit" | string;
+  model?: string;
+  size?: string;
+  resolution?: string;
+  custom_size?: string;
+  task_ids: string[];
+  error_message?: string;
+}
+
 export interface ChatMessage {
   id: number;
   session_id: string;
   role: "user" | "assistant" | "system" | string;
   content: string;
   images?: ChatImage[];
+  generate?: ChatGenerateInfo | null;
   model: string;
   client_message_id?: string | null;
   credit_cost: number;

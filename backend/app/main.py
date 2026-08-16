@@ -1783,6 +1783,8 @@ def _ensure_chat_schema():
         if "images_json" not in message_columns:
             conn.execute(text("ALTER TABLE chat_messages ADD COLUMN images_json TEXT NULL"))
             conn.execute(text("UPDATE chat_messages SET images_json = '[]' WHERE images_json IS NULL"))
+        if "extra_json" not in message_columns:
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN extra_json TEXT NULL"))
         if "idx_chat_messages_reply_to" not in message_indexes:
             conn.execute(text("CREATE INDEX idx_chat_messages_reply_to ON chat_messages (reply_to_message_id)"))
         if "chat_sessions" in set(inspector.get_table_names()) and "session_id" not in session_columns:

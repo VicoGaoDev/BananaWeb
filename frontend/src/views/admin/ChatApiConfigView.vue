@@ -32,7 +32,7 @@ import type {
   ExternalApiConfigStatus,
 } from "@/types";
 
-const MAX_STARTER_PROMPTS = 4;
+const MAX_STARTER_PROMPTS = 6;
 const DEFAULT_STARTER_PROMPTS: ChatStarterPrompt[] = [
   {
     tag: "生图",

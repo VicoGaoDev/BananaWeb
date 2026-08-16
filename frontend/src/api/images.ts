@@ -22,6 +22,24 @@ export function appendImageTransform(url: string, transform: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}${transform}`;
 }
 
+export function toOriginalImageUrl(imageUrl?: string): string {
+  const resolved = resolveImageUrl(imageUrl || "");
+  if (!resolved || resolved.startsWith("data:") || resolved.startsWith("blob:")) return resolved;
+  const [withoutHash, hash = ""] = resolved.split("#");
+  const [base, query = ""] = withoutHash.split("?");
+  const cleanedBase = base.replace(/![^/]*$/, "").replace(/\/Zoom$/i, "");
+  const kept = query
+    .split("&")
+    .map((part) => part.trim())
+    .filter((part) => {
+      if (!part) return false;
+      const key = decodeURIComponent(part.split("=")[0] || "");
+      return !key.startsWith("imageMogr2") && !key.startsWith("imageView2");
+    });
+  const next = kept.length ? `${cleanedBase}?${kept.join("&")}` : cleanedBase;
+  return hash ? `${next}#${hash}` : next;
+}
+
 export function exceedsRealtimeImagePreviewLimit(imageSizeBytes?: number | null): boolean {
   return typeof imageSizeBytes === "number" && imageSizeBytes >= REALTIME_IMAGE_PREVIEW_LIMIT_BYTES;
 }

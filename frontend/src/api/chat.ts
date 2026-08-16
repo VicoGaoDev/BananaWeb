@@ -47,6 +47,21 @@ export function listChatMessages(
   return client.get(`/chat/sessions/${sessionId}/messages`, { params });
 }
 
+export function confirmChatMessageGenerate(
+  sessionId: string,
+  messageId: number,
+  payload: {
+    action: "confirm" | "cancel";
+    model?: string;
+    num_images?: number;
+    size?: string;
+    resolution?: string;
+    custom_size?: string;
+  },
+): Promise<ChatMessage> {
+  return client.post(`/chat/sessions/${sessionId}/messages/${messageId}/generate`, payload);
+}
+
 /** 对话发送会同步等待上游模型，需覆盖后端 AI_TIMEOUT（默认 600s） */
 const CHAT_SEND_TIMEOUT_MS = 630_000;
 const BASE = import.meta.env.VITE_API_BASE_URL || "";

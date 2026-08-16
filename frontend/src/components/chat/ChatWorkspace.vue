@@ -26,13 +26,15 @@ import {
 } from "@/api/chat";
 import { getAdminChatSession, listAdminChatMessages, listAdminChatSessions } from "@/api/admin";
 import { getChatModels } from "@/api/chatConfig";
-import { getPreviewImageSrc } from "@/api/images";
+import { getPreviewImageSrc, toOriginalImageUrl } from "@/api/images";
 import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
 import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
 import { applyChatGenerateDraftInPlace, requestCloseAiAssistantDock, saveChatGenerateDraft } from "@/lib/chatGenerateDraft";
+import { stripGenerateImageFence } from "@/lib/simpleMarkdown";
 import type { AdminUser, ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
+import ChatGenerateCard from "@/components/chat/ChatGenerateCard.vue";
 
 const props = withDefaults(defineProps<{
   embedded?: boolean;
@@ -207,7 +209,7 @@ function chatImageDisplaySrc(url: string) {
 }
 
 function openChatImagePreview(url: string) {
-  const src = chatImageDisplaySrc(url);
+  const src = getPreviewImageSrc(toOriginalImageUrl((url || "").trim()));
   if (!src) return;
   previewSrc.value = src;
   previewVisible.value = true;
@@ -595,7 +597,7 @@ const starterPrompts = computed(() => {
       image_url: String(item?.image_url || "").trim(),
     }))
     .filter((item) => item.text)
-    .slice(0, 4);
+    .slice(0, 6);
   return configured;
 });
 
@@ -635,7 +637,7 @@ function formatTime(value?: string | null) {
 }
 
 function messagePlainText(item: ChatMessage) {
-  return (item.content || item.error_message || "").trim();
+  return stripGenerateImageFence((item.content || item.error_message || "").trim());
 }
 
 function isBrokenAssistantMessage(item: ChatMessage) {
@@ -643,7 +645,7 @@ function isBrokenAssistantMessage(item: ChatMessage) {
   if (item.status === "pending" || streamingMessageId.value === item.id || liveStreaming.value) {
     return false;
   }
-  return !messagePlainText(item);
+  return !messagePlainText(item) && !item.generate?.status;
 }
 
 function modelWantsStream(modelKey: string) {
@@ -739,9 +741,17 @@ function stopAssistantStreaming() {
 
 function assistantDisplayText(item: ChatMessage) {
   if (streamingMessageId.value === item.id) {
-    return streamingVisibleText.value;
+    return stripGenerateImageFence(streamingVisibleText.value);
   }
   return messagePlainText(item);
+}
+
+function handleGenerateCardUpdated(next: ChatMessage) {
+  const sessionId = next.session_id || activeSessionId.value || "";
+  if (!sessionId) return;
+  mutateSessionMessages(sessionId, (items) => items.map((item) => (
+    item.id === next.id ? { ...item, ...next } : item
+  )));
 }
 
 function createAssistantStreamWorker(): Worker | null {
@@ -1899,9 +1909,19 @@ onBeforeUnmount(() => {
                       class="message-content is-plain"
                     >{{ item.content }}</div>
                     <div
-                      v-else-if="item.role !== 'user' || !messageImages(item).length"
+                      v-else-if="!item.generate?.status && (item.role !== 'user' || !messageImages(item).length)"
                       class="message-content is-plain"
                     >{{ item.error_message || "系统出错，可进行重试" }}</div>
+                    <ChatGenerateCard
+                      v-if="item.role === 'assistant' && item.generate?.status"
+                      :session-id="item.session_id || activeSessionId || ''"
+                      :message-id="item.id"
+                      :generate="item.generate"
+                      :readonly="isReadOnly"
+                      :admin-viewer="adminViewer"
+                      @updated="handleGenerateCardUpdated"
+                      @preview="openChatImagePreview"
+                    />
                   </template>
                   <div
                     v-if="item.status === 'failed' && !isBrokenAssistantMessage(item)"
@@ -2079,10 +2099,14 @@ onBeforeUnmount(() => {
         <div v-if="!models.length" class="composer-hint">暂无可用对话场景，请联系管理员在「对话接口」中配置场景绑定。</div>
       </div>
     </section>
-    <div v-if="previewVisible" style="display: none">
+    <div style="display: none">
       <a-image
+        :key="previewSrc"
         :src="previewSrc"
-        :preview="{ visible: previewVisible, onVisibleChange: (visible: boolean) => (previewVisible = visible) }"
+        :preview="{
+          visible: previewVisible,
+          onVisibleChange: (visible: boolean) => (previewVisible = visible),
+        }"
       />
     </div>
     <AdminUserInfoDialog

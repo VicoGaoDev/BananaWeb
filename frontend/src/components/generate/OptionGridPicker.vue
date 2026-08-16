@@ -9,9 +9,11 @@ const props = withDefaults(defineProps<{
   panelTitle: string;
   placeholder?: string;
   showPreview?: boolean;
+  columns?: number;
 }>(), {
   placeholder: "请选择",
   showPreview: false,
+  columns: 3,
 });
 
 const emit = defineEmits<{
@@ -87,7 +89,7 @@ function selectOption(value: string) {
     <template #content>
       <div class="option-grid-panel">
         <div class="option-grid-panel-title">{{ panelTitle }}</div>
-        <div class="option-grid">
+        <div class="option-grid" :class="{ 'is-single-col': columns <= 1 }" :style="{ gridTemplateColumns: `repeat(${Math.max(1, columns)}, minmax(0, 1fr))` }">
           <button
             v-for="option in options"
             :key="option.value"
@@ -240,6 +242,30 @@ function selectOption(value: string) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   width: min(228px, calc(100vw - 72px));
+}
+
+.option-grid.is-single-col {
+  width: min(260px, calc(100vw - 72px));
+  max-height: min(280px, 46vh);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.option-grid.is-single-col .option-grid-item {
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+.option-grid.is-single-col .option-grid-badge {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .option-grid-item {

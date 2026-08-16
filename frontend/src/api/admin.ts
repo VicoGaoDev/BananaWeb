@@ -59,6 +59,7 @@ import type {
   ChatMessageListResponse,
   ChatSession,
   ChatSessionListResponse,
+  TaskResult,
   UserCanvasListResponse,
   AdminVideoTaskListResponse,
   VideoStats,
@@ -169,6 +170,14 @@ export function listAdminChatMessages(
   params?: { before_id?: number; page_size?: number },
 ): Promise<ChatMessageListResponse> {
   return client.get(`/admin/chat/sessions/${encodeURIComponent(sessionId)}/messages`, { params });
+}
+
+export function getAdminTasks(taskIds: string[]): Promise<TaskResult[]> {
+  const params = new URLSearchParams();
+  taskIds.forEach((taskId) => {
+    params.append("task_ids", String(taskId));
+  });
+  return client.get(`/admin/tasks?${params.toString()}`);
 }
 
 export function createUser(data: { username: string; password: string; role?: string }): Promise<AdminUser> {

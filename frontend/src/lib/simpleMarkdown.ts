@@ -287,8 +287,15 @@ markdownRenderer.core.ruler.after("inline", "strong_section_title", (state) => {
 });
 
 /** Prefer the pasteable prompt section from assistant replies; fallback to full text. */
+export function stripGenerateImageFence(text: string): string {
+  return (text || "")
+    .replace(/```(?:generate-image|generate_image)\s*\n[\s\S]*?(```|$)/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function extractGeneratePrompt(content: string): string {
-  const text = (content || "").trim();
+  const text = stripGenerateImageFence(content || "");
   if (!text) return "";
 
   const fenced = text.match(/```(?:[\w-]*)\n([\s\S]*?)```/);
@@ -310,8 +317,16 @@ export function extractGeneratePrompt(content: string): string {
   return stripMarkdownDecorations(text);
 }
 
+function normalizeFenceLayout(markdown: string): string {
+  return (markdown || "")
+    .replace(/([^\n])```([^\n`]*)\n/g, "$1\n```$2\n")
+    .replace(/\n```([^\n`]*)\n/g, "\n\n```$1\n")
+    .replace(/\n```\s*([.,;:!?，。；：！？、)\]}])/g, "\n```\n$1")
+    .replace(/\n{3,}```/g, "\n\n```");
+}
+
 export function renderSimpleMarkdown(markdown: string): string {
-  const source = (markdown || "").replace(/\r\n/g, "\n");
+  const source = normalizeFenceLayout((markdown || "").replace(/\r\n/g, "\n"));
   if (!source.trim()) return "";
   return markdownRenderer.render(source);
 }
