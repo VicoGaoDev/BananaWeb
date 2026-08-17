@@ -97,7 +97,10 @@ onBeforeUnmount(() => {
     :aria-hidden="!open"
   >
     <header class="ai-assistant-panel-head">
-      <strong>AI助手</strong>
+      <div class="ai-assistant-panel-title">
+        <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-panel-icon" />
+        <strong>AI助手</strong>
+      </div>
       <div class="ai-assistant-panel-actions">
         <button type="button" class="ai-assistant-open-full" @click="openFullChat">
           在对话页打开
@@ -130,18 +133,24 @@ onBeforeUnmount(() => {
   gap: 8px;
   width: 44px;
   padding: 12px 6px 14px;
-  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid rgb(255, 171, 36);
   border-right: 0;
   border-radius: 16px 0 0 16px;
-  background: rgb(247, 241, 233);
-  box-shadow: -6px 8px 20px rgba(80, 52, 20, 0.1);
-  color: var(--theme-title, #3d2f22);
+  background: rgb(255, 171, 36);
+  box-shadow: -6px 8px 20px rgba(255, 171, 36, 0.32);
+  color: #523713;
   cursor: pointer;
   transform: translateY(-50%);
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    width 0.2s ease;
 }
 
 .ai-assistant-tab:hover {
-  background: #fff8ee;
+  width: 50px;
+  background: rgb(240, 150, 16);
+  box-shadow: -8px 10px 24px rgba(255, 171, 36, 0.42);
 }
 
 .ai-assistant-tab-avatar {
@@ -195,6 +204,21 @@ onBeforeUnmount(() => {
   height: 56px;
   padding: 0 16px;
   border-bottom: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.06));
+}
+
+.ai-assistant-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-assistant-panel-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .ai-assistant-panel-head strong {
