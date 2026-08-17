@@ -377,7 +377,11 @@ def _render_json_template(
         rendered: dict[str, Any] = {}
         missing_count = 0
         for key, value in template.items():
-            next_value = _render_json_template(value, variables)
+            next_value = _render_json_template(
+                value,
+                variables,
+                prune_partial_objects=prune_partial_objects,
+            )
             if next_value is _MISSING_PLACEHOLDER:
                 missing_count += 1
                 continue
