@@ -2811,6 +2811,115 @@ def get_analytics_offline_order_revenue(
     }
 
 
+def _redeem_amount_yuan(credit_amount: int) -> float:
+    return float(REDEEM_UNIT_PRICES.get(int(credit_amount or 0), 0.0))
+
+
+def get_analytics_revenue_timeseries(
+    db: Session,
+    *,
+    granularity: str = "day",
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> dict:
+    current_start, current_end = _align_range(granularity, start_date, end_date)
+    bucket_starts = _iter_bucket_starts(current_start, current_end, granularity)
+    bucket_map = {
+        bucket: {
+            "label": _bucket_label(bucket, granularity),
+            "bucket_start": bucket,
+            "bucket_end": _bucket_end(bucket, granularity),
+            "online_amount": 0.0,
+            "redeem_amount": 0.0,
+            "offline_amount": 0.0,
+            "total_amount": 0.0,
+        }
+        for bucket in bucket_starts
+    }
+
+    payment_rows = (
+        db.query(PaymentOrder.paid_at, PaymentOrder.amount_fen)
+        .filter(
+            PaymentOrder.status.in_(("paid", "credited")),
+            PaymentOrder.paid_at.isnot(None),
+            PaymentOrder.paid_at >= current_start,
+            PaymentOrder.paid_at <= current_end,
+        )
+        .all()
+    )
+    for paid_at, amount_fen in payment_rows:
+        if paid_at is None:
+            continue
+        bucket = _bucket_start(_to_local_datetime(paid_at), granularity)
+        if bucket not in bucket_map:
+            continue
+        bucket_map[bucket]["online_amount"] += int(amount_fen or 0) / 100
+
+    redeem_rows = (
+        db.query(CreditRedeemKey.used_at, CreditRedeemKey.credit_amount)
+        .filter(
+            CreditRedeemKey.used_at.isnot(None),
+            CreditRedeemKey.used_at >= current_start,
+            CreditRedeemKey.used_at <= current_end,
+        )
+        .all()
+    )
+    for used_at, credit_amount in redeem_rows:
+        if used_at is None:
+            continue
+        bucket = _bucket_start(_to_local_datetime(used_at), granularity)
+        if bucket not in bucket_map:
+            continue
+        bucket_map[bucket]["redeem_amount"] += _redeem_amount_yuan(int(credit_amount or 0))
+
+    offline_rows = (
+        db.query(OfflineOrder.created_at, OfflineOrder.order_type, OfflineOrder.amount_fen)
+        .filter(
+            OfflineOrder.created_at >= _to_db_datetime(current_start),
+            OfflineOrder.created_at <= _to_db_datetime(current_end),
+        )
+        .all()
+    )
+    for created_at, order_type, amount_fen in offline_rows:
+        if created_at is None:
+            continue
+        bucket = _bucket_start(_to_local_datetime(created_at), granularity)
+        if bucket not in bucket_map:
+            continue
+        signed_amount = int(amount_fen or 0) / 100
+        if order_type == "refund":
+            signed_amount = -signed_amount
+        bucket_map[bucket]["offline_amount"] += signed_amount
+
+    points: list[dict] = []
+    total_online_amount = 0.0
+    total_redeem_amount = 0.0
+    total_offline_amount = 0.0
+    for bucket in bucket_starts:
+        item = bucket_map[bucket]
+        item["online_amount"] = round(item["online_amount"], 2)
+        item["redeem_amount"] = round(item["redeem_amount"], 2)
+        item["offline_amount"] = round(item["offline_amount"], 2)
+        item["total_amount"] = round(
+            item["online_amount"] + item["redeem_amount"] + item["offline_amount"],
+            2,
+        )
+        total_online_amount += item["online_amount"]
+        total_redeem_amount += item["redeem_amount"]
+        total_offline_amount += item["offline_amount"]
+        points.append(item)
+
+    return {
+        "granularity": granularity,
+        "range_label": _format_range_label(current_start, current_end),
+        "points": points,
+        "total_online_amount": round(total_online_amount, 2),
+        "total_redeem_amount": round(total_redeem_amount, 2),
+        "total_offline_amount": round(total_offline_amount, 2),
+        "total_amount": round(total_online_amount + total_redeem_amount + total_offline_amount, 2),
+    }
+
+
 LEDGER_EXPENSE_TYPES = {"server", "third_party_api", "other"}
 LEDGER_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 

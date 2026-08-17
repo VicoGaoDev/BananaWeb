@@ -243,6 +243,26 @@ class AnalyticsRedeemRevenueOut(BaseModel):
     total_amount: float
 
 
+class AnalyticsRevenueTimeseriesPointOut(BaseModel):
+    label: str
+    bucket_start: datetime | None = None
+    bucket_end: datetime | None = None
+    online_amount: float = 0
+    redeem_amount: float = 0
+    offline_amount: float = 0
+    total_amount: float = 0
+
+
+class AnalyticsRevenueTimeseriesOut(BaseModel):
+    granularity: str
+    range_label: str
+    points: list[AnalyticsRevenueTimeseriesPointOut]
+    total_online_amount: float = 0
+    total_redeem_amount: float = 0
+    total_offline_amount: float = 0
+    total_amount: float = 0
+
+
 class ErrorAnalyticsItemOut(BaseModel):
     error_category: str
     error_message: str

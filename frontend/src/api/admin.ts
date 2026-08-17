@@ -8,6 +8,7 @@ import type {
   AdminErrorTaskList,
   AdminAnalyticsQuery,
   AdminAnalyticsRedeemRevenue,
+  AdminAnalyticsRevenueTimeseries,
   AdminAnalyticsSummary,
   AdminAnalyticsTimeseries,
   AdminConfig,
@@ -517,6 +518,16 @@ export function getAdminAnalyticsPaymentRevenue(query: AdminAnalyticsQuery): Pro
 
 export function getAdminAnalyticsOfflineOrderRevenue(query: AdminAnalyticsQuery): Promise<AdminAnalyticsRedeemRevenue> {
   return client.get("/admin/analytics/offline-order-revenue", {
+    params: {
+      granularity: query.granularity,
+      start_date: query.start_date,
+      end_date: query.end_date,
+    },
+  });
+}
+
+export function getAdminAnalyticsRevenueTimeseries(query: AdminAnalyticsQuery): Promise<AdminAnalyticsRevenueTimeseries> {
+  return client.get("/admin/analytics/revenue-timeseries", {
     params: {
       granularity: query.granularity,
       start_date: query.start_date,

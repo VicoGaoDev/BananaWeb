@@ -11,7 +11,7 @@ from app.schemas.admin import (
     UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, ResetCreditsRequest, CreditLogOut,
     CreateRedeemKeysBatchRequest, RedeemKeyBatchOut, RedeemKeyOut, UpdateRedeemKeyStatusRequest, PaymentOrderAdminOut,
     CreateOfflineOrderRequest, OfflineOrderOut,
-    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest,
+    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, AnalyticsRevenueTimeseriesOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest,
     AdminLedgerCreateRequest, AdminLedgerUpdateRequest, AdminLedgerOut,
     AdminUserListOut, AdminUserPromoDashboardOut,
     VideoStatsOut,
@@ -42,7 +42,7 @@ from app.services.admin_service import (
     get_admin_promo_stats_dashboard,
     get_admin_promo_stats_user_detail,
     get_analytics_summary, get_analytics_timeseries, get_analytics_breakdown, get_analytics_redeem_revenue,
-    get_analytics_payment_revenue, get_analytics_offline_order_revenue, get_error_analytics, get_error_category_timeseries, get_error_tasks,
+    get_analytics_payment_revenue, get_analytics_offline_order_revenue, get_analytics_revenue_timeseries, get_error_analytics, get_error_category_timeseries, get_error_tasks,
     get_video_stats, get_video_analytics_summary, get_video_analytics_timeseries, get_video_analytics_breakdown,
 )
 from app.services.credit_redeem_service import create_redeem_key_batch, list_redeem_keys, update_redeem_key_status
@@ -742,6 +742,22 @@ def admin_analytics_offline_order_revenue(
     db: Session = Depends(get_db),
 ):
     return get_analytics_offline_order_revenue(
+        db,
+        granularity=granularity,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get("/analytics/revenue-timeseries", response_model=AnalyticsRevenueTimeseriesOut)
+def admin_analytics_revenue_timeseries(
+    granularity: str = Query("day", pattern="^(3hour|day|week|month)$"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    _user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return get_analytics_revenue_timeseries(
         db,
         granularity=granularity,
         start_date=start_date,

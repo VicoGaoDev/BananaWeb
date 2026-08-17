@@ -1242,6 +1242,26 @@ export interface AdminAnalyticsRedeemRevenue {
   total_amount: number;
 }
 
+export interface AdminAnalyticsRevenueTimeseriesPoint {
+  label: string;
+  bucket_start?: string | null;
+  bucket_end?: string | null;
+  online_amount: number;
+  redeem_amount: number;
+  offline_amount: number;
+  total_amount: number;
+}
+
+export interface AdminAnalyticsRevenueTimeseries {
+  granularity: string;
+  range_label: string;
+  points: AdminAnalyticsRevenueTimeseriesPoint[];
+  total_online_amount: number;
+  total_redeem_amount: number;
+  total_offline_amount: number;
+  total_amount: number;
+}
+
 export interface AdminErrorAnalyticsItem {
   error_category: string;
   error_message: string;
