@@ -384,6 +384,10 @@ def _render_string(template: str, variables: dict[str, Any]) -> Any:
     if exact_match:
         return variables.get(exact_match.group(1), _MISSING_PLACEHOLDER)
 
+    names = PLACEHOLDER_RE.findall(template)
+    if names and any(name not in variables for name in names):
+        return _MISSING_PLACEHOLDER
+
     def replace(match: re.Match[str]) -> str:
         name = match.group(1)
         value = variables.get(name, "")
@@ -408,6 +412,15 @@ def _render_json_template(
         for key, value in template.items():
             next_value = _render_json_template(value, variables)
             if next_value is _MISSING_PLACEHOLDER:
+                missing_count += 1
+                continue
+            if (
+                prune_partial_objects
+                and isinstance(value, list)
+                and value
+                and isinstance(next_value, list)
+                and not next_value
+            ):
                 missing_count += 1
                 continue
             rendered[key] = next_value
