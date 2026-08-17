@@ -22,6 +22,7 @@ import {
   ExclamationCircleFilled,
   ReloadOutlined,
   ThunderboltOutlined,
+  ExperimentOutlined,
   DownOutlined,
   MessageOutlined,
   PlusOutlined,
@@ -335,7 +336,7 @@ const activePromptOptimizeRequestId = ref<number | null>(null);
 const promptOptimizeStyleDialogOpen = ref(false);
 const pendingPromptOptimizePayload = ref<Omit<PromptOptimizePayload, "style_name" | "style_prompt"> | null>(null);
 const pendingPromptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
-const PROMPT_OPTIMIZE_TOOLTIP = "在保留原意的前提下，自动补全构图、光线、画风和细节，让提示词更适合出图";
+const PROMPT_OPTIMIZE_TOOLTIP = "免费。保留原意，并结合参考图理解画面，自动补全构图、光线、画风和细节，让提示词更适合出图";
 let promptOptimizeRequestSeq = 0;
 let promptOptimizeAbortController: AbortController | null = null;
 const cancelledPromptOptimizeRequestIds = new Set<number>();
@@ -3688,7 +3689,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ThunderboltOutlined /></template>
+                          <template #icon><ExperimentOutlined /></template>
                           提示词优化
                         </a-button>
                       </span>
@@ -4068,7 +4069,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ThunderboltOutlined /></template>
+                          <template #icon><ExperimentOutlined /></template>
                           提示词优化
                         </a-button>
                       </span>
@@ -4502,7 +4503,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
                       <span>
                         <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ThunderboltOutlined /></template>
+                          <template #icon><ExperimentOutlined /></template>
                           提示词优化
                         </a-button>
                       </span>
