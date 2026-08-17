@@ -14,6 +14,7 @@ import { getAdminVideoTasks, listUserOptions } from "@/api/admin";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
+import { getAvatarImageSrc } from "@/api/images";
 import { withApiBaseUrl } from "@/lib/assets";
 import { triggerDirectDownload } from "@/lib/directDownload";
 import { readStoredGridColumnCount, writeStoredGridColumnCount } from "@/lib/gridColumnPreference";
@@ -572,7 +573,7 @@ onBeforeUnmount(() => {
               class="result-card-user"
               @click.stop="openUserInfoDialog(item)"
             >
-              <a-avatar :size="22" :src="withApiBaseUrl(item.avatar_url) || undefined" class="result-card-user-avatar">
+              <a-avatar :size="22" :src="getAvatarImageSrc(item.avatar_url) || undefined" class="result-card-user-avatar">
                 {{ item.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <span class="result-card-user-name">{{ item.username || "未知用户" }}</span>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import {
   CopyOutlined,
@@ -8,7 +8,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons-vue";
 import { changePassword, getMe, updateProfile, uploadAvatar } from "@/api/auth";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -28,8 +28,37 @@ const pwdForm = ref({
   confirmPassword: "",
 });
 
-const avatarUrl = computed(() => withApiBaseUrl(auth.user?.avatar_url || ""));
+const avatarUrl = computed(() => getAvatarImageSrc(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
+const avatarPreviewVisible = ref(false);
+const avatarCachedSrc = ref("");
+const avatarImgRef = ref<HTMLImageElement | null>(null);
+const avatarLoadFailed = ref(false);
+
+function rememberAvatarSrc(image?: HTMLImageElement | null) {
+  const loadedSrc = image?.currentSrc || image?.src || "";
+  if (!loadedSrc) return;
+  avatarCachedSrc.value = loadedSrc;
+}
+
+function cacheLoadedAvatar(event: Event) {
+  rememberAvatarSrc(event.target as HTMLImageElement);
+}
+
+function handleAvatarLoadError() {
+  avatarLoadFailed.value = true;
+  avatarCachedSrc.value = "";
+  avatarPreviewVisible.value = false;
+}
+
+function openAvatarPreview() {
+  if (!avatarCachedSrc.value) return;
+  avatarPreviewVisible.value = true;
+}
+
+function closeAvatarPreview() {
+  avatarPreviewVisible.value = false;
+}
 const roleLabel = computed(() => {
   if (auth.user?.role === "superadmin") return "超级管理员";
   if (auth.user?.role === "admin") return "管理员";
@@ -140,6 +169,17 @@ watch(
   },
   { immediate: true }
 );
+
+watch(avatarUrl, async (value, previous) => {
+  if (value === previous) return;
+  avatarLoadFailed.value = false;
+  avatarCachedSrc.value = "";
+  avatarPreviewVisible.value = false;
+  if (!value) return;
+  await nextTick();
+  const image = avatarImgRef.value;
+  if (image?.complete) rememberAvatarSrc(image);
+});
 </script>
 
 <template>
@@ -160,7 +200,15 @@ watch(
       <div class="profile-layout">
         <section class="profile-summary warm-card motion-card-lift">
           <div class="profile-summary-main">
-            <a-avatar :size="92" class="profile-avatar" :src="avatarUrl || undefined">
+            <button
+              v-if="avatarUrl && !avatarLoadFailed"
+              type="button"
+              class="profile-avatar profile-avatar-button is-previewable"
+              @click="openAvatarPreview"
+            >
+              <img ref="avatarImgRef" :src="avatarUrl" alt="" @load="cacheLoadedAvatar" @error="handleAvatarLoadError" />
+            </button>
+            <a-avatar v-else :size="92" class="profile-avatar">
               {{ avatarFallback }}
             </a-avatar>
             <div class="profile-summary-copy">
@@ -293,6 +341,21 @@ watch(
         </section>
       </div>
     </a-spin>
+
+    <Teleport to="body">
+      <div
+        v-show="avatarPreviewVisible"
+        class="profile-avatar-preview-mask"
+        @click="closeAvatarPreview"
+      >
+        <img
+          v-if="avatarCachedSrc"
+          :src="avatarCachedSrc"
+          alt=""
+          @click.stop
+        />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -395,8 +458,46 @@ watch(
   box-shadow: 0 16px 28px var(--theme-brand-shadow);
 }
 
+.profile-avatar-button {
+  width: 92px;
+  height: 92px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  border-radius: 50%;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.profile-avatar.is-previewable {
+  cursor: zoom-in;
+}
+
 .profile-avatar-small {
   font-size: 26px;
+}
+
+.profile-avatar-preview-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: zoom-out;
+
+  img {
+    max-width: min(80vw, 520px);
+    max-height: 80vh;
+    border-radius: 16px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+  }
 }
 
 .profile-summary-copy {

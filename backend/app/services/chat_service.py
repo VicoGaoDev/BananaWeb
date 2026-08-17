@@ -52,7 +52,7 @@ from app.services.external_api_config_service import (
     read_value_by_path,
     render_config,
 )
-from app.services.image_delivery_service import build_webp_url
+from app.services.image_delivery_service import build_webp_url, get_optional_cos_config, resolve_user_avatar_url
 from app.services.chat_generate_service import (
     GENERATE_IMAGE_SYSTEM_HINT,
     apply_generate_proposal,
@@ -242,6 +242,7 @@ def _serialize_admin_session(
     user: User | None,
     *,
     credit_cost: int = 0,
+    cos_config=None,
 ) -> ChatSessionAdminOut:
     return ChatSessionAdminOut(
         id=(session.session_id or "").strip(),
@@ -252,7 +253,7 @@ def _serialize_admin_session(
         updated_at=session.updated_at,
         user_id=user_external_id(user) if user else "",
         username=(user.username if user else "") or "",
-        avatar_url=(user.avatar_url if user else "") or "",
+        avatar_url=resolve_user_avatar_url(user, cos_config=cos_config),
         credit_cost=max(int(credit_cost or 0), 0),
     )
 
@@ -440,9 +441,15 @@ def list_admin_sessions(
     page_rows = rows[:normalized_page_size]
     credit_costs = _session_credit_costs(db, [int(session.id) for session, _user in page_rows])
     last_public_id = (page_rows[-1][0].session_id or "").strip() if page_rows else ""
+    cos_config = get_optional_cos_config(db)
     return ChatSessionAdminListOut(
         items=[
-            _serialize_admin_session(session, user, credit_cost=credit_costs.get(int(session.id), 0))
+            _serialize_admin_session(
+                session,
+                user,
+                credit_cost=credit_costs.get(int(session.id), 0),
+                cos_config=cos_config,
+            )
             for session, user in page_rows
         ],
         total=len(page_rows) + (1 if has_more else 0),
@@ -457,7 +464,12 @@ def get_admin_session(db: Session, session_id: str) -> ChatSessionAdminOut:
     session = _require_session_any_user(db, session_id)
     user = db.query(User).filter(User.id == session.user_id).first()
     credit_cost = _session_credit_costs(db, [int(session.id)]).get(int(session.id), 0)
-    return _serialize_admin_session(session, user, credit_cost=credit_cost)
+    return _serialize_admin_session(
+        session,
+        user,
+        credit_cost=credit_cost,
+        cos_config=get_optional_cos_config(db),
+    )
 
 
 def list_admin_messages(

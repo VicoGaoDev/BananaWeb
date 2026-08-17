@@ -16,7 +16,7 @@ import {
   listUserOptions,
 } from "@/api/admin";
 import { setStoredAdminUnresolvedFeedbackCount } from "@/lib/adminFeedbackNotice";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import { isSessionExpiredError } from "@/lib/authError";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import AnalyticsFilterBar from "@/components/admin/AnalyticsFilterBar.vue";
@@ -726,7 +726,7 @@ watch(filterSignature, async () => {
                   title="查看用户信息"
                   @click="openUserInfoDialog(record)"
                 >
-                  <a-avatar :size="30" :src="withApiBaseUrl(record.avatar_url) || undefined" class="table-user-avatar">
+                  <a-avatar :size="30" :src="getAvatarImageSrc(record.avatar_url) || undefined" class="table-user-avatar">
                     {{ record.username?.charAt(0)?.toUpperCase() }}
                   </a-avatar>
                 </button>

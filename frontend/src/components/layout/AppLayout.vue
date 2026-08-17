@@ -17,7 +17,8 @@ import { validateInviteCode } from "@/api/inviteRewards";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnreadFeedbackCount } from "@/api/admin";
-import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
+import { withBaseUrl } from "@/lib/assets";
 import {
   getStoredAdminUnresolvedFeedbackCount,
   setStoredAdminUnresolvedFeedbackCount,
@@ -1385,7 +1386,7 @@ const announcementConfig = ref<AnnouncementConfig>({
 const ANNOUNCEMENT_DISMISS_KEY = "systemAnnouncementDismissState";
 const authInputPrefixStyle = { color: "var(--theme-input-prefix-color)" };
 
-const avatarUrl = computed(() => withApiBaseUrl(auth.user?.avatar_url || ""));
+const avatarUrl = computed(() => getAvatarImageSrc(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
 
 function getTodayString() {

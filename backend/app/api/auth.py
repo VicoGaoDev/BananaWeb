@@ -1,7 +1,5 @@
 import logging
-import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -9,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.config import settings
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -60,6 +57,8 @@ from app.models.prompt_optimize_task import PromptOptimizeTask
 from app.services.admin_service import get_credit_logs
 from app.services.prompt_optimize_service import PROMPT_OPTIMIZE_MODE
 from app.services.user_credit_service import get_user_credit_balance
+from app.services.cos_service import build_object_key, upload_bytes_to_cos
+from app.services.image_delivery_service import get_optional_cos_config, resolve_avatar_url
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 audit_logger = logging.getLogger("app.audit")
@@ -70,7 +69,7 @@ AVATAR_MAX_SIZE = 1 * 1024 * 1024  # 1 MB
 def _user_brief(db: Session, user: User) -> UserBrief:
     return UserBrief(
         id=user_external_id(user), business_id=user.business_id, username=user.username, email=user.email, role=user.role,
-        avatar_url=user.avatar_url or "", credits=get_user_credit_balance(db, user.id), is_whitelisted=bool(user.is_whitelisted),
+        avatar_url=resolve_avatar_url(user.avatar_url, cos_config=get_optional_cos_config(db)), credits=get_user_credit_balance(db, user.id), is_whitelisted=bool(user.is_whitelisted),
     )
 
 
@@ -452,13 +451,15 @@ async def upload_avatar(
     if len(data) > AVATAR_MAX_SIZE:
         raise HTTPException(status_code=400, detail="头像图片不能超过 1 MB")
 
-    ext = Path(file.filename or "avatar.jpg").suffix or ".jpg"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    dest = Path(settings.UPLOAD_DIR) / "avatar" / filename
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-
-    user.avatar_url = f"/uploads/avatar/{filename}"
+    content_type = file.content_type or "image/jpeg"
+    key = build_object_key("avatar", file.filename or "avatar.jpg", content_type)
+    user.avatar_url = upload_bytes_to_cos(
+        db,
+        data=data,
+        key=key,
+        content_type=content_type,
+        cache_control="public, max-age=31536000",
+    )
     db.add(user)
     db.commit()
     db.refresh(user)

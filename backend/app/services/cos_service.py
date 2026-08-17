@@ -29,6 +29,7 @@ UPLOAD_PURPOSE_PREFIXES = {
     "admin_ledger": "admin_ledger",
     "canvas": "canvas",
     "template": "template",
+    "avatar": "avatar",
     "generated": "generated",
 }
 PUT_OBJECT_ACTIONS = [

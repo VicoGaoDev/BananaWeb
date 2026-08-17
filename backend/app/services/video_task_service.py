@@ -19,7 +19,7 @@ from app.services.failure_refund_service import (
     DAILY_FAILURE_REFUND_LIMIT,
     get_today_failure_refund_count,
 )
-from app.services.image_delivery_service import normalize_external_image_url
+from app.services.image_delivery_service import get_optional_cos_config, normalize_external_image_url, resolve_user_avatar_url
 from app.services.user_credit_service import apply_user_credit_delta, get_user_credit_account
 from app.services.video_external_api_config_service import (
     VIDEO_SCENE_AVAILABILITY_FIRST_LAST,
@@ -639,6 +639,7 @@ def list_admin_video_tasks(
         .limit(normalized_page_size)
         .all()
     )
+    cos_config = get_optional_cos_config(db)
     return {
         "total": total,
         "items": [
@@ -646,7 +647,7 @@ def list_admin_video_tasks(
                 **serialize_video_task(task),
                 "user_id": task.user.business_id if task.user else "",
                 "username": task.user.username if task.user else "",
-                "avatar_url": task.user.avatar_url if task.user else "",
+                "avatar_url": resolve_user_avatar_url(task.user, cos_config=cos_config),
             }
             for task in tasks
         ],

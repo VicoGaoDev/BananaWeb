@@ -15,7 +15,7 @@ import {
 } from "@/api/admin";
 import UserCreditLogsDialog from "@/components/admin/UserCreditLogsDialog.vue";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminUser, AdminUserPromoDashboard } from "@/types";
 
@@ -456,7 +456,7 @@ function promoActivityRowKey(record: {
           <template v-if="column.dataIndex === 'username'">
             <div class="user-cell">
               <button type="button" class="table-avatar-btn" @click="openUserInfo(record)">
-                <a-avatar :size="34" :src="withApiBaseUrl(record.avatar_url) || undefined" class="table-avatar">
+                <a-avatar :size="34" :src="getAvatarImageSrc(record.avatar_url) || undefined" class="table-avatar">
                   {{ record.username?.charAt(0)?.toUpperCase() }}
                 </a-avatar>
               </button>
@@ -660,7 +660,7 @@ function promoActivityRowKey(record: {
         <div class="whitelist-list" v-if="!whitelistLoading">
           <div v-for="user in filteredWhitelistUsers" :key="user.id" class="whitelist-item">
             <div class="user-cell">
-              <a-avatar :size="36" :src="withApiBaseUrl(user.avatar_url) || undefined" class="table-avatar">
+              <a-avatar :size="36" :src="getAvatarImageSrc(user.avatar_url) || undefined" class="table-avatar">
                 {{ user.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <div class="whitelist-user-meta">

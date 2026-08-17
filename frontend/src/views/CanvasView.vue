@@ -28,7 +28,7 @@ import { assignCanvasNodesToGroup, createCanvas, createCanvasGroup, createCanvas
 import { getMe } from "@/api/auth";
 import { getTaskScenes } from "@/api/config";
 import { deleteHistoryTask } from "@/api/history";
-import { getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl } from "@/api/images";
+import { getAvatarImageSrc, getDisplayImageUrl, getDownloadUrl, getPreviewImageUrl } from "@/api/images";
 import { getTasks } from "@/api/tasks";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import { deleteVideoTask, getVideoTasks } from "@/api/videoTasks";
@@ -4717,7 +4717,7 @@ onBeforeUnmount(() => {
             title="查看用户信息"
             @click="openReadonlyOwnerDialog"
           >
-            <a-avatar :size="22" :src="withApiBaseUrl(readonlyCanvasOwnerFallback.avatar_url) || undefined" class="canvas-owner-avatar">
+            <a-avatar :size="22" :src="getAvatarImageSrc(readonlyCanvasOwnerFallback.avatar_url) || undefined" class="canvas-owner-avatar">
               {{ readonlyCanvasOwnerFallback.username?.charAt(0)?.toUpperCase() }}
             </a-avatar>
             <span>{{ readonlyCanvasOwnerFallback.username }}</span>

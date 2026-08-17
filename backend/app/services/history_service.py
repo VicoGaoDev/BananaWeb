@@ -38,6 +38,7 @@ from app.services.task_type_service import (
 from app.services.image_delivery_service import (
     format_generation_public_error_message,
     get_optional_cos_config,
+    resolve_user_avatar_url,
     serialize_asset_urls,
     serialize_image,
 )
@@ -584,7 +585,7 @@ def _serialize_task_history_detail(
         "image_id": primary_image.id if primary_image else None,
             "user_id": user_external_id(task.user),
             "username": task.user.username if task.user else "",
-            "avatar_url": task.user.avatar_url or "" if task.user else "",
+            "avatar_url": resolve_user_avatar_url(task.user, cos_config=cos_config),
         "is_pinned": False,
         "pinned_at": None,
         "image_url": primary_image_payload["image_url"],
@@ -648,7 +649,7 @@ def _serialize_prompt_history_detail(row: PromptHistory, *, cos_config) -> dict:
         "image_id": -row.id,
         "user_id": user_external_id(user),
         "username": user.username if user else "",
-        "avatar_url": (user.avatar_url or "") if user else "",
+        "avatar_url": resolve_user_avatar_url(user, cos_config=cos_config),
         "is_pinned": False,
         "pinned_at": None,
         "image_url": "",
@@ -699,7 +700,7 @@ def _serialize_prompt_optimize_detail(row: PromptOptimizeTask, *, cos_config) ->
         "image_id": -(PROMPT_OPTIMIZE_IMAGE_ID_OFFSET + int(row.id)),
         "user_id": user_external_id(user),
         "username": user.username if user else "",
-        "avatar_url": (user.avatar_url or "") if user else "",
+        "avatar_url": resolve_user_avatar_url(user, cos_config=cos_config),
         "is_pinned": False,
         "pinned_at": None,
         "image_url": "",
@@ -759,7 +760,7 @@ def get_user_history(
     current_user = current_user if current_user and current_user.id == user_id else db.query(User).filter(User.id == user_id).first()
     current_user_external_id = user_external_id(current_user)
     current_username = current_user.username if current_user else ""
-    current_avatar_url = (current_user.avatar_url or "") if current_user else ""
+    current_avatar_url = resolve_user_avatar_url(current_user, cos_config=cos_config)
     history_pins = (
         db.query(HistoryPin)
         .filter(HistoryPin.user_id == user_id)
@@ -1373,7 +1374,7 @@ def get_all_history(
             user_cache[task.user_id] = {
                 "user_id": user_external_id(u),
                 "username": u.username if u else "未知",
-                "avatar_url": (u.avatar_url or "") if u else "",
+                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
             }
 
         soft_deleted_count = sum(1 for img in task.images if img.is_deleted)
@@ -1419,7 +1420,7 @@ def get_all_history(
             user_cache[log.user_id] = {
                 "user_id": user_external_id(u),
                 "username": u.username if u else "未知",
-                "avatar_url": (u.avatar_url or "") if u else "",
+                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
             }
 
         items.append({
@@ -1456,7 +1457,7 @@ def get_all_history(
             user_cache[row.user_id] = {
                 "user_id": user_external_id(u),
                 "username": u.username if u else "未知",
-                "avatar_url": (u.avatar_url or "") if u else "",
+                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
             }
 
         items.append({
@@ -1848,7 +1849,7 @@ def get_admin_history_cards(
             "image_id": image.id,
             "user_id": user_external_id(task_user),
             "username": task_user.username if task_user else "",
-            "avatar_url": (task_user.avatar_url or "") if task_user else "",
+            "avatar_url": resolve_user_avatar_url(task_user, cos_config=cos_config),
             "is_pinned": False,
             "pinned_at": None,
             "image_url": image_payload["image_url"],
@@ -1913,7 +1914,7 @@ def get_admin_history_cards(
             "image_id": primary_image["id"] if primary_image else None,
             "user_id": user_external_id(task_user),
             "username": task_user.username if task_user else "",
-            "avatar_url": (task_user.avatar_url or "") if task_user else "",
+            "avatar_url": resolve_user_avatar_url(task_user, cos_config=cos_config),
             "is_pinned": False,
             "pinned_at": None,
             "image_url": primary_image["image_url"] if primary_image else "",
@@ -1974,7 +1975,7 @@ def get_admin_history_cards(
             "image_id": None,
             "user_id": user_external_id(task_user),
             "username": task_user.username if task_user else "",
-            "avatar_url": (task_user.avatar_url or "") if task_user else "",
+            "avatar_url": resolve_user_avatar_url(task_user, cos_config=cos_config),
             "is_pinned": False,
             "pinned_at": None,
             "image_url": "",
@@ -2029,7 +2030,7 @@ def get_admin_history_cards(
             "image_id": -row.id,
             "user_id": user_external_id(row_user),
             "username": row_user.username if row_user else "",
-            "avatar_url": (row_user.avatar_url or "") if row_user else "",
+            "avatar_url": resolve_user_avatar_url(row_user, cos_config=cos_config),
             "is_pinned": False,
             "pinned_at": None,
             "image_url": "",
@@ -2068,7 +2069,7 @@ def get_admin_history_cards(
         row_user = user_cache.get(row.user_id)
         item["user_id"] = user_external_id(row_user)
         item["username"] = row_user.username if row_user else ""
-        item["avatar_url"] = (row_user.avatar_url or "") if row_user else ""
+        item["avatar_url"] = resolve_user_avatar_url(row_user, cos_config=cos_config)
         items.append(item)
 
     items.sort(key=lambda item: item.get("created_at") or datetime.min, reverse=True)

@@ -19,6 +19,7 @@ from app.services.image_delivery_service import (
     build_thumb_url,
     get_optional_cos_config,
     normalize_external_image_url,
+    resolve_user_avatar_url,
     serialize_task,
 )
 from app.services.task_service import create_tasks
@@ -68,8 +69,18 @@ def _generate_unique_project_id(db: Session) -> str:
     raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="创建画布失败，请稍后重试")
 
 
-def _serialize_canvas_summary(canvas: UserCanvas, node_count: int = 0, preview_urls: list[str] | None = None, *, is_readonly: bool = False) -> dict:
+def _serialize_canvas_summary(
+    canvas: UserCanvas,
+    node_count: int = 0,
+    preview_urls: list[str] | None = None,
+    *,
+    is_readonly: bool = False,
+    cos_config=None,
+) -> dict:
     owner = canvas.user
+    if cos_config is None:
+        db = Session.object_session(canvas)
+        cos_config = get_optional_cos_config(db) if db else None
     return {
         "id": canvas.id,
         "project_id": canvas.project_id,
@@ -83,7 +94,7 @@ def _serialize_canvas_summary(canvas: UserCanvas, node_count: int = 0, preview_u
         "is_deleted": bool(canvas.is_deleted),
         "owner_user_id": user_external_id(owner),
         "owner_username": owner.username if owner else "",
-        "owner_avatar_url": owner.avatar_url or "" if owner else "",
+        "owner_avatar_url": resolve_user_avatar_url(owner, cos_config=cos_config),
         "created_at": canvas.created_at,
         "updated_at": canvas.updated_at,
     }

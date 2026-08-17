@@ -15,7 +15,7 @@ import { createCanvas, deleteCanvas, listCanvases, updateCanvas } from "@/api/ca
 import { getAdminCanvases, listUserOptions } from "@/api/admin";
 import { copyExampleCanvasProject, listExampleCanvasProjects } from "@/api/exampleCanvases";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
-import { appendImageTransform } from "@/api/images";
+import { appendImageTransform, getAvatarImageSrc } from "@/api/images";
 import { withApiBaseUrl } from "@/lib/assets";
 import type { AdminUser, ExampleCanvasProject, UserCanvasSummary } from "@/types";
 
@@ -426,7 +426,7 @@ onBeforeUnmount(() => {
               :title="canvas.owner_username || '未知用户'"
               @click.stop="openUserInfoDialog(canvas)"
             >
-              <a-avatar :size="22" :src="withApiBaseUrl(canvas.owner_avatar_url) || undefined" class="canvas-list-owner-avatar">
+              <a-avatar :size="22" :src="getAvatarImageSrc(canvas.owner_avatar_url) || undefined" class="canvas-list-owner-avatar">
                 {{ canvas.owner_username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <span class="canvas-list-owner-name">{{ canvas.owner_username || "未知用户" }}</span>

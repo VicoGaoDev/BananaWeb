@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import { getAdminUserDetail, getCreditLogs as getAdminCreditLogs, listPaymentOrders } from "@/api/admin";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import type { AdminPaymentOrder, AdminUser, CreditLog } from "@/types";
 
 const props = withDefaults(defineProps<{
@@ -89,7 +89,7 @@ watch(() => [props.open, props.user?.id], () => {
       <div v-if="displayUser" class="user-info-dialog">
         <div class="user-info-scroll">
           <div class="user-info-header">
-            <a-avatar :size="54" :src="withApiBaseUrl(displayUser.avatar_url) || undefined" class="user-info-avatar">
+            <a-avatar :size="54" :src="getAvatarImageSrc(displayUser.avatar_url) || undefined" class="user-info-avatar">
               {{ displayUser.username?.charAt(0)?.toUpperCase() }}
             </a-avatar>
             <div class="user-info-identity">

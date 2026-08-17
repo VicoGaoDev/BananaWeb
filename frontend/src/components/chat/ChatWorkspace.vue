@@ -26,9 +26,9 @@ import {
 } from "@/api/chat";
 import { getAdminChatSession, listAdminChatMessages, listAdminChatSessions } from "@/api/admin";
 import { getChatModels } from "@/api/chatConfig";
-import { getPreviewImageSrc, toOriginalImageUrl } from "@/api/images";
+import { getAvatarImageSrc, getPreviewImageSrc, toOriginalImageUrl } from "@/api/images";
 import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
-import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
+import { withBaseUrl } from "@/lib/assets";
 import { applyChatGenerateDraftInPlace, requestCloseAiAssistantDock, saveChatGenerateDraft } from "@/lib/chatGenerateDraft";
 import { stripGenerateImageFence } from "@/lib/simpleMarkdown";
 import type { AdminUser, ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
@@ -518,7 +518,7 @@ function sessionOwnerName(session?: ChatSession | null) {
 }
 
 function sessionOwnerAvatar(session?: ChatSession | null) {
-  return withApiBaseUrl(session?.avatar_url || "") || "";
+  return getAvatarImageSrc(session?.avatar_url || "") || "";
 }
 
 function sessionOwnerInitial(session?: ChatSession | null) {

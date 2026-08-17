@@ -8,7 +8,7 @@ import { CopyOutlined, GiftOutlined } from "@ant-design/icons-vue";
 import { createRedeemKeysBatch, listRedeemKeys, updateRedeemKeyStatus } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { copyText } from "@/lib/clipboard";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import type { AdminRedeemKey, AdminRedeemKeyBatchResult, AdminUser, RedeemKeyStatus } from "@/types";
 
 const loading = ref(false);
@@ -437,7 +437,7 @@ onMounted(() => {
                   title="查看用户信息"
                   @click="openUserInfo(record)"
                 >
-                  <a-avatar :size="28" :src="withApiBaseUrl(findAdminUser(record.used_by_user_id)?.avatar_url) || undefined" class="user-avatar">
+                  <a-avatar :size="28" :src="getAvatarImageSrc(findAdminUser(record.used_by_user_id)?.avatar_url) || undefined" class="user-avatar">
                     {{ record.used_by_username?.charAt(0)?.toUpperCase() }}
                   </a-avatar>
                 </button>

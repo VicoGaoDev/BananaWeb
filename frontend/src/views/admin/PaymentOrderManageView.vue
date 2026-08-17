@@ -7,7 +7,7 @@ import type { Dayjs } from "dayjs";
 import { AccountBookOutlined, ArrowLeftOutlined, CopyOutlined } from "@ant-design/icons-vue";
 import { listPaymentOrders } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import type { AdminPaymentOrder, AdminUser } from "@/types";
 
 const router = useRouter();
@@ -324,7 +324,7 @@ onMounted(async () => {
                   title="查看用户信息"
                   @click="openUserInfo(record)"
                 >
-                  <a-avatar :size="28" :src="withApiBaseUrl(findAdminUser(record.user_id)?.avatar_url) || undefined" class="user-avatar">
+                  <a-avatar :size="28" :src="getAvatarImageSrc(findAdminUser(record.user_id)?.avatar_url) || undefined" class="user-avatar">
                     {{ record.username?.charAt(0)?.toUpperCase() }}
                   </a-avatar>
                 </button>

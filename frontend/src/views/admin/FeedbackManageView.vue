@@ -6,7 +6,7 @@ import dayjs from "dayjs";
 import { listAdminFeedbacks } from "@/api/admin";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import FeedbackDetailDrawer from "@/components/feedback/FeedbackDetailDrawer.vue";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import type { AdminUser, FeedbackItem, FeedbackStatus, FeedbackType } from "@/types";
 
 const loading = ref(false);
@@ -264,7 +264,7 @@ onMounted(async () => {
                 title="查看用户信息"
                 @click="openUserInfo(record)"
               >
-                <a-avatar :size="28" :src="withApiBaseUrl(findAdminUser(record.user_id)?.avatar_url) || undefined" class="user-avatar">
+                <a-avatar :size="28" :src="getAvatarImageSrc(findAdminUser(record.user_id)?.avatar_url) || undefined" class="user-avatar">
                   {{ record.username?.charAt(0)?.toUpperCase() }}
                 </a-avatar>
               </button>

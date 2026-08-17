@@ -15,7 +15,7 @@ import { getVideoTaskScenes } from "@/api/videoConfig";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import { VChart } from "@/components/admin/charting";
 import VideoTaskDetailDialog from "@/components/video/VideoTaskDetailDialog.vue";
-import { withApiBaseUrl } from "@/lib/assets";
+import { getAvatarImageSrc } from "@/api/images";
 import { getSuccessRateColor } from "@/lib/analyticsMetric";
 import { isSessionExpiredError } from "@/lib/authError";
 import type {
@@ -1054,7 +1054,7 @@ watch(filterSignature, async () => {
                   title="查看用户信息"
                   @click="openUserInfoDialog(record)"
                 >
-                  <a-avatar :size="30" :src="withApiBaseUrl(record.avatar_url) || undefined" class="table-user-avatar">
+                  <a-avatar :size="30" :src="getAvatarImageSrc(record.avatar_url) || undefined" class="table-user-avatar">
                     {{ record.username?.charAt(0)?.toUpperCase() }}
                   </a-avatar>
                 </button>

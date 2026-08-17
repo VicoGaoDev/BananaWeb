@@ -52,6 +52,27 @@ export function getPreviewImageSrc(imageUrl?: string): string {
   return appendImageTransform(resolveImageUrl(imageUrl || ""), "imageMogr2/format/webp");
 }
 
+function appendZoomStyle(url: string): string {
+  const [withoutHash, hash = ""] = url.split("#");
+  const [base, query = ""] = withoutHash.split("?");
+  const cleanedBase = base.replace(/\/+$/, "");
+  if (!cleanedBase || /\/Zoom$/i.test(cleanedBase)) {
+    return url;
+  }
+  const next = query ? `${cleanedBase}/Zoom?${query}` : `${cleanedBase}/Zoom`;
+  return hash ? `${next}#${hash}` : next;
+}
+
+export function getAvatarImageSrc(imageUrl?: string): string {
+  const raw = (imageUrl || "").trim();
+  if (!raw || raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
+  if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) return "";
+  const original = toOriginalImageUrl(raw);
+  if (!original || original.startsWith("data:") || original.startsWith("blob:")) return original;
+  if (!/^https?:\/\//i.test(original)) return "";
+  return appendImageTransform(appendZoomStyle(original), "imageMogr2/format/webp");
+}
+
 export function getPreviewImageUrl(image?: Pick<ImageResult, "image_url" | "preview_url" | "thumb_url">): string {
   return getPreviewImageSrc(image?.image_url || image?.preview_url || image?.thumb_url || "");
 }

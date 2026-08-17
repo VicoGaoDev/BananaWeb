@@ -24,6 +24,7 @@ from app.models.video_task_api_attempt import VideoTaskApiAttempt
 from app.models.user_credit import DEFAULT_USER_CREDIT_STATUS, UserCredit
 from app.services.promo_service import PROMO_CODE_REWARD_CREDITS, get_user_promo_dashboard_for_admin
 from app.services.business_id_service import get_user_by_business_id, task_external_id, user_external_id
+from app.services.image_delivery_service import get_optional_cos_config, resolve_avatar_url, resolve_user_avatar_url
 from app.services.content_safety_service import (
     build_content_safety_error_clause,
     build_exclude_content_safety_failed_task_clause,
@@ -142,13 +143,14 @@ def _task_credit_refund_filter():
     )
 
 
-def _serialize_user(user: User) -> dict:
+def _serialize_user(user: User, *, cos_config=None) -> dict:
     db = user._sa_instance_state.session
+    resolved_cos = cos_config if cos_config is not None else (get_optional_cos_config(db) if db else None)
     return {
         "id": user_external_id(user),
         "username": user.username,
         "email": user.email,
-        "avatar_url": user.avatar_url or "",
+        "avatar_url": resolve_avatar_url(user.avatar_url, cos_config=resolved_cos),
         "role": user.role,
         "status": user.status,
         "is_whitelisted": bool(user.is_whitelisted),
@@ -322,12 +324,14 @@ def list_users(
         .scalar()
         or 0
     )
+    cos_config = get_optional_cos_config(db)
     return {
         "items": [
             _serialize_user_with_balance(
                 user,
                 credit_map.get(user.id, 0),
                 consumed_credit_map.get(user.id, 0),
+                cos_config=cos_config,
             )
             for user in users
         ],
@@ -356,8 +360,9 @@ def list_user_options(db: Session, keyword: str | None = None, limit: int = 2000
         .limit(max(1, min(int(limit or 2000), 5000)))
         .all()
     )
+    cos_config = get_optional_cos_config(db)
     return [
-        _serialize_user_with_balance(user, 0, 0)
+        _serialize_user_with_balance(user, 0, 0, cos_config=cos_config)
         for user in users
     ]
 
@@ -391,12 +396,14 @@ def get_user_detail(db: Session, user_id: str) -> dict:
     )
 
 
-def _serialize_user_with_balance(user: User, balance: int, consumed_credits: int = 0) -> dict:
+def _serialize_user_with_balance(user: User, balance: int, consumed_credits: int = 0, *, cos_config=None) -> dict:
+    db = user._sa_instance_state.session
+    resolved_cos = cos_config if cos_config is not None else (get_optional_cos_config(db) if db else None)
     return {
         "id": user_external_id(user),
         "username": user.username,
         "email": user.email,
-        "avatar_url": user.avatar_url or "",
+        "avatar_url": resolve_avatar_url(user.avatar_url, cos_config=resolved_cos),
         "role": user.role,
         "status": user.status,
         "is_whitelisted": bool(user.is_whitelisted),
@@ -3927,6 +3934,7 @@ def get_error_tasks(
     used_fallback_api: bool | None = None,
     include_unsafe_tasks: bool = True,
 ) -> dict:
+    cos_config = get_optional_cos_config(db)
     if task_kind == ERROR_ANALYTICS_TASK_KIND_VIDEO:
         if used_fallback_api is True:
             query = (
@@ -3994,7 +4002,7 @@ def get_error_tasks(
                 "task_id": task.business_id or "",
                 "user_id": user_external_id(user),
                 "username": user.username or "",
-                "avatar_url": user.avatar_url or "",
+                "avatar_url": resolve_user_avatar_url(user, cos_config=cos_config),
                 "task_type": task_type,
                 "model": task.model or "",
                 "source": task.source or "web",
@@ -4081,7 +4089,7 @@ def get_error_tasks(
                 "task_id": task_external_id(task),
                 "user_id": user_external_id(user),
                 "username": user.username or "",
-                "avatar_url": user.avatar_url or "",
+                "avatar_url": resolve_user_avatar_url(user, cos_config=cos_config),
                 "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
                 "model": task.model or "",
                 "source": task.source or "web",

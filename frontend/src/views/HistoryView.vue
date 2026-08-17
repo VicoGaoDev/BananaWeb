@@ -22,6 +22,7 @@ import { getGenerationModels, getTaskScenes } from "@/api/config";
 import { deleteHistoryTask, fetchHistory, toggleHistoryPin } from "@/api/history";
 import {
   exceedsRealtimeImagePreviewLimit,
+  getAvatarImageSrc,
   getDisplayImageUrl,
   getDownloadUrl,
   getPreviewImageSrc,
@@ -35,7 +36,7 @@ import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
-import { withApiBaseUrl, withBaseUrl } from "@/lib/assets";
+import { withBaseUrl } from "@/lib/assets";
 import { useAuthStore } from "@/stores/auth";
 import {
   HISTORY_GRID_COLUMN_COUNT_KEY,
@@ -1356,7 +1357,7 @@ function handleEditImage(item: UserHistoryCard) {
               class="result-card-user"
               @click.stop="openUserInfoDialog(item)"
             >
-              <a-avatar :size="22" :src="withApiBaseUrl(item.avatar_url) || undefined" class="result-card-user-avatar">
+              <a-avatar :size="22" :src="getAvatarImageSrc(item.avatar_url) || undefined" class="result-card-user-avatar">
                 {{ item.username?.charAt(0)?.toUpperCase() }}
               </a-avatar>
               <span class="result-card-user-name">{{ item.username || "未知用户" }}</span>
