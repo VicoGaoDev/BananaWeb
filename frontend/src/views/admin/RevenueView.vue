@@ -12,7 +12,6 @@ import {
   getAdminAnalyticsOfflineOrderRevenue,
   getAdminAnalyticsPaymentRevenue,
   getAdminAnalyticsRedeemRevenue,
-  getAdminAnalyticsRevenueTimeseries,
   listOfflineOrders,
   listUserOptions,
   sendAdminDailyReportRange,
@@ -22,7 +21,7 @@ import { isSessionExpiredError } from "@/lib/authError";
 import { useAuthStore } from "@/stores/auth";
 import RedeemRevenueTable from "@/components/admin/RedeemRevenueTable.vue";
 import RevenueTimeseriesChart from "@/components/admin/RevenueTimeseriesChart.vue";
-import type { AdminAnalyticsRedeemRevenue, AdminAnalyticsRevenueTimeseries, AdminDailyReportTestResult, AdminOfflineOrder, AdminUser } from "@/types";
+import type { AdminAnalyticsRedeemRevenue, AdminDailyReportTestResult, AdminOfflineOrder, AdminUser } from "@/types";
 
 type DatePreset = "today" | "3d" | "7d" | "30d";
 
@@ -41,7 +40,7 @@ const selectedMonth = ref<Dayjs | null>(null);
 const redeemRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const paymentRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
 const offlineOrderRevenue = ref<AdminAnalyticsRedeemRevenue | null>(null);
-const revenueTimeseries = ref<AdminAnalyticsRevenueTimeseries | null>(null);
+const revenueChartRef = ref<{ reload: () => Promise<void> } | null>(null);
 const offlineOrderItems = ref<AdminOfflineOrder[]>([]);
 const users = ref<AdminUser[]>([]);
 const usersLoading = ref(false);
@@ -208,11 +207,10 @@ async function load() {
       start_date: formatQueryDate(dateRange.value[0].startOf("day")),
       end_date: formatQueryDate(dateRange.value[1].endOf("day")),
     } as const;
-    const [redeemResult, paymentResult, offlineOrderResult, timeseriesResult, offlineOrderListResult] = await Promise.all([
+    const [redeemResult, paymentResult, offlineOrderResult, offlineOrderListResult] = await Promise.all([
       getAdminAnalyticsRedeemRevenue(query),
       getAdminAnalyticsPaymentRevenue(query),
       getAdminAnalyticsOfflineOrderRevenue(query),
-      getAdminAnalyticsRevenueTimeseries(query),
       listOfflineOrders({
         page: 1,
         page_size: 100,
@@ -223,7 +221,6 @@ async function load() {
     redeemRevenue.value = redeemResult;
     paymentRevenue.value = paymentResult;
     offlineOrderRevenue.value = offlineOrderResult;
-    revenueTimeseries.value = timeseriesResult;
     offlineOrderItems.value = offlineOrderListResult.items;
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
@@ -304,7 +301,7 @@ async function handleCreateOfflineOrder() {
     });
     message.success("线下订单录入成功");
     offlineOrderModalOpen.value = false;
-    await load();
+    await Promise.all([load(), revenueChartRef.value?.reload()]);
   } catch (err: unknown) {
     if (isSessionExpiredError(err)) return;
     message.error((err as any)?.response?.data?.detail || "线下订单录入失败");
@@ -328,7 +325,7 @@ onMounted(() => {
         </div>
         <div>
           <div class="warm-page-title">营业额</div>
-          <div class="warm-page-desc">统计在线购买与积分兑换码营业额，支持按日期区间或月份筛选，并查看每日收入趋势。</div>
+          <div class="warm-page-desc">统计在线购买与积分兑换码营业额，支持按日期区间或月份筛选；每日收入图按月对比，不受顶部日期影响。</div>
         </div>
       </div>
       <a-button
@@ -401,7 +398,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <RevenueTimeseriesChart :data="revenueTimeseries" :loading="loading" />
+    <RevenueTimeseriesChart ref="revenueChartRef" />
 
     <div class="revenue-section-stack">
       <RedeemRevenueTable

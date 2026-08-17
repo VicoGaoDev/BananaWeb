@@ -1,54 +1,51 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import type { PropType } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { message } from "ant-design-vue";
+import datePickerZhCN from "ant-design-vue/es/date-picker/locale/zh_CN";
+import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
+import { getAdminAnalyticsRevenueTimeseries } from "@/api/admin";
+import { isSessionExpiredError } from "@/lib/authError";
 import type { AdminAnalyticsRevenueTimeseries } from "@/types";
 import { VChart } from "./charting";
 
 type RevenueChannel = "total" | "online" | "redeem";
 
-const props = defineProps({
-  data: {
-    type: Object as PropType<AdminAnalyticsRevenueTimeseries | null>,
-    default: null,
-  },
-  loading: {
-    type: Boolean,
-    default: false,
-  },
-});
-
+const loading = ref(false);
+const chartMonth = ref<Dayjs>(dayjs());
+const data = ref<AdminAnalyticsRevenueTimeseries | null>(null);
 const channel = ref<RevenueChannel>("total");
 
-const labels = computed(() => props.data?.points.map((item) => item.label) || []);
+const labels = computed(() => data.value?.points.map((item) => item.label) || []);
 
 const channelMeta = computed(() => {
   if (channel.value === "online") {
     return {
       title: "每日在线购买收入",
-      desc: "按支付成功时间统计在线购买金额。",
+      desc: "按所选月份逐日对比在线购买金额。",
       badge: "在线购买",
-      total: Number(props.data?.total_online_amount || 0),
+      total: Number(data.value?.total_online_amount || 0),
     };
   }
   if (channel.value === "redeem") {
     return {
       title: "每日兑换码收入",
-      desc: "按兑换使用时间统计兑换码金额。",
+      desc: "按所选月份逐日对比兑换码金额。",
       badge: "兑换码",
-      total: Number(props.data?.total_redeem_amount || 0),
+      total: Number(data.value?.total_redeem_amount || 0),
     };
   }
   return {
     title: "每日总收入",
-    desc: "按日汇总在线购买、兑换码和线下订单收入。",
+    desc: "按所选月份逐日对比在线购买、兑换码和线下订单收入。",
     badge: "总收入",
-    total: Number(props.data?.total_amount || 0),
+    total: Number(data.value?.total_amount || 0),
   };
 });
 
 const hasChartData = computed(() => {
-  if (!props.data?.points.length) return false;
-  return props.data.points.some((item) => {
+  if (!data.value?.points.length) return false;
+  return data.value.points.some((item) => {
     if (channel.value === "online") return Number(item.online_amount || 0) !== 0;
     if (channel.value === "redeem") return Number(item.redeem_amount || 0) !== 0;
     return Number(item.total_amount || 0) !== 0;
@@ -60,7 +57,7 @@ function formatMoney(value?: number) {
 }
 
 function barLabelAmount(index: number) {
-  const point = props.data?.points[index];
+  const point = data.value?.points[index];
   if (!point) return 0;
   if (channel.value === "online") return Number(point.online_amount || 0);
   if (channel.value === "redeem") return Number(point.redeem_amount || 0);
@@ -89,6 +86,41 @@ function handleLegendSelectChanged(params: { name?: string }) {
   channel.value = channel.value === next && next !== "total" ? "total" : next;
 }
 
+function disableFutureMonth(value: Dayjs) {
+  return value.startOf("month").isAfter(dayjs().startOf("month"));
+}
+
+function handleMonthChange(value: Dayjs | null) {
+  if (!value) return;
+  chartMonth.value = value;
+  loadChart();
+}
+
+async function loadChart() {
+  loading.value = true;
+  try {
+    const month = chartMonth.value;
+    const start = month.startOf("month");
+    const end = month.isSame(dayjs(), "month") ? dayjs().endOf("day") : month.endOf("month");
+    data.value = await getAdminAnalyticsRevenueTimeseries({
+      granularity: "day",
+      start_date: start.format("YYYY-MM-DDTHH:mm:ss"),
+      end_date: end.format("YYYY-MM-DDTHH:mm:ss"),
+    });
+  } catch (err: unknown) {
+    if (isSessionExpiredError(err)) return;
+    message.error("获取每日收入数据失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  loadChart();
+});
+
+defineExpose({ reload: loadChart });
+
 const chartOption = computed(() => {
   const moneyAxis = {
     type: "value" as const,
@@ -110,7 +142,7 @@ const chartOption = computed(() => {
       borderWidth: 0,
       textStyle: { color: "#fffdf8" },
       formatter: (params: Array<{ dataIndex?: number; axisValue?: string; marker?: string; seriesName?: string }>) => {
-        const point = props.data?.points[params[0]?.dataIndex || 0];
+        const point = data.value?.points[params[0]?.dataIndex || 0];
         const offlineAmount = Number(point?.offline_amount || 0);
         const rows = [
           { name: "在线购买", value: Number(point?.online_amount || 0), marker: params.find((item) => item.seriesName === "在线购买")?.marker, visible: channel.value === "total" || channel.value === "online" },
@@ -142,7 +174,7 @@ const chartOption = computed(() => {
         name: "在线购买",
         type: "bar",
         stack: "revenue",
-        data: props.data?.points.map((item, index) => ({
+        data: data.value?.points.map((item, index) => ({
           value: Number(item.online_amount || 0) || null,
           itemStyle: {
             color: "#0E61AC",
@@ -162,7 +194,7 @@ const chartOption = computed(() => {
         name: "兑换码",
         type: "bar",
         stack: "revenue",
-        data: props.data?.points.map((item, index) => ({
+        data: data.value?.points.map((item, index) => ({
           value: Number(item.redeem_amount || 0) || null,
           itemStyle: {
             color: "#FAF2E0",
@@ -184,7 +216,7 @@ const chartOption = computed(() => {
         name: "线下订单",
         type: "bar",
         stack: "revenue",
-        data: props.data?.points.map((item, index) => {
+        data: data.value?.points.map((item, index) => {
           const amount = Number(item.offline_amount || 0);
           return {
             value: amount === 0 ? null : Math.abs(amount),
@@ -217,6 +249,17 @@ const chartOption = computed(() => {
           <div class="revenue-chart-desc">{{ channelMeta.desc }}</div>
         </div>
         <div class="revenue-chart-actions">
+          <a-date-picker
+            v-model:value="chartMonth"
+            picker="month"
+            placeholder="选择月份"
+            format="YYYY年M月"
+            :locale="datePickerZhCN"
+            :allow-clear="false"
+            :disabled-date="disableFutureMonth"
+            class="revenue-chart-month"
+            @change="handleMonthChange"
+          />
           <a-radio-group
             v-model:value="channel"
             class="analytics-segmented-group analytics-segmented-group-secondary"
@@ -244,7 +287,7 @@ const chartOption = computed(() => {
         <a-empty class="warm-empty" description="当前筛选条件下暂无收入数据">
           <template #description>
             <div class="empty-title">当前筛选条件下暂无收入数据</div>
-            <div class="empty-desc">调整日期区间或切换收入来源后，可查看每日收入趋势。</div>
+            <div class="empty-desc">切换月份或收入来源后，可查看每日收入对比。</div>
           </template>
         </a-empty>
       </div>
@@ -286,6 +329,10 @@ const chartOption = computed(() => {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.revenue-chart-month {
+  width: 132px;
 }
 
 .revenue-chart-summary {
@@ -341,6 +388,10 @@ const chartOption = computed(() => {
   .revenue-chart-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .revenue-chart-month {
+    width: 100%;
   }
 }
 </style>
