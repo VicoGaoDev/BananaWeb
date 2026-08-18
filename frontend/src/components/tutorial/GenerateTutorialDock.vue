@@ -1,28 +1,30 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
-import { CloseOutlined } from "@ant-design/icons-vue";
-import { useRouter } from "vue-router";
-import { withBaseUrl } from "@/lib/assets";
-import { CLOSE_AI_ASSISTANT_DOCK_EVENT } from "@/lib/chatGenerateDraft";
-import { requestCloseGenerateTutorialDock } from "@/lib/generateTutorialDock";
-import { useAuthStore } from "@/stores/auth";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { CloseOutlined, ReadOutlined } from "@ant-design/icons-vue";
+import { useRoute, useRouter } from "vue-router";
+import TutorialDocFrame from "@/components/tutorial/TutorialDocFrame.vue";
+import { requestCloseAiAssistantDock } from "@/lib/chatGenerateDraft";
+import {
+  CLOSE_GENERATE_TUTORIAL_DOCK_EVENT,
+  OPEN_GENERATE_TUTORIAL_DOCK_EVENT,
+} from "@/lib/generateTutorialDock";
+import {
+  DEFAULT_TUTORIAL_MODULE,
+  resolveTutorialModule,
+  tutorialModuleMeta,
+  type TutorialModule,
+} from "@/lib/tutorial";
 
-const ChatWorkspace = defineAsyncComponent(() => import("@/components/chat/ChatWorkspace.vue"));
-const xiaobaAvatarSrc = withBaseUrl("chat-xiaoba-avatar.png");
+const route = useRoute();
 const router = useRouter();
-const auth = useAuthStore();
-const loginModalVisible = inject<Ref<boolean>>("loginModalVisible");
-
 const open = ref(false);
 const tabVisible = ref(true);
-const workspaceReady = ref(false);
-const sessionId = ref<string | null>(null);
+const currentModule = ref<TutorialModule>(DEFAULT_TUTORIAL_MODULE);
+const isTutorialPage = computed(() => route.path.startsWith("/tutorial"));
 let tabRevealTimer = 0;
 
-const chatPageHref = computed(() => (sessionId.value ? `/chat/${sessionId.value}` : "/chat"));
-
 function syncBodyDockClass() {
-  document.body.classList.toggle("ai-assistant-dock-open", open.value);
+  document.body.classList.toggle("generate-tutorial-dock-open", open.value);
 }
 
 function revealTab() {
@@ -33,13 +35,11 @@ function revealTab() {
 }
 
 function openDock() {
-  if (!auth.isLoggedIn) {
-    if (loginModalVisible) loginModalVisible.value = true;
-    return;
-  }
   window.clearTimeout(tabRevealTimer);
-  requestCloseGenerateTutorialDock();
-  workspaceReady.value = true;
+  requestCloseAiAssistantDock();
+  currentModule.value = isTutorialPage.value
+    ? resolveTutorialModule(String(route.params.module || ""))
+    : DEFAULT_TUTORIAL_MODULE;
   tabVisible.value = false;
   open.value = true;
 }
@@ -50,34 +50,32 @@ function closeDock() {
   revealTab();
 }
 
-function openFullChat() {
+function openFullTutorial() {
   closeDock();
-  void router.push(chatPageHref.value);
+  void router.push(tutorialModuleMeta[currentModule.value].path);
 }
 
 function handleWindowKeydown(event: KeyboardEvent) {
   if (event.key === "Escape") closeDock();
 }
 
-watch(open, syncBodyDockClass);
-
-watch(() => auth.isLoggedIn, (loggedIn) => {
-  if (loggedIn) return;
-  closeDock();
-  workspaceReady.value = false;
-  sessionId.value = null;
+watch(open, (isOpen) => {
+  syncBodyDockClass();
+  if (isOpen) requestCloseAiAssistantDock();
 });
 
 onMounted(() => {
   window.addEventListener("keydown", handleWindowKeydown);
-  window.addEventListener(CLOSE_AI_ASSISTANT_DOCK_EVENT, closeDock);
+  window.addEventListener(OPEN_GENERATE_TUTORIAL_DOCK_EVENT, openDock);
+  window.addEventListener(CLOSE_GENERATE_TUTORIAL_DOCK_EVENT, closeDock);
 });
 
 onBeforeUnmount(() => {
   window.clearTimeout(tabRevealTimer);
   window.removeEventListener("keydown", handleWindowKeydown);
-  window.removeEventListener(CLOSE_AI_ASSISTANT_DOCK_EVENT, closeDock);
-  document.body.classList.remove("ai-assistant-dock-open");
+  window.removeEventListener(OPEN_GENERATE_TUTORIAL_DOCK_EVENT, openDock);
+  window.removeEventListener(CLOSE_GENERATE_TUTORIAL_DOCK_EVENT, closeDock);
+  document.body.classList.remove("generate-tutorial-dock-open");
 });
 </script>
 
@@ -85,48 +83,56 @@ onBeforeUnmount(() => {
   <button
     v-show="tabVisible"
     type="button"
-    class="ai-assistant-tab"
-    aria-label="AI助手"
+    class="generate-tutorial-tab"
+    aria-label="使用教程"
     @click="openDock"
   >
-    <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-tab-avatar" />
-    <span class="ai-assistant-tab-label">AI助手</span>
+    <span class="generate-tutorial-tab-icon">
+      <ReadOutlined />
+    </span>
+    <span class="generate-tutorial-tab-label">使用教程</span>
   </button>
 
   <aside
-    class="ai-assistant-panel"
+    class="generate-tutorial-panel"
     :class="{ 'is-open': open }"
     :aria-hidden="!open"
   >
-    <header class="ai-assistant-panel-head">
-      <div class="ai-assistant-panel-title">
-        <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-panel-icon" />
-        <strong>AI助手</strong>
+    <header class="generate-tutorial-panel-head">
+      <div class="generate-tutorial-panel-title">
+        <span class="generate-tutorial-panel-icon">
+          <ReadOutlined />
+        </span>
+        <strong>使用教程</strong>
       </div>
-      <div class="ai-assistant-panel-actions">
-        <button type="button" class="ai-assistant-open-full" @click="openFullChat">
-          在对话页打开
+      <div class="generate-tutorial-panel-actions">
+        <button
+          v-if="!isTutorialPage"
+          type="button"
+          class="generate-tutorial-open-full"
+          @click="openFullTutorial"
+        >
+          在教程页打开
         </button>
-        <button type="button" class="ai-assistant-close" aria-label="关闭" @click="closeDock">
+        <button type="button" class="generate-tutorial-close" aria-label="关闭" @click="closeDock">
           <CloseOutlined />
         </button>
       </div>
     </header>
-    <div class="ai-assistant-panel-body">
-      <ChatWorkspace
-        v-if="workspaceReady"
-        embedded
-        :sync-route="false"
-        @update:session-id="sessionId = $event"
+    <div class="generate-tutorial-panel-body">
+      <TutorialDocFrame
+        v-if="open"
+        :module="currentModule"
+        @update:module="currentModule = $event"
       />
     </div>
   </aside>
 </template>
 
 <style scoped>
-.ai-assistant-tab {
+.generate-tutorial-tab {
   position: fixed;
-  top: 50%;
+  top: calc(50% - 86px);
   right: 0;
   z-index: 1060;
   display: flex;
@@ -142,27 +148,31 @@ onBeforeUnmount(() => {
   box-shadow: -6px 8px 20px rgba(255, 171, 36, 0.32);
   color: #523713;
   cursor: pointer;
-  transform: translateY(-50%);
+  transform: translateY(-100%);
   transition:
     background 0.2s ease,
     box-shadow 0.2s ease,
     width 0.2s ease;
 }
 
-.ai-assistant-tab:hover {
+.generate-tutorial-tab:hover {
   width: 50px;
   background: rgb(240, 150, 16);
   box-shadow: -8px 10px 24px rgba(255, 171, 36, 0.42);
 }
 
-.ai-assistant-tab-avatar {
+.generate-tutorial-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  object-fit: cover;
+  background: rgba(82, 55, 19, 0.12);
+  font-size: 14px;
 }
 
-.ai-assistant-tab-label {
+.generate-tutorial-tab-label {
   writing-mode: vertical-rl;
   font-size: 13px;
   font-weight: 800;
@@ -170,7 +180,7 @@ onBeforeUnmount(() => {
   line-height: 1.1;
 }
 
-.ai-assistant-panel {
+.generate-tutorial-panel {
   position: fixed;
   top: 0;
   right: 0;
@@ -178,8 +188,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: min(598px, 100vw);
-  max-width: 598px;
+  width: min(720px, 100vw);
+  max-width: 720px;
   height: 100dvh;
   overflow: hidden;
   background: var(--theme-page-base, #fffaf3);
@@ -190,14 +200,14 @@ onBeforeUnmount(() => {
   transition: transform 0.28s ease, visibility 0s linear 0.28s;
 }
 
-.ai-assistant-panel.is-open {
+.generate-tutorial-panel.is-open {
   transform: translateX(0);
   visibility: visible;
   pointer-events: auto;
   transition: transform 0.28s ease;
 }
 
-.ai-assistant-panel-head {
+.generate-tutorial-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -208,33 +218,38 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.06));
 }
 
-.ai-assistant-panel-title {
+.generate-tutorial-panel-title {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.ai-assistant-panel-icon {
+.generate-tutorial-panel-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  object-fit: cover;
+  background: rgb(255, 171, 36);
+  color: #523713;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
-.ai-assistant-panel-head strong {
+.generate-tutorial-panel-head strong {
   color: var(--theme-title, #3d2f22);
   font-size: 16px;
 }
 
-.ai-assistant-panel-actions {
+.generate-tutorial-panel-actions {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.ai-assistant-open-full {
+.generate-tutorial-open-full {
   padding: 0;
   border: 0;
   background: transparent;
@@ -243,7 +258,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.ai-assistant-close {
+.generate-tutorial-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -257,28 +272,28 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.ai-assistant-close:hover {
+.generate-tutorial-close:hover {
   background: color-mix(in srgb, var(--theme-title, #3d2f22) 8%, transparent);
   color: var(--theme-title, #3d2f22);
 }
 
-.ai-assistant-panel-body {
+.generate-tutorial-panel-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
 @media (max-width: 768px) {
-  .ai-assistant-tab {
+  .generate-tutorial-tab {
     top: auto;
-    bottom: 88px;
+    bottom: 196px;
     transform: none;
   }
 }
 </style>
 
 <style>
-body.ai-assistant-dock-open .suggestion-fab-wrap {
+body.generate-tutorial-dock-open .suggestion-fab-wrap {
   visibility: hidden;
   pointer-events: none;
 }

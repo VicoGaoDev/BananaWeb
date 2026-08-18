@@ -19,7 +19,7 @@ import {
   AppstoreOutlined,
   BarChartOutlined,
   LoadingOutlined,
-  ExclamationCircleFilled,
+  InfoCircleFilled,
   ReloadOutlined,
   ThunderboltOutlined,
   ExperimentOutlined,
@@ -34,6 +34,7 @@ import {
   FilterOutlined,
   CalendarOutlined,
   ExpandOutlined,
+  ReadOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -198,7 +199,7 @@ const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponen
     <circle cx="400" cy="330" r="34" fill="#ffd585" stroke-width="12"/>
   </g>
   <text x="480" y="654" text-anchor="middle" font-size="54" font-weight="700" fill="#8c5a16">原图已过期</text>
-  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器只保留原图15天</text>
+  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器保留原图15天</text>
   <text x="480" y="776" text-anchor="middle" font-size="34" fill="#a9742e">请在有效期内查看或下载</text>
 </svg>
 `)}`;
@@ -1617,6 +1618,10 @@ function ensureLoggedIn() {
 async function goCanvas() {
   if (!(await ensureAuthenticated())) return;
   router.push("/canvas");
+}
+
+function goTutorial() {
+  void router.push("/tutorial");
 }
 
 function triggerUpload() {
@@ -4629,11 +4634,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 {{ board.name }}
               </a-select-option>
             </a-select>
-            <div class="result-tips">
-              <div class="result-tip-line">
+            <div class="result-retain-badge">
+              <InfoCircleFilled class="result-retain-icon" />
+              <span>
                 每日前 <span class="result-tip-highlight">20</span> 次失败任务不扣积分
                 <span v-if="failureRefundRemainingCount !== null">（剩余{{ failureRefundRemainingCount }}次）</span>
-              </div>
+                <span class="result-tip-divider">/</span>
+                服务器保留原图 <span class="result-tip-highlight">15</span> 天
+              </span>
             </div>
           </div>
           <div class="result-head-center">
@@ -4643,7 +4651,16 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </button>
           </div>
           <div class="result-head-meta">
-            <UpdateLogEntryButton />
+            <a-tooltip title="使用教程">
+              <button
+                type="button"
+                class="result-filter-trigger"
+                aria-label="打开使用教程"
+                @click="goTutorial"
+              >
+                <ReadOutlined />
+              </button>
+            </a-tooltip>
             <a-popover
               v-model:open="resultViewOptionsOpen"
               trigger="click"
@@ -4696,6 +4713,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 </div>
               </template>
             </a-popover>
+            <UpdateLogEntryButton />
             <a-popover
               v-model:open="generatedTaskFilterOpen"
               trigger="click"
@@ -4870,10 +4888,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 </div>
               </template>
             </a-popover>
-            <div class="result-retain-badge">
-              <ExclamationCircleFilled class="result-retain-icon" />
-              <span>服务器只保留原图15天</span>
-            </div>
           </div>
         </div>
 
@@ -7801,7 +7815,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 32px;
   padding: 0 14px;
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(var(--theme-surface-strong-rgb), 0.96), rgba(var(--theme-page-base-rgb), 0.92));
@@ -7813,9 +7827,27 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   box-shadow: 0 10px 20px var(--theme-shadow-soft);
 }
 
+.result-retain-badge > span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.result-retain-badge .result-tip-highlight {
+  margin: 0 4px;
+  line-height: 1;
+  color: #16a34a;
+}
+
 .result-retain-icon {
-  color: #e25555;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--theme-accent, #ffab24);
+  font-size: 16px;
+}
+
+.result-tip-divider {
+  margin: 0 8px;
+  color: var(--theme-text-secondary, #8b7457);
 }
 
 .result-list {
@@ -9200,6 +9232,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-ret
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-icon {
   color: var(--theme-accent) !important;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-badge .result-tip-highlight {
+  color: #4ade80;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-btn,

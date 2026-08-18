@@ -37,6 +37,10 @@ import {
 } from "@/lib/systemMessageNotice";
 import { NEW_USER_TRIAL_CREDITS, PROMO_CODE_REWARD_CREDITS } from "@/lib/auth";
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
+import {
+  isTutorialDockTabEnabled,
+  subscribeTutorialDockTabEnabled,
+} from "@/lib/generateTutorialDock";
 import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
@@ -77,6 +81,7 @@ import {
   HighlightOutlined,
   ShareAltOutlined,
   CloseOutlined,
+  ReadOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -109,6 +114,23 @@ const showAiAssistantDock = computed(() => {
   );
 });
 const AiAssistantDock = defineAsyncComponent(() => import("@/components/chat/AiAssistantDock.vue"));
+const GenerateTutorialDock = defineAsyncComponent(() => import("@/components/tutorial/GenerateTutorialDock.vue"));
+const tutorialDockTabEnabled = ref(isTutorialDockTabEnabled());
+let unsubscribeTutorialDockTabEnabled: (() => void) | null = null;
+const showGenerateTutorialDock = computed(() => {
+  if (!tutorialDockTabEnabled.value) return false;
+  if (isAdminRoute.value) return false;
+  const path = route.path;
+  return (
+    path.startsWith("/tutorial")
+    || path.startsWith("/generate")
+    || path.startsWith("/video-generate")
+    || path.startsWith("/canvas")
+    || path.startsWith("/history")
+    || path.startsWith("/templates")
+    || path.startsWith("/batch-generate")
+  );
+});
 const SUGGESTION_FAB_POSITION_KEY = "userSuggestionFabPosition";
 const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
 const PROMO_CODE_SESSION_KEY = "bananaPromoCode";
@@ -211,6 +233,11 @@ const routeOrder = new Map<string, number>([
   ["/canvas", 4],
   ["/templates", 5],
   ["/history", 6],
+  ["/tutorial", 6.5],
+  ["/tutorial/generate", 6.5],
+  ["/tutorial/chat", 6.51],
+  ["/tutorial/video", 6.52],
+  ["/tutorial/canvas", 6.53],
   ["/profile", 7],
   ["/api-keys", 8],
   ["/system-messages", 9],
@@ -295,10 +322,11 @@ const videoEntryMenuItems: Array<{ key: VideoEntryMenuKey; mode: VideoEntryMode;
   { key: "video-firstLastFrame", mode: "firstLastFrame", label: "首尾帧视频", icon: VideoCameraOutlined },
 ];
 
-type MoreFeatureMenuKey = "templates" | "history";
+type MoreFeatureMenuKey = "templates" | "history" | "tutorial";
 const moreFeatureMenuItems: Array<{ key: MoreFeatureMenuKey; label: string; icon: Component; iconSrc: string }> = [
   { key: "templates", label: "创意模版", icon: BulbOutlined, iconSrc: withBaseUrl("nav-templates.svg") },
   { key: "history", label: "历史图片", icon: ClockCircleOutlined, iconSrc: withBaseUrl("nav-history.svg") },
+  { key: "tutorial", label: "使用教程", icon: ReadOutlined, iconSrc: withBaseUrl("nav-templates.svg") },
 ];
 
 const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
@@ -547,6 +575,7 @@ const selectedKeys = computed(() => {
   if (p.startsWith("/admin")) return ["admin"];
   if (p === "/") return [];
   if (p === "/templates") return ["more", "templates"];
+  if (p.startsWith("/tutorial")) return ["more", "tutorial"];
   if (p === "/video-generate") return ["video-generate"];
   if (p.startsWith("/chat")) return ["chat"];
   if (p.startsWith("/canvas")) return ["canvas"];
@@ -566,6 +595,7 @@ const selectedKeys = computed(() => {
 });
 
 const activeMoreFeatureKey = computed<MoreFeatureMenuKey | "">(() => {
+  if (route.path.startsWith("/tutorial")) return "tutorial";
   if (route.path === "/templates") return "templates";
   if (route.path.startsWith("/history")) return "history";
   return "";
@@ -653,10 +683,13 @@ function handleMenuClick({ key }: { key: string }) {
     }
     router.push("/history");
   }
+  else if (key === "tutorial") {
+    router.push("/tutorial");
+  }
 }
 
 function handleMoreFeatureMenu({ key }: { key: string }) {
-  if (key === "templates" || key === "history") {
+  if (key === "templates" || key === "history" || key === "tutorial") {
     handleMenuClick({ key });
   }
 }
@@ -1582,6 +1615,9 @@ onMounted(async () => {
     userUnreadSystemMessageCount.value = count;
   });
   unsubscribeAuthSessionExpired = subscribeAuthSessionExpired(handleAuthSessionExpired);
+  unsubscribeTutorialDockTabEnabled = subscribeTutorialDockTabEnabled((enabled) => {
+    tutorialDockTabEnabled.value = enabled;
+  });
 
   if (typeof document !== "undefined") {
     themeObserver = new MutationObserver(() => {
@@ -1631,6 +1667,8 @@ onBeforeUnmount(() => {
   unsubscribeSystemMessageCount = null;
   unsubscribeAuthSessionExpired?.();
   unsubscribeAuthSessionExpired = null;
+  unsubscribeTutorialDockTabEnabled?.();
+  unsubscribeTutorialDockTabEnabled = null;
   stopSystemMessagePolling();
   themeObserver?.disconnect();
   themeObserver = null;
@@ -2747,6 +2785,7 @@ watch(
     </div>
 
     <AiAssistantDock v-if="showAiAssistantDock" />
+    <GenerateTutorialDock v-if="showGenerateTutorialDock" />
 
     <UserSuggestionDialog v-if="suggestionDialogOpen" v-model:open="suggestionDialogOpen" />
     <NotificationCenterDialog

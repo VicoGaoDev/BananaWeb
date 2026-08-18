@@ -53,6 +53,15 @@ const router = createRouter({
           component: () => import("@/views/BatchGenerateView.vue"),
         },
         {
+          path: "tutorial",
+          redirect: "/tutorial/generate",
+        },
+        {
+          path: "tutorial/:module",
+          name: "Tutorial",
+          component: () => import("@/views/TutorialView.vue"),
+        },
+        {
           path: "history",
           name: "HistoryBoards",
           component: () => import("@/views/HistoryBoardsView.vue"),

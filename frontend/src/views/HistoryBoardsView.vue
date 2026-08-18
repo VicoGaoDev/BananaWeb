@@ -41,7 +41,7 @@ const expiredPreviewAsset = `data:image/svg+xml;charset=UTF-8,${encodeURICompone
     <circle cx="400" cy="330" r="34" fill="#ffd585" stroke-width="12"/>
   </g>
   <text x="480" y="654" text-anchor="middle" font-size="54" font-weight="700" fill="#8c5a16">原图已过期</text>
-  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器只保留原图15天</text>
+  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器保留原图15天</text>
   <text x="480" y="776" text-anchor="middle" font-size="34" fill="#a9742e">请在有效期内查看或下载</text>
 </svg>
 `)}`;
