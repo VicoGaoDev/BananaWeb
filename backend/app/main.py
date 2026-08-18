@@ -132,6 +132,7 @@ def _run_startup_schema_sync():
     _ensure_user_referral_schema()
     _ensure_user_promo_code_schema()
     _ensure_invite_reward_schema()
+    _ensure_promo_reward_schema()
     _backfill_invite_codes()
     _ensure_user_identity_schema()
     _ensure_business_id_schema()
@@ -749,6 +750,44 @@ def _ensure_invite_reward_schema():
                     UNIQUE KEY ux_referral_reward_index (referrer_id, invitee_id, reward_index),
                     CONSTRAINT fk_referral_reward_referrer_id FOREIGN KEY (referrer_id) REFERENCES users (id),
                     CONSTRAINT fk_referral_reward_invitee_id FOREIGN KEY (invitee_id) REFERENCES users (id)
+                )
+                """
+            )
+        )
+
+
+def _ensure_promo_reward_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "users" not in table_names or "promo_reward_grants" in table_names:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE promo_reward_grants (
+                    id INTEGER NOT NULL AUTO_INCREMENT,
+                    referrer_id INTEGER NOT NULL,
+                    invitee_id INTEGER NOT NULL,
+                    promo_code_id INTEGER NULL,
+                    source_type VARCHAR(20) NOT NULL,
+                    source_id VARCHAR(64) NOT NULL,
+                    source_credits INTEGER NOT NULL DEFAULT 0,
+                    source_amount_fen INTEGER NOT NULL DEFAULT 0,
+                    reward_rate INTEGER NOT NULL DEFAULT 30,
+                    reward_amount_fen INTEGER NOT NULL DEFAULT 0,
+                    reward_index INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    INDEX ix_promo_reward_grants_referrer_id (referrer_id),
+                    INDEX ix_promo_reward_grants_invitee_id (invitee_id),
+                    INDEX ix_promo_reward_grants_promo_code_id (promo_code_id),
+                    INDEX ix_promo_reward_grants_source_type (source_type),
+                    INDEX ix_promo_reward_grants_source_id (source_id),
+                    UNIQUE KEY ux_promo_reward_source (source_type, source_id, referrer_id),
+                    UNIQUE KEY ux_promo_reward_index (referrer_id, invitee_id, reward_index),
+                    CONSTRAINT fk_promo_reward_referrer_id FOREIGN KEY (referrer_id) REFERENCES users (id),
+                    CONSTRAINT fk_promo_reward_invitee_id FOREIGN KEY (invitee_id) REFERENCES users (id)
                 )
                 """
             )

@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     WECOM_NOTIFY_ENABLED: bool = False
     WECOM_WEBHOOK_URL: str = ""
     WECOM_NOTIFY_TIMEOUT_SECONDS: int = 10
+    PROMO_REBATE_START_AT: str = "2026-08-19T00:00:00"
     ALIPAY_APP_ID: str = ""
     ALIPAY_PRIVATE_KEY: str = ""
     ALIPAY_PUBLIC_KEY: str = ""

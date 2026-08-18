@@ -18,11 +18,18 @@ from app.models.admin_ledger import AdminLedger, AdminLedgerExpense, AdminLedger
 from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
 from app.models.referral_reward_grant import ReferralRewardGrant
+from app.models.promo_reward_grant import PromoRewardGrant
 from app.models.user_promo_code import UserPromoCode
 from app.models.video_task import VideoTask
 from app.models.video_task_api_attempt import VideoTaskApiAttempt
 from app.models.user_credit import DEFAULT_USER_CREDIT_STATUS, UserCredit
 from app.services.promo_service import PROMO_CODE_REWARD_CREDITS, get_user_promo_dashboard_for_admin
+from app.services.promo_reward_service import (
+    current_reward_month,
+    fen_to_yuan,
+    parse_reward_month,
+    promo_rebate_start_at,
+)
 from app.services.business_id_service import get_user_by_business_id, task_external_id, user_external_id
 from app.services.image_delivery_service import get_optional_cos_config, resolve_avatar_url, resolve_user_avatar_url
 from app.services.content_safety_service import (
@@ -1286,7 +1293,8 @@ def get_admin_invite_reward_user_detail(db: Session, user_id: str) -> dict:
     }
 
 
-def get_admin_promo_stats_dashboard(db: Session) -> dict:
+def get_admin_promo_stats_dashboard(db: Session, *, month: str | None = None) -> dict:
+    selected_month, month_start, month_end = parse_reward_month(month or current_reward_month())
     whitelisted_users = (
         db.query(func.count(User.id)).filter(User.is_whitelisted.is_(True)).scalar() or 0
     )
@@ -1344,6 +1352,46 @@ def get_admin_promo_stats_dashboard(db: Session) -> dict:
     redeem_credits = 0
     owner_purchase_credits: dict[int, int] = defaultdict(int)
     owner_redeem_credits: dict[int, int] = defaultdict(int)
+    owner_reward_amount_fen: dict[int, int] = defaultdict(int)
+    owner_reward_grant_count: dict[int, int] = defaultdict(int)
+    owner_month_reward_amount_fen: dict[int, int] = defaultdict(int)
+    owner_month_reward_grant_count: dict[int, int] = defaultdict(int)
+    rebate_rows = (
+        db.query(
+            PromoRewardGrant.referrer_id,
+            func.count(PromoRewardGrant.id),
+            func.coalesce(func.sum(PromoRewardGrant.reward_amount_fen), 0),
+        )
+        .group_by(PromoRewardGrant.referrer_id)
+        .all()
+    )
+    for referrer_id, grant_count, amount_fen in rebate_rows:
+        if not referrer_id:
+            continue
+        owner_reward_grant_count[int(referrer_id)] = int(grant_count or 0)
+        owner_reward_amount_fen[int(referrer_id)] = int(amount_fen or 0)
+    total_reward_amount_fen = sum(owner_reward_amount_fen.values())
+    total_reward_grant_count = sum(owner_reward_grant_count.values())
+    month_rebate_rows = (
+        db.query(
+            PromoRewardGrant.referrer_id,
+            func.count(PromoRewardGrant.id),
+            func.coalesce(func.sum(PromoRewardGrant.reward_amount_fen), 0),
+        )
+        .filter(
+            PromoRewardGrant.created_at >= month_start,
+            PromoRewardGrant.created_at < month_end,
+        )
+        .group_by(PromoRewardGrant.referrer_id)
+        .all()
+    )
+    for referrer_id, grant_count, amount_fen in month_rebate_rows:
+        if not referrer_id:
+            continue
+        owner_month_reward_grant_count[int(referrer_id)] = int(grant_count or 0)
+        owner_month_reward_amount_fen[int(referrer_id)] = int(amount_fen or 0)
+    month_reward_amount_fen = sum(owner_month_reward_amount_fen.values())
+    month_reward_grant_count = sum(owner_month_reward_grant_count.values())
     if all_invitee_ids:
         payment_rows = (
             db.query(
@@ -1411,6 +1459,10 @@ def get_admin_promo_stats_dashboard(db: Session) -> dict:
                 "reward_credits": referrals * PROMO_CODE_REWARD_CREDITS,
                 "purchase_credits": int(owner_purchase_credits.get(owner_id, 0)),
                 "redeem_credits": int(owner_redeem_credits.get(owner_id, 0)),
+                "reward_grant_count": int(owner_reward_grant_count.get(owner_id, 0)),
+                "total_reward_amount_yuan": fen_to_yuan(owner_reward_amount_fen.get(owner_id, 0)),
+                "month_reward_grant_count": int(owner_month_reward_grant_count.get(owner_id, 0)),
+                "month_reward_amount_yuan": fen_to_yuan(owner_month_reward_amount_fen.get(owner_id, 0)),
                 "last_referral_at": owner_last_referral.get(owner_id),
                 "created_at": user.created_at,
             }
@@ -1453,17 +1505,37 @@ def get_admin_promo_stats_dashboard(db: Session) -> dict:
             "purchase_credits": int(purchase_credits),
             "redeem_count": int(redeem_count),
             "redeem_credits": int(redeem_credits),
+            "reward_grant_count": int(total_reward_grant_count),
+            "total_reward_amount_yuan": fen_to_yuan(total_reward_amount_fen),
+            "month": selected_month,
+            "month_reward_grant_count": int(month_reward_grant_count),
+            "month_reward_amount_yuan": fen_to_yuan(month_reward_amount_fen),
+            "start_at": promo_rebate_start_at(),
         },
         "users": user_items,
         "recent_referrals": recent_referrals,
     }
 
 
-def get_admin_promo_stats_user_detail(db: Session, user_id: str) -> dict:
+def get_admin_promo_stats_user_detail(
+    db: Session,
+    user_id: str,
+    *,
+    month: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> dict:
     target_user = get_user_by_business_id(db, user_id)
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
-    return get_user_promo_dashboard_for_admin(db, target_user, require_whitelist=False)
+    return get_user_promo_dashboard_for_admin(
+        db,
+        target_user,
+        require_whitelist=False,
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def get_stats(db: Session) -> dict:

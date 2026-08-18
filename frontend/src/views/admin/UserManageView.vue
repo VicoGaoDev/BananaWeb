@@ -730,6 +730,10 @@ function promoActivityRowKey(record: {
               <span>奖励发放人数</span>
               <strong>{{ promoDashboard.summary.rewarded_registrations }}</strong>
             </div>
+            <div class="promo-stat-card">
+              <span>累计现金返利</span>
+              <strong>{{ promoDashboard.summary.total_reward_amount_yuan != null ? `¥${Number(promoDashboard.summary.total_reward_amount_yuan).toFixed(2)}` : "¥0.00" }}</strong>
+            </div>
           </div>
 
           <div class="promo-dashboard-section">
@@ -766,7 +770,13 @@ function promoActivityRowKey(record: {
               <a-table-column title="邮箱" data-index="email_masked" width="220" />
               <a-table-column title="推广码" data-index="promo_code" width="140" />
               <a-table-column title="来源平台" data-index="platform_name" width="160" />
-              <a-table-column title="奖励积分" data-index="reward_credits" width="100" />
+              <a-table-column title="注册奖励积分" data-index="reward_credits" width="110" />
+              <a-table-column title="返利次数" data-index="reward_count" width="88" />
+              <a-table-column title="累计返利" data-index="total_reward_amount_yuan" width="110">
+                <template #default="{ record }">
+                  {{ record.total_reward_amount_yuan != null ? `¥${Number(record.total_reward_amount_yuan).toFixed(2)}` : "¥0.00" }}
+                </template>
+              </a-table-column>
               <a-table-column title="注册时间" data-index="registered_at" width="180">
                 <template #default="{ record }">
                   {{ fmtTime(record.registered_at) }}
@@ -802,6 +812,16 @@ function promoActivityRowKey(record: {
               <a-table-column title="金额" data-index="amount_yuan" width="96">
                 <template #default="{ record }">
                   {{ record.amount_yuan != null ? `¥${record.amount_yuan.toFixed(2)}` : "-" }}
+                </template>
+              </a-table-column>
+              <a-table-column title="返利比例" data-index="reward_rate" width="88">
+                <template #default="{ record }">
+                  {{ record.reward_rate != null ? `${record.reward_rate}%` : "-" }}
+                </template>
+              </a-table-column>
+              <a-table-column title="返利金额" data-index="reward_amount_yuan" width="100">
+                <template #default="{ record }">
+                  {{ record.reward_amount_yuan != null ? `¥${Number(record.reward_amount_yuan).toFixed(2)}` : "-" }}
                 </template>
               </a-table-column>
               <a-table-column title="订单号/兑换码" ellipsis>
@@ -1006,7 +1026,7 @@ function promoActivityRowKey(record: {
 
 .promo-dashboard-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 

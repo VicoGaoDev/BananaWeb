@@ -211,10 +211,11 @@ def _request_frontend_base_url(request: Request) -> str:
 @router.get("/promo-codes/me", response_model=PromoCodeListResponse)
 def list_my_promo_codes(
     request: Request,
+    month: Optional[str] = Query(None, description="返利统计月份，格式 YYYY-MM，默认当前月"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_my_promo_codes(db, user, base_url=_request_frontend_base_url(request))
+    return get_my_promo_codes(db, user, base_url=_request_frontend_base_url(request), month=month)
 
 
 @router.post("/promo-codes", response_model=PromoCodeListResponse)

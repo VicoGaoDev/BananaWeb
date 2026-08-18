@@ -52,6 +52,19 @@
 - `reward_credits`: 实际发放给邀请人的奖励积分。
 - `reward_index`: 该被邀请用户触发的第几次奖励，最多记录到 3。
 
+### `promo_reward_grants`
+
+- `referrer_id`: 获得推广现金返利记账的白名单推广人。
+- `invitee_id`: 通过推广码注册并触发返利的用户。
+- `promo_code_id`: 注册时使用的推广码 ID。
+- `source_type`: 当前仅为 `payment`。
+- `source_id`: 在线支付订单号。
+- `source_credits`: 被推广用户本次到账积分。
+- `source_amount_fen`: 订单金额（分）。
+- `reward_rate`: 返利比例，第 1–2 单为 `30`，第 3–5 单为 `15`。
+- `reward_amount_fen`: 记账返利金额（分）；平台不支持提现。
+- `reward_index`: 该被推广用户触发的第几次返利，最多记录到 5。
+
 ### `user_credits`
 
 - `id`: 积分账户主键。
@@ -568,6 +581,31 @@ CREATE TABLE referral_reward_grants (
   UNIQUE KEY ux_referral_reward_index (referrer_id, invitee_id, reward_index),
   CONSTRAINT fk_referral_reward_referrer_id FOREIGN KEY (referrer_id) REFERENCES users (id),
   CONSTRAINT fk_referral_reward_invitee_id FOREIGN KEY (invitee_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE promo_reward_grants (
+  id INT NOT NULL AUTO_INCREMENT,
+  referrer_id INT NOT NULL,
+  invitee_id INT NOT NULL,
+  promo_code_id INT NULL,
+  source_type VARCHAR(20) NOT NULL,
+  source_id VARCHAR(64) NOT NULL,
+  source_credits INT NOT NULL DEFAULT 0,
+  source_amount_fen INT NOT NULL DEFAULT 0,
+  reward_rate INT NOT NULL DEFAULT 30,
+  reward_amount_fen INT NOT NULL DEFAULT 0,
+  reward_index INT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_promo_reward_grants_referrer_id (referrer_id),
+  KEY ix_promo_reward_grants_invitee_id (invitee_id),
+  KEY ix_promo_reward_grants_promo_code_id (promo_code_id),
+  KEY ix_promo_reward_grants_source_type (source_type),
+  KEY ix_promo_reward_grants_source_id (source_id),
+  UNIQUE KEY ux_promo_reward_source (source_type, source_id, referrer_id),
+  UNIQUE KEY ux_promo_reward_index (referrer_id, invitee_id, reward_index),
+  CONSTRAINT fk_promo_reward_referrer_id FOREIGN KEY (referrer_id) REFERENCES users (id),
+  CONSTRAINT fk_promo_reward_invitee_id FOREIGN KEY (invitee_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE user_credits (

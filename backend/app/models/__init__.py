@@ -29,6 +29,7 @@ from app.models.user_credit import UserCredit
 from app.models.user_api_key import UserApiKey
 from app.models.user_promo_code import UserPromoCode
 from app.models.referral_reward_grant import ReferralRewardGrant
+from app.models.promo_reward_grant import PromoRewardGrant
 from app.models.prompt_history import PromptHistory
 from app.models.prompt_optimize_style import PromptOptimizeStyle
 from app.models.prompt_optimize_task import PromptOptimizeTask
@@ -77,6 +78,7 @@ __all__ = [
     "UserApiKey",
     "UserPromoCode",
     "ReferralRewardGrant",
+    "PromoRewardGrant",
     "PromptHistory",
     "PromptOptimizeStyle",
     "PromptOptimizeTask",

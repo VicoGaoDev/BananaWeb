@@ -291,13 +291,22 @@ def admin_reset_credits(
 @router.get("/users/{user_id}/promo-dashboard", response_model=AdminUserPromoDashboardOut)
 def admin_user_promo_dashboard(
     user_id: str,
+    month: Optional[str] = Query(None, description="返利统计月份，格式 YYYY-MM"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     target_user = get_user_by_business_id(db, user_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return get_user_promo_dashboard_for_admin(db, target_user)
+    return get_user_promo_dashboard_for_admin(
+        db,
+        target_user,
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 @router.post("/redeem-keys/batch", response_model=RedeemKeyBatchOut)
@@ -498,19 +507,29 @@ def admin_invite_reward_user_detail(
 
 @router.get("/promo-stats", response_model=dict)
 def admin_promo_stats(
+    month: Optional[str] = Query(None, description="返利排行月份，格式 YYYY-MM，默认当前月"),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_admin_promo_stats_dashboard(db)
+    return get_admin_promo_stats_dashboard(db, month=month)
 
 
 @router.get("/promo-stats/users/{user_id}", response_model=dict)
 def admin_promo_stats_user_detail(
     user_id: str,
+    month: Optional[str] = Query(None, description="返利统计月份，格式 YYYY-MM"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
     _user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_admin_promo_stats_user_detail(db, user_id)
+    return get_admin_promo_stats_user_detail(
+        db,
+        user_id,
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 @router.get("/video-stats", response_model=VideoStatsOut)

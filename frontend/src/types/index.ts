@@ -808,6 +808,28 @@ export interface PromoCodeSummary {
   total_referrals: number;
   used_code_count: number;
   rewarded_registrations: number;
+  rewarded_invitees?: number;
+  reward_grant_count?: number;
+  total_reward_amount_fen?: number;
+  total_reward_amount_yuan?: number;
+  today_reward_amount_fen?: number;
+  today_reward_amount_yuan?: number;
+  month?: string;
+  month_reward_grant_count?: number;
+  month_reward_amount_fen?: number;
+  month_reward_amount_yuan?: number;
+  period_referrals?: number;
+  period_rewarded_invitees?: number;
+  period_reward_grant_count?: number;
+  period_reward_amount_fen?: number;
+  period_reward_amount_yuan?: number;
+  period_start?: string | null;
+  period_end?: string | null;
+  first_rate?: number;
+  next_rate?: number;
+  first_count?: number;
+  max_reward_count?: number;
+  start_at?: string | null;
 }
 
 export interface PromoCodeItem {
@@ -833,6 +855,9 @@ export interface PromoReferralItem {
   promo_code: string;
   platform_name: string;
   reward_credits: number;
+  reward_count?: number;
+  total_reward_amount_yuan?: number;
+  last_reward_at?: string | null;
   registered_at?: string | null;
 }
 
@@ -849,6 +874,10 @@ export interface PromoReferralActivityItem {
   credits: number;
   amount_fen?: number | null;
   amount_yuan?: number | null;
+  reward_rate?: number | null;
+  reward_index?: number | null;
+  reward_amount_fen?: number | null;
+  reward_amount_yuan?: number | null;
   redeem_key: string;
   order_no: string;
   occurred_at?: string | null;
@@ -1008,6 +1037,12 @@ export interface AdminPromoStatsSummary {
   purchase_credits: number;
   redeem_count: number;
   redeem_credits: number;
+  reward_grant_count?: number;
+  total_reward_amount_yuan?: number;
+  month?: string;
+  month_reward_grant_count?: number;
+  month_reward_amount_yuan?: number;
+  start_at?: string | null;
 }
 
 export interface AdminPromoStatsUserItem {
@@ -1021,6 +1056,10 @@ export interface AdminPromoStatsUserItem {
   reward_credits: number;
   purchase_credits: number;
   redeem_credits: number;
+  reward_grant_count?: number;
+  total_reward_amount_yuan?: number;
+  month_reward_grant_count?: number;
+  month_reward_amount_yuan?: number;
   last_referral_at?: string | null;
   created_at?: string | null;
 }

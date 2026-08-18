@@ -479,6 +479,9 @@ class AdminPromoReferralItemOut(BaseModel):
     promo_code: str = ""
     platform_name: str = ""
     reward_credits: int = 0
+    reward_count: int = 0
+    total_reward_amount_yuan: float = 0
+    last_reward_at: datetime | None = None
     registered_at: datetime | None = None
 
 
@@ -490,6 +493,10 @@ class AdminPromoReferralActivityItemOut(BaseModel):
     credits: int = 0
     amount_fen: int | None = None
     amount_yuan: float | None = None
+    reward_rate: int | None = None
+    reward_index: int | None = None
+    reward_amount_fen: int | None = None
+    reward_amount_yuan: float | None = None
     redeem_key: str = ""
     order_no: str = ""
     occurred_at: datetime | None = None
@@ -499,6 +506,28 @@ class AdminPromoSummaryOut(BaseModel):
     total_referrals: int = 0
     used_code_count: int = 0
     rewarded_registrations: int = 0
+    rewarded_invitees: int = 0
+    reward_grant_count: int = 0
+    total_reward_amount_fen: int = 0
+    total_reward_amount_yuan: float = 0
+    today_reward_amount_fen: int = 0
+    today_reward_amount_yuan: float = 0
+    month: str = ""
+    month_reward_grant_count: int = 0
+    month_reward_amount_fen: int = 0
+    month_reward_amount_yuan: float = 0
+    period_referrals: int = 0
+    period_rewarded_invitees: int = 0
+    period_reward_grant_count: int = 0
+    period_reward_amount_fen: int = 0
+    period_reward_amount_yuan: float = 0
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    first_rate: int = 30
+    next_rate: int = 15
+    first_count: int = 2
+    max_reward_count: int = 5
+    start_at: datetime | None = None
 
 
 class AdminUserPromoDashboardOut(BaseModel):

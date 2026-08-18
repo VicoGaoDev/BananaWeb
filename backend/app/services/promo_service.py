@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import HTTPException, status
@@ -13,6 +13,14 @@ from app.models.payment_order import PaymentOrder
 from app.models.user import User
 from app.models.user_promo_code import UserPromoCode
 from app.services.business_id_service import user_external_id
+from app.services.promo_reward_service import (
+    fen_to_yuan,
+    get_promo_reward_period_summary,
+    get_promo_reward_summary,
+    list_promo_reward_aggregates_by_invitee,
+    list_promo_reward_grants_by_source_id,
+    parse_reward_month,
+)
 from app.utils.datetime_utils import to_local_naive
 
 PROMO_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -113,7 +121,7 @@ def update_promo_code_platform(db: Session, user: User, promo_code_id: int, plat
     return promo
 
 
-def _build_promo_codes_payload(db: Session, owner: User, *, base_url: str = "") -> dict:
+def _build_promo_codes_payload(db: Session, owner: User, *, base_url: str = "", month: str | None = None) -> dict:
     promo_codes = (
         db.query(UserPromoCode)
         .filter(UserPromoCode.user_id == owner.id)
@@ -139,12 +147,14 @@ def _build_promo_codes_payload(db: Session, owner: User, *, base_url: str = "") 
         or 0
     )
     used_code_count = sum(1 for promo in promo_codes if referral_counts.get(promo.id, 0) > 0)
+    reward_summary = get_promo_reward_summary(db, owner, month=month)
 
     return {
         "summary": {
             "total_referrals": int(total_referrals),
             "used_code_count": int(used_code_count),
             "rewarded_registrations": int(total_referrals),
+            **reward_summary,
         },
         "items": [
             {
@@ -179,6 +189,22 @@ def _normalize_filter_dates(
         to_local_naive(start_date) if start_date is not None else None,
         to_local_naive(end_date) if end_date is not None else None,
     )
+
+
+def resolve_promo_filter_window(
+    *,
+    month: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> tuple[datetime | None, datetime | None]:
+    normalized_start, normalized_end = _normalize_filter_dates(start_date, end_date)
+    if normalized_start is not None or normalized_end is not None:
+        return normalized_start, normalized_end
+    parsed = parse_reward_month(month)
+    if not parsed:
+        return None, None
+    _, month_start, month_exclusive_end = parsed
+    return month_start, month_exclusive_end - timedelta(microseconds=1)
 
 
 def _get_referred_user_rows(
@@ -230,6 +256,12 @@ def _build_promo_referrals_payload(
         start_date=start_date,
         end_date=end_date,
     )
+    reward_map = list_promo_reward_aggregates_by_invitee(
+        db,
+        owner,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     return {
         "total": len(rows),
@@ -242,6 +274,11 @@ def _build_promo_referrals_payload(
                 "promo_code": promo.code if promo else "",
                 "platform_name": promo.platform_name if promo else "",
                 "reward_credits": PROMO_CODE_REWARD_CREDITS,
+                "reward_count": int(reward_map.get(invitee.id, {}).get("reward_count") or 0),
+                "total_reward_amount_yuan": float(
+                    reward_map.get(invitee.id, {}).get("total_reward_amount_yuan") or 0
+                ),
+                "last_reward_at": reward_map.get(invitee.id, {}).get("last_reward_at"),
                 "registered_at": invitee.created_at,
             }
             for invitee, promo in rows
@@ -249,9 +286,9 @@ def _build_promo_referrals_payload(
     }
 
 
-def get_my_promo_codes(db: Session, user: User, *, base_url: str = "") -> dict:
+def get_my_promo_codes(db: Session, user: User, *, base_url: str = "", month: str | None = None) -> dict:
     ensure_promo_access(user)
-    return _build_promo_codes_payload(db, user, base_url=base_url)
+    return _build_promo_codes_payload(db, user, base_url=base_url, month=month)
 
 
 def get_my_promo_referrals(
@@ -282,14 +319,15 @@ def _build_promo_referral_activities_payload(
     platform_name: str | None = None,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
+    filter_invitees_by_date: bool = True,
 ) -> dict:
     referred_rows = _get_referred_user_rows(
         db,
         owner,
         keyword=keyword,
         platform_name=platform_name,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=start_date if filter_invitees_by_date else None,
+        end_date=end_date if filter_invitees_by_date else None,
     )
     referred_users = [invitee for invitee, _ in referred_rows]
     referred_user_ids = [invitee.id for invitee in referred_users]
@@ -309,11 +347,18 @@ def _build_promo_referral_activities_payload(
         redeem_query = redeem_query.filter(CreditRedeemKey.used_at <= normalized_end)
 
     user_map = {invitee.id: invitee for invitee in referred_users}
+    payment_orders = payments_query.order_by(PaymentOrder.credited_at.desc(), PaymentOrder.id.desc()).all()
+    grant_map = list_promo_reward_grants_by_source_id(
+        db,
+        owner,
+        [str(order.order_no or "") for order in payment_orders],
+    )
     items: list[dict] = []
-    for order in payments_query.order_by(PaymentOrder.credited_at.desc(), PaymentOrder.id.desc()).all():
+    for order in payment_orders:
         invitee = user_map.get(order.user_id)
         if not invitee:
             continue
+        grant = grant_map.get(str(order.order_no or ""))
         items.append(
             {
                 "user_id": user_external_id(invitee),
@@ -323,6 +368,10 @@ def _build_promo_referral_activities_payload(
                 "credits": int(order.credits or 0),
                 "amount_fen": int(order.amount_fen or 0),
                 "amount_yuan": round(int(order.amount_fen or 0) / 100, 2),
+                "reward_rate": int(grant.reward_rate) if grant else None,
+                "reward_index": int(grant.reward_index) if grant else None,
+                "reward_amount_fen": int(grant.reward_amount_fen) if grant else None,
+                "reward_amount_yuan": fen_to_yuan(grant.reward_amount_fen) if grant else None,
                 "redeem_key": "",
                 "order_no": order.order_no,
                 "occurred_at": order.credited_at,
@@ -341,6 +390,10 @@ def _build_promo_referral_activities_payload(
                 "credits": int(redeem.credit_amount or 0),
                 "amount_fen": None,
                 "amount_yuan": None,
+                "reward_rate": None,
+                "reward_index": None,
+                "reward_amount_fen": None,
+                "reward_amount_yuan": None,
                 "redeem_key": redeem.redeem_key,
                 "order_no": "",
                 "occurred_at": redeem.used_at,
@@ -376,15 +429,48 @@ def get_user_promo_dashboard_for_admin(
     owner: User,
     *,
     require_whitelist: bool = True,
+    month: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
 ) -> dict:
     if require_whitelist and not owner.is_whitelisted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户不是白名单用户")
-    promo_payload = _build_promo_codes_payload(db, owner)
+    period_start, period_end = resolve_promo_filter_window(
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    promo_payload = _build_promo_codes_payload(db, owner, month=month)
+    referrals_payload = _build_promo_referrals_payload(
+        db,
+        owner,
+        start_date=period_start,
+        end_date=period_end,
+    )
+    activities_payload = _build_promo_referral_activities_payload(
+        db,
+        owner,
+        start_date=period_start,
+        end_date=period_end,
+        filter_invitees_by_date=False,
+    )
+    period_stats = get_promo_reward_period_summary(
+        db,
+        owner,
+        start_date=period_start,
+        end_date=period_end,
+    )
     return {
         "user_id": user_external_id(owner),
         "username": owner.username,
-        "summary": promo_payload["summary"],
+        "summary": {
+            **promo_payload["summary"],
+            **period_stats,
+            "period_referrals": int(referrals_payload["total"]),
+            "period_start": period_start,
+            "period_end": period_end,
+        },
         "promo_codes": promo_payload["items"],
-        "referrals": _build_promo_referrals_payload(db, owner)["items"],
-        "activities": _build_promo_referral_activities_payload(db, owner)["items"],
+        "referrals": referrals_payload["items"],
+        "activities": activities_payload["items"],
     }

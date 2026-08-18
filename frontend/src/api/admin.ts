@@ -317,12 +317,19 @@ export function getAdminInviteRewardUserDetail(userId: string): Promise<AdminInv
   return client.get(`/admin/invite-rewards/users/${userId}`);
 }
 
-export function getAdminPromoStatsDashboard(): Promise<AdminPromoStatsDashboard> {
-  return client.get("/admin/promo-stats");
+export function getAdminPromoStatsDashboard(params?: { month?: string }): Promise<AdminPromoStatsDashboard> {
+  return client.get("/admin/promo-stats", { params });
 }
 
-export function getAdminPromoStatsUserDetail(userId: string): Promise<AdminUserPromoDashboard> {
-  return client.get(`/admin/promo-stats/users/${userId}`);
+export function getAdminPromoStatsUserDetail(
+  userId: string,
+  params?: {
+    month?: string;
+    start_date?: string;
+    end_date?: string;
+  },
+): Promise<AdminUserPromoDashboard> {
+  return client.get(`/admin/promo-stats/users/${userId}`, { params });
 }
 
 export function getVideoStats(): Promise<VideoStats> {

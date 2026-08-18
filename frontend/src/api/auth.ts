@@ -106,8 +106,8 @@ export function getAnnouncementConfig(): Promise<AnnouncementConfig> {
   return client.get("/config/announcement");
 }
 
-export function getMyPromoCodes(): Promise<PromoCodeListResponse> {
-  return client.get("/auth/promo-codes/me");
+export function getMyPromoCodes(params?: { month?: string }): Promise<PromoCodeListResponse> {
+  return client.get("/auth/promo-codes/me", { params });
 }
 
 export function createPromoCode(platformName: string): Promise<PromoCodeListResponse> {
