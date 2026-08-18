@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -147,12 +147,24 @@ class AnalyticsBreakdownItemOut(BaseModel):
     credit_cost: int = 0
 
 
+class AnalyticsModelCompareItemOut(BaseModel):
+    name: str
+    count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    success_rate: float = 0
+    credit_cost: int = 0
+    avg_credit_cost: float = 0
+
+
 class AnalyticsBreakdownOut(BaseModel):
     range_label: str
     status_breakdown: list[AnalyticsBreakdownItemOut]
     source_breakdown: list[AnalyticsBreakdownItemOut]
     mode_breakdown: list[AnalyticsBreakdownItemOut]
+    canvas_breakdown: list[AnalyticsBreakdownItemOut] = Field(default_factory=list)
     model_breakdown: list[AnalyticsBreakdownItemOut]
+    model_compare: list[AnalyticsModelCompareItemOut] = Field(default_factory=list)
     top_users_by_tasks: list[AnalyticsBreakdownItemOut]
     top_users_by_credit: list[AnalyticsBreakdownItemOut]
 

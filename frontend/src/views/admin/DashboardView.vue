@@ -489,11 +489,14 @@ function handleBucketClick(payload: { start?: string | null; end?: string | null
   preset.value = "custom";
 }
 
-function handleBreakdownFilter(payload: { type: "status" | "source" | "mode" | "model" | "user"; value: string }) {
+function handleBreakdownFilter(payload: { type: "status" | "source" | "mode" | "model" | "user" | "canvas"; value: string }) {
   if (payload.type === "status") filters.status = payload.value;
   if (payload.type === "source") filters.source = payload.value as TaskSource;
   if (payload.type === "mode") filters.mode = payload.value as TaskType;
   if (payload.type === "model") filters.model = payload.value;
+  if (payload.type === "canvas" && (payload.value === "canvas" || payload.value === "non_canvas")) {
+    filters.canvas_task_filter = payload.value;
+  }
   if (payload.type === "user") {
     const matchedUser = users.value.find((item) => item.username === payload.value);
     if (matchedUser) filters.user_id = matchedUser.id;

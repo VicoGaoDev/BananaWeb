@@ -1193,6 +1193,16 @@ export interface AdminAnalyticsBreakdownItem {
   credit_cost: number;
 }
 
+export interface AdminAnalyticsModelCompareItem {
+  name: string;
+  count: number;
+  success_count: number;
+  failed_count: number;
+  success_rate: number;
+  credit_cost: number;
+  avg_credit_cost: number;
+}
+
 export interface AdminDailyReportTestResult {
   sent: boolean;
   report_date: string;
@@ -1223,7 +1233,9 @@ export interface AdminAnalyticsBreakdown {
   status_breakdown: AdminAnalyticsBreakdownItem[];
   source_breakdown: AdminAnalyticsBreakdownItem[];
   mode_breakdown: AdminAnalyticsBreakdownItem[];
+  canvas_breakdown?: AdminAnalyticsBreakdownItem[];
   model_breakdown: AdminAnalyticsBreakdownItem[];
+  model_compare?: AdminAnalyticsModelCompareItem[];
   top_users_by_tasks: AdminAnalyticsBreakdownItem[];
   top_users_by_credit: AdminAnalyticsBreakdownItem[];
 }

@@ -16,8 +16,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits<{
-  (e: "filter-click", payload: { type: "status" | "source" | "mode" | "model" | "user"; value: string }): void;
+  (e: "filter-click", payload: { type: "status" | "source" | "mode" | "model" | "user" | "canvas"; value: string }): void;
 }>();
+
+const modelCompare = computed(() => props.data?.model_compare || []);
 
 const hasBreakdownData = computed(() => {
   if (!props.data) return false;
@@ -25,7 +27,9 @@ const hasBreakdownData = computed(() => {
     ...props.data.status_breakdown,
     ...props.data.source_breakdown,
     ...props.data.mode_breakdown,
+    ...(props.data.canvas_breakdown || []),
     ...props.data.model_breakdown,
+    ...modelCompare.value,
     ...props.data.top_users_by_tasks,
     ...props.data.top_users_by_credit,
   ].some((item) => item.count > 0 || item.credit_cost > 0);
@@ -54,6 +58,11 @@ function sourceLabel(value: string) {
   if (value === "app") return "App";
   if (value === "api") return "API";
   return "Web";
+}
+
+function canvasLabel(value: string) {
+  if (value === "canvas") return "Canvas";
+  return "普通生图";
 }
 
 const statusPieOption = computed(() => ({
@@ -100,6 +109,28 @@ const modePieOption = computed(() => ({
   ],
 }));
 
+const canvasPieOption = computed(() => ({
+  color: ["#722ed1", "#13c2c2"],
+  tooltip: {
+    trigger: "item",
+    backgroundColor: "rgba(76, 52, 26, 0.92)",
+    borderWidth: 0,
+    textStyle: { color: "#fffdf8" },
+  },
+  legend: { bottom: 0 },
+  series: [
+    {
+      type: "pie",
+      radius: ["42%", "68%"],
+      data: (props.data?.canvas_breakdown || []).map((item) => ({
+        name: canvasLabel(item.name),
+        value: item.count,
+        rawValue: item.name,
+      })),
+    },
+  ],
+}));
+
 const sourcePieOption = computed(() => ({
   color: ["#1890ff", "#722ed1"],
   tooltip: {
@@ -122,21 +153,82 @@ const sourcePieOption = computed(() => ({
   ],
 }));
 
-const modelBarOption = computed(() => ({
+const modelCompareOption = computed(() => ({
+  color: ["#1890ff", "#fa8c16", "#52c41a"],
   tooltip: {
     trigger: "axis",
     backgroundColor: "rgba(76, 52, 26, 0.92)",
     borderWidth: 0,
     textStyle: { color: "#fffdf8" },
+    formatter: (params: Array<{ axisValue?: string; dataIndex?: number }>) => {
+      const dataIndex = params[0]?.dataIndex ?? 0;
+      const item = modelCompare.value[dataIndex];
+      const name = item?.name || params[0]?.axisValue || "";
+      if (!item) return name;
+      return [
+        name,
+        `用量：${item.count}`,
+        `成功 / 失败：${item.success_count} / ${item.failed_count}`,
+        `成功率：${item.success_rate}%`,
+        `消耗积分：${item.credit_cost}`,
+        `均耗积分：${item.avg_credit_cost}`,
+      ].join("<br/>");
+    },
   },
-  grid: { left: 40, right: 20, top: 20, bottom: 48 },
-  xAxis: { type: "category", data: (props.data?.model_breakdown || []).map((item) => item.name), axisLabel: { interval: 0, rotate: 18 } },
-  yAxis: { type: "value" },
+  legend: { top: 0 },
+  grid: { left: 40, right: 72, top: 44, bottom: 52 },
+  xAxis: {
+    type: "category",
+    data: modelCompare.value.map((item) => item.name),
+    axisLabel: { interval: 0, rotate: 18 },
+  },
+  yAxis: [
+    {
+      type: "value",
+      name: "用量",
+    },
+    {
+      type: "value",
+      name: "均耗积分",
+      splitLine: { show: false },
+    },
+    {
+      type: "value",
+      name: "成功率",
+      min: 0,
+      max: 100,
+      offset: 40,
+      splitLine: { show: false },
+      axisLabel: { formatter: "{value}%" },
+    },
+  ],
   series: [
     {
+      name: "用量",
       type: "bar",
-      data: (props.data?.model_breakdown || []).map((item) => item.count),
+      yAxisIndex: 0,
+      data: modelCompare.value.map((item) => item.count),
       itemStyle: { color: "#1890ff", borderRadius: [8, 8, 0, 0] },
+    },
+    {
+      name: "均耗积分",
+      type: "line",
+      yAxisIndex: 1,
+      smooth: true,
+      symbolSize: 8,
+      lineStyle: { width: 3 },
+      data: modelCompare.value.map((item) => item.avg_credit_cost),
+      itemStyle: { color: "#fa8c16" },
+    },
+    {
+      name: "成功率",
+      type: "line",
+      yAxisIndex: 2,
+      smooth: true,
+      symbolSize: 8,
+      lineStyle: { width: 3 },
+      data: modelCompare.value.map((item) => item.success_rate),
+      itemStyle: { color: "#52c41a" },
     },
   ],
 }));
@@ -199,8 +291,13 @@ function handleSourceClick(params: { data?: unknown }) {
   if (rawValue) emit("filter-click", { type: "source", value: rawValue });
 }
 
+function handleCanvasClick(params: { data?: unknown }) {
+  const rawValue = getRawValue(params.data);
+  if (rawValue) emit("filter-click", { type: "canvas", value: rawValue });
+}
+
 function handleModelClick(params: { dataIndex?: number }) {
-  const item = props.data?.model_breakdown[params.dataIndex || 0];
+  const item = modelCompare.value[params.dataIndex || 0] || props.data?.model_breakdown[params.dataIndex || 0];
   if (item) emit("filter-click", { type: "model", value: item.name });
 }
 
@@ -217,46 +314,49 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
 
 <template>
   <a-spin :spinning="loading">
-    <div v-if="hasBreakdownData" class="breakdown-grid">
-      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 220ms">
-        <div class="breakdown-head">
-          <div>
-            <div class="breakdown-title">任务状态占比</div>
-            <div class="breakdown-desc">查看整体结果健康度。</div>
+    <div v-if="hasBreakdownData" class="breakdown-layout">
+      <div class="breakdown-pies">
+        <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 220ms">
+          <div class="breakdown-head">
+            <div>
+              <div class="breakdown-title">任务状态占比</div>
+              <div class="breakdown-desc">查看整体结果健康度。</div>
+            </div>
+            <div class="breakdown-badge">饼图</div>
           </div>
-          <div class="breakdown-badge">饼图</div>
+          <VChart class="breakdown-chart" :option="statusPieOption" autoresize @click="handleStatusClick" />
         </div>
-        <VChart class="breakdown-chart" :option="statusPieOption" autoresize @click="handleStatusClick" />
-      </div>
-      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 260ms">
-        <div class="breakdown-head">
-          <div>
-            <div class="breakdown-title">来源分布（Web/App）</div>
-            <div class="breakdown-desc">区分不同端的任务占比和消耗情况。</div>
+        <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 260ms">
+          <div class="breakdown-head">
+            <div>
+              <div class="breakdown-title">来源分布（Web/App）</div>
+              <div class="breakdown-desc">区分不同端的任务占比和消耗情况。</div>
+            </div>
+            <div class="breakdown-badge">饼图</div>
           </div>
-          <div class="breakdown-badge">饼图</div>
+          <VChart class="breakdown-chart" :option="sourcePieOption" autoresize @click="handleSourceClick" />
         </div>
-        <VChart class="breakdown-chart" :option="sourcePieOption" autoresize @click="handleSourceClick" />
-      </div>
-      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
-        <div class="breakdown-head">
-          <div>
-            <div class="breakdown-title">任务类型占比</div>
-            <div class="breakdown-desc">区分生图、局部重绘和提示词反推的占用比例。</div>
+        <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 300ms">
+          <div class="breakdown-head">
+            <div>
+              <div class="breakdown-title">任务类型占比</div>
+              <div class="breakdown-desc">区分生图、局部重绘和提示词反推的占用比例。</div>
+            </div>
+            <div class="breakdown-badge">饼图</div>
           </div>
-          <div class="breakdown-badge">饼图</div>
+          <VChart class="breakdown-chart" :option="modePieOption" autoresize @click="handleModeClick" />
         </div>
-        <VChart class="breakdown-chart" :option="modePieOption" autoresize @click="handleModeClick" />
       </div>
+      <div class="breakdown-grid">
       <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 340ms">
         <div class="breakdown-head">
           <div>
-            <div class="breakdown-title">模型使用 Top</div>
-            <div class="breakdown-desc">了解当前最常被使用的模型。</div>
+            <div class="breakdown-title">模型用量 / 成功率 / 均耗积分</div>
+            <div class="breakdown-desc">对照高频模型的使用量、成功率和单次平均积分消耗。</div>
           </div>
-          <div class="breakdown-badge">排行</div>
+          <div class="breakdown-badge">对照</div>
         </div>
-        <VChart class="breakdown-chart" :option="modelBarOption" autoresize @click="handleModelClick" />
+        <VChart class="breakdown-chart" :option="modelCompareOption" autoresize @click="handleModelClick" />
       </div>
       <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 380ms">
         <div class="breakdown-head">
@@ -268,7 +368,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         </div>
         <VChart class="breakdown-chart" :option="userTaskOption" autoresize @click="handleUserTaskClick" />
       </div>
-      <div class="breakdown-card warm-card breakdown-card-wide motion-card-lift motion-fade-up" style="--motion-delay: 420ms">
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 420ms">
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">用户消耗积分 Top</div>
@@ -277,6 +377,17 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
           <div class="breakdown-badge">排行</div>
         </div>
         <VChart class="breakdown-chart" :option="userCreditOption" autoresize @click="handleUserCreditClick" />
+      </div>
+      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 460ms">
+        <div class="breakdown-head">
+          <div>
+            <div class="breakdown-title">Canvas / 普通生图占比</div>
+            <div class="breakdown-desc">看画布任务是否在分流普通生图的用量。</div>
+          </div>
+          <div class="breakdown-badge">饼图</div>
+        </div>
+        <VChart class="breakdown-chart" :option="canvasPieOption" autoresize @click="handleCanvasClick" />
+      </div>
       </div>
     </div>
     <div v-else class="breakdown-empty warm-card motion-fade-up" style="--motion-delay: 220ms">
@@ -291,10 +402,19 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
 </template>
 
 <style scoped lang="scss">
+.breakdown-layout,
+.breakdown-pies,
 .breakdown-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.breakdown-pies {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.breakdown-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .breakdown-empty {
@@ -327,10 +447,6 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 10px;
-}
-
-.breakdown-card-wide {
-  grid-column: span 2;
 }
 
 .breakdown-title {
@@ -373,12 +489,9 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
 }
 
 @media (max-width: 900px) {
+  .breakdown-pies,
   .breakdown-grid {
     grid-template-columns: 1fr;
-  }
-
-  .breakdown-card-wide {
-    grid-column: span 1;
   }
 
   .breakdown-card {

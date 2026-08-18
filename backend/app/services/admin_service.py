@@ -105,6 +105,7 @@ class AnalyticsRecord:
     credit_cost: int
     created_at: datetime
     used_fallback_api: bool = False
+    from_canvas: bool = False
 
 
 VIDEO_TASK_TYPE_TEXT_TO_VIDEO = "text_to_video"
@@ -1919,6 +1920,7 @@ def _build_analytics_records(
             credit_cost=0 if task.id in refunded_task_ids else int(task.credit_cost or 0),
             created_at=task.created_at,
             used_fallback_api=bool(task.used_fallback_api),
+            from_canvas=bool(getattr(task, "canvas_id", None)),
         )
         for task in tasks
     ]
@@ -1959,6 +1961,7 @@ def _build_analytics_records(
                 credit_cost=max(0, int(-(log.amount or 0))),
                 created_at=log.created_at,
                 used_fallback_api=False,
+                from_canvas=False,
             )
             for log in prompt_reverse_query.all()
         ]
@@ -2175,6 +2178,26 @@ def _sorted_breakdown(items: dict[str, dict[str, int]], limit: int | None = None
     return rows
 
 
+def _model_compare_rows(items: dict[str, dict[str, int]], limit: int = 10) -> list[dict]:
+    rows: list[dict] = []
+    for name, payload in items.items():
+        count = int(payload.get("count") or 0)
+        success_count = int(payload.get("success_count") or 0)
+        failed_count = int(payload.get("failed_count") or 0)
+        credit_cost = int(payload.get("credit_cost") or 0)
+        rows.append({
+            "name": name,
+            "count": count,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "success_rate": round((success_count / count) * 100, 1) if count else 0.0,
+            "credit_cost": credit_cost,
+            "avg_credit_cost": round(credit_cost / count, 1) if count else 0.0,
+        })
+    rows.sort(key=lambda item: (item["count"], item["credit_cost"], item["name"]), reverse=True)
+    return rows[:limit]
+
+
 def get_analytics_breakdown(
     db: Session,
     *,
@@ -2212,8 +2235,11 @@ def get_analytics_breakdown(
     status_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     source_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     mode_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
-    model_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
+    model_breakdown: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"count": 0, "credit_cost": 0, "success_count": 0, "failed_count": 0}
+    )
     user_task_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
+    canvas_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
 
     for record in records:
         task_cost = record.credit_cost
@@ -2231,8 +2257,16 @@ def get_analytics_breakdown(
         mode_breakdown[mode_key]["count"] += 1
         mode_breakdown[mode_key]["credit_cost"] += task_cost
 
+        canvas_key = "canvas" if record.from_canvas else "non_canvas"
+        canvas_breakdown[canvas_key]["count"] += 1
+        canvas_breakdown[canvas_key]["credit_cost"] += task_cost
+
         model_breakdown[model_key]["count"] += 1
         model_breakdown[model_key]["credit_cost"] += task_cost
+        if record.status == "success":
+            model_breakdown[model_key]["success_count"] += 1
+        elif record.status == "failed":
+            model_breakdown[model_key]["failed_count"] += 1
 
         user = users_by_id.get(record.user_id)
         if user and user.role != "superadmin":
@@ -2240,7 +2274,7 @@ def get_analytics_breakdown(
             user_task_breakdown[user.username]["credit_cost"] += task_cost
 
     user_breakdown_rows = _sorted_breakdown(user_task_breakdown)
-    top_users_by_tasks = user_breakdown_rows[:8]
+    top_users_by_tasks = user_breakdown_rows[:10]
     top_users_by_credit = sorted(
         user_breakdown_rows,
         key=lambda item: (item["credit_cost"], item["count"], item["name"]),
@@ -2252,9 +2286,11 @@ def get_analytics_breakdown(
         "status_breakdown": _sorted_breakdown(status_breakdown),
         "source_breakdown": _sorted_breakdown(source_breakdown),
         "mode_breakdown": _sorted_breakdown(mode_breakdown),
-        "model_breakdown": _sorted_breakdown(model_breakdown, limit=8),
+        "canvas_breakdown": _sorted_breakdown(canvas_breakdown),
+        "model_breakdown": _sorted_breakdown(model_breakdown, limit=10),
+        "model_compare": _model_compare_rows(model_breakdown, limit=10),
         "top_users_by_tasks": top_users_by_tasks,
-        "top_users_by_credit": top_users_by_credit[:8],
+        "top_users_by_credit": top_users_by_credit[:10],
     }
 
 
@@ -2602,7 +2638,7 @@ def get_video_analytics_breakdown(
             user_task_breakdown[user.username]["count"] += 1
             user_task_breakdown[user.username]["credit_cost"] += task_cost
     user_breakdown_rows = _sorted_breakdown(user_task_breakdown)
-    top_users_by_tasks = user_breakdown_rows[:8]
+    top_users_by_tasks = user_breakdown_rows[:10]
     top_users_by_credit = sorted(
         user_breakdown_rows,
         key=lambda item: (item["credit_cost"], item["count"], item["name"]),
@@ -2613,9 +2649,9 @@ def get_video_analytics_breakdown(
         "status_breakdown": _sorted_breakdown(status_breakdown),
         "source_breakdown": _sorted_breakdown(source_breakdown),
         "mode_breakdown": _sorted_breakdown(mode_breakdown),
-        "model_breakdown": _sorted_breakdown(model_breakdown, limit=8),
+        "model_breakdown": _sorted_breakdown(model_breakdown, limit=10),
         "top_users_by_tasks": top_users_by_tasks,
-        "top_users_by_credit": top_users_by_credit[:8],
+        "top_users_by_credit": top_users_by_credit[:10],
     }
 
 
