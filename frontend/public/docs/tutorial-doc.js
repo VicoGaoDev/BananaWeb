@@ -56,8 +56,15 @@
 
   window.addEventListener("message", (event) => {
     if (event.origin !== origin) return;
-    if (event.data?.type !== "banana-tutorial-scroll") return;
-    scrollToId(event.data.id);
+    if (event.data?.type === "banana-tutorial-scroll") {
+      scrollToId(event.data.id);
+      return;
+    }
+    if (event.data?.type === "banana-tutorial-scroll-top") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      const firstSection = document.querySelector("section[id]");
+      if (firstSection?.id) postActiveSection(firstSection.id);
+    }
   });
 
   window.addEventListener("hashchange", () => {
@@ -171,4 +178,12 @@
       }
     });
   });
+
+  function postScrollState() {
+    const top = window.scrollY || document.documentElement.scrollTop;
+    postToParent({ type: "banana-tutorial-scroll-state", visible: top > 240 });
+  }
+
+  window.addEventListener("scroll", postScrollState, { passive: true });
+  postScrollState();
 })();

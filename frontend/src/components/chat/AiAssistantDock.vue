@@ -270,9 +270,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .ai-assistant-tab {
-    top: auto;
-    bottom: 88px;
-    transform: none;
+    display: none;
   }
 }
 </style>

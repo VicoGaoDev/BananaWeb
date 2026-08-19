@@ -4992,6 +4992,12 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   }
 }
 
+@media (max-width: 768px) {
+  .suggestion-fab-wrap {
+    display: none;
+  }
+}
+
 @media (max-width: 640px) {
   .canvas-side-nav {
     width: 64px;

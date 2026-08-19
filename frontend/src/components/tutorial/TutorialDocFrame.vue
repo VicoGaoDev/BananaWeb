@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { DoubleLeftOutlined, DoubleRightOutlined } from "@ant-design/icons-vue";
 import { withBaseUrl } from "@/lib/assets";
 import {
   generateTutorialSections,
@@ -11,11 +12,14 @@ import {
 const props = defineProps<{
   module: TutorialModule;
   sectionId?: string;
+  showDockSwitch?: boolean;
+  dockTabEnabled?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:module": [value: TutorialModule];
   "update:section": [value: string];
+  "update:dockTabEnabled": [value: boolean];
 }>();
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
@@ -23,6 +27,7 @@ const navCollapsed = ref(false);
 const activeSectionId = ref(props.sectionId || "overview");
 const pendingSectionId = ref("");
 const preview = ref<{ src: string; alt: string; caption: string } | null>(null);
+const showBackTop = ref(false);
 const openGroups = reactive<Record<TutorialModule, boolean>>({
   chat: false,
   generate: true,
@@ -40,7 +45,9 @@ function closePreview() {
 function setNavCollapsed(collapsed: boolean) {
   navCollapsed.value = collapsed;
   try {
-    localStorage.setItem("tutorial-nav-collapsed", collapsed ? "1" : "0");
+    const mobile = window.matchMedia("(max-width: 768px)").matches;
+    const key = mobile ? "tutorial-nav-collapsed-mobile" : "tutorial-nav-collapsed";
+    localStorage.setItem(key, collapsed ? "1" : "0");
   } catch {
     /* ignore */
   }
@@ -85,13 +92,27 @@ function openGenerateSection(id: string) {
   }
   scrollToSection(id);
   emit("update:section", id);
+  if (window.matchMedia("(max-width: 768px)").matches) {
+    setNavCollapsed(true);
+  }
 }
 
 function handleFrameLoad() {
   const id = pendingSectionId.value || props.sectionId;
   pendingSectionId.value = "";
+  showBackTop.value = false;
   if (props.module === "generate" && id) {
     window.setTimeout(() => scrollToSection(id), 80);
+  }
+}
+
+function scrollToDocTop() {
+  const frameWindow = iframeRef.value?.contentWindow;
+  if (!frameWindow) return;
+  try {
+    frameWindow.postMessage({ type: "banana-tutorial-scroll-top" }, window.location.origin);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -100,6 +121,10 @@ function handleFrameMessage(event: MessageEvent) {
   if (event.source !== iframeRef.value?.contentWindow) return;
   const data = event.data;
   if (!data || typeof data !== "object") return;
+  if (data.type === "banana-tutorial-scroll-state") {
+    showBackTop.value = Boolean(data.visible);
+    return;
+  }
   if (data.type === "banana-tutorial-preview" && typeof data.src === "string" && data.src) {
     preview.value = {
       src: data.src,
@@ -147,11 +172,7 @@ watch(
 );
 
 onMounted(() => {
-  try {
-    navCollapsed.value = localStorage.getItem("tutorial-nav-collapsed") === "1";
-  } catch {
-    /* ignore */
-  }
+  navCollapsed.value = false;
   window.addEventListener("message", handleFrameMessage);
   window.addEventListener("keydown", handlePreviewKeydown, true);
 });
@@ -165,16 +186,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="tutorial-shell" :class="{ 'is-nav-collapsed': navCollapsed }">
+    <button
+      v-if="!navCollapsed"
+      type="button"
+      class="tutorial-nav-backdrop"
+      aria-label="收起目录"
+      @click="setNavCollapsed(true)"
+    ></button>
     <nav class="tutorial-nav" aria-label="标题导航">
       <div class="tutorial-nav-head">
         <div class="tutorial-nav-title">目录</div>
         <button
           type="button"
           class="nav-toggle"
-          :aria-label="navCollapsed ? '展开目录' : '收起目录'"
+          aria-label="收起目录"
           @click="toggleNavCollapsed"
         >
-          <span class="nav-toggle-icon" aria-hidden="true"></span>
+          <DoubleLeftOutlined class="nav-toggle-icon" />
         </button>
       </div>
 
@@ -226,6 +254,43 @@ onBeforeUnmount(() => {
       />
     </div>
 
+    <div class="tutorial-float-bar">
+      <button
+        v-if="navCollapsed"
+        type="button"
+        class="nav-float-toggle"
+        aria-label="展开目录"
+        @click="toggleNavCollapsed"
+      >
+        <DoubleRightOutlined class="nav-toggle-icon" />
+      </button>
+      <label
+        v-if="showDockSwitch"
+        class="tutorial-dock-switch"
+        title="在创作页显示侧边教程入口"
+      >
+        <span class="tutorial-dock-switch-label">在创作页显示侧边教程入口</span>
+        <span class="tutorial-dock-switch-label-short">侧边入口</span>
+        <a-switch
+          class="warm-switch"
+          :checked="dockTabEnabled"
+          size="small"
+          @change="emit('update:dockTabEnabled', $event)"
+        />
+      </label>
+      <Teleport to="body" :disabled="!showDockSwitch">
+        <a-tooltip v-if="showBackTop" title="回到顶部" placement="left">
+          <button
+            type="button"
+            class="tutorial-back-top"
+            :class="{ 'is-viewport': showDockSwitch }"
+            aria-label="回到顶部"
+            @click="scrollToDocTop"
+          ></button>
+        </a-tooltip>
+      </Teleport>
+    </div>
+
     <Teleport to="body">
       <div
         v-if="preview"
@@ -247,11 +312,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .tutorial-shell {
+  position: relative;
   display: flex;
   align-items: stretch;
   height: 100%;
   min-height: 0;
   background: var(--theme-page-base, #fffaf3);
+}
+
+.nav-float-toggle,
+.tutorial-nav-backdrop {
+  display: none;
 }
 
 .tutorial-nav {
@@ -302,11 +373,8 @@ onBeforeUnmount(() => {
 }
 
 .nav-toggle-icon {
-  width: 7px;
-  height: 7px;
-  border-left: 1.6px solid currentColor;
-  border-bottom: 1.6px solid currentColor;
-  transform: rotate(45deg);
+  font-size: 14px;
+  line-height: 1;
 }
 
 .tutorial-shell.is-nav-collapsed .tutorial-nav {
@@ -323,10 +391,6 @@ onBeforeUnmount(() => {
 .tutorial-shell.is-nav-collapsed .tutorial-nav-title,
 .tutorial-shell.is-nav-collapsed .nav-group {
   display: none;
-}
-
-.tutorial-shell.is-nav-collapsed .nav-toggle-icon {
-  transform: rotate(-135deg);
 }
 
 .nav-group + .nav-group {
@@ -433,6 +497,153 @@ onBeforeUnmount(() => {
   height: 100%;
   border: 0;
   background: var(--theme-page-base, #fffaf3);
+}
+
+.tutorial-float-bar {
+  pointer-events: none;
+}
+
+.tutorial-float-bar > * {
+  pointer-events: auto;
+}
+
+.tutorial-dock-switch {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-panel-bg, #fffdf8) 92%, transparent);
+  box-shadow: 0 6px 16px rgba(80, 52, 20, 0.08);
+  color: var(--theme-text-secondary, #8b7457);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.tutorial-dock-switch-label {
+  white-space: nowrap;
+}
+
+.tutorial-dock-switch-label-short {
+  display: none;
+}
+
+.tutorial-back-top.is-viewport {
+  position: fixed;
+  z-index: 1040;
+}
+
+.tutorial-back-top {
+  position: absolute;
+  right: 88px;
+  bottom: 24px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
+  border-radius: 50%;
+  background: var(--theme-panel-bg, #fffdf8);
+  box-shadow: 0 8px 20px rgba(80, 52, 20, 0.14);
+  color: var(--theme-title, #3d2f22);
+  cursor: pointer;
+}
+
+.tutorial-back-top::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  transform: translateY(2px) rotate(45deg);
+}
+
+@media (max-width: 768px) {
+  .tutorial-nav-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    border: 0;
+    padding: 0;
+    background: rgba(32, 22, 12, 0.28);
+    cursor: pointer;
+  }
+
+  .tutorial-float-bar {
+    position: static;
+  }
+
+  .nav-float-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
+    border-radius: 10px;
+    background: var(--theme-panel-bg, #fffdf8);
+    box-shadow: 0 6px 16px rgba(80, 52, 20, 0.12);
+    color: var(--theme-title, #3d2f22);
+    cursor: pointer;
+  }
+
+  .tutorial-dock-switch {
+    top: 0;
+    right: 0;
+    z-index: 5;
+    padding: 5px 8px;
+  }
+
+  .tutorial-dock-switch-label {
+    display: none;
+  }
+
+  .tutorial-dock-switch-label-short {
+    display: inline;
+    white-space: nowrap;
+  }
+
+  .tutorial-back-top {
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: 36px;
+    height: 36px;
+  }
+
+  .tutorial-nav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 6;
+    flex-basis: min(280px, 82vw);
+    width: min(280px, 82vw);
+    box-shadow: 8px 0 24px rgba(80, 52, 20, 0.16);
+  }
+
+  .tutorial-shell.is-nav-collapsed .tutorial-nav {
+    flex-basis: 0;
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    box-shadow: none;
+  }
 }
 </style>
 

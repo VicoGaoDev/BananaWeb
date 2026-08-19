@@ -23,6 +23,10 @@ html, body {
   line-height: 1.7;
 }
 
+html {
+  scroll-padding-top: 48px;
+}
+
 .doc {
   max-width: 720px;
   margin: 0 auto;
@@ -43,7 +47,7 @@ html, body {
 
 section {
   margin: 0 0 36px;
-  scroll-margin-top: 20px;
+  scroll-margin-top: 48px;
 }
 
 .coming-soon {
@@ -70,7 +74,7 @@ h2 {
   border-bottom: 1px solid var(--line);
   color: var(--title);
   font-size: 20px;
-  scroll-margin-top: 20px;
+  scroll-margin-top: 48px;
 }
 
 h3 {
@@ -228,7 +232,16 @@ figcaption {
 }
 
 @media (max-width: 560px) {
+  html {
+    scroll-padding-top: 56px;
+  }
+
   .doc {
-    padding: 20px 16px 48px;
+    padding: 52px 16px 72px;
+  }
+
+  section,
+  h2 {
+    scroll-margin-top: 56px;
   }
 }
