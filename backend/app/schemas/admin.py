@@ -523,9 +523,10 @@ class AdminPromoSummaryOut(BaseModel):
     period_reward_amount_yuan: float = 0
     period_start: datetime | None = None
     period_end: datetime | None = None
-    first_rate: int = 30
+    first_rate: int = 40
+    second_rate: int = 30
     next_rate: int = 15
-    first_count: int = 2
+    first_count: int = 1
     max_reward_count: int = 5
     start_at: datetime | None = None
 

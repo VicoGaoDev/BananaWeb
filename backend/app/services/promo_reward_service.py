@@ -15,8 +15,8 @@ from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import now_local, to_local_naive
 
 PROMO_REBATE_MAX_GRANTS = 5
-PROMO_REBATE_FIRST_COUNT = 2
-PROMO_REBATE_RATE_FIRST = 30
+PROMO_REBATE_RATE_FIRST = 40
+PROMO_REBATE_RATE_SECOND = 30
 PROMO_REBATE_RATE_NEXT = 15
 PROMO_REBATE_SOURCE_PAYMENT = "payment"
 PROMO_REBATE_DEFAULT_START_AT = datetime(2026, 8, 19)
@@ -62,16 +62,19 @@ def fen_to_yuan(amount_fen: int | None) -> float:
 def promo_rebate_rate_for_index(reward_index: int) -> int | None:
     if reward_index < 1 or reward_index > PROMO_REBATE_MAX_GRANTS:
         return None
-    if reward_index <= PROMO_REBATE_FIRST_COUNT:
+    if reward_index == 1:
         return PROMO_REBATE_RATE_FIRST
+    if reward_index == 2:
+        return PROMO_REBATE_RATE_SECOND
     return PROMO_REBATE_RATE_NEXT
 
 
 def promo_reward_rule_payload() -> dict:
     return {
         "first_rate": PROMO_REBATE_RATE_FIRST,
+        "second_rate": PROMO_REBATE_RATE_SECOND,
         "next_rate": PROMO_REBATE_RATE_NEXT,
-        "first_count": PROMO_REBATE_FIRST_COUNT,
+        "first_count": 1,
         "max_reward_count": PROMO_REBATE_MAX_GRANTS,
         "start_at": promo_rebate_start_at(),
     }

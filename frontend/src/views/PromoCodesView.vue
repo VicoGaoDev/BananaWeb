@@ -66,9 +66,10 @@ const summary = ref<PromoCodeSummary>({
   month: "",
   month_reward_grant_count: 0,
   month_reward_amount_yuan: 0,
-  first_rate: 30,
+  first_rate: 40,
+  second_rate: 30,
   next_rate: 15,
-  first_count: 2,
+  first_count: 1,
   max_reward_count: 5,
   start_at: null,
 });
@@ -381,14 +382,36 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <div class="warm-card promo-rule-banner motion-fade-up" style="--motion-delay: 80ms">
-        仅对 {{ formatRebateStartDate(summary.start_at) }} 及之后通过推广码注册的用户有效。
-        这些用户前 {{ summary.first_count || 2 }} 次在线购买，推广人记
-        <strong class="promo-rule-rate">{{ summary.first_rate || 30 }}%</strong>
-        现金返利；第 {{ (summary.first_count || 2) + 1 }}–{{ summary.max_reward_count || 5 }} 次记
-        <strong class="promo-rule-rate promo-rule-rate--sm">{{ summary.next_rate || 15 }}%</strong>
-        。该日期前注册的推广用户，后续新购买不返利。仅统计金额，平台不支持提现。
-      </div>
+      <ul class="warm-card promo-rule-banner motion-fade-up" style="--motion-delay: 80ms">
+        <li>
+          推广注册用户第 1 次在线购买，推广人记
+          <strong class="promo-rule-rate">{{ summary.first_rate || 40 }}%</strong>
+          现金返利
+        </li>
+        <li>
+          推广注册用户第 2 次在线购买，推广人记
+          <strong class="promo-rule-rate">{{ summary.second_rate || 30 }}%</strong>
+          现金返利
+        </li>
+        <li>
+          推广注册用户第 3–{{ summary.max_reward_count || 5 }} 次在线购买，推广人记
+          <strong class="promo-rule-rate">{{ summary.next_rate || 15 }}%</strong>
+          现金返利
+        </li>
+        <li>
+          例：推广注册用户前 5 次均购买 118 元在线套餐，推广人返利为
+          118×<strong class="promo-rule-rate">{{ summary.first_rate || 40 }}%</strong>
+          + 118×<strong class="promo-rule-rate">{{ summary.second_rate || 30 }}%</strong>
+          + 118×<strong class="promo-rule-rate">{{ summary.next_rate || 15 }}%</strong>×3
+          = <strong class="promo-rule-rate">47.2</strong>
+          + <strong class="promo-rule-rate">35.4</strong>
+          + <strong class="promo-rule-rate">17.7</strong>×3
+          = 1 个用户返利 <strong class="promo-rule-rate">135.7</strong> 元，10 个用户就是 <strong class="promo-rule-rate">1357</strong> 元
+        </li>
+        <li>{{ formatRebateStartDate(summary.start_at) }} 前注册的推广注册用户，后续新购买不返利</li>
+        <li>仅统计金额，平台不支持提现，月底结算</li>
+        <li>仅对 {{ formatRebateStartDate(summary.start_at) }} 及之后通过推广码注册的推广注册用户有效</li>
+      </ul>
 
       <div class="promo-summary-grid motion-fade-up" style="--motion-delay: 100ms">
         <div class="promo-summary-item promo-summary-item--col-1">
@@ -731,25 +754,26 @@ onMounted(async () => {
 }
 
 .promo-rule-banner {
-  padding: 12px 16px;
+  margin: 0;
+  padding: 12px 16px 12px 32px;
   border-radius: 14px;
   background: var(--theme-pill-bg-strong);
   color: var(--theme-accent-text);
   font-size: 14px;
   font-weight: 700;
-  line-height: 1.6;
+  line-height: 1.7;
+}
+
+.promo-rule-banner li + li {
+  margin-top: 4px;
 }
 
 .promo-rule-rate {
   margin-inline: 2px;
-  color: var(--theme-accent-text);
-  font-size: 24px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.promo-rule-rate--sm {
+  color: #6a63c4;
   font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .promo-summary-grid {
@@ -896,17 +920,17 @@ onMounted(async () => {
   min-width: 0;
   padding: 14px 16px;
   border-radius: 16px;
-  background: #edf8f0;
-  border: 1px solid rgba(61, 154, 101, 0.14);
+  background: #fff1f0;
+  border: 1px solid rgba(226, 61, 61, 0.14);
 
   span {
-    color: #4f8f68;
+    color: #c45a5a;
     font-size: 13px;
     font-weight: 600;
   }
 
   strong {
-    color: #2f7a4f;
+    color: #e23d3d;
     font-size: 28px;
     line-height: 1;
   }

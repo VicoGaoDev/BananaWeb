@@ -826,6 +826,7 @@ export interface PromoCodeSummary {
   period_start?: string | null;
   period_end?: string | null;
   first_rate?: number;
+  second_rate?: number;
   next_rate?: number;
   first_count?: number;
   max_reward_count?: number;
