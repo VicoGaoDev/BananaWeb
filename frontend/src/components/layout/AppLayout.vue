@@ -1053,16 +1053,23 @@ function clearStoredPromoCode() {
   }
 }
 
+const lockedPromoFromSession = ref("");
+
+function syncLockedPromoFromSession() {
+  lockedPromoFromSession.value = getStoredPromoCode();
+}
+
 function applyStoredInviteOrPromoCodeToRegisterForm() {
+  syncLockedPromoFromSession();
+  const storedPromoCode = lockedPromoFromSession.value;
+  if (storedPromoCode) {
+    registerForm.promoCode = storedPromoCode;
+    return;
+  }
   if (registerForm.promoCode.trim()) return;
   const storedInviteCode = getStoredInviteCode();
   if (storedInviteCode) {
     registerForm.promoCode = storedInviteCode;
-    return;
-  }
-  const storedPromoCode = getStoredPromoCode();
-  if (storedPromoCode) {
-    registerForm.promoCode = storedPromoCode;
   }
 }
 
@@ -1093,6 +1100,7 @@ function capturePromoCodeFromRoute() {
   } catch {
     // Ignore storage errors in restricted browser modes.
   }
+  lockedPromoFromSession.value = promoCode;
   if (authTab.value === "register" || loginModalVisible.value) {
     registerForm.promoCode = promoCode;
   }
@@ -1356,6 +1364,7 @@ async function handleRegisterSubmit() {
       clearStoredInviteCode();
     } else if (normalizedInviteOrPromoCode) {
       clearStoredPromoCode();
+      lockedPromoFromSession.value = "";
     }
     notification.success({
       message: "赠送积分已到账",
@@ -3087,12 +3096,13 @@ watch(
                 @press-enter="handleRegisterSubmit"
               />
             </a-form-item>
-            <a-form-item label="邀请码（选填）">
+            <a-form-item :label="lockedPromoFromSession ? '推广码' : '邀请码（选填）'">
               <a-input
                 v-model:value="registerForm.promoCode"
                 size="large"
-                placeholder="填写邀请码或推广码（选填）"
+                :placeholder="lockedPromoFromSession ? '已通过推广链接自动填入' : '填写邀请码或推广码（选填）'"
                 :maxlength="32"
+                :disabled="Boolean(lockedPromoFromSession)"
               />
             </a-form-item>
             <a-form-item class="auth-agreement-item">
