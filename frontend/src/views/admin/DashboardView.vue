@@ -51,6 +51,7 @@ type FallbackCardItem = {
 const router = useRouter();
 const analyticsLoading = ref(false);
 const historyLoading = ref(false);
+const historyRefreshing = ref(false);
 const summary = ref<AdminAnalyticsSummary | null>(null);
 const timeseries = ref<AdminAnalyticsTimeseries | null>(null);
 const breakdown = ref<AdminAnalyticsBreakdown | null>(null);
@@ -351,7 +352,9 @@ async function checkUnresolvedFeedbacks() {
 }
 
 async function loadHistory() {
-  historyLoading.value = true;
+  const showFullSpinner = history.value.length === 0;
+  if (showFullSpinner) historyLoading.value = true;
+  historyRefreshing.value = true;
   try {
     const res = await getAdminHistory(page.value, HISTORY_PAGE_SIZE, buildHistoryFilter());
     history.value = res.items;
@@ -362,6 +365,7 @@ async function loadHistory() {
     message.error("获取任务记录失败");
   } finally {
     historyLoading.value = false;
+    historyRefreshing.value = false;
   }
 }
 
@@ -598,8 +602,7 @@ function historyStatusSummary(record: HistoryItem) {
 onMounted(async () => {
   preset.value = defaultPresetByGranularity(granularity.value);
   applyPresetRange(preset.value);
-  await loadModels();
-  await Promise.all([loadPageData(), checkUnresolvedFeedbacks()]);
+  await Promise.all([loadModels(), loadPageData(), checkUnresolvedFeedbacks()]);
   ready.value = true;
 });
 
@@ -706,6 +709,7 @@ watch(filterSignature, async () => {
             <div class="table-card-desc">当前图表与筛选条件对应的任务与提示词反推明细。</div>
           </div>
           <div class="history-summary">
+            <span v-if="historyRefreshing && history.length" class="history-summary-chip">更新中</span>
             <span class="history-summary-chip">筛选结果 {{ historyTotal }} 条</span>
             <span class="history-summary-chip">总消耗积分 {{ historyCreditTotal }}</span>
           </div>
@@ -714,7 +718,7 @@ watch(filterSignature, async () => {
         <a-table
           :columns="columns"
           :data-source="history"
-          :loading="historyLoading"
+          :loading="historyLoading && !history.length"
           :row-key="(record: HistoryItem) => record.display_id || record.task_id"
           :pagination="false"
           :scroll="{ x: HISTORY_TABLE_SCROLL_X }"

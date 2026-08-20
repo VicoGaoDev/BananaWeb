@@ -1241,6 +1241,8 @@ export interface AdminAnalyticsModelCompareItem {
   success_rate: number;
   credit_cost: number;
   avg_credit_cost: number;
+  duration_count?: number;
+  avg_duration_seconds?: number;
 }
 
 export interface AdminDailyReportTestResult {

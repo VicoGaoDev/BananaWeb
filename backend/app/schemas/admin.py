@@ -227,6 +227,8 @@ class AnalyticsModelCompareItemOut(BaseModel):
     success_rate: float = 0
     credit_cost: int = 0
     avg_credit_cost: float = 0
+    duration_count: int = 0
+    avg_duration_seconds: float = 0
 
 
 class AnalyticsBreakdownOut(BaseModel):

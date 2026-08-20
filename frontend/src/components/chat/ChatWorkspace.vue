@@ -2012,7 +2012,7 @@ onBeforeUnmount(() => {
             v-model="draft"
             class="composer-prompt-input"
             :disabled="!models.length"
-            placeholder="描述你想聊的内容，可粘贴或拖入图片..."
+            placeholder="输入想聊的内容，也可粘贴或拖入图片（Enter 发送，Shift + Enter 换行）"
             @keydown="handleComposerKeydown"
             @paste="handleComposerPaste"
             @focus="composerPopoverOpen = false"

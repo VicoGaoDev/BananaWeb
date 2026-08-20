@@ -74,6 +74,7 @@ from app.services.video_task_service import (
     VIDEO_TASK_FAILURE_REFUND_PREFIX,
     is_video_task_credit_refunded,
 )
+from app.services.history_service import _calculate_task_run_time
 from app.services.wecom_notify_service import send_wecom_markdown
 from app.utils.datetime_utils import LOCAL_TZ, now_local, to_local_naive
 from app.utils.security import hash_password
@@ -96,6 +97,93 @@ def _exclude_example_template_seed_task_clause():
     return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
 
 
+def _dialog_task_run_time_expr():
+    # 与任务详情 dialog 的 run_time 一致：finished - (started or created)
+    return func.unix_timestamp(Task.request_finished_at) - func.unix_timestamp(
+        func.coalesce(Task.request_started_at, Task.created_at)
+    )
+
+
+def _task_duration_seconds(task: Task, attempt_duration_ms: int | None = None) -> float | None:
+    run_time = _calculate_task_run_time(task)
+    if run_time is not None:
+        return float(run_time)
+    if attempt_duration_ms and attempt_duration_ms > 0:
+        return attempt_duration_ms / 1000.0
+    return None
+
+
+def _task_attempt_duration_ms_map(db: Session, task_ids: list[int]) -> dict[int, int]:
+    normalized_ids = [int(task_id) for task_id in task_ids if task_id]
+    if not normalized_ids:
+        return {}
+    rows = (
+        db.query(TaskApiAttempt.task_id, func.coalesce(func.sum(TaskApiAttempt.duration_ms), 0))
+        .filter(
+            TaskApiAttempt.task_id.in_(normalized_ids),
+            TaskApiAttempt.duration_ms.is_not(None),
+            TaskApiAttempt.duration_ms > 0,
+        )
+        .group_by(TaskApiAttempt.task_id)
+        .all()
+    )
+    return {int(task_id): int(total_ms) for task_id, total_ms in rows if total_ms}
+
+
+def _model_avg_run_time_map(
+    db: Session,
+    *,
+    start_date: datetime,
+    end_date: datetime,
+    status_filter: str | None = None,
+    user_id: int | None = None,
+    source: str | None = None,
+    model: str | None = None,
+    mode: str | None = None,
+    canvas_task_filter: str | None = None,
+    include_unsafe_tasks: bool = True,
+) -> dict[str, tuple[float, int]]:
+    attempt_seconds = (
+        db.query(func.sum(TaskApiAttempt.duration_ms) / 1000.0)
+        .filter(
+            TaskApiAttempt.task_id == Task.id,
+            TaskApiAttempt.duration_ms.is_not(None),
+            TaskApiAttempt.duration_ms > 0,
+        )
+        .correlate(Task)
+        .scalar_subquery()
+    )
+    run_time = case(
+        (Task.request_finished_at.is_not(None), _dialog_task_run_time_expr()),
+        else_=attempt_seconds,
+    )
+    rows = (
+        _task_query(
+            db,
+            start_date=start_date,
+            end_date=end_date,
+            status_filter=status_filter,
+            user_id=user_id,
+            source=source,
+            model=model,
+            mode=mode,
+            canvas_task_filter=canvas_task_filter,
+            include_unsafe_tasks=include_unsafe_tasks,
+            include_restricted_users=True,
+        )
+        .with_entities(Task.model, func.avg(run_time), func.count(run_time))
+        .group_by(Task.model)
+        .all()
+    )
+    result: dict[str, tuple[float, int]] = {}
+    for model_name, avg_value, sample_count in rows:
+        count = int(sample_count or 0)
+        if not count or avg_value is None:
+            continue
+        result[(model_name or "").strip() or "未设置"] = (round(float(avg_value), 1), count)
+    return result
+
+
 def _get_first_admin_id(db: Session) -> int | None:
     first = db.query(User).filter(User.role == "admin").order_by(User.created_at.asc()).first()
     return first.id if first else None
@@ -113,6 +201,7 @@ class AnalyticsRecord:
     created_at: datetime
     used_fallback_api: bool = False
     from_canvas: bool = False
+    duration_seconds: float | None = None
 
 
 VIDEO_TASK_TYPE_TEXT_TO_VIDEO = "text_to_video"
@@ -1862,11 +1951,13 @@ def _task_query(
     mode: str | None = None,
     canvas_task_filter: str | None = None,
     include_unsafe_tasks: bool = True,
+    include_restricted_users: bool = False,
 ):
+    user_filters = (User.role != "superadmin",) if include_restricted_users else _analytics_user_filter()
     query = db.query(Task).join(User, User.id == Task.user_id).filter(
         Task.created_at >= _to_db_datetime(start_date),
         Task.created_at <= _to_db_datetime(end_date),
-        *_analytics_user_filter(),
+        *user_filters,
         _exclude_example_template_seed_task_clause(),
     )
     scene_type_map = get_task_scene_type_map(db)
@@ -1981,6 +2072,7 @@ def _build_analytics_records(
         include_unsafe_tasks=include_unsafe_tasks,
     ).all()
     refunded_task_ids = _get_refunded_task_ids(db, [task.id for task in tasks])
+    attempt_duration_ms_map = _task_attempt_duration_ms_map(db, [task.id for task in tasks])
     task_records = [
         AnalyticsRecord(
             user_id=task.user_id,
@@ -1993,6 +2085,10 @@ def _build_analytics_records(
             created_at=task.created_at,
             used_fallback_api=bool(task.used_fallback_api),
             from_canvas=bool(getattr(task, "canvas_id", None)),
+            duration_seconds=_task_duration_seconds(
+                task,
+                attempt_duration_ms_map.get(int(task.id)),
+            ),
         )
         for task in tasks
     ]
@@ -2250,13 +2346,26 @@ def _sorted_breakdown(items: dict[str, dict[str, int]], limit: int | None = None
     return rows
 
 
-def _model_compare_rows(items: dict[str, dict[str, int]], limit: int = 10) -> list[dict]:
+def _model_compare_rows(
+    items: dict[str, dict[str, int]],
+    limit: int = 10,
+    duration_map: dict[str, tuple[float, int]] | None = None,
+) -> list[dict]:
+    duration_map = duration_map or {}
     rows: list[dict] = []
     for name, payload in items.items():
         count = int(payload.get("count") or 0)
         success_count = int(payload.get("success_count") or 0)
         failed_count = int(payload.get("failed_count") or 0)
         credit_cost = int(payload.get("credit_cost") or 0)
+        mapped_avg, mapped_count = duration_map.get(name, (0.0, 0))
+        duration_count = int(mapped_count or payload.get("duration_count") or 0)
+        duration_total = float(payload.get("duration_total") or 0)
+        avg_duration_seconds = (
+            float(mapped_avg)
+            if mapped_count
+            else (round(duration_total / duration_count, 1) if duration_count else 0.0)
+        )
         rows.append({
             "name": name,
             "count": count,
@@ -2265,6 +2374,8 @@ def _model_compare_rows(items: dict[str, dict[str, int]], limit: int = 10) -> li
             "success_rate": round((success_count / count) * 100, 1) if count else 0.0,
             "credit_cost": credit_cost,
             "avg_credit_cost": round(credit_cost / count, 1) if count else 0.0,
+            "duration_count": duration_count,
+            "avg_duration_seconds": avg_duration_seconds,
         })
     rows.sort(key=lambda item: (item["count"], item["credit_cost"], item["name"]), reverse=True)
     return rows[:limit]
@@ -2308,7 +2419,14 @@ def get_analytics_breakdown(
     source_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     mode_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     model_breakdown: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"count": 0, "credit_cost": 0, "success_count": 0, "failed_count": 0}
+        lambda: {
+            "count": 0,
+            "credit_cost": 0,
+            "success_count": 0,
+            "failed_count": 0,
+            "duration_total": 0,
+            "duration_count": 0,
+        }
     )
     user_task_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
     canvas_breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "credit_cost": 0})
@@ -2339,6 +2457,9 @@ def get_analytics_breakdown(
             model_breakdown[model_key]["success_count"] += 1
         elif record.status == "failed":
             model_breakdown[model_key]["failed_count"] += 1
+        if record.duration_seconds:
+            model_breakdown[model_key]["duration_total"] += float(record.duration_seconds)
+            model_breakdown[model_key]["duration_count"] += 1
 
         user = users_by_id.get(record.user_id)
         if user and user.role != "superadmin":
@@ -2360,7 +2481,22 @@ def get_analytics_breakdown(
         "mode_breakdown": _sorted_breakdown(mode_breakdown),
         "canvas_breakdown": _sorted_breakdown(canvas_breakdown),
         "model_breakdown": _sorted_breakdown(model_breakdown, limit=10),
-        "model_compare": _model_compare_rows(model_breakdown, limit=10),
+        "model_compare": _model_compare_rows(
+            model_breakdown,
+            limit=10,
+            duration_map=_model_avg_run_time_map(
+                db,
+                start_date=current_start,
+                end_date=current_end,
+                status_filter=status_filter,
+                user_id=user_id,
+                source=source,
+                model=model,
+                mode=mode,
+                canvas_task_filter=canvas_task_filter,
+                include_unsafe_tasks=include_unsafe_tasks,
+            ),
+        ),
         "top_users_by_tasks": top_users_by_tasks,
         "top_users_by_credit": top_users_by_credit[:10],
     }

@@ -15,6 +15,7 @@ from app.models.prompt_optimize_task import PromptOptimizeTask
 from app.models.task import Task
 from app.models.task_api_attempt import TaskApiAttempt
 from app.models.user import User
+from app.models.user_canvas import UserCanvas
 from app.services.content_safety_service import build_exclude_content_safety_failed_task_clause
 from app.services.prompt_optimize_service import (
     PROMPT_OPTIMIZE_MODE,
@@ -85,7 +86,7 @@ def _get_restricted_user_ids(db: Session) -> list[int]:
         int(user_id)
         for (user_id,) in (
             db.query(User.id)
-            .filter(or_(User.role == "superadmin", User.is_whitelisted.is_(True)))
+            .filter(User.role == "superadmin")
             .all()
         )
     ]
@@ -1214,32 +1215,29 @@ def get_all_history(
 ):
     cos_config = get_optional_cos_config(db)
     scene_type_map = get_task_scene_type_map(db)
-    visible_user_query = db.query(User.id).filter(
-        User.role != "superadmin",
-        User.is_whitelisted.is_(False),
-    )
+    visible_user_clause = [User.role != "superadmin"]
     if user_id:
-        visible_user_query = visible_user_query.filter(User.id == user_id)
-    visible_user_ids = [int(row_id) for (row_id,) in visible_user_query.all()]
-    if not visible_user_ids:
-        return {"total": 0, "total_credit_cost": 0, "items": []}
+        visible_user_clause.append(User.id == user_id)
 
     task_query = (
         db.query(Task)
-        .filter(Task.user_id.in_(visible_user_ids))
+        .join(User, User.id == Task.user_id)
+        .filter(*visible_user_clause)
         .filter(_exclude_example_template_seed_task_clause())
     )
     reverse_query = (
         db.query(CreditLog)
+        .join(User, User.id == CreditLog.user_id)
         .filter(
+            *visible_user_clause,
             CreditLog.type == "consume",
             CreditLog.description == PROMPT_REVERSE_CREDIT_LOG_DESCRIPTION,
-            CreditLog.user_id.in_(visible_user_ids),
         )
     )
     prompt_optimize_query = (
         db.query(PromptOptimizeTask)
-        .filter(PromptOptimizeTask.user_id.in_(visible_user_ids))
+        .join(User, User.id == PromptOptimizeTask.user_id)
+        .filter(*visible_user_clause)
     )
 
     if status:
@@ -1304,13 +1302,15 @@ def get_all_history(
         reverse_query = reverse_query.filter(CreditLog.created_at <= end_date)
         prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.created_at <= end_date)
 
-    task_total = int(task_query.with_entities(func.count(Task.id)).scalar() or 0)
-    reverse_total = int(reverse_query.with_entities(func.count(CreditLog.id)).scalar() or 0)
-    prompt_optimize_total = int(prompt_optimize_query.with_entities(func.count(PromptOptimizeTask.id)).scalar() or 0)
+    task_total = int(task_query.order_by(None).with_entities(func.count(Task.id)).scalar() or 0)
+    reverse_total = int(reverse_query.order_by(None).with_entities(func.count(CreditLog.id)).scalar() or 0)
+    prompt_optimize_total = int(
+        prompt_optimize_query.order_by(None).with_entities(func.count(PromptOptimizeTask.id)).scalar() or 0
+    )
     total = task_total + reverse_total + prompt_optimize_total
 
     task_credit_total = int(
-        task_query.with_entities(func.coalesce(func.sum(Task.credit_cost), 0)).scalar() or 0
+        task_query.order_by(None).with_entities(func.coalesce(func.sum(Task.credit_cost), 0)).scalar() or 0
     )
     refunded_task_ids_query = (
         db.query(CreditLog.task_id.label("task_id"))
@@ -1323,7 +1323,8 @@ def get_all_history(
         .subquery()
     )
     refunded_credit_total = int(
-        task_query
+        task_query.order_by(None)
+        .with_entities(Task.id, Task.credit_cost, Task.status)
         .join(refunded_task_ids_query, Task.id == refunded_task_ids_query.c.task_id)
         .filter(Task.status == "failed", Task.credit_cost > 0)
         .with_entities(func.coalesce(func.sum(Task.credit_cost), 0))
@@ -1342,7 +1343,39 @@ def get_all_history(
     fetch_limit = start_index + page_size
     tasks = (
         task_query
-        .options(selectinload(Task.images), selectinload(Task.user), selectinload(Task.canvas))
+        .options(
+            load_only(
+                Task.id,
+                Task.business_id,
+                Task.user_id,
+                Task.canvas_id,
+                Task.model,
+                Task.source,
+                Task.mode,
+                Task.prompt,
+                Task.num_images,
+                Task.size,
+                Task.resolution,
+                Task.custom_size,
+                Task.reference_images,
+                Task.credit_cost,
+                Task.status,
+                Task.error_message,
+                Task.provider_error_message,
+                Task.used_fallback_api,
+                Task.is_deleted,
+                Task.created_at,
+            ),
+            selectinload(Task.user).load_only(
+                User.id,
+                User.business_id,
+                User.username,
+                User.avatar_url,
+            ),
+            selectinload(Task.canvas).load_only(UserCanvas.id, UserCanvas.project_id),
+            lazyload(Task.images),
+            lazyload(Task.api_attempts),
+        )
         .order_by(Task.created_at.desc(), Task.id.desc())
         .limit(fetch_limit)
         .all()
@@ -1360,24 +1393,44 @@ def get_all_history(
         .all()
     )
     refunded_task_ids = _get_refunded_task_ids(db, [task.id for task in tasks])
+    deleted_image_count_map = {
+        int(task_id): int(count)
+        for task_id, count in (
+            db.query(Image.task_id, func.count(Image.id))
+            .filter(
+                Image.task_id.in_([task.id for task in tasks]),
+                Image.is_deleted.is_(True),
+            )
+            .group_by(Image.task_id)
+            .all()
+            if tasks
+            else []
+        )
+    }
+
+    user_cache: dict[int, dict[str, str]] = {}
+
+    def _cache_user(user: User | None, fallback_user_id: int) -> dict[str, str]:
+        cached = user_cache.get(fallback_user_id)
+        if cached:
+            return cached
+        payload = {
+            "user_id": user_external_id(user),
+            "username": user.username if user else "未知",
+            "avatar_url": resolve_user_avatar_url(user, cos_config=cos_config),
+        }
+        user_cache[fallback_user_id] = payload
+        return payload
 
     page_user_ids = {task.user_id for task in tasks} | {log.user_id for log in reverse_logs} | {row.user_id for row in prompt_optimize_rows}
-    users_by_id = {
-        user.id: user
-        for user in db.query(User).filter(User.id.in_(page_user_ids)).all()
-    } if page_user_ids else {}
-    user_cache: dict[int, dict[str, str]] = {}
+    if page_user_ids:
+        for user in db.query(User).filter(User.id.in_(page_user_ids)).all():
+            _cache_user(user, user.id)
+
     items = []
     for task in tasks:
-        if task.user_id not in user_cache:
-            u = users_by_id.get(task.user_id)
-            user_cache[task.user_id] = {
-                "user_id": user_external_id(u),
-                "username": u.username if u else "未知",
-                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
-            }
-
-        soft_deleted_count = sum(1 for img in task.images if img.is_deleted)
+        user_info = _cache_user(task.user, task.user_id)
+        soft_deleted_count = deleted_image_count_map.get(int(task.id), 0)
 
         items.append({
             "item_type": "task",
@@ -1386,15 +1439,15 @@ def get_all_history(
             "canvas_project_id": _get_task_canvas_project_id(task),
             "history_id": None,
             "display_id": task_external_id(task),
-            "user_id": user_cache[task.user_id]["user_id"],
-            "username": user_cache[task.user_id]["username"],
-            "avatar_url": user_cache[task.user_id]["avatar_url"],
+            "user_id": user_info["user_id"],
+            "username": user_info["username"],
+            "avatar_url": user_info["avatar_url"],
             "task_type": resolve_task_type_for_task(task, scene_type_map=scene_type_map),
             "model": task.model or "",
             "source": task.source or "web",
             "mode": task.mode or "generate",
             "prompt": task.prompt or "",
-            "reference_images": _parse_refs(task.reference_images),
+            "reference_images": [],
             "num_images": task.num_images or 1,
             "size": task.size or "",
             "resolution": task.resolution or "",
@@ -1407,30 +1460,20 @@ def get_all_history(
             "is_soft_deleted": soft_deleted_count > 0,
             "soft_deleted_count": soft_deleted_count,
             "created_at": task.created_at,
-            "images": _serialize_history_images(
-                task.images,
-                cos_config=cos_config,
-                include_deleted=True,
-            ),
+            "images": [],
         })
 
     for log in reverse_logs:
-        if log.user_id not in user_cache:
-            u = users_by_id.get(log.user_id)
-            user_cache[log.user_id] = {
-                "user_id": user_external_id(u),
-                "username": u.username if u else "未知",
-                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
-            }
+        user_info = _cache_user(None, log.user_id)
 
         items.append({
             "item_type": "prompt_history",
             "task_id": None,
             "history_id": log.id,
             "display_id": f"PR-{log.id}",
-            "user_id": user_cache[log.user_id]["user_id"],
-            "username": user_cache[log.user_id]["username"],
-            "avatar_url": user_cache[log.user_id]["avatar_url"],
+            "user_id": user_info["user_id"],
+            "username": user_info["username"],
+            "avatar_url": user_info["avatar_url"],
             "task_type": TASK_TYPE_PROMPT_REVERSE,
             "model": PROMPT_REVERSE_MODEL,
             "source": "web",
@@ -1452,13 +1495,7 @@ def get_all_history(
         })
 
     for row in prompt_optimize_rows:
-        if row.user_id not in user_cache:
-            u = users_by_id.get(row.user_id)
-            user_cache[row.user_id] = {
-                "user_id": user_external_id(u),
-                "username": u.username if u else "未知",
-                "avatar_url": resolve_user_avatar_url(u, cos_config=cos_config),
-            }
+        user_info = _cache_user(None, row.user_id)
 
         items.append({
             "item_type": PROMPT_OPTIMIZE_HISTORY_ITEM_TYPE,
@@ -1467,9 +1504,9 @@ def get_all_history(
             "style_id": row.style_id,
             "style_name": (row.style_name_snapshot or "").strip(),
             "display_id": f"PO-{row.id}",
-            "user_id": user_cache[row.user_id]["user_id"],
-            "username": user_cache[row.user_id]["username"],
-            "avatar_url": user_cache[row.user_id]["avatar_url"],
+            "user_id": user_info["user_id"],
+            "username": user_info["username"],
+            "avatar_url": user_info["avatar_url"],
             "task_type": TASK_TYPE_PROMPT_OPTIMIZE,
             "model": PROMPT_OPTIMIZE_MODEL,
             "source": (row.source or "web").strip() or "web",

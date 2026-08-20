@@ -21,6 +21,14 @@ const emit = defineEmits<{
 
 const modelCompare = computed(() => props.data?.model_compare || []);
 
+function formatDurationSeconds(value: number | undefined) {
+  const seconds = Number(value || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "-";
+  const durationMs = seconds * 1000;
+  if (durationMs < 1000) return `${Math.round(durationMs)} ms`;
+  return `${seconds.toFixed(2)} s`;
+}
+
 const hasBreakdownData = computed(() => {
   if (!props.data) return false;
   return [
@@ -170,8 +178,7 @@ const modelCompareOption = computed(() => ({
         `用量：${item.count}`,
         `成功 / 失败：${item.success_count} / ${item.failed_count}`,
         `成功率：${item.success_rate}%`,
-        `消耗积分：${item.credit_cost}`,
-        `均耗积分：${item.avg_credit_cost}`,
+        `平均耗时：${formatDurationSeconds(item.avg_duration_seconds)}`,
       ].join("<br/>");
     },
   },
@@ -189,8 +196,9 @@ const modelCompareOption = computed(() => ({
     },
     {
       type: "value",
-      name: "均耗积分",
+      name: "平均耗时",
       splitLine: { show: false },
+      axisLabel: { formatter: "{value}秒" },
     },
     {
       type: "value",
@@ -211,13 +219,13 @@ const modelCompareOption = computed(() => ({
       itemStyle: { color: "#1890ff", borderRadius: [8, 8, 0, 0] },
     },
     {
-      name: "均耗积分",
+      name: "平均耗时",
       type: "line",
       yAxisIndex: 1,
       smooth: true,
       symbolSize: 8,
       lineStyle: { width: 3 },
-      data: modelCompare.value.map((item) => item.avg_credit_cost),
+      data: modelCompare.value.map((item) => item.avg_duration_seconds ?? 0),
       itemStyle: { color: "#fa8c16" },
     },
     {
@@ -351,8 +359,8 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
       <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 340ms">
         <div class="breakdown-head">
           <div>
-            <div class="breakdown-title">模型用量 / 成功率 / 均耗积分</div>
-            <div class="breakdown-desc">对照高频模型的使用量、成功率和单次平均积分消耗。</div>
+            <div class="breakdown-title">模型用量 / 成功率 / 平均耗时</div>
+            <div class="breakdown-desc">对照高频模型的使用量、成功率和单次平均接口耗时。</div>
           </div>
           <div class="breakdown-badge">对照</div>
         </div>

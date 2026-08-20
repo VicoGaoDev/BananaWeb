@@ -370,7 +370,7 @@ async function loadUsers() {
   if (!isAdminHistoryView.value || users.value.length || usersLoading.value) return;
   usersLoading.value = true;
   try {
-    users.value = (await listUserOptions()).filter((item) => !item.is_whitelisted);
+    users.value = await listUserOptions();
   } catch {
     users.value = [];
   } finally {
