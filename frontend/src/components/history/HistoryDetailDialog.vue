@@ -1661,7 +1661,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
   &.pending {
     cursor: default;
     background:
-      linear-gradient(180deg, rgba(255, 252, 246, 0.24), rgba(255, 248, 238, 0.34)),
+      linear-gradient(180deg, color-mix(in srgb, var(--theme-page-base) 24%, transparent), color-mix(in srgb, var(--theme-page-base) 34%, transparent)),
       linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg));
   }
 
@@ -1711,7 +1711,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(255, 252, 246, 0.82), rgba(255, 248, 238, 0.88));
+  background: color-mix(in srgb, var(--theme-page-base) 86%, transparent);
 }
 
 .detail-media-hidden {
@@ -1752,22 +1752,22 @@ function handleGenerateVideo(item: UserHistoryCard) {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  color: #6f4d1f;
+  color: var(--theme-title);
   text-align: center;
   font-size: 15px;
   line-height: 1.75;
   font-weight: 600;
   background:
-    linear-gradient(180deg, rgba(255, 249, 241, 0.94), rgba(255, 245, 232, 0.98)),
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-page-base) 94%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 98%, transparent)),
     linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg));
 
   span {
     max-width: min(100%, 320px);
     padding: 12px 16px;
     border-radius: 14px;
-    background: rgba(255, 252, 247, 0.98);
-    border: 1px solid rgba(201, 160, 102, 0.22);
-    box-shadow: 0 12px 28px rgba(76, 52, 26, 0.14);
+    background: var(--theme-surface-strong);
+    border: 1px solid var(--theme-panel-border);
+    box-shadow: 0 12px 28px var(--theme-shadow-medium);
   }
 }
 
@@ -1781,7 +1781,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
 .detail-expired-image {
   object-fit: contain !important;
   padding: 28px;
-  background: #fff8ee;
+  background: var(--theme-empty-bg);
 }
 
 .detail-failure-message {

@@ -341,7 +341,7 @@ const chartOption = computed(() => {
   gap: 8px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 245, 223, 0.9);
+  background: var(--theme-panel-bg-strong);
   color: #a07d49;
   font-size: 12px;
   font-weight: 700;

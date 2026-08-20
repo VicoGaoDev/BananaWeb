@@ -306,18 +306,18 @@ function removeRef(index: number) {
 
 <style scoped lang="scss">
 .template-secondary-btn {
-  border-color: #efc784 !important;
-  background: #fff7e8 !important;
-  color: #b16d10 !important;
+  border-color: var(--theme-control-border-strong) !important;
+  background: var(--theme-control-bg) !important;
+  color: var(--theme-accent-text) !important;
   border-radius: 12px !important;
   font-weight: 600;
 }
 
 .template-secondary-btn:hover,
 .template-secondary-btn:focus {
-  border-color: #e1a64a !important;
-  background: #fff0d3 !important;
-  color: #c7770d !important;
+  border-color: var(--theme-border-strong) !important;
+  background: var(--theme-control-hover-bg) !important;
+  color: var(--theme-accent-text-hover) !important;
 }
 
 .template-form-grid {

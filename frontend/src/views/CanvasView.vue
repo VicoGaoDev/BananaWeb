@@ -7134,7 +7134,7 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   border-radius: 11px;
-  background: rgb(255, 171, 39);
+  background: var(--theme-accent);
   box-shadow: 0 8px 16px var(--theme-brand-shadow);
   overflow: hidden;
 

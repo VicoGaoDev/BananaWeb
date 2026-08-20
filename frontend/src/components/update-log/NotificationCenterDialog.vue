@@ -518,17 +518,17 @@ watch(activeTab, () => {
 }
 
 .notification-title-tab.active {
-  border-color: rgba(255, 127, 39, 0.24);
-  background: rgba(255, 127, 39, 0.12);
-  color: #ff7f27;
+  border-color: color-mix(in srgb, var(--theme-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--theme-accent) 12%, transparent);
+  color: var(--theme-accent-text);
 }
 
 .notification-title-count,
 .notification-title-badge {
   padding: 0 6px;
   border-radius: 999px;
-  background: #ff7f27;
-  color: #fff;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;

@@ -334,8 +334,8 @@ function handlePointClick(params: { dataIndex?: number }) {
   justify-content: center;
   padding: 28px 20px;
   background:
-    radial-gradient(circle at top right, rgba(255, 208, 109, 0.16), transparent 34%),
-    linear-gradient(180deg, #fffaf0 0%, #fffefb 100%);
+    radial-gradient(circle at top right, var(--theme-page-glow), transparent 34%),
+    var(--theme-modal-bg);
 }
 
 .trend-card {
@@ -376,7 +376,7 @@ function handlePointClick(params: { dataIndex?: number }) {
   flex-shrink: 0;
   padding: 5px 10px;
   border-radius: 999px;
-  background: rgba(255, 245, 223, 0.9);
+  background: var(--theme-panel-bg-strong);
   color: #a07d49;
   font-size: 11px;
   font-weight: 700;

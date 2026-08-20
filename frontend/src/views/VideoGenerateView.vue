@@ -1816,7 +1816,7 @@ onBeforeUnmount(() => {
   height: calc(100vh - 112px);
   --config-title-size: 14px;
   --config-title-gap: 8px;
-  --config-title-color: #5e4524;
+  --config-title-color: var(--theme-title);
   --config-section-gap: 17px;
   --generate-config-min-width: 320px;
   --generate-config-fluid-width: 31vw;
@@ -1891,7 +1891,7 @@ onBeforeUnmount(() => {
   appearance: none;
   border: 1px solid transparent;
   background: transparent;
-  color: #8f7558;
+  color: var(--theme-nav-text);
   padding: 0;
   border-radius: 16px;
   cursor: pointer;
@@ -1903,7 +1903,7 @@ onBeforeUnmount(() => {
     border-color var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    color: #b77a17;
+    color: var(--theme-nav-hover-text);
     transform: translateY(-1px);
   }
 
@@ -2369,11 +2369,11 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 12px !important;
   border-radius: 12px;
-  color: #a88962 !important;
+  color: var(--theme-accent-text) !important;
   font-size: 13px;
   font-weight: 600;
-  background: rgba(255, 250, 242, 0.92) !important;
-  border: 1px solid rgba(241, 221, 183, 0.95) !important;
+  background: var(--theme-control-bg) !important;
+  border: 1px solid var(--theme-control-border-strong) !important;
   transition:
     transform var(--motion-duration-press) var(--motion-ease-soft),
     background var(--motion-duration-fast) var(--motion-ease-soft),
@@ -2382,9 +2382,9 @@ onBeforeUnmount(() => {
     box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    color: #d38a12 !important;
-    background: rgba(255, 238, 205, 0.92) !important;
-    border-color: #efc784 !important;
+    color: var(--theme-accent-text-hover) !important;
+    background: var(--theme-control-hover-bg) !important;
+    border-color: var(--theme-border-strong) !important;
     transform: translateY(-1px);
     box-shadow: 0 10px 20px var(--theme-shadow-soft);
   }
@@ -2404,8 +2404,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--theme-control-border);
   border-radius: 16px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    0 10px 24px rgba(188, 154, 94, 0.08);
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 8px 18px var(--theme-card-shadow);
 
   :deep(.ant-select-selector) {
     height: 52px !important;
@@ -2437,13 +2437,13 @@ onBeforeUnmount(() => {
 
   :deep(.ant-slider-rail) {
     height: 8px;
-    background: rgba(188, 154, 94, 0.18);
+    background: color-mix(in srgb, var(--theme-accent) 18%, transparent);
     border-radius: 999px;
   }
 
   :deep(.ant-slider-track) {
     height: 8px;
-    background: linear-gradient(90deg, #ffb84d 0%, #ff9f1a 100%);
+    background: linear-gradient(90deg, var(--theme-accent-strong) 0%, var(--theme-accent) 100%);
     border-radius: 999px;
   }
 
@@ -2453,13 +2453,13 @@ onBeforeUnmount(() => {
     margin-inline-start: 0;
     inset-block-start: 50%;
     transform: translate(-50%, -50%);
-    background: #fff7e8;
-    border: 2px solid rgba(255, 184, 77, 0.45);
-    box-shadow: 0 1px 4px rgba(188, 154, 94, 0.12);
+    background: var(--theme-surface-strong);
+    border: 2px solid color-mix(in srgb, var(--theme-accent) 45%, transparent);
+    box-shadow: 0 1px 4px var(--theme-shadow-soft);
   }
 
   :deep(.ant-slider-dot-active) {
-    border-color: #ff9f1a;
+    border-color: var(--theme-accent);
   }
 
   :deep(.ant-slider-handle) {
@@ -2474,11 +2474,11 @@ onBeforeUnmount(() => {
     inset-inline-start: 0;
     inset-block-start: 0;
     box-sizing: border-box;
-    background: linear-gradient(180deg, #ffb84d 0%, #ff9f1a 100%);
-    border: 2px solid #fff7e8;
+    background: linear-gradient(180deg, var(--theme-accent-strong) 0%, var(--theme-accent) 100%);
+    border: 2px solid var(--theme-surface-strong);
     box-shadow:
-      0 4px 14px rgba(188, 154, 94, 0.24),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      0 4px 14px var(--theme-shadow-medium),
+      inset 0 1px 0 var(--theme-panel-inset);
   }
 
   :deep(.ant-slider-mark-text) {
@@ -2952,13 +2952,13 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   font-size: 17px;
   font-weight: 700;
-  color: #8f7558;
+  color: var(--theme-title);
 }
 
 .empty-desc {
   margin-top: 6px;
   font-size: 13px;
-  color: #b8a080;
+  color: var(--text-secondary);
   line-height: 1.8;
 }
 

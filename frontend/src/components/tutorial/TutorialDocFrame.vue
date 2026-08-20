@@ -2,6 +2,8 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { DoubleLeftOutlined, DoubleRightOutlined } from "@ant-design/icons-vue";
 import { withBaseUrl } from "@/lib/assets";
+import { APP_THEME_ATTRIBUTE } from "@/config/theme";
+import { getCurrentTheme } from "@/lib/theme";
 import {
   generateTutorialSections,
   tutorialModuleMeta,
@@ -23,6 +25,7 @@ const emit = defineEmits<{
 }>();
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
+let themeObserver: MutationObserver | null = null;
 const navCollapsed = ref(false);
 const activeSectionId = ref(props.sectionId || "overview");
 const pendingSectionId = ref("");
@@ -97,7 +100,21 @@ function openGenerateSection(id: string) {
   }
 }
 
+function postThemeToFrame() {
+  const frameWindow = iframeRef.value?.contentWindow;
+  if (!frameWindow) return;
+  try {
+    frameWindow.postMessage(
+      { type: "banana-tutorial-theme", theme: getCurrentTheme() },
+      window.location.origin,
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 function handleFrameLoad() {
+  postThemeToFrame();
   const id = pendingSectionId.value || props.sectionId;
   pendingSectionId.value = "";
   showBackTop.value = false;
@@ -175,11 +192,18 @@ onMounted(() => {
   navCollapsed.value = false;
   window.addEventListener("message", handleFrameMessage);
   window.addEventListener("keydown", handlePreviewKeydown, true);
+  themeObserver = new MutationObserver(postThemeToFrame);
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: [APP_THEME_ATTRIBUTE],
+  });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("message", handleFrameMessage);
   window.removeEventListener("keydown", handlePreviewKeydown, true);
+  themeObserver?.disconnect();
+  themeObserver = null;
   closePreview();
 });
 </script>
@@ -368,8 +392,8 @@ onBeforeUnmount(() => {
 }
 
 .nav-toggle:hover {
-  background: rgba(255, 171, 36, 0.16);
-  color: var(--theme-title, #3d2f22);
+  background: var(--theme-nav-hover-bg);
+  color: var(--theme-title);
 }
 
 .nav-toggle-icon {
@@ -415,7 +439,7 @@ onBeforeUnmount(() => {
 
 .nav-group-title:hover,
 .nav-group-title.is-current {
-  background: rgba(255, 171, 36, 0.12);
+  background: var(--theme-nav-hover-bg);
 }
 
 .nav-group-title::after {
@@ -470,18 +494,18 @@ onBeforeUnmount(() => {
 }
 
 .nav-link:hover {
-  background: rgba(255, 171, 36, 0.12);
-  color: var(--theme-title, #3d2f22);
+  background: var(--theme-nav-hover-bg);
+  color: var(--theme-title);
 }
 
 .nav-link.is-active {
-  background: rgba(255, 171, 36, 0.2);
-  color: var(--theme-title, #3d2f22);
+  background: color-mix(in srgb, var(--theme-accent) 16%, transparent);
+  color: var(--theme-accent-text);
   font-weight: 700;
 }
 
 .nav-link.is-soon {
-  color: #c2b09a;
+  color: var(--theme-text-muted);
   cursor: default;
 }
 
@@ -518,8 +542,8 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-panel-bg, #fffdf8) 92%, transparent);
-  box-shadow: 0 6px 16px rgba(80, 52, 20, 0.08);
+  background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
+  box-shadow: 0 6px 16px var(--theme-shadow-soft);
   color: var(--theme-text-secondary, #8b7457);
   font-size: 12px;
   line-height: 1.2;
@@ -553,7 +577,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
   border-radius: 50%;
   background: var(--theme-panel-bg, #fffdf8);
-  box-shadow: 0 8px 20px rgba(80, 52, 20, 0.14);
+  box-shadow: 0 8px 20px var(--theme-shadow-medium);
   color: var(--theme-title, #3d2f22);
   cursor: pointer;
 }
@@ -575,7 +599,7 @@ onBeforeUnmount(() => {
     z-index: 5;
     border: 0;
     padding: 0;
-    background: rgba(32, 22, 12, 0.28);
+    background: var(--theme-overlay-medium);
     cursor: pointer;
   }
 
@@ -597,7 +621,7 @@ onBeforeUnmount(() => {
     border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
     border-radius: 10px;
     background: var(--theme-panel-bg, #fffdf8);
-    box-shadow: 0 6px 16px rgba(80, 52, 20, 0.12);
+    box-shadow: 0 6px 16px var(--theme-shadow-soft);
     color: var(--theme-title, #3d2f22);
     cursor: pointer;
   }
@@ -633,7 +657,7 @@ onBeforeUnmount(() => {
     z-index: 6;
     flex-basis: min(280px, 82vw);
     width: min(280px, 82vw);
-    box-shadow: 8px 0 24px rgba(80, 52, 20, 0.16);
+    box-shadow: 8px 0 24px var(--theme-shadow-medium);
   }
 
   .tutorial-shell.is-nav-collapsed .tutorial-nav {
@@ -660,7 +684,7 @@ body.tutorial-shot-lightbox-open {
   align-items: center;
   justify-content: center;
   padding: 28px 20px;
-  background: rgba(32, 22, 12, 0.78);
+  background: var(--theme-overlay-heavy);
   cursor: zoom-out;
 }
 
@@ -677,14 +701,14 @@ body.tutorial-shot-lightbox-open {
   max-height: calc(100dvh - 96px);
   border: 0;
   border-radius: 12px;
-  background: #fffdf8;
-  box-shadow: 0 18px 48px rgba(20, 12, 6, 0.28);
+  background: var(--theme-surface-strong);
+  box-shadow: 0 18px 48px var(--theme-shadow-strong);
   object-fit: contain;
 }
 
 .tutorial-shot-lightbox-caption {
   margin-top: 10px;
-  color: #f6ead6;
+  color: #fff;
   font-size: 13px;
   text-align: center;
 }
@@ -698,8 +722,8 @@ body.tutorial-shot-lightbox-open {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 253, 248, 0.16);
-  color: #fffdf8;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   cursor: pointer;
 }
 
@@ -723,6 +747,6 @@ body.tutorial-shot-lightbox-open {
 }
 
 .tutorial-shot-lightbox-close:hover {
-  background: rgba(255, 253, 248, 0.28);
+  background: rgba(255, 255, 255, 0.28);
 }
 </style>

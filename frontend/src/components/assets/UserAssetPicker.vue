@@ -900,10 +900,10 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-sidebar {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(220, 185, 125, 0.22);
+  border: 1px solid var(--theme-panel-border);
   border-radius: 18px;
   padding: 14px;
-  background: rgba(255, 249, 240, 0.72);
+  background: var(--theme-panel-bg-soft);
   min-height: 0;
 }
 
@@ -948,7 +948,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-sidebar-title {
   font-size: 14px;
   font-weight: 700;
-  color: #7b5c32;
+  color: var(--theme-title);
 }
 
 .asset-sidebar-actions,
@@ -966,9 +966,9 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  border: 1px solid rgba(214, 180, 119, 0.28);
-  background: #fff;
-  color: #8b693a;
+  border: 1px solid var(--theme-control-border);
+  background: var(--theme-control-bg);
+  color: var(--theme-accent-text);
   cursor: pointer;
 }
 
@@ -986,7 +986,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   overflow: auto;
   padding-right: 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+  scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
 }
 
 .asset-category-btn {
@@ -998,15 +998,15 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text-primary);
+  background: var(--theme-control-bg);
+  color: var(--theme-title);
   cursor: pointer;
 }
 
 .asset-category-btn.active {
-  border-color: rgba(236, 185, 88, 0.55);
-  background: rgba(255, 242, 214, 0.95);
-  color: #8a6323;
+  border-color: var(--theme-accent);
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text);
 }
 
 .asset-main {
@@ -1033,7 +1033,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   right: 14px;
   bottom: 10px;
   z-index: 2;
-  color: rgba(138, 79, 27, 0.55);
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.4;
   pointer-events: none;
@@ -1046,20 +1046,20 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   z-index: 5;
   display: grid;
   place-items: center;
-  border: 2px dashed rgba(214, 102, 64, 0.72);
+  border: 2px dashed var(--theme-border-strong);
   border-radius: 18px;
-  background: rgba(255, 248, 236, 0.88);
+  background: color-mix(in srgb, var(--theme-page-base) 88%, transparent);
   pointer-events: none;
 }
 
 .asset-drop-overlay-text {
   padding: 10px 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #8a4f1b;
+  background: var(--theme-surface-strong);
+  color: var(--theme-accent-text);
   font-size: 14px;
   font-weight: 700;
-  box-shadow: 0 12px 26px rgba(236, 185, 88, 0.18);
+  box-shadow: 0 12px 26px var(--theme-shadow-medium);
 }
 
 .asset-batch-bar {
@@ -1069,13 +1069,13 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   gap: 12px;
   margin-bottom: 12px;
   padding: 10px 14px;
-  border: 1px solid rgba(236, 185, 88, 0.28);
+  border: 1px solid var(--theme-panel-border);
   border-radius: 14px;
-  background: rgba(255, 247, 229, 0.92);
+  background: var(--theme-panel-bg-strong);
 }
 
 .asset-batch-summary {
-  color: #7f551c;
+  color: var(--theme-accent-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1094,7 +1094,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   display: grid;
   place-items: center;
   border-radius: 18px;
-  background: rgba(255, 250, 242, 0.48);
+  background: color-mix(in srgb, var(--theme-page-base) 48%, transparent);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
@@ -1109,7 +1109,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   overflow-y: scroll;
   padding: 0 4px 4px 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+  scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
 }
 
 .asset-content::-webkit-scrollbar,
@@ -1120,19 +1120,19 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-content::-webkit-scrollbar-track,
 .asset-category-list::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: rgba(255, 244, 220, 0.78);
+  background: var(--theme-panel-bg-muted);
 }
 
 .asset-content::-webkit-scrollbar-thumb,
 .asset-category-list::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  border: 2px solid rgba(255, 244, 220, 0.78);
-  background: rgba(191, 148, 79, 0.55);
+  border: 2px solid var(--theme-panel-bg-muted);
+  background: var(--theme-border-strong);
 }
 
 .asset-content::-webkit-scrollbar-thumb:hover,
 .asset-category-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 124, 52, 0.72);
+  background: var(--theme-accent);
 }
 
 .asset-search {
@@ -1142,9 +1142,9 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   min-height: 38px;
   border-radius: 999px;
   overflow: hidden;
-  border: 1px solid rgba(214, 180, 119, 0.28);
-  background: rgba(255, 250, 242, 0.96);
-  box-shadow: 0 8px 18px rgba(236, 185, 88, 0.08);
+  border: 1px solid var(--theme-control-border);
+  background: var(--theme-control-bg);
+  box-shadow: 0 8px 18px var(--theme-shadow-soft);
   transition:
     border-color var(--motion-duration-fast, 0.18s) var(--motion-ease-soft, ease),
     box-shadow var(--motion-duration-fast, 0.18s) var(--motion-ease-soft, ease);
@@ -1152,8 +1152,8 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 
 .asset-search:hover,
 .asset-search:focus-within {
-  border-color: rgba(236, 185, 88, 0.42);
-  box-shadow: 0 10px 22px rgba(236, 185, 88, 0.12);
+  border-color: var(--theme-border-strong);
+  box-shadow: 0 10px 22px var(--theme-shadow-medium);
 }
 
 .asset-search :deep(.ant-input-affix-wrapper) {
@@ -1167,28 +1167,28 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 }
 
 .asset-search :deep(.ant-input) {
-  color: #6f4f24;
+  color: var(--theme-title);
 }
 
 .asset-search :deep(.ant-input::placeholder) {
-  color: rgba(138, 99, 35, 0.58);
+  color: var(--text-muted);
 }
 
 .asset-search :deep(.ant-input-clear-icon) {
-  color: rgba(138, 99, 35, 0.55);
+  color: var(--text-muted);
 }
 
 .asset-search :deep(.ant-input-clear-icon:hover) {
-  color: #8a6323;
+  color: var(--theme-accent-text);
 }
 
 .asset-search-btn {
   flex-shrink: 0;
   width: 42px;
   border: none;
-  border-left: 1px solid rgba(214, 180, 119, 0.22);
-  background: linear-gradient(180deg, rgba(255, 244, 220, 0.98), rgba(255, 232, 188, 0.98));
-  color: #9a6a1f;
+  border-left: 1px solid var(--theme-control-border);
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1204,20 +1204,20 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 
 .asset-search-btn:hover,
 .asset-search-btn:focus {
-  background: linear-gradient(180deg, rgba(255, 236, 196, 1), rgba(255, 220, 160, 1));
-  color: #7f551c;
+  background: var(--theme-panel-bg-strong);
+  color: var(--theme-accent-text-hover);
 }
 
 .asset-batch-toggle-active {
-  color: #8a6323;
-  background: rgba(255, 242, 214, 0.9);
+  color: var(--theme-accent-text);
+  background: var(--theme-control-hover-bg);
 }
 
 .asset-quota-pill {
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 243, 218, 0.92);
-  color: #8a6323;
+  background: var(--theme-pill-bg);
+  color: var(--theme-pill-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1234,9 +1234,9 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  border: 1px solid rgba(220, 185, 125, 0.24);
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(236, 185, 88, 0.08);
+  border: 1px solid var(--theme-panel-border);
+  background: var(--theme-surface-strong);
+  box-shadow: 0 12px 28px var(--theme-shadow-soft);
   transition:
     transform var(--motion-duration-hover, 0.22s) var(--motion-ease-enter, ease),
     box-shadow var(--motion-duration-hover, 0.22s) var(--motion-ease-soft, ease),
@@ -1244,8 +1244,8 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 }
 
 .asset-card-selected {
-  border-color: rgba(236, 185, 88, 0.72);
-  box-shadow: 0 18px 34px rgba(236, 185, 88, 0.18);
+  border-color: var(--theme-accent);
+  box-shadow: 0 18px 34px var(--theme-shadow-medium);
 }
 
 .asset-card-check {
@@ -1259,8 +1259,8 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-card:hover,
 .asset-card:focus-within {
   transform: translateY(-3px);
-  border-color: rgba(236, 185, 88, 0.34);
-  box-shadow: 0 18px 34px rgba(236, 185, 88, 0.14);
+  border-color: var(--theme-border-strong);
+  box-shadow: 0 18px 34px var(--theme-shadow-medium);
 }
 
 .asset-card-media {
@@ -1270,7 +1270,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 .asset-card-thumb {
   aspect-ratio: 1 / 1;
   cursor: zoom-in;
-  background: #f8f4eb;
+  background: var(--theme-panel-bg-muted);
   overflow: hidden;
 }
 
@@ -1408,10 +1408,10 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(214, 180, 119, 0.22);
+  border: 1px solid var(--theme-control-border);
   border-radius: 999px;
-  background: rgba(255, 250, 242, 0.92);
-  color: #9a7340;
+  background: var(--theme-control-bg);
+  color: var(--text-secondary);
   cursor: pointer;
   transition:
     background var(--motion-duration-fast, 0.18s) var(--motion-ease-soft, ease),
@@ -1422,9 +1422,9 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 
 .asset-card-more-btn:hover,
 .asset-card-more-btn:focus {
-  background: rgba(255, 240, 210, 0.98);
-  border-color: rgba(214, 180, 119, 0.42);
-  color: #7f551c;
+  background: var(--theme-control-hover-bg);
+  border-color: var(--theme-border-strong);
+  color: var(--theme-accent-text);
   transform: translateY(-1px);
 }
 
@@ -1438,7 +1438,7 @@ function handleAssetDragStart(event: DragEvent, asset: UserAsset) {
 
 .asset-category-dialog-hint {
   margin-bottom: 10px;
-  color: #7f551c;
+  color: var(--theme-accent-text);
   font-size: 13px;
 }
 
@@ -1505,7 +1505,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .asset-search-btn {
 html:is([data-theme="dark"], [data-theme="midnight"]) .asset-search-btn:hover,
 html:is([data-theme="dark"], [data-theme="midnight"]) .asset-search-btn:focus {
   background: linear-gradient(180deg, rgba(78, 62, 38, 0.98), rgba(58, 46, 29, 0.98));
-  color: #ffd995;
+  color: var(--theme-accent-text);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .asset-sidebar {
@@ -1542,7 +1542,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .asset-category-btn {
 html:is([data-theme="dark"], [data-theme="midnight"]) .asset-category-btn.active {
   background: var(--theme-panel-bg-strong);
   border-color: var(--theme-panel-border-strong);
-  color: #ffd995;
+  color: var(--theme-accent-text);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .asset-drop-hint {
@@ -1629,7 +1629,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .asset-empty-title {
 
 .asset-empty-desc-emphasis {
   margin: 0 2px;
-  color: var(--warm-ink, #3d2b1f);
+  color: var(--theme-title);
   font-size: 1.2em;
   font-weight: 800;
 }

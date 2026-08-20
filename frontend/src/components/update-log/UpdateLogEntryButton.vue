@@ -94,11 +94,11 @@ onMounted(() => {
 }
 
 .update-log-entry-btn.is-recent {
-  color: #ff7f27;
+  color: var(--theme-accent);
 }
 
 .update-log-entry-btn.is-recent:hover {
-  color: #ff7f27;
+  color: var(--theme-accent-text-hover);
   opacity: 0.92;
 }
 
@@ -113,11 +113,11 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  background: #ff7f27;
+  color: var(--theme-accent-contrast);
+  background: var(--theme-accent);
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: 0 6px 12px rgba(255, 127, 39, 0.28);
+  box-shadow: 0 6px 12px var(--theme-shadow-strong);
 }
 </style>

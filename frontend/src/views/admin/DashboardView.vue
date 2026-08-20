@@ -894,8 +894,8 @@ watch(filterSignature, async () => {
     width: 6px;
     height: 18px;
     border-radius: 999px;
-    background: linear-gradient(180deg, #ffc45b, #ffab25);
-    box-shadow: 0 6px 12px rgba(255, 169, 37, 0.24);
+    background: var(--theme-accent);
+    box-shadow: 0 6px 12px var(--theme-shadow-strong);
   }
 }
 
@@ -903,8 +903,8 @@ watch(filterSignature, async () => {
   flex-shrink: 0;
   padding: 5px 10px;
   border-radius: 999px;
-  background: rgba(255, 245, 223, 0.9);
-  color: #a07d49;
+  background: var(--theme-pill-bg);
+  color: var(--theme-pill-text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1083,7 +1083,7 @@ watch(filterSignature, async () => {
 }
 
 :deep(.admin-mobile-table .ant-table-cell-fix-right) {
-  background: #fffdf8;
+  background: var(--theme-panel-bg);
 }
 
 @media (max-width: 768px) {

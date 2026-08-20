@@ -114,7 +114,7 @@ function openSuggestionDialog() {
           <div class="style-card-head">
             <div class="style-card-title">
               {{ item.name }}
-              <a-tag v-if="item.is_default" color="gold">默认</a-tag>
+              <a-tag v-if="item.is_default" class="style-default-tag">默认</a-tag>
             </div>
             <CheckCircleOutlined v-if="selectedStyleId === item.id" class="style-card-check" />
           </div>
@@ -171,7 +171,7 @@ function openSuggestionDialog() {
 .style-add-request-btn:hover,
 .style-add-request-btn:focus {
   color: var(--theme-accent-text-hover, #6f4610) !important;
-  border-color: var(--theme-primary, #d7922b) !important;
+  border-color: var(--theme-accent) !important;
   background: var(--theme-control-hover-bg, #fff1d9) !important;
 }
 
@@ -193,11 +193,11 @@ function openSuggestionDialog() {
 }
 
 .style-loading-wrap :deep(.ant-spin) {
-  color: var(--theme-primary, #d7922b);
+  color: var(--theme-accent);
 }
 
 .style-loading-wrap :deep(.ant-spin-dot-item) {
-  background-color: var(--theme-primary, #d7922b);
+  background-color: var(--theme-accent);
 }
 
 .style-loading-wrap :deep(.ant-spin-text) {
@@ -228,19 +228,19 @@ function openSuggestionDialog() {
 }
 
 .style-card:hover {
-  border-color: var(--theme-primary, #d7922b);
+  border-color: var(--theme-accent);
   transform: translateY(-1px);
 }
 
 .style-card-active {
-  border: 2px solid var(--theme-primary, #d7922b);
+  border: 2px solid var(--theme-accent);
   padding: 9px 11px;
-  background: var(--theme-panel-bg-soft, #fff4e4);
+  background: var(--theme-control-hover-bg);
   box-shadow: none;
 }
 
 .style-card-active .style-card-title {
-  color: var(--theme-primary, #d7922b);
+  color: var(--theme-accent-text);
 }
 
 .style-card-head {
@@ -262,8 +262,15 @@ function openSuggestionDialog() {
 }
 
 .style-card-check {
-  color: var(--theme-primary, #d7922b);
+  color: var(--theme-accent);
   font-size: 16px;
+}
+
+.style-default-tag {
+  margin-inline-end: 0;
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  border-color: var(--theme-panel-border-strong) !important;
 }
 
 .style-card-desc {

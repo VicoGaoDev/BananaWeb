@@ -1,25 +1,87 @@
 export const APP_THEME_STORAGE_KEY = "banana-web-theme";
 export const APP_THEME_ATTRIBUTE = "data-theme";
+export const APP_PAGE_THEME_ATTRIBUTE = "data-page-theme";
+
+export type AppThemeGroup = "dark" | "color";
+
+export type AppThemeSwatch = {
+  label: string;
+  color: string;
+};
 
 export const appThemes = {
   warm: {
     key: "warm",
-    label: "暖色主题",
+    label: "琥珀橙",
+    group: "color",
+    palette: [
+      { label: "背景", color: "#fffaf4" },
+      { label: "卡片", color: "#fffdf8" },
+      { label: "强调", color: "#ffab25" },
+      { label: "文字", color: "#4c341a" },
+    ],
+  },
+  jade: {
+    key: "jade",
+    label: "玉子绿",
+    group: "color",
+    palette: [
+      { label: "背景", color: "#fffeee" },
+      { label: "卡片", color: "#eef3e4" },
+      { label: "强调", color: "#00797c" },
+      { label: "文字", color: "#0c4a4c" },
+    ],
+  },
+  iris: {
+    key: "iris",
+    label: "鸢尾蓝",
+    group: "color",
+    palette: [
+      { label: "背景", color: "#fffbea" },
+      { label: "卡片", color: "#efe8d4" },
+      { label: "强调", color: "#0f64b5" },
+      { label: "文字", color: "#0a3d70" },
+    ],
   },
   dark: {
     key: "dark",
-    label: "黑色主题",
+    label: "石墨灰",
+    group: "dark",
+    palette: [
+      { label: "背景", color: "#f6f7f9" },
+      { label: "卡片", color: "#fbfbfc" },
+      { label: "强调", color: "#34363d" },
+      { label: "文字", color: "#1f2229" },
+    ],
   },
   midnight: {
     key: "midnight",
-    label: "暗黑主题",
+    label: "墨夜",
+    group: "dark",
+    palette: [
+      { label: "背景", color: "#181818" },
+      { label: "卡片", color: "#1f1f1f" },
+      { label: "强调", color: "#3a3a3a" },
+      { label: "文字", color: "#e6e6e6" },
+    ],
   },
 } as const;
 
 export type AppThemeName = keyof typeof appThemes;
+export type AppThemeMeta = (typeof appThemes)[AppThemeName];
 
 export const DEFAULT_APP_THEME: AppThemeName = "warm";
 
+export const appThemeList = Object.values(appThemes) as AppThemeMeta[];
+
 export function isAppThemeName(value: string | null | undefined): value is AppThemeName {
-  return value === "warm" || value === "dark" || value === "midnight";
+  return !!value && value in appThemes;
+}
+
+export function isDarkAppTheme(theme: AppThemeName) {
+  return appThemes[theme].group === "dark";
+}
+
+export function getAppThemesByGroup(group: AppThemeGroup) {
+  return appThemeList.filter((theme) => theme.group === group);
 }

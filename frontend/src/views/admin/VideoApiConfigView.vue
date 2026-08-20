@@ -2039,7 +2039,7 @@ onMounted(load);
 }
 
 .api-card :deep(.ant-card-head) {
-  border-bottom: 1px solid #f0dfbe;
+  border-bottom: 1px solid var(--theme-border);
   background: linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.22));
 }
 
@@ -2166,8 +2166,8 @@ onMounted(load);
   margin: 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #fff8ee;
-  border: 1px solid #f0dfbe;
+  background: var(--theme-empty-bg);
+  border: 1px solid var(--theme-panel-border);
   white-space: pre-wrap;
   word-break: break-word;
 }

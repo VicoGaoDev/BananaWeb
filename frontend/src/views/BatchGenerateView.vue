@@ -3559,32 +3559,32 @@ onBeforeUnmount(() => {
 
 .batch-action-btn-primary {
   border: none !important;
-  background: rgb(255, 172, 38) !important;
-  color: #5b3300 !important;
-  box-shadow: 0 10px 22px rgba(245, 158, 11, 0.28);
+  background: var(--theme-accent) !important;
+  color: var(--theme-accent-contrast) !important;
+  box-shadow: 0 10px 22px var(--theme-shadow-strong);
 }
 
 .batch-action-btn-primary:hover,
 .batch-action-btn-primary:focus {
   border: none !important;
-  background: rgb(255, 172, 38) !important;
-  color: #5b3300 !important;
-  box-shadow: 0 14px 26px rgba(245, 158, 11, 0.32) !important;
+  background: var(--theme-accent-strong) !important;
+  color: var(--theme-accent-contrast) !important;
+  box-shadow: 0 14px 26px var(--theme-shadow-strong) !important;
 }
 
 .batch-action-btn-secondary {
-  border: none !important;
-  background: rgb(255, 172, 38) !important;
-  color: #9a5a00 !important;
-  box-shadow: 0 8px 18px rgba(245, 158, 11, 0.12);
+  border: 1px solid var(--theme-panel-border-strong) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  color: var(--theme-accent-text) !important;
+  box-shadow: 0 8px 18px var(--theme-shadow-soft);
 }
 
 .batch-action-btn-secondary:hover,
 .batch-action-btn-secondary:focus {
-  border: none !important;
-  background: rgb(255, 172, 38) !important;
-  color: #8a4f00 !important;
-  box-shadow: 0 12px 22px rgba(245, 158, 11, 0.18) !important;
+  border-color: var(--theme-border-strong) !important;
+  background: var(--theme-control-hover-bg) !important;
+  color: var(--theme-accent-text-hover) !important;
+  box-shadow: 0 12px 22px var(--theme-shadow-medium) !important;
 }
 
 .batch-action-btn-neutral {
@@ -3610,8 +3610,8 @@ onBeforeUnmount(() => {
   padding: 3px;
   border: none !important;
   border-radius: 10px !important;
-  background: #fff4df !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 172, 38, 0.22) !important;
+  background: var(--theme-panel-bg-strong) !important;
+  box-shadow: inset 0 0 0 1px var(--theme-panel-border) !important;
 }
 
 :deep(.global-scene-switch .ant-segmented-group) {
@@ -3626,7 +3626,7 @@ onBeforeUnmount(() => {
   line-height: 24px;
   font-size: 12px;
   font-weight: 600;
-  color: #9a5a00;
+  color: var(--theme-accent-text);
   border-radius: 8px;
   transition:
     background var(--motion-duration-fast) var(--motion-ease-soft),
@@ -3643,9 +3643,9 @@ onBeforeUnmount(() => {
 }
 
 :deep(.global-scene-switch .ant-segmented-item-selected) {
-  background: rgb(255, 172, 38) !important;
-  color: #5b3300 !important;
-  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.22) !important;
+  background: var(--theme-accent) !important;
+  color: var(--theme-accent-contrast) !important;
+  box-shadow: 0 6px 16px var(--theme-shadow-strong) !important;
 }
 
 .field-label {

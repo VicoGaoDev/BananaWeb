@@ -135,12 +135,12 @@ onBeforeUnmount(() => {
   gap: 8px;
   width: 44px;
   padding: 12px 6px 14px;
-  border: 1px solid rgb(255, 171, 36);
+  border: 1px solid var(--theme-accent);
   border-right: 0;
   border-radius: 16px 0 0 16px;
-  background: rgb(255, 171, 36);
-  box-shadow: -6px 8px 20px rgba(255, 171, 36, 0.32);
-  color: #523713;
+  background: var(--theme-accent);
+  box-shadow: -6px 8px 20px var(--theme-fab-shadow);
+  color: var(--theme-accent-contrast);
   cursor: pointer;
   transform: translateY(-50%);
   transition:
@@ -151,8 +151,8 @@ onBeforeUnmount(() => {
 
 .ai-assistant-tab:hover {
   width: 50px;
-  background: rgb(240, 150, 16);
-  box-shadow: -8px 10px 24px rgba(255, 171, 36, 0.42);
+  background: var(--primary-dark);
+  box-shadow: -8px 10px 24px var(--theme-fab-shadow);
 }
 
 .ai-assistant-tab-avatar {
@@ -182,8 +182,8 @@ onBeforeUnmount(() => {
   max-width: 598px;
   height: 100dvh;
   overflow: hidden;
-  background: var(--theme-page-base, #fffaf3);
-  box-shadow: -12px 0 28px rgba(80, 52, 20, 0.12);
+  background: var(--theme-page-base);
+  box-shadow: -12px 0 28px var(--theme-shadow-medium);
   transform: translateX(100%);
   visibility: hidden;
   pointer-events: none;

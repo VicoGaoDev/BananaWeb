@@ -907,7 +907,7 @@ onBeforeUnmount(() => {
 .canvas-list-preview img.canvas-list-preview-expired {
   object-fit: contain;
   padding: 10px;
-  background: #fff8ee;
+  background: var(--theme-empty-bg);
 }
 
 .canvas-list-preview-side {

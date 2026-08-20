@@ -2257,8 +2257,8 @@ onBeforeUnmount(() => {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  background: #fff7e8;
-  border: 1px solid rgba(247, 168, 49, 0.28);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
   box-shadow: 0 4px 10px rgba(90, 60, 20, 0.08);
   flex-shrink: 0;
 }
@@ -2550,9 +2550,9 @@ onBeforeUnmount(() => {
   height: 40px;
   border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
   border-radius: 999px;
-  background: #fff;
+  background: var(--theme-surface-strong);
   color: var(--theme-title, #3d2f22);
-  box-shadow: 0 10px 24px rgba(60, 40, 20, 0.14);
+  box-shadow: 0 10px 24px var(--theme-shadow-medium);
   transform: translateX(-50%);
   cursor: pointer;
   transition:
@@ -2756,7 +2756,7 @@ onBeforeUnmount(() => {
 
 .message-bubble.failed {
   border-color: #fca5a5;
-  background: #fff7f7;
+  background: color-mix(in srgb, #ef4444 8%, var(--theme-panel-bg));
 }
 
 .message-error-block {
@@ -2774,7 +2774,7 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   border: 1px solid color-mix(in srgb, #ef4444 35%, var(--theme-panel-border, #ebd9c1));
   border-radius: 10px;
-  background: #fff;
+  background: var(--theme-surface-strong);
   color: #b42318;
   font-size: 12px;
   font-weight: 700;
@@ -2782,7 +2782,7 @@ onBeforeUnmount(() => {
 }
 
 .message-retry-btn:hover:not(:disabled) {
-  background: #fff1f0;
+  background: color-mix(in srgb, #ef4444 8%, var(--theme-panel-bg));
 }
 
 .message-retry-btn:disabled {

@@ -2376,7 +2376,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .history-page .result-card
 .history-expired-image {
   object-fit: contain !important;
   padding: 28px;
-  background: #fff8ee;
+  background: var(--theme-empty-bg);
   border-radius: calc(var(--media-radius, 18px) - 2px);
 }
 

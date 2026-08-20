@@ -677,7 +677,7 @@ onMounted(() => {
   gap: 14px;
   padding: 18px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--theme-surface-strong);
   border: 1px solid var(--theme-panel-border);
 }
 
@@ -848,6 +848,35 @@ onMounted(() => {
 
   .invite-summary-value {
     font-size: 24px;
+  }
+}
+
+html[data-theme="midnight"] {
+  .invite-summary-item--col-1 {
+    background: color-mix(in srgb, #4a7fd4 18%, var(--theme-panel-bg));
+  }
+
+  .invite-summary-item--col-2 {
+    background: color-mix(in srgb, #3d9a65 18%, var(--theme-panel-bg));
+  }
+
+  .invite-summary-item--col-3 {
+    background: color-mix(in srgb, #c8842a 18%, var(--theme-panel-bg));
+  }
+
+  .invite-summary-item--col-1 .invite-summary-label,
+  .invite-summary-item--col-1 .invite-summary-value {
+    color: #9db8e8;
+  }
+
+  .invite-summary-item--col-2 .invite-summary-label,
+  .invite-summary-item--col-2 .invite-summary-value {
+    color: #8fd0a8;
+  }
+
+  .invite-summary-item--col-3 .invite-summary-label,
+  .invite-summary-item--col-3 .invite-summary-value {
+    color: #e0b57a;
   }
 }
 </style>

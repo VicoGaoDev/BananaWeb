@@ -879,7 +879,7 @@ function handleDownload(item: VideoTaskResult) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(255, 252, 246, 0.82), rgba(255, 248, 238, 0.88));
+  background: color-mix(in srgb, var(--theme-page-base) 86%, transparent);
 }
 
 .detail-media-loading-dark {

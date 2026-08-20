@@ -41,8 +41,9 @@ import {
   isTutorialDockTabEnabled,
   subscribeTutorialDockTabEnabled,
 } from "@/lib/generateTutorialDock";
-import { APP_THEME_ATTRIBUTE, type AppThemeName } from "@/config/theme";
-import { getCurrentTheme } from "@/lib/theme";
+import { APP_THEME_ATTRIBUTE, appThemes, getAppThemesByGroup, isAppThemeName, type AppThemeName } from "@/config/theme";
+import { getCurrentTheme, setAppTheme } from "@/lib/theme";
+import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
 import {
   PictureOutlined,
@@ -82,6 +83,7 @@ import {
   ShareAltOutlined,
   CloseOutlined,
   ReadOutlined,
+  BgColorsOutlined,
 } from "@ant-design/icons-vue";
 
 const router = useRouter();
@@ -136,6 +138,7 @@ const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
 const PROMO_CODE_SESSION_KEY = "bananaPromoCode";
 const SUGGESTION_FAB_DESKTOP_GAP = 24;
 const SUGGESTION_FAB_MOBILE_GAP = 16;
+const SUGGESTION_FAB_DEFAULT_BOTTOM_EXTRA = 24;
 const SUGGESTION_FAB_DESKTOP_SIZE = 40;
 const SUGGESTION_FAB_MOBILE_SIZE = 36;
 const USER_NOTICE_CARD_STYLE = {
@@ -278,6 +281,12 @@ const routeOrder = new Map<string, number>([
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
+const darkThemeOptions = getAppThemesByGroup("dark");
+const colorThemeOptions = getAppThemesByGroup("color");
+const themeMenuGroups = [
+  { key: "dark", label: "黑暗主题", themes: darkThemeOptions },
+  { key: "color", label: "颜色主题", themes: colorThemeOptions },
+] as const;
 let themeObserver: MutationObserver | null = null;
 const adminUnresolvedFeedbackCount = ref(getStoredAdminUnresolvedFeedbackCount());
 let unsubscribeAdminFeedbackCount: (() => void) | null = null;
@@ -544,7 +553,7 @@ const userMenuAccountItems = computed(() =>
   userMenuItems.value.filter((item) => ["profile", "credits", "promo-codes", "api-keys"].includes(item.key))
 );
 const userMenuSettingsItems = computed(() =>
-  userMenuItems.value.filter((item) => ["contact", "settings"].includes(item.key))
+  userMenuItems.value.filter((item) => ["contact"].includes(item.key))
 );
 const userMenuNoticeItems = computed(() =>
   userMenuItems.value.filter((item) => ["my-feedback", "system-messages", "update-logs"].includes(item.key))
@@ -742,7 +751,20 @@ function handleAdminMenuOpenChange(keys: string[]) {
   adminMenuOpenKeys.value = keys;
 }
 
+function applyUserTheme(theme: AppThemeName) {
+  if (theme === currentTheme.value) return;
+  setAppTheme(theme);
+  currentTheme.value = theme;
+  message.success(`已切换为${appThemes[theme].label}`);
+}
+
 function handleUserMenu({ key }: { key: string }) {
+  if (key === "theme-style-entry") return;
+  if (key.startsWith("theme:")) {
+    const theme = key.slice("theme:".length);
+    if (isAppThemeName(theme)) applyUserTheme(theme);
+    return;
+  }
   mobileDrawerOpen.value = false;
   if (key === "profile") router.push("/profile");
   else if (key === "system-messages") router.push("/system-messages");
@@ -1535,7 +1557,7 @@ function getDefaultSuggestionFabPosition() {
   const size = getSuggestionFabSize();
   return {
     x: window.innerWidth - size - gap,
-    y: window.innerHeight - size - gap,
+    y: window.innerHeight - size - gap - SUGGESTION_FAB_DEFAULT_BOTTOM_EXTRA,
   };
 }
 
@@ -2131,6 +2153,9 @@ watch(
                       <span v-else>{{ item.label }}</span>
                     </a-menu-item>
                   </a-sub-menu>
+                  <a-menu-item key="theme-style-entry" class="theme-style-menu-item">
+                    <ThemeStyleMenuEntry :current-theme="currentTheme" />
+                  </a-menu-item>
                   <a-menu-item
                     v-for="item in userMenuSettingsItems"
                     :key="item.key"
@@ -2463,6 +2488,9 @@ watch(
                   <span v-else>{{ item.label }}</span>
                 </a-menu-item>
               </a-sub-menu>
+              <a-menu-item key="theme-style-entry" class="theme-style-menu-item">
+                <ThemeStyleMenuEntry :current-theme="currentTheme" />
+              </a-menu-item>
               <a-menu-item v-for="item in userMenuSettingsItems" :key="item.key">
                 <component :is="item.icon" />
                 <span style="margin-left: 8px">{{ item.label }}</span>
@@ -2742,6 +2770,35 @@ watch(
                   <span v-else-if="item.key === 'update-logs'">{{ item.label }}</span>
                   <span v-else>{{ item.label }}</span>
                 </a-menu-item>
+              </a-sub-menu>
+              <a-sub-menu key="mobile-user-theme-submenu">
+                <template #icon><BgColorsOutlined /></template>
+                <template #title>主题风格</template>
+                <a-menu-item-group
+                  v-for="group in themeMenuGroups"
+                  :key="`mobile-theme-group-${group.key}`"
+                  :title="group.label"
+                >
+                  <a-menu-item
+                    v-for="option in group.themes"
+                    :key="`theme:${option.key}`"
+                    class="mobile-theme-menu-item"
+                  >
+                    <span class="theme-menu-item-title">
+                      <span>{{ option.label }}</span>
+                      <CheckOutlined v-if="currentTheme === option.key" class="theme-menu-check" />
+                    </span>
+                    <div class="theme-menu-swatches-inline">
+                      <span
+                        v-for="swatch in option.palette"
+                        :key="swatch.label"
+                        class="theme-menu-swatch-chip-inline"
+                        :style="{ background: swatch.color }"
+                        :title="swatch.label"
+                      />
+                    </div>
+                  </a-menu-item>
+                </a-menu-item-group>
               </a-sub-menu>
               <a-menu-item
                 v-for="item in userMenuSettingsItems"
@@ -3266,7 +3323,7 @@ watch(
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgb(255, 171, 39);
+  background: var(--theme-accent);
   box-shadow: 0 12px 22px var(--theme-brand-shadow);
   overflow: hidden;
 }
@@ -3366,7 +3423,7 @@ watch(
   }
 
   :deep(.ant-menu-item-selected) {
-    background: rgb(255, 171, 39) !important;
+    background: var(--theme-accent) !important;
     color: var(--theme-nav-active-text) !important;
     box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
   }
@@ -3450,7 +3507,7 @@ watch(
   justify-content: center;
   border: 0;
   border-radius: 15px;
-  background: rgb(255, 171, 39);
+  background: var(--theme-accent);
   box-shadow: 0 12px 22px var(--theme-brand-shadow);
   cursor: pointer;
   transition:
@@ -3529,7 +3586,7 @@ watch(
 }
 
 .canvas-side-nav-item.active {
-  background: rgb(255, 171, 39);
+  background: var(--theme-accent);
   color: var(--theme-nav-active-text);
   box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
 }
@@ -3553,8 +3610,8 @@ watch(
   height: 16px;
   padding: 0 5px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff5f6d, #ff9a44);
-  color: #fff;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-size: 9px;
   font-weight: 900;
   line-height: 1;
@@ -3686,7 +3743,7 @@ watch(
 .suggestion-fab-wrap {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  bottom: 48px;
   z-index: 1080;
   touch-action: none;
   user-select: none;
@@ -3701,8 +3758,8 @@ watch(
   padding: 0;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ffb347, #ff8f1f);
-  color: #2d1f08;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-size: 18px;
   box-shadow: 0 12px 24px var(--theme-fab-shadow);
   cursor: pointer;
@@ -3916,7 +3973,7 @@ watch(
   }
 
   :deep(.ant-menu-item-selected) {
-    background: rgb(255, 171, 39) !important;
+    background: var(--theme-accent) !important;
     color: var(--theme-nav-active-text) !important;
     box-shadow: 0 10px 18px var(--theme-nav-active-shadow);
   }
@@ -3937,6 +3994,48 @@ watch(
     background: #fff1ee !important;
     color: #b84b3b !important;
   }
+
+  :deep(.ant-menu-item-group-title) {
+    padding: 8px 16px 4px;
+    color: var(--theme-text-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  :deep(.mobile-theme-menu-item .ant-menu-title-content) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+.theme-menu-item-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.theme-menu-check {
+  color: var(--theme-accent);
+  font-size: 14px;
+}
+
+.theme-menu-swatches-inline {
+  display: grid;
+  grid-template-columns: repeat(4, 18px);
+  gap: 6px;
+}
+
+.theme-menu-swatch-chip-inline {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 }
 
 .nav-menu-new-badge-mobile {
@@ -4194,10 +4293,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 }
 
 .credits-purchase-card {
-  --credits-purchase-accent: #ff8a18;
-  --credits-purchase-accent-start: #ff9a23;
-  --credits-purchase-accent-end: #ff7a11;
-  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
+  --credits-purchase-accent: var(--theme-accent);
+  --credits-purchase-accent-start: var(--theme-accent-strong);
+  --credits-purchase-accent-end: var(--theme-accent);
+  --credits-purchase-accent-shadow: var(--theme-shadow-strong);
 
   position: relative;
   display: grid;
@@ -4208,13 +4307,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   min-height: 70px;
   padding: 14px;
   border-radius: 18px;
-  border: 1.5px solid rgba(243, 154, 73, 0.24);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 241, 0.94)),
-    radial-gradient(circle at top, rgba(255, 214, 171, 0.34), transparent 62%);
+  border: 1.5px solid var(--theme-panel-border);
+  background: var(--theme-panel-bg);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 10px 30px rgba(227, 150, 72, 0.08);
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 10px 30px var(--theme-shadow-soft);
   text-align: left;
   cursor: pointer;
   transition:
@@ -4225,15 +4322,15 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 
 .credits-purchase-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 145, 53, 0.45);
+  border-color: var(--theme-border-strong);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 14px 36px rgba(227, 150, 72, 0.14);
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 14px 36px var(--theme-shadow-medium);
 }
 
 .credits-purchase-card-active {
-  border: 1px solid #ff8a18;
-  background: #fff1e3;
+  border: 1px solid var(--theme-accent);
+  background: var(--theme-control-hover-bg);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
     0 14px 30px var(--credits-purchase-accent-shadow);
@@ -4282,18 +4379,12 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 }
 
 .credits-purchase-card-light,
-.credits-purchase-card-plus {
-  --credits-purchase-accent: #ff8a18;
-  --credits-purchase-accent-start: #ff9a23;
-  --credits-purchase-accent-end: #ff7a11;
-  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
-}
-
+.credits-purchase-card-plus,
 .credits-purchase-card-popular {
-  --credits-purchase-accent: #ff8a18;
-  --credits-purchase-accent-start: #ff9a23;
-  --credits-purchase-accent-end: #ff7a11;
-  --credits-purchase-accent-shadow: rgba(255, 142, 31, 0.24);
+  --credits-purchase-accent: var(--theme-accent);
+  --credits-purchase-accent-start: var(--theme-accent-strong);
+  --credits-purchase-accent-end: var(--theme-accent);
+  --credits-purchase-accent-shadow: var(--theme-shadow-strong);
 }
 
 .credits-purchase-card-value {
@@ -4345,7 +4436,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   flex-wrap: nowrap;
   font-size: 14px;
   font-weight: 700;
-  color: #ff7a10;
+  color: var(--theme-accent-text);
   white-space: nowrap;
   min-width: 0;
 }
@@ -4356,7 +4447,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #76614f;
+  color: var(--theme-text-secondary);
   white-space: nowrap;
 }
 
@@ -4377,9 +4468,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   height: 24px;
   margin-left: 6px;
   border-radius: 999px;
-  border: 1.5px solid #ecd9c9;
+  border: 1.5px solid var(--theme-control-border);
   color: transparent;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--theme-surface-strong);
   font-size: 12px;
   transition:
     border-color 0.2s ease,
@@ -4416,7 +4507,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   text-align: center;
   font-size: 11px;
   font-weight: 600;
-  color: #c69063;
+  color: var(--theme-accent-text);
 }
 
 .credits-purchase-submit {
@@ -4462,7 +4553,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 .credits-purchase-qr-subject {
   font-size: 18px;
   font-weight: 700;
-  color: #3c2f23;
+  color: var(--theme-title);
 }
 
 .credits-purchase-qr-meta {
@@ -4476,8 +4567,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   justify-content: center;
   min-height: 244px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(243, 154, 73, 0.2);
+  background: var(--theme-surface-strong);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .credits-purchase-qr-box-empty {
@@ -4502,8 +4593,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   gap: 16px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255, 250, 245, 0.82);
-  border: 1px solid rgba(243, 154, 73, 0.16);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .credits-purchase-qr-summary span {
@@ -4533,7 +4624,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 .credits-purchase-qr-subject {
   font-size: 18px;
   font-weight: 700;
-  color: #3c2f23;
+  color: var(--theme-title);
 }
 
 .credits-purchase-qr-meta {
@@ -4547,8 +4638,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   justify-content: center;
   min-height: 244px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(243, 154, 73, 0.2);
+  background: var(--theme-surface-strong);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .credits-purchase-qr-box-empty {
@@ -4573,8 +4664,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   gap: 16px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255, 250, 245, 0.82);
-  border: 1px solid rgba(243, 154, 73, 0.16);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .credits-purchase-qr-summary span {
@@ -4624,11 +4715,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   border-radius: 22px;
   padding: 16px 18px 18px;
   background:
-    radial-gradient(circle at top, rgba(255, 222, 183, 0.36), transparent 38%),
-    linear-gradient(180deg, #fffdf9 0%, #fff9f1 100%);
+    radial-gradient(circle at top, var(--theme-page-glow), transparent 38%),
+    var(--theme-modal-bg);
   box-shadow:
-    0 22px 60px rgba(83, 57, 28, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    0 22px 60px var(--theme-shadow-medium),
+    inset 0 1px 0 var(--theme-panel-inset);
 }
 
 :deep(.credits-purchase-modal-wrap .ant-modal-close) {
@@ -4637,13 +4728,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   width: 34px;
   height: 34px;
   border-radius: 999px;
-  background: rgba(255, 248, 240, 0.88);
-  color: #b88c67;
+  background: var(--theme-control-bg);
+  color: var(--theme-accent-text);
 }
 
 :deep(.credits-purchase-modal-wrap .ant-modal-close:hover) {
-  background: rgba(255, 241, 227, 0.96);
-  color: #9f724d;
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text-hover);
 }
 
 .announcement-modal {
@@ -4666,7 +4757,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
   scrollbar-width: thin;
-  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+  scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
 }
 
 .announcement-content::-webkit-scrollbar {
@@ -4675,17 +4766,17 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
 
 .announcement-content::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: rgba(255, 244, 220, 0.78);
+  background: var(--theme-panel-bg-muted);
 }
 
 .announcement-content::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  border: 2px solid rgba(255, 244, 220, 0.78);
-  background: rgba(191, 148, 79, 0.55);
+  border: 2px solid var(--theme-panel-bg-muted);
+  background: var(--theme-border-strong);
 }
 
 .announcement-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 124, 52, 0.72);
+  background: var(--theme-accent);
 }
 
 .announcement-actions {
@@ -4992,7 +5083,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 
   .suggestion-fab-wrap {
     right: 16px;
-    bottom: 16px;
+    bottom: 40px;
   }
 
   .suggestion-fab {
@@ -5169,6 +5260,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 <style lang="scss">
 .warm-dropdown {
   z-index: 1300;
+  overflow: visible;
 }
 
 .app-layout-desktop-side-nav .generate-page,
@@ -5370,6 +5462,112 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 .warm-dropdown .ant-dropdown-menu-item-divider {
   margin: 8px 2px;
   background: var(--theme-border);
+}
+
+.warm-dropdown .ant-dropdown-menu-item-group-title {
+  padding: 10px 16px 6px !important;
+  color: var(--theme-text-muted) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+}
+
+.warm-dropdown .theme-menu-item-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.warm-dropdown .theme-menu-check {
+  color: var(--theme-accent) !important;
+  font-size: 14px;
+}
+
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .ant-dropdown-menu-title-content {
+  width: 100%;
+}
+
+.theme-style-overlay {
+  z-index: 1400 !important;
+}
+
+.theme-style-overlay .theme-style-panel {
+  min-width: 176px;
+  padding: 12px 10px;
+  border-radius: 18px;
+  border: 1px solid var(--theme-panel-border);
+  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
+  box-shadow: 0 16px 28px var(--theme-shadow-soft);
+}
+
+.theme-swatch-tooltip {
+  z-index: 1400 !important;
+}
+
+.theme-swatch-tooltip .ant-tooltip-inner {
+  min-width: 228px;
+  padding: 12px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 14px;
+  background: var(--theme-panel-bg);
+  box-shadow: 0 16px 28px var(--theme-shadow-soft);
+  color: var(--theme-title);
+}
+
+.theme-swatch-tooltip .ant-tooltip-arrow::before,
+.theme-swatch-tooltip .ant-tooltip-arrow::after {
+  background: var(--theme-panel-bg);
+}
+
+.theme-menu-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 220px;
+}
+
+.theme-menu-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.theme-menu-swatch-chip {
+  display: block;
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.theme-menu-swatch > span:last-child {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--theme-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-user-notice-card.ant-notification-notice {

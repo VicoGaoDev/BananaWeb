@@ -475,7 +475,7 @@ function promoActivityRowKey(record: {
             <span style="font-weight: 700; color: #cf1322">{{ record.consumed_credits ?? 0 }}</span>
           </template>
           <template v-else-if="column.dataIndex === 'credits'">
-            <span style="font-weight: 700; color: #d48806">{{ record.credits }}</span>
+            <span style="font-weight: 700; color: var(--theme-accent-text)">{{ record.credits }}</span>
           </template>
           <template v-else-if="column.dataIndex === 'status'">
             <a-badge :status="record.status === 'active' ? 'success' : 'error'" />
@@ -870,14 +870,14 @@ function promoActivityRowKey(record: {
 .filter-reset-btn {
   height: 36px;
   border-radius: 12px;
-  border: 1px solid #efc784 !important;
-  background: #fff7e8 !important;
-  color: #b16d10 !important;
+  border: 1px solid var(--theme-control-border-strong) !important;
+  background: var(--theme-control-bg) !important;
+  color: var(--theme-accent-text) !important;
 
   &:hover {
-    border-color: #e1a64a !important;
-    background: #fff0d3 !important;
-    color: #c7770d !important;
+    border-color: var(--theme-border-strong) !important;
+    background: var(--theme-control-hover-bg) !important;
+    color: var(--theme-accent-text-hover) !important;
   }
 }
 
@@ -912,8 +912,8 @@ function promoActivityRowKey(record: {
 }
 
 .table-avatar {
-  background: linear-gradient(180deg, #ffd06d, #ffb02b);
-  color: #5a3c14;
+  background: var(--theme-accent);
+  color: var(--theme-accent-contrast);
   font-weight: 700;
 }
 
@@ -932,13 +932,13 @@ function promoActivityRowKey(record: {
   }
 
   &:focus-visible {
-    outline: 2px solid #ffb02b;
+    outline: 2px solid var(--theme-accent);
     outline-offset: 2px;
   }
 }
 
 .user-cell-name {
-  color: #4c341a;
+  color: var(--theme-title);
   font-weight: 700;
 }
 
@@ -988,13 +988,13 @@ function promoActivityRowKey(record: {
 }
 
 .user-action-btn.user-action-btn-primary {
-  color: #c7770d !important;
-  background: #fff4df !important;
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-strong) !important;
 }
 
 .user-action-btn.user-action-btn-secondary {
-  color: #a9772e !important;
-  background: #fff8ee !important;
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-soft) !important;
 }
 
 .user-action-btn.user-action-btn-danger {
@@ -1014,9 +1014,9 @@ function promoActivityRowKey(record: {
 }
 
 .warm-tag-role-admin {
-  color: #c7770d;
-  background: #fff4df;
-  border-color: #efc784;
+  color: var(--theme-accent-text);
+  background: var(--theme-panel-bg-strong);
+  border-color: var(--theme-panel-border-strong);
 }
 
 .promo-dashboard {
@@ -1033,18 +1033,18 @@ function promoActivityRowKey(record: {
 .promo-stat-card {
   padding: 16px;
   border-radius: 16px;
-  background: #fff8ee;
-  border: 1px solid #f2d7a6;
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
   display: grid;
   gap: 8px;
 
   span {
-    color: #8c7458;
+    color: var(--text-secondary);
     font-size: 13px;
   }
 
   strong {
-    color: #4c341a;
+    color: var(--theme-title);
     font-size: 28px;
     line-height: 1;
   }
@@ -1091,21 +1091,21 @@ function promoActivityRowKey(record: {
 }
 
 .warm-tag-role-user {
-  color: #a9772e;
-  background: #fff8ee;
-  border-color: #f2d8a7;
+  color: var(--theme-accent-text);
+  background: var(--theme-panel-bg-soft);
+  border-color: var(--theme-panel-border-strong);
 }
 
 .warm-tag-whitelist {
-  color: #b16d10;
-  background: #fff1d9;
-  border-color: #efc784;
+  color: var(--theme-accent-text-hover);
+  background: var(--theme-panel-bg-strong);
+  border-color: var(--theme-border-strong);
 }
 
 .warm-tag-muted {
-  color: #8f7558;
-  background: #fffaf2;
-  border-color: #f2e3c6;
+  color: var(--text-secondary);
+  background: var(--theme-empty-bg);
+  border-color: var(--theme-panel-border);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .warm-page .warm-tag-role-admin,

@@ -173,7 +173,7 @@ function handleCardClick(card: CardItem) {
 
 .kpi-label {
   font-size: 13px;
-  color: #8c7458;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
@@ -181,8 +181,8 @@ function handleCardClick(card: CardItem) {
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(255, 245, 223, 0.9);
-  color: #a07d49;
+  background: var(--theme-panel-bg-strong);
+  color: var(--theme-accent-text);
   font-size: 11px;
   font-weight: 700;
 }
@@ -191,7 +191,7 @@ function handleCardClick(card: CardItem) {
   font-size: 32px;
   line-height: 1.1;
   font-weight: 700;
-  color: #4c341a;
+  color: var(--theme-title);
   letter-spacing: -0.02em;
 }
 
@@ -203,21 +203,21 @@ function handleCardClick(card: CardItem) {
 }
 
 .kpi-meta-label {
-  color: #ad8a58;
+  color: var(--theme-subtitle);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
 .kpi-meta-value {
-  color: #7b6342;
+  color: var(--theme-title);
   font-size: 14px;
   font-weight: 700;
 }
 
 .kpi-delta {
   font-size: 12px;
-  color: #8c7458;
+  color: var(--text-secondary);
   line-height: 1.5;
   padding: 8px 10px 0;
   border-top: 1px dashed rgba(232, 213, 192, 0.9);

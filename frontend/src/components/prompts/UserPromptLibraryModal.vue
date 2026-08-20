@@ -613,10 +613,10 @@ function handleDeleteCategory() {
 .prompt-sidebar {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(220, 185, 125, 0.22);
+  border: 1px solid var(--theme-panel-border);
   border-radius: 18px;
   padding: 14px;
-  background: rgba(255, 249, 240, 0.72);
+  background: var(--theme-panel-bg-soft);
   min-height: 0;
 }
 
@@ -661,7 +661,7 @@ function handleDeleteCategory() {
 .prompt-sidebar-title {
   font-size: 14px;
   font-weight: 700;
-  color: #7b5c32;
+  color: var(--theme-title);
 }
 
 .prompt-sidebar-actions,
@@ -679,9 +679,9 @@ function handleDeleteCategory() {
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  border: 1px solid rgba(214, 180, 119, 0.28);
-  background: #fff;
-  color: #8b693a;
+  border: 1px solid var(--theme-control-border);
+  background: var(--theme-control-bg);
+  color: var(--theme-accent-text);
   cursor: pointer;
 }
 
@@ -699,7 +699,7 @@ function handleDeleteCategory() {
   overflow: auto;
   padding-right: 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+  scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
 }
 
 .prompt-category-btn {
@@ -711,15 +711,15 @@ function handleDeleteCategory() {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text-primary);
+  background: var(--theme-control-bg);
+  color: var(--theme-title);
   cursor: pointer;
 }
 
 .prompt-category-btn.active {
-  border-color: rgba(236, 185, 88, 0.55);
-  background: rgba(255, 242, 214, 0.95);
-  color: #8a6323;
+  border-color: var(--theme-accent);
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text);
 }
 
 .prompt-main {
@@ -748,13 +748,13 @@ function handleDeleteCategory() {
   gap: 12px;
   margin-bottom: 12px;
   padding: 10px 14px;
-  border: 1px solid rgba(236, 185, 88, 0.28);
+  border: 1px solid var(--theme-panel-border);
   border-radius: 14px;
-  background: rgba(255, 247, 229, 0.92);
+  background: var(--theme-panel-bg-strong);
 }
 
 .prompt-batch-summary {
-  color: #7f551c;
+  color: var(--theme-accent-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -773,7 +773,7 @@ function handleDeleteCategory() {
   display: grid;
   place-items: center;
   border-radius: 18px;
-  background: rgba(255, 250, 242, 0.48);
+  background: color-mix(in srgb, var(--theme-page-base) 48%, transparent);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
@@ -788,7 +788,7 @@ function handleDeleteCategory() {
   overflow-y: scroll;
   padding: 0 4px 4px 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(191, 148, 79, 0.55) rgba(255, 244, 220, 0.78);
+  scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
 }
 
 .prompt-content::-webkit-scrollbar,
@@ -799,19 +799,19 @@ function handleDeleteCategory() {
 .prompt-content::-webkit-scrollbar-track,
 .prompt-category-list::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: rgba(255, 244, 220, 0.78);
+  background: var(--theme-panel-bg-muted);
 }
 
 .prompt-content::-webkit-scrollbar-thumb,
 .prompt-category-list::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  border: 2px solid rgba(255, 244, 220, 0.78);
-  background: rgba(191, 148, 79, 0.55);
+  border: 2px solid var(--theme-panel-bg-muted);
+  background: var(--theme-border-strong);
 }
 
 .prompt-content::-webkit-scrollbar-thumb:hover,
 .prompt-category-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 124, 52, 0.72);
+  background: var(--theme-accent);
 }
 
 .prompt-search {
@@ -821,9 +821,9 @@ function handleDeleteCategory() {
   min-height: 38px;
   border-radius: 999px;
   overflow: hidden;
-  border: 1px solid rgba(214, 180, 119, 0.28);
-  background: rgba(255, 250, 242, 0.96);
-  box-shadow: 0 8px 18px rgba(236, 185, 88, 0.08);
+  border: 1px solid var(--theme-control-border);
+  background: var(--theme-control-bg);
+  box-shadow: 0 8px 18px var(--theme-shadow-soft);
 }
 
 .prompt-search :deep(.ant-input-affix-wrapper) {
@@ -837,20 +837,20 @@ function handleDeleteCategory() {
 }
 
 .prompt-search :deep(.ant-input) {
-  color: #6f4f24;
+  color: var(--theme-title);
 }
 
 .prompt-search :deep(.ant-input::placeholder) {
-  color: rgba(138, 99, 35, 0.58);
+  color: var(--text-muted);
 }
 
 .prompt-search-btn {
   flex-shrink: 0;
   width: 42px;
   border: none;
-  border-left: 1px solid rgba(214, 180, 119, 0.22);
-  background: linear-gradient(180deg, rgba(255, 244, 220, 0.98), rgba(255, 232, 188, 0.98));
-  color: #9a6a1f;
+  border-left: 1px solid var(--theme-control-border);
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -858,15 +858,15 @@ function handleDeleteCategory() {
 }
 
 .prompt-batch-toggle-active {
-  color: #8a6323;
-  background: rgba(255, 242, 214, 0.9);
+  color: var(--theme-accent-text);
+  background: var(--theme-control-hover-bg);
 }
 
 .prompt-count-pill {
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 243, 218, 0.92);
-  color: #8a6323;
+  background: var(--theme-pill-bg);
+  color: var(--theme-pill-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -883,9 +883,9 @@ function handleDeleteCategory() {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  border: 1px solid rgba(220, 185, 125, 0.24);
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(236, 185, 88, 0.08);
+  border: 1px solid var(--theme-panel-border);
+  background: var(--theme-surface-strong);
+  box-shadow: 0 12px 28px var(--theme-shadow-soft);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -893,8 +893,8 @@ function handleDeleteCategory() {
 }
 
 .prompt-card-selected {
-  border-color: rgba(236, 185, 88, 0.72);
-  box-shadow: 0 18px 34px rgba(236, 185, 88, 0.18);
+  border-color: var(--theme-accent);
+  box-shadow: 0 18px 34px var(--theme-shadow-medium);
 }
 
 .prompt-card-batch-selectable {
@@ -920,7 +920,7 @@ function handleDeleteCategory() {
 .prompt-card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #2d1b00;
+  color: var(--theme-title);
 }
 
 .prompt-card-actions {
@@ -932,25 +932,25 @@ function handleDeleteCategory() {
 
 .prompt-card-action-btn,
 .prompt-card-icon-btn {
-  color: #c47b13;
+  color: var(--theme-accent-text);
 }
 
 .prompt-card-action-btn:hover,
 .prompt-card-action-btn:focus,
 .prompt-card-icon-btn:hover,
 .prompt-card-icon-btn:focus {
-  color: #de971e;
+  color: var(--theme-accent-text-hover);
 }
 
 .prompt-card-meta-row {
   font-size: 12px;
-  color: #8b6b3f;
+  color: var(--text-secondary);
 }
 
 .prompt-card-content {
   font-size: 13px;
   line-height: 1.7;
-  color: #4a3210;
+  color: var(--theme-title);
   white-space: pre-wrap;
   word-break: break-word;
   display: -webkit-box;
@@ -963,8 +963,8 @@ function handleDeleteCategory() {
   min-height: 100%;
   padding: 28px 20px;
   border-radius: 22px;
-  border: 1px dashed rgba(220, 185, 125, 0.42);
-  background: rgba(255, 250, 242, 0.65);
+  border: 1px dashed var(--theme-empty-border);
+  background: var(--theme-empty-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -975,12 +975,12 @@ function handleDeleteCategory() {
 .prompt-empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: #2d1b00;
+  color: var(--theme-title);
 }
 
 .prompt-empty-desc {
   margin-top: 8px;
-  color: #8b6b3f;
+  color: var(--text-secondary);
   line-height: 1.7;
   max-width: 360px;
 }
@@ -999,7 +999,7 @@ function handleDeleteCategory() {
 
 .user-prompt-form-item label {
   font-weight: 600;
-  color: #5c3b11;
+  color: var(--theme-title);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-sidebar {
@@ -1040,7 +1040,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-category-btn {
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-category-btn.active {
   background: var(--theme-panel-bg-strong);
   border-color: var(--theme-panel-border-strong);
-  color: #ffd995;
+  color: var(--theme-accent-text);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-batch-bar {
@@ -1056,14 +1056,14 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-empty-desc {
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn {
-  color: #ffbf66;
+  color: var(--theme-accent-text);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn:hover,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-action-btn:focus,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn:hover,
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-card-icon-btn:focus {
-  color: #ffd995;
+  color: var(--theme-accent-text);
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .prompt-loading-mask {

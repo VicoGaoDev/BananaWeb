@@ -1179,7 +1179,7 @@ onMounted(async () => {
   width: 200px;
   height: 200px;
   border-radius: 14px;
-  background: #fff;
+  background: var(--theme-surface-strong);
   border: 1px solid var(--theme-panel-border);
 
   img {
@@ -1250,6 +1250,20 @@ onMounted(async () => {
     :deep(.ant-table-tbody > tr > td:last-child) {
       padding-right: 16px;
     }
+  }
+}
+
+html[data-theme="midnight"] {
+  .promo-summary-item--col-1 {
+    background: color-mix(in srgb, #4a7fd4 18%, var(--theme-panel-bg));
+  }
+
+  .promo-summary-item--col-2 {
+    background: color-mix(in srgb, #3d9a65 18%, var(--theme-panel-bg));
+  }
+
+  .promo-summary-item--col-3 {
+    background: color-mix(in srgb, #c8842a 18%, var(--theme-panel-bg));
   }
 }
 </style>

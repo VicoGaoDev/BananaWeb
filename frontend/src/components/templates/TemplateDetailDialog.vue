@@ -189,7 +189,7 @@ const detailMetaList = computed(() => {
   height: 40px;
   padding-inline: 16px;
   border-radius: 14px;
-  box-shadow: 0 14px 28px rgba(236, 185, 88, 0.18);
+  box-shadow: 0 14px 28px var(--theme-shadow-medium);
 }
 
 .detail-label {
@@ -198,7 +198,7 @@ const detailMetaList = computed(() => {
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #8a6d45;
+  color: var(--text-secondary);
 }
 
 .detail-section > .detail-label {
@@ -355,7 +355,7 @@ const detailMetaList = computed(() => {
   span:not(:last-child)::after {
     content: "｜";
     margin: 0 8px;
-    color: #d3b487;
+    color: var(--theme-panel-border-strong);
   }
 }
 

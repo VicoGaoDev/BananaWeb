@@ -1008,12 +1008,12 @@ onMounted(async () => {
 .fallback-trigger-group {
   padding: 14px;
   border-radius: 16px;
-  background: rgba(255, 253, 248, 0.72);
-  border: 1px solid rgba(240, 223, 190, 0.86);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .fallback-trigger-group-title {
-  color: #4c341a;
+  color: var(--theme-title);
   font-size: 14px;
   font-weight: 800;
 }
@@ -1165,7 +1165,7 @@ onMounted(async () => {
 
 .category-badge-warning {
   background: rgba(255, 247, 230, 0.96);
-  color: #d48806;
+  color: var(--theme-accent-text);
 }
 
 .clear-filter-btn {

@@ -596,7 +596,7 @@ onMounted(() => {
   min-width: 24px;
   height: 24px;
   padding: 0 !important;
-  color: #b16d10 !important;
+  color: var(--theme-accent-text) !important;
 }
 
 .redeem-key-text {
@@ -615,7 +615,7 @@ onMounted(() => {
 
 .credit-amount {
   font-weight: 700;
-  color: #d48806;
+  color: var(--theme-accent-text);
 }
 
 .used-user-cell {
@@ -673,8 +673,8 @@ onMounted(() => {
 }
 
 .user-action-btn.user-action-btn-secondary {
-  color: #a9772e !important;
-  background: #fff8ee !important;
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-panel-bg-soft) !important;
 }
 
 .user-action-btn.user-action-btn-danger {
@@ -689,35 +689,35 @@ onMounted(() => {
 }
 
 .warm-tag-role-admin {
-  color: #c7770d;
-  background: #fff4df;
-  border-color: #efc784;
+  color: var(--theme-accent-text);
+  background: var(--theme-panel-bg-strong);
+  border-color: var(--theme-panel-border-strong);
 }
 
 .warm-tag-whitelist {
-  color: #b16d10;
-  background: #fff1d9;
-  border-color: #efc784;
+  color: var(--theme-accent-text-hover);
+  background: var(--theme-panel-bg-strong);
+  border-color: var(--theme-border-strong);
 }
 
 .warm-tag-muted {
-  color: #8f7558;
-  background: #fffaf2;
-  border-color: #f2e3c6;
+  color: var(--text-secondary);
+  background: var(--theme-empty-bg);
+  border-color: var(--theme-panel-border);
 }
 
 .filter-reset-btn {
   height: 36px;
   border-radius: 12px;
-  border: 1px solid #efc784 !important;
-  background: #fff7e8 !important;
-  color: #b16d10 !important;
+  border: 1px solid var(--theme-control-border-strong) !important;
+  background: var(--theme-control-bg) !important;
+  color: var(--theme-accent-text) !important;
 }
 
 .filter-reset-btn:hover {
-  border-color: #e1a64a !important;
-  background: #fff0d3 !important;
-  color: #c7770d !important;
+  border-color: var(--theme-border-strong) !important;
+  background: var(--theme-control-hover-bg) !important;
+  color: var(--theme-accent-text-hover) !important;
 }
 
 :deep(.admin-mobile-table .ant-table-thead > tr > th) {
