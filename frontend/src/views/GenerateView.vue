@@ -62,6 +62,7 @@ import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.v
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { withBaseUrl } from "@/lib/assets";
+import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
 import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import {
   formatGenerationErrorMessage,
@@ -183,26 +184,7 @@ function handleChatGenerateDraft() {
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const canvasNavIcon = withBaseUrl("nav-canvas.svg");
-const expiredResultAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#fffeee"/>
-      <stop offset="100%" stop-color="#e8f2f0"/>
-    </linearGradient>
-  </defs>
-  <rect width="960" height="960" rx="56" fill="url(#bg)"/>
-  <rect x="74" y="74" width="812" height="812" rx="42" fill="none" stroke="#9bb8b4" stroke-dasharray="18 16" stroke-width="10"/>
-  <g fill="none" stroke="#00797c" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="282" y="248" width="396" height="286" rx="28" stroke-width="18"/>
-    <path d="M326 490l110-108 92 88 72-66 76 86" stroke-width="18"/>
-    <circle cx="400" cy="330" r="34" fill="#1a8f92" stroke-width="12"/>
-  </g>
-  <text x="480" y="654" text-anchor="middle" font-size="54" font-weight="700" fill="#0c4a4c">原图已过期</text>
-  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#5a6e6c">服务器保留原图15天</text>
-  <text x="480" y="776" text-anchor="middle" font-size="34" fill="#5a6e6c">请在有效期内查看或下载</text>
-</svg>
-`)}`;
+const expiredResultAsset = useExpiredResultAsset();
 const prompt = ref("");
 const repaintPrompt = ref("");
 const lastSavedPromptText = ref("");
@@ -701,8 +683,8 @@ watch(
   }
 );
 
-const accentIndicatorStyle = { fontSize: "20px", color: "var(--theme-accent)" };
-const smallAccentIndicatorStyle = { fontSize: "18px", color: "var(--theme-accent)" };
+const accentIndicatorStyle = { fontSize: "20px", color: "var(--theme-icon)" };
+const smallAccentIndicatorStyle = { fontSize: "18px", color: "var(--theme-icon)" };
 const neutralIndicatorStyle = { fontSize: "24px", color: "var(--text-secondary)" };
 
 type GenerateTaskPayload = {
@@ -2936,7 +2918,7 @@ function getGeneratedResultMediaState(task: GeneratedTaskItem, img: ImageResult,
 
 function getGeneratedResultDisplayUrl(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success") return getResultDisplayUrl(img);
-  if (isGeneratedTaskExpired(task)) return expiredResultAsset;
+  if (isGeneratedTaskExpired(task)) return expiredResultAsset.value;
   if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return "";
   const displayUrl = getResultDisplayUrl(img);
   if (!displayUrl) return "";
@@ -4049,7 +4031,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
                     />
                     <template v-else>
-                      <CloudUploadOutlined style="font-size: 22px; color: var(--theme-accent)" />
+                      <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
                       <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
                     </template>
                   </div>
@@ -5952,10 +5934,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     box-shadow: 0 0 0 3px var(--theme-focus-ring);
   }
 
+  &.ant-input-textarea-show-count,
   :deep(.ant-input-textarea-show-count) {
     color: var(--theme-title) !important;
   }
 
+  &.ant-input-textarea-show-count::after,
   :deep(.ant-input-textarea-show-count)::after,
   :deep(.ant-input-data-count) {
     color: var(--theme-title) !important;
@@ -6077,7 +6061,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked) {
-  background: var(--theme-accent) !important;
+  background: var(--theme-control-active) !important;
   box-shadow: none !important;
 }
 
@@ -6086,7 +6070,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled)) {
-  background: var(--theme-accent) !important;
+  background: var(--theme-control-active) !important;
   box-shadow: none !important;
 }
 
@@ -6445,6 +6429,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   &:active {
     transform: scale(0.96);
   }
+}
+
+.generate-config-panel .upload-add-icon {
+  color: currentColor;
 }
 
 .generate-config-panel .ref-upload-block.is-reference-drag-over .upload-add {
@@ -7847,7 +7835,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .result-retain-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--theme-accent, #ffab24);
+  color: var(--theme-icon, var(--theme-accent, #ffab24));
   font-size: 16px;
 }
 
@@ -8857,6 +8845,37 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 </style>
 
 <style lang="scss">
+.generate-dropdown.ant-select-dropdown {
+  border-radius: 14px;
+  padding: 6px;
+  background: var(--theme-dropdown-bg);
+  border: 1px solid var(--theme-panel-border);
+  box-shadow: 0 18px 32px var(--theme-shadow-medium);
+}
+
+.generate-dropdown .ant-select-item {
+  border-radius: 10px;
+}
+
+.generate-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--theme-dropdown-hover-bg) !important;
+}
+
+.generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--theme-dropdown-selected-bg) !important;
+  color: var(--theme-dropdown-selected-text) !important;
+}
+
+.generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .model-option-label,
+.generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+  color: var(--theme-dropdown-selected-text) !important;
+}
+
+.generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .model-option-desc {
+  color: var(--theme-dropdown-selected-text) !important;
+  opacity: 0.78;
+}
+
 .generate-tool-dropdown .generate-tool-menu {
   min-width: 156px;
   padding: 8px;
@@ -9073,10 +9092,12 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-c
     box-shadow: none !important;
   }
 
+  &.ant-input-textarea-show-count,
   :deep(.ant-input-textarea-show-count) {
     color: var(--theme-title) !important;
   }
 
+  &.ant-input-textarea-show-count::after,
   :deep(.ant-input-textarea-show-count)::after,
   :deep(.ant-input-data-count) {
     color: var(--theme-title) !important;
@@ -9098,6 +9119,16 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-c
 
   :deep(textarea::placeholder) {
     color: var(--text-muted);
+  }
+}
+
+html[data-theme="midnight"] .generate-page .generate-config-panel .prompt-input {
+  &.ant-input-textarea-show-count,
+  &.ant-input-textarea-show-count::after,
+  :deep(.ant-input-textarea-show-count),
+  :deep(.ant-input-textarea-show-count)::after,
+  :deep(.ant-input-data-count) {
+    color: #ffffff !important;
   }
 }
 
@@ -9212,6 +9243,16 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .source-upl
   }
 }
 
+html[data-theme="midnight"] .generate-page .generate-config-panel .upload-add,
+html[data-theme="midnight"] .generate-page .source-upload-empty {
+  color: #ffffff;
+}
+
+html[data-theme="midnight"] .generate-page .generate-config-panel .upload-add-icon,
+html[data-theme="midnight"] .generate-page .source-upload-icon {
+  color: #ffffff !important;
+}
+
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-config-panel .flat-select {
   background: var(--theme-control-bg);
   border-color: var(--theme-control-border);
@@ -9252,7 +9293,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-ret
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-icon {
-  color: var(--theme-accent) !important;
+  color: var(--theme-icon) !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-badge .result-tip-highlight {
@@ -9262,9 +9303,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-ret
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-btn,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-action-btn-primary,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
-  background: var(--theme-accent) !important;
+  background: var(--theme-control-active) !important;
   color: var(--theme-accent-contrast) !important;
-  border-color: var(--theme-accent) !important;
+  border-color: var(--theme-control-active) !important;
   box-shadow: 0 14px 24px var(--theme-shadow-strong) !important;
 }
 
@@ -9274,6 +9315,21 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-ac
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-action-btn-primary:focus {
   background: var(--theme-accent-strong) !important;
   box-shadow: 0 16px 28px var(--theme-shadow-strong) !important;
+}
+
+html[data-theme="midnight"] .generate-page .generate-btn,
+html[data-theme="midnight"] .generate-page .reverse-action-btn-primary,
+html[data-theme="midnight"] .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+  color: #ffffff !important;
+}
+
+html[data-theme="midnight"] .generate-page .aspect-ratio-auto-row .aspect-ratio-auto-switch.ant-switch {
+  background: var(--theme-control-track) !important;
+  box-shadow: inset 0 0 0 1px var(--theme-border-strong) !important;
+}
+
+html[data-theme="midnight"] .generate-page .aspect-ratio-auto-row .aspect-ratio-auto-switch.ant-switch .ant-switch-handle::before {
+  background: #ffffff !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-btn:disabled {

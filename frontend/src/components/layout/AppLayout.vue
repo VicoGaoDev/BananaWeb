@@ -176,7 +176,7 @@ function renderUserNoticeIcon(icon: Component) {
         height: "34px",
         borderRadius: "50%",
         border: "1px solid var(--theme-border-accent)",
-        background: "var(--theme-accent)",
+        background: "var(--theme-control-active)",
         boxShadow: "0 10px 20px var(--theme-shadow-soft)",
       },
     },

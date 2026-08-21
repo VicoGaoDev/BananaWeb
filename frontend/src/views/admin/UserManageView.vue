@@ -1118,6 +1118,15 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-page .warm-tag-muted
   box-shadow: none !important;
 }
 
+html[data-theme="midnight"] .warm-page .warm-tag-role-admin,
+html[data-theme="midnight"] .warm-page .warm-tag-role-user,
+html[data-theme="midnight"] .warm-page .warm-tag-whitelist,
+html[data-theme="midnight"] .warm-page .warm-tag-muted {
+  background: var(--theme-tag-bg) !important;
+  border-color: var(--theme-pill-border) !important;
+  color: var(--theme-title) !important;
+}
+
 .whitelist-dialog {
   display: flex;
   flex-direction: column;

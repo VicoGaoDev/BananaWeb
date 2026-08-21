@@ -14,6 +14,7 @@ import {
 } from "@ant-design/icons-vue";
 import { createBoard, deleteBoard, listBoards, updateBoard } from "@/api/boards";
 import { boardKeyFromId, GENERATE_BOARD_KEY, writeStoredBoardKey } from "@/lib/boardPreference";
+import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
 import type { UserBoardSummary } from "@/types";
 
 const router = useRouter();
@@ -25,26 +26,7 @@ const renameDialogOpen = ref(false);
 const renameSaving = ref(false);
 const renameTarget = ref<UserBoardSummary | null>(null);
 const renameName = ref("");
-const expiredPreviewAsset = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="960" viewBox="0 0 960 960">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#fff8ee"/>
-      <stop offset="100%" stop-color="#ffe6c8"/>
-    </linearGradient>
-  </defs>
-  <rect width="960" height="960" rx="56" fill="url(#bg)"/>
-  <rect x="74" y="74" width="812" height="812" rx="42" fill="none" stroke="#efc784" stroke-dasharray="18 16" stroke-width="10"/>
-  <g fill="none" stroke="#d08a24" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="282" y="248" width="396" height="286" rx="28" stroke-width="18"/>
-    <path d="M326 490l110-108 92 88 72-66 76 86" stroke-width="18"/>
-    <circle cx="400" cy="330" r="34" fill="#ffd585" stroke-width="12"/>
-  </g>
-  <text x="480" y="654" text-anchor="middle" font-size="54" font-weight="700" fill="#8c5a16">原图已过期</text>
-  <text x="480" y="726" text-anchor="middle" font-size="34" fill="#a9742e">服务器保留原图15天</text>
-  <text x="480" y="776" text-anchor="middle" font-size="34" fill="#a9742e">请在有效期内查看或下载</text>
-</svg>
-`)}`;
+const expiredPreviewAsset = useExpiredResultAsset();
 
 const userBoards = computed(() => boards.value.filter((board) => !board.is_default));
 const filteredBoards = computed(() => {
@@ -179,7 +161,7 @@ function handleBoardPreviewError(event: Event) {
   if (image.dataset.expiredFallback === "true") return;
   image.dataset.expiredFallback = "true";
   image.classList.add("board-preview-expired");
-  image.src = expiredPreviewAsset;
+  image.src = expiredPreviewAsset.value;
 }
 
 onMounted(loadBoards);

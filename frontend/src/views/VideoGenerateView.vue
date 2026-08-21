@@ -2321,7 +2321,7 @@ onBeforeUnmount(() => {
 }
 
 .upload-add-icon {
-  color: var(--theme-accent);
+  color: currentColor;
 }
 
 .frame-upload-grid {
@@ -2514,10 +2514,12 @@ onBeforeUnmount(() => {
   border: none !important;
   background: transparent !important;
 
+  &.ant-input-textarea-show-count,
   :deep(.ant-input-textarea-show-count) {
     color: var(--theme-title) !important;
   }
 
+  &.ant-input-textarea-show-count::after,
   :deep(.ant-input-textarea-show-count)::after,
   :deep(.ant-input-data-count) {
     color: var(--theme-title) !important;
@@ -3111,6 +3113,19 @@ onBeforeUnmount(() => {
 .video-generate-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
   background: var(--theme-dropdown-selected-bg);
   color: var(--theme-dropdown-selected-text);
+}
+
+html[data-theme="midnight"] .generate-page .upload-add {
+  color: #ffffff;
+}
+
+html[data-theme="midnight"] .generate-page .upload-add-icon {
+  color: #ffffff !important;
+}
+
+html[data-theme="midnight"] .generate-page .prompt-input.ant-input-textarea-show-count::after,
+html[data-theme="midnight"] .generate-page .prompt-input .ant-input-data-count {
+  color: #ffffff !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-library-btn,
