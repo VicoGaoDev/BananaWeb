@@ -21,6 +21,8 @@
   --theme-brand-bg-end: #ffaf29;
   --theme-brand-shadow: rgba(255, 175, 41, 0.24);
   --theme-title: #4c341a;
+  --theme-text-primary: var(--theme-title);
+  --theme-muted-text: var(--text-muted);
   --theme-subtitle: #b8883f;
   --theme-nav-text: #7c6644;
   --theme-nav-hover-text: #d58b14;
@@ -230,6 +232,8 @@ html[data-theme="midnight"] {
   --theme-brand-bg-end: #1f1f1f;
   --theme-brand-shadow: rgba(0, 0, 0, 0.4);
   --theme-title: #e6e6e6;
+  --theme-text-primary: #f3f3f3;
+  --theme-muted-text: #c5c5c5;
   --theme-subtitle: #9aa0a6;
   --theme-nav-text: #c5c5c5;
   --theme-nav-hover-text: #ffffff;
@@ -971,7 +975,20 @@ html, body, #app {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 20px 24px 24px;
+  color: var(--theme-text-primary);
   transition: background var(--motion-duration-base) var(--motion-ease-soft);
+}
+
+.ant-modal-confirm .ant-modal-confirm-title {
+  color: var(--theme-title) !important;
+}
+
+.ant-modal-confirm .ant-modal-confirm-content {
+  color: var(--theme-text-secondary) !important;
+}
+
+.ant-modal .ant-empty-description {
+  color: var(--theme-muted-text);
 }
 
 .ant-modal .ant-modal-footer {

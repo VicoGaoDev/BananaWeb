@@ -262,7 +262,7 @@ function openSuggestionDialog() {
 }
 
 .style-card-check {
-  color: var(--theme-accent);
+  color: var(--theme-icon);
   font-size: 16px;
 }
 
