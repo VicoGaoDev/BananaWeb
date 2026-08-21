@@ -3360,8 +3360,11 @@ watch(generatedTaskLoadMoreAnchor, (target) => {
   setupGeneratedTaskLoadMoreObserver(target);
 });
 
-watch(isDesktopGeneratedTaskAutoLoad, () => {
+watch(isDesktopGeneratedTaskAutoLoad, (isDesktop) => {
   setupGeneratedTaskLoadMoreObserver(generatedTaskLoadMoreAnchor.value);
+  if (!isDesktop) {
+    isConfigPanelCollapsed.value = false;
+  }
 });
 
 watch([
@@ -3473,7 +3476,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             <div class="mode-switch-cluster">
               <div class="mode-switch-group mode-switch-group-secondary">
                 <a-dropdown
-                  :trigger="['hover']"
+                  :trigger="isDesktopGeneratedTaskAutoLoad ? ['hover'] : ['click']"
                   placement="bottomRight"
                   overlay-class-name="generate-tool-dropdown"
                 >
@@ -3509,7 +3512,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-menu>
                   </template>
                 </a-dropdown>
-                <a-tooltip title="收起配置">
+                <a-tooltip v-if="isDesktopGeneratedTaskAutoLoad" title="收起配置">
                   <button
                     type="button"
                     class="mode-switch-btn config-collapse-btn"
@@ -4577,7 +4580,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       >
         <div class="result-head">
           <div class="result-head-main">
-            <a-tooltip v-if="isConfigPanelCollapsed" title="展开配置">
+            <a-tooltip v-if="isDesktopGeneratedTaskAutoLoad && isConfigPanelCollapsed" title="展开配置">
               <button
                 type="button"
                 class="result-config-expand-btn"
@@ -5441,6 +5444,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   width: 100%;
   min-height: 0;
   min-width: 0;
+  background: transparent;
 }
 
 .generate-mode-switch {
@@ -5894,7 +5898,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   height: 32px;
   padding: 0 12px !important;
   border-radius: 12px;
-  color: var(--theme-accent-text) !important;
+  color: var(--theme-title) !important;
   font-size: 13px;
   font-weight: 600;
   background: var(--theme-control-bg) !important;
@@ -5907,7 +5911,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    color: var(--theme-accent-text-hover) !important;
+    color: var(--theme-title) !important;
     background: var(--theme-control-hover-bg) !important;
     border-color: var(--theme-border-strong) !important;
     transform: translateY(-1px);
@@ -7159,6 +7163,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   height: 100%;
   min-height: 0;
   padding: 16px 18px 18px;
+  background: var(--theme-panel-bg);
+  background-image: none;
 }
 
 .result-panel.config-panel-is-collapsed {
@@ -7856,6 +7862,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   grid-template-columns: repeat(var(--generate-grid-columns, 4), minmax(0, 1fr));
   gap: 16px;
   margin-top: 12px;
+  background: var(--theme-panel-bg);
+  background-image: none;
 }
 
 .result-body {
@@ -7866,6 +7874,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   padding-right: 4px;
   display: flex;
   flex-direction: column;
+  background: var(--theme-panel-bg);
+  background-image: none;
   scrollbar-width: thin;
   scrollbar-color: var(--theme-border-strong) transparent;
 
@@ -7944,6 +7954,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   margin: 0;
   position: relative;
   border-radius: 16px;
+  background: transparent;
   transition: transform var(--motion-duration-hover) var(--motion-ease-enter);
 
   &:hover {
@@ -7962,10 +7973,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   border-radius: 16px;
   overflow: hidden;
   border: 1px dashed var(--theme-panel-border);
-  background:
-    radial-gradient(circle at 50% 45%, rgba(var(--theme-surface-strong-rgb), 0.98) 0%, rgba(var(--theme-page-base-rgb), 0.98) 58%, rgba(var(--theme-page-base-rgb), 0.96) 100%),
-    linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-strong));
-  box-shadow: 0 12px 24px var(--theme-shadow-soft);
+  background: var(--theme-panel-bg);
+  box-shadow: none;
   transition:
     transform var(--motion-duration-hover) var(--motion-ease-enter),
     box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
@@ -7978,7 +7987,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     object-fit: contain;
     object-position: center;
     box-sizing: border-box;
-    background: transparent;
+    background: var(--theme-panel-bg);
     transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 
@@ -8010,7 +8019,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong);
-  box-shadow: 0 16px 28px var(--theme-shadow-medium);
+  box-shadow: none;
 }
 
 .result-card:hover .result-frame.clickable img {
@@ -8714,6 +8723,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .mode-switch-group {
     flex-wrap: nowrap;
   }
+
+  .config-collapse-btn,
+  .result-config-expand-btn {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
@@ -9116,10 +9130,17 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-can
     0 0 0 1px rgba(255, 255, 255, 0.14) inset;
 }
 
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .work-panel {
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .work-panel:not(.result-panel) {
   background: linear-gradient(180deg, var(--theme-panel-bg) 0%, var(--theme-panel-bg-soft) 100%);
   border-color: var(--theme-panel-border);
   box-shadow: 0 18px 45px var(--theme-shadow-soft);
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-panel,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-body,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-list {
+  background: var(--theme-panel-bg);
+  background-image: none;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-panel.generate-config-panel {
@@ -9296,7 +9317,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .frame-stat
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong) !important;
-  box-shadow: 0 18px 30px var(--theme-shadow-medium) !important;
+  box-shadow: none !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-empty {
@@ -9359,5 +9380,30 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-t
 .generate-tool-dropdown .generate-tool-menu .ant-menu-item .anticon {
   font-size: 18px;
   color: currentColor;
+}
+
+.generate-page .result-panel,
+.generate-page .result-body,
+.generate-page .result-list,
+.generate-page .result-card {
+  background: var(--theme-panel-bg) !important;
+  background-image: none !important;
+}
+
+.generate-page .result-card,
+.generate-page .result-card:hover,
+.generate-page .result-frame,
+.generate-page .result-card:hover .result-frame {
+  box-shadow: none !important;
+}
+
+.generate-page .result-frame:not(.pending):not(.failed),
+.generate-page .result-frame:not(.pending):not(.failed) img {
+  background: var(--theme-panel-bg) !important;
+  background-image: none !important;
+}
+
+.generate-page .result-frame:not(.pending):not(.failed) {
+  border: 1px dashed var(--theme-panel-border) !important;
 }
 </style>

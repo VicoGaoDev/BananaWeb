@@ -1814,6 +1814,7 @@ onBeforeUnmount(() => {
 .generate-page {
   min-height: calc(100vh - 112px);
   height: calc(100vh - 112px);
+  background: var(--theme-page-base);
   --config-title-size: 14px;
   --config-title-gap: 8px;
   --config-title-color: var(--theme-title);
@@ -1861,6 +1862,7 @@ onBeforeUnmount(() => {
   width: 100%;
   min-height: 0;
   min-width: 0;
+  background: transparent;
 }
 
 .generate-mode-switch {
@@ -2369,7 +2371,7 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 12px !important;
   border-radius: 12px;
-  color: var(--theme-accent-text) !important;
+  color: var(--theme-title) !important;
   font-size: 13px;
   font-weight: 600;
   background: var(--theme-control-bg) !important;
@@ -2382,7 +2384,7 @@ onBeforeUnmount(() => {
     box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
-    color: var(--theme-accent-text-hover) !important;
+    color: var(--theme-title) !important;
     background: var(--theme-control-hover-bg) !important;
     border-color: var(--theme-border-strong) !important;
     transform: translateY(-1px);
@@ -2443,7 +2445,7 @@ onBeforeUnmount(() => {
 
   :deep(.ant-slider-track) {
     height: 8px;
-    background: linear-gradient(90deg, var(--theme-accent-strong) 0%, var(--theme-accent) 100%);
+    background: linear-gradient(90deg, var(--theme-progress) 0%, color-mix(in srgb, var(--theme-progress) 70%, var(--theme-accent)) 100%);
     border-radius: 999px;
   }
 
@@ -2599,6 +2601,7 @@ onBeforeUnmount(() => {
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--theme-panel-bg);
 }
 
 .result-head {

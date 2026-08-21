@@ -1,17 +1,14 @@
 <script setup lang="ts">
 import { message } from "ant-design-vue";
 import { BgColorsOutlined, CheckOutlined, RightOutlined } from "@ant-design/icons-vue";
-import { appThemes, getAppThemesByGroup, type AppThemeName } from "@/config/theme";
+import { appThemes, getAppThemeGroups, type AppThemeName } from "@/config/theme";
 import { setAppTheme } from "@/lib/theme";
 
 const props = defineProps<{
   currentTheme: AppThemeName;
 }>();
 
-const themeMenuGroups = [
-  { key: "dark", label: "黑暗主题", themes: getAppThemesByGroup("dark") },
-  { key: "color", label: "颜色主题", themes: getAppThemesByGroup("color") },
-] as const;
+const themeMenuGroups = getAppThemeGroups();
 
 function applyTheme(theme: AppThemeName) {
   if (theme === props.currentTheme) return;

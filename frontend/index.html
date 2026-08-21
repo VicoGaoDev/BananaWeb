@@ -82,6 +82,66 @@
         --boot-text: #6a6a5c;
       }
 
+      html[data-theme="cyan"] {
+        color-scheme: light;
+        background: #ffffff;
+        color: #3d4a52;
+        --boot-page-bg: #ffffff;
+        --boot-page-gradient: #ffffff;
+        --boot-page-glow: transparent;
+        --boot-brand-start: #05afb5;
+        --boot-brand-end: #047b80;
+        --boot-brand-text: #ffffff;
+        --boot-brand-shadow: rgba(4, 123, 128, 0.22);
+        --boot-accent: #05afb5;
+        --boot-text: #5a6570;
+      }
+
+      html[data-theme="mauve"] {
+        color-scheme: light;
+        background: #fafbe6;
+        color: #4a4258;
+        --boot-page-bg: #fafbe6;
+        --boot-page-gradient: #fafbe6;
+        --boot-page-glow: transparent;
+        --boot-brand-start: #b9a6ed;
+        --boot-brand-end: #a48ce6;
+        --boot-brand-text: #fafbe6;
+        --boot-brand-shadow: rgba(164, 140, 230, 0.24);
+        --boot-accent: #a48ce6;
+        --boot-text: #6e6678;
+      }
+
+      html[data-theme="alum"] {
+        color-scheme: light;
+        background: #f5f4f7;
+        color: #3a4542;
+        --boot-page-bg: #f5f4f7;
+        --boot-page-gradient: #f5f4f7;
+        --boot-page-glow: transparent;
+        --boot-brand-start: #3aad8c;
+        --boot-brand-end: #2c9678;
+        --boot-brand-text: #f5f4f7;
+        --boot-brand-shadow: rgba(44, 150, 120, 0.22);
+        --boot-accent: #2c9678;
+        --boot-text: #5c6a66;
+      }
+
+      html[data-theme="mist"] {
+        color-scheme: light;
+        background: #e3e3e5;
+        color: #3d4150;
+        --boot-page-bg: #e3e3e5;
+        --boot-page-gradient: #e3e3e5;
+        --boot-page-glow: transparent;
+        --boot-brand-start: #858cab;
+        --boot-brand-end: #707899;
+        --boot-brand-text: #e3e3e5;
+        --boot-brand-shadow: rgba(112, 120, 153, 0.22);
+        --boot-accent: #707899;
+        --boot-text: #5c6070;
+      }
+
       html,
       body {
         margin: 0;
@@ -159,6 +219,10 @@
             theme === "warm" ||
             theme === "jade" ||
             theme === "iris" ||
+            theme === "cyan" ||
+            theme === "mauve" ||
+            theme === "alum" ||
+            theme === "mist" ||
             theme === "dark" ||
             theme === "midnight"
           ) {

@@ -1,6 +1,6 @@
 (function () {
   var STORAGE_KEY = "banana-web-theme";
-  var THEMES = { warm: true, jade: true, iris: true, dark: true, midnight: true };
+  var THEMES = { warm: true, jade: true, iris: true, cyan: true, mauve: true, alum: true, mist: true, dark: true, midnight: true };
 
   function applyTheme(theme) {
     var name = THEMES[theme] ? theme : "warm";

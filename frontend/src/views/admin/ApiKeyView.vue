@@ -2,12 +2,11 @@
 import { onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { BgColorsOutlined, SettingOutlined } from "@ant-design/icons-vue";
-import { appThemes, getAppThemesByGroup, type AppThemeName } from "@/config/theme";
+import { appThemes, getAppThemeGroups, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
-const darkThemeOptions = getAppThemesByGroup("dark");
-const colorThemeOptions = getAppThemesByGroup("color");
+const themeGroups = getAppThemeGroups();
 
 onMounted(() => {
   currentTheme.value = getCurrentTheme();
@@ -43,41 +42,18 @@ function applyThemeSelection() {
           <BgColorsOutlined class="theme-section-icon" />
         </div>
 
-        <div class="theme-group">
-          <div class="theme-group-label">黑暗主题</div>
-          <div class="theme-option-grid theme-option-grid-dark">
+        <div
+          v-for="group in themeGroups"
+          :key="group.key"
+          class="theme-group"
+        >
+          <div class="theme-group-label">{{ group.label }}</div>
+          <div
+            class="theme-option-grid"
+            :class="{ 'theme-option-grid-dark': group.key === 'dark' }"
+          >
             <button
-              v-for="option in darkThemeOptions"
-              :key="option.key"
-              type="button"
-              class="theme-option-card"
-              :class="{ 'is-active': currentTheme === option.key }"
-              @click="currentTheme = option.key"
-            >
-              <div class="theme-option-name">{{ option.label }}</div>
-              <div class="theme-option-swatches">
-                <div
-                  v-for="swatch in option.palette"
-                  :key="swatch.label"
-                  class="theme-swatch"
-                >
-                  <span
-                    class="theme-swatch-chip"
-                    :style="{ background: swatch.color }"
-                    :title="swatch.label"
-                  />
-                  <span class="theme-swatch-label">{{ swatch.label }}</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <div class="theme-group">
-          <div class="theme-group-label">颜色主题</div>
-          <div class="theme-option-grid">
-            <button
-              v-for="option in colorThemeOptions"
+              v-for="option in group.themes"
               :key="option.key"
               type="button"
               class="theme-option-card"
@@ -177,7 +153,7 @@ function applyThemeSelection() {
 
 .theme-option-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 

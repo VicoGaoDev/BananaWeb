@@ -41,7 +41,7 @@ import {
   isTutorialDockTabEnabled,
   subscribeTutorialDockTabEnabled,
 } from "@/lib/generateTutorialDock";
-import { APP_THEME_ATTRIBUTE, appThemes, getAppThemesByGroup, isAppThemeName, type AppThemeName } from "@/config/theme";
+import { APP_THEME_ATTRIBUTE, appThemes, getAppThemeGroups, isAppThemeName, type AppThemeName } from "@/config/theme";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
@@ -281,12 +281,7 @@ const routeOrder = new Map<string, number>([
 ]);
 
 const currentTheme = ref<AppThemeName>(getCurrentTheme());
-const darkThemeOptions = getAppThemesByGroup("dark");
-const colorThemeOptions = getAppThemesByGroup("color");
-const themeMenuGroups = [
-  { key: "dark", label: "黑暗主题", themes: darkThemeOptions },
-  { key: "color", label: "颜色主题", themes: colorThemeOptions },
-] as const;
+const themeMenuGroups = getAppThemeGroups();
 let themeObserver: MutationObserver | null = null;
 const adminUnresolvedFeedbackCount = ref(getStoredAdminUnresolvedFeedbackCount());
 let unsubscribeAdminFeedbackCount: (() => void) | null = null;
@@ -3269,9 +3264,7 @@ watch(
 <style scoped lang="scss">
 .app-layout {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top, var(--theme-page-glow), transparent 28%),
-    var(--theme-page-gradient);
+  background: var(--theme-page-base);
 }
 
 .app-header {
@@ -4791,21 +4784,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 .app-content {
   position: relative;
   padding: 22px 50px 28px;
+  background: var(--theme-page-base);
 
   &::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    left: 0;
-    height: 132px;
-    pointer-events: none;
-    background: linear-gradient(
-      180deg,
-      rgba(var(--theme-surface-strong-rgb), 0.72) 0%,
-      rgba(var(--theme-surface-strong-rgb), 0.46) 34%,
-      rgba(var(--theme-page-base-rgb), 0) 100%
-    );
+    display: none;
   }
 }
 
