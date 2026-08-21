@@ -213,7 +213,7 @@ def _is_async_provider_task_still_polling(db: Session, task: Task, *, now_value)
     if poll_timeout_seconds is None:
         return False
 
-    started_at = task.updated_at or task.request_started_at or task.enqueued_at or task.created_at
+    started_at = task.provider_started_at or task.updated_at or task.request_started_at or task.enqueued_at or task.created_at
     if started_at is None:
         return False
 

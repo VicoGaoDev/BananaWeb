@@ -280,6 +280,13 @@ def _mark_task_request_started(task: Task) -> bool:
 def _mark_task_request_finished(task: Task) -> None:
     task.request_finished_at = now_local()
 
+
+def _elapsed_ms_since(started_at) -> int | None:
+    if started_at is None:
+        return None
+    return max(int(round((now_local() - started_at).total_seconds() * 1000)), 0)
+
+
 def _read_file_as_base64(ref_url: str) -> tuple[str, str] | None:
     """Read a local or remote image and return (mime_type, base64_data)."""
     result = load_image_bytes(ref_url)
@@ -356,7 +363,13 @@ def _build_async_request_context(provider_task_id: str, request_url: str) -> str
 
 
 def _get_async_provider_started_at(task: Task):
-    return task.request_started_at or task.enqueued_at or task.created_at or task.updated_at
+    return (
+        task.provider_started_at
+        or task.request_started_at
+        or task.enqueued_at
+        or task.created_at
+        or task.updated_at
+    )
 
 
 def _is_async_provider_poll_timed_out(task: Task, poll_timeout_seconds: int, *, now_value=None) -> bool:
@@ -929,7 +942,7 @@ def _poll_async_generation_once(
         task.provider_error_message = _clip_error_message(
             f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
         )
-        task.provider_status = task.provider_status or "timeout"
+        task.provider_status = "timeout"
         task.last_polled_at = now_local()
         task.next_poll_at = None
         db.commit()
@@ -1033,7 +1046,7 @@ def _poll_async_generation_once(
             task.provider_error_message = _clip_error_message(
                 f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
             )
-            task.provider_status = provider_status or "timeout"
+            task.provider_status = "timeout"
             task.provider_response_preview = response_preview
             task.last_polled_at = now_local()
             task.poll_count = next_poll_count
@@ -1335,7 +1348,8 @@ def _submit_generation_with_configs(
             task.provider_status = submit_result.provider_status or "submitted"
             task.provider_error_message = ""
             task.provider_response_preview = submit_result.response_preview
-            task.request_started_at = provider_started_at
+            _mark_task_request_started(task)
+            task.provider_started_at = provider_started_at
             task.request_finished_at = None
             task.poll_count = 0
             task.last_polled_at = None
@@ -1402,6 +1416,7 @@ def _clear_task_provider_context(task: Task) -> None:
     task.poll_count = 0
     task.last_polled_at = None
     task.next_poll_at = None
+    task.provider_started_at = None
 
 
 def _clear_provider_context_if_more_images_pending(task: Task, images: list[Image]) -> None:
@@ -1983,10 +1998,15 @@ def _first_pending_image(task: Task) -> Image | None:
     return sorted(pending_images, key=lambda image: image.id)[0]
 
 
+def _is_async_poll_timeout_error(error_message: str) -> bool:
+    return "异步生图轮询超时" in (error_message or "")
+
+
 def _is_async_poll_failed_status(config: ExternalApiConfig, provider_status: str) -> bool:
     failed_values = {item.strip().lower() for item in parse_string_list_json(config.result_failed_values_json) if item.strip()}
     if not failed_values:
         failed_values = {"failed", "error", "cancelled"}
+    failed_values.add("timeout")
     return (provider_status or "").strip().lower() in failed_values
 
 
@@ -2081,7 +2101,11 @@ def _retry_async_poll_with_fallback(
 ) -> tuple[ApiCallResult | None, list[ApiAttemptRecord]]:
     if call_result.deferred or call_result.result:
         return None, []
-    if not _is_async_poll_failed_status(config, task.provider_status or ""):
+    if not (
+        _is_async_poll_failed_status(config, task.provider_status or "")
+        or _is_async_poll_timeout_error(call_result.error_message)
+        or _is_async_poll_timeout_error(task.provider_error_message)
+    ):
         return None, []
     if not _should_use_fallback_api(call_result.http_status_code, call_result.error_message):
         return None, []
@@ -2101,7 +2125,7 @@ def _retry_async_poll_with_fallback(
             status="failed",
             http_status=call_result.http_status_code,
             error_message=_clip_error_message(call_result.error_message),
-            duration_ms=None,
+            duration_ms=_elapsed_ms_since(_get_async_provider_started_at(task)),
         )
     ]
 

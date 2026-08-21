@@ -34,6 +34,7 @@ class Task(Base):
     poll_count = Column(Integer, nullable=False, default=0, server_default="0")
     last_polled_at = Column(DateTime, nullable=True)
     next_poll_at = Column(DateTime, nullable=True)
+    provider_started_at = Column(DateTime, nullable=True)
     used_fallback_api = Column(Boolean, nullable=False, default=False, server_default="0")
     is_deleted = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())

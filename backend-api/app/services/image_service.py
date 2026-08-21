@@ -38,6 +38,7 @@ def request_regenerate(
     image.task.poll_count = 0
     image.task.last_polled_at = None
     image.task.next_poll_at = None
+    image.task.provider_started_at = None
     image.status = "pending"
     image.error_message = ""
     image.image_url = ""

@@ -348,6 +348,7 @@ def _submit_async_video_generation_api_once(db, *, config, task: VideoTask) -> t
         task.provider_error_message = ""
         db.commit()
         result_payload, error_message = _poll_async_video_result(db, task=task, config=config)
+        duration_ms = max(int(round((time.perf_counter() - request_started_perf) * 1000)), 0)
         return result_payload, error_message, None, duration_ms
     except Exception as exc:
         duration_ms = max(int(round((time.perf_counter() - request_started_perf) * 1000)), 0)

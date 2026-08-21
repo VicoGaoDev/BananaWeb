@@ -178,6 +178,8 @@ def _ensure_schema_compat():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN request_started_at DATETIME"))
         if "request_finished_at" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN request_finished_at DATETIME"))
+        if "provider_started_at" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN provider_started_at DATETIME"))
 
     image_columns = {col["name"] for col in inspector.get_columns("images")}
     with engine.begin() as conn:
@@ -1015,6 +1017,7 @@ def _ensure_task_credit_cost_column():
         and "last_polled_at" in task_columns
         and "next_poll_at" in task_columns
         and "used_fallback_api" in task_columns
+        and "provider_started_at" in task_columns
     ):
         return
 
@@ -1049,6 +1052,8 @@ def _ensure_task_credit_cost_column():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN next_poll_at DATETIME"))
         if "used_fallback_api" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN used_fallback_api BOOLEAN NOT NULL DEFAULT 0"))
+        if "provider_started_at" not in task_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN provider_started_at DATETIME"))
         conn.execute(text("UPDATE tasks SET used_fallback_api = 0 WHERE used_fallback_api IS NULL"))
         if "provider_task_id" in task_columns:
             conn.execute(text("UPDATE tasks SET provider_task_id = '' WHERE provider_task_id IS NULL"))
