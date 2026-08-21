@@ -250,6 +250,16 @@ async function copyPrompt(text?: string) {
   }
 }
 
+async function copyBusinessId(text?: string) {
+  if (!text?.trim()) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success("已复制 ID");
+  } catch {
+    message.error("复制失败，请重试");
+  }
+}
+
 async function handlePlayVideo() {
   const video = videoPlayerRef.value;
   if (!video) return;
@@ -370,6 +380,17 @@ function handleDownload(item: VideoTaskResult) {
               <div class="detail-right">
                 <div class="detail-section">
                   <div class="detail-meta">
+                    <span v-if="item.id" class="detail-meta-business-id">
+                      ID：{{ item.id }}
+                      <button
+                        type="button"
+                        class="detail-meta-copy"
+                        aria-label="复制 ID"
+                        @click="copyBusinessId(item.id)"
+                      >
+                        <CopyOutlined />
+                      </button>
+                    </span>
                     <span v-for="meta in detailMetaList(item)" :key="meta">{{ meta }}</span>
                   </div>
                 </div>
@@ -825,6 +846,29 @@ function handleDownload(item: VideoTaskResult) {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
+}
+
+.detail-meta-business-id {
+  gap: 4px;
+  word-break: break-all;
+}
+
+.detail-meta-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-link);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.detail-meta-copy:hover {
+  color: var(--theme-accent);
 }
 
 .detail-thumb-row {
