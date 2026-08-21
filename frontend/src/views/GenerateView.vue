@@ -7973,8 +7973,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   border-radius: 16px;
   overflow: hidden;
   border: 1px dashed var(--theme-panel-border);
-  background: var(--theme-panel-bg);
-  box-shadow: none;
+  background: #ffffff;
+  box-shadow: 0 12px 24px var(--theme-shadow-soft);
   transition:
     transform var(--motion-duration-hover) var(--motion-ease-enter),
     box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
@@ -7987,7 +7987,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     object-fit: contain;
     object-position: center;
     box-sizing: border-box;
-    background: var(--theme-panel-bg);
+    background: transparent;
     transition: transform var(--motion-duration-emphasis) var(--motion-ease-enter);
   }
 
@@ -8019,7 +8019,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong);
-  box-shadow: none;
+  box-shadow: 0 16px 28px var(--theme-shadow-medium);
 }
 
 .result-card:hover .result-frame.clickable img {
@@ -9300,7 +9300,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-re
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-frame {
   border-color: var(--theme-panel-border) !important;
-  background: var(--theme-panel-bg) !important;
+  background: var(--theme-surface-strong) !important;
   box-shadow: 0 12px 28px var(--theme-shadow-soft) !important;
 }
 
@@ -9317,7 +9317,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .frame-stat
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong) !important;
-  box-shadow: none !important;
+  box-shadow: 0 18px 30px var(--theme-shadow-medium) !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-empty {
@@ -9384,26 +9384,21 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-t
 
 .generate-page .result-panel,
 .generate-page .result-body,
-.generate-page .result-list,
+.generate-page .result-list {
+  background: var(--theme-panel-bg) !important;
+  background-image: none !important;
+}
+
 .generate-page .result-card {
-  background: var(--theme-panel-bg) !important;
-  background-image: none !important;
-}
-
-.generate-page .result-card,
-.generate-page .result-card:hover,
-.generate-page .result-frame,
-.generate-page .result-card:hover .result-frame {
-  box-shadow: none !important;
-}
-
-.generate-page .result-frame:not(.pending):not(.failed),
-.generate-page .result-frame:not(.pending):not(.failed) img {
-  background: var(--theme-panel-bg) !important;
-  background-image: none !important;
+  background: transparent !important;
 }
 
 .generate-page .result-frame:not(.pending):not(.failed) {
   border: 1px dashed var(--theme-panel-border) !important;
+  background: #ffffff !important;
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-frame:not(.pending):not(.failed) {
+  background: var(--theme-surface-strong) !important;
 }
 </style>
