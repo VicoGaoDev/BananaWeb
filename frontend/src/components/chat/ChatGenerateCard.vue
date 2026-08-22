@@ -8,6 +8,7 @@ import { getTaskScenes } from "@/api/config";
 import { getTasks } from "@/api/tasks";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
+import { formatGenerationTaskFailureMessage, GENERATION_TASK_FAILURE_MESSAGE } from "@/lib/generationErrors";
 import type { ChatGenerateInfo, ChatMessage, SceneOptionItem, TaskResult, TaskSceneConfig } from "@/types";
 
 const IMAGE_COUNT_OPTIONS: SceneOptionItem[] = Array.from({ length: 8 }, (_, index) => {
@@ -39,6 +40,7 @@ const resolution = ref("");
 const customSize = ref("");
 const tasks = ref<TaskResult[]>([]);
 const tasksFetched = ref(false);
+const loadedImageKeys = ref<Set<string>>(new Set());
 let pollTimer: number | null = null;
 
 const generateInfo = computed(() => props.generate);
@@ -105,9 +107,15 @@ const isGenerating = computed(() => {
   if (tasks.value.length) {
     return tasks.value.some((item) => item.status === "processing" || item.status === "queued" || item.status === "pending");
   }
+  if (generateInfo.value.status === "success") return false;
   if (generateInfo.value.status === "running") return true;
   return false;
 });
+const hasKnownSuccess = computed(() => (
+  generateInfo.value.status === "success"
+  || resultImages.value.length > 0
+  || tasks.value.some((item) => item.status === "success")
+));
 const allTasksFailed = computed(() => (
   tasksSettled.value && tasks.value.every((item) => item.status === "failed")
 ));
@@ -149,6 +157,9 @@ const resultSlots = computed(() => {
     if (!task && (generateInfo.value.status === "failed" || tasksMissing.value)) {
       return { key: `fail-${index}`, status: "failed" as const, url: "", previewUrl: "" };
     }
+    if (hasKnownSuccess.value || task?.status === "success") {
+      return { key: `load-${task?.id || index}`, status: "loading" as const, url: "", previewUrl: "" };
+    }
     return { key: `pending-${task?.id || index}`, status: "pending" as const, url: "", previewUrl: "" };
   });
 });
@@ -161,23 +172,43 @@ const resultAspectRatio = computed(() => {
   return "1 / 1";
 });
 const failedMessage = computed(() => {
-  if (generateInfo.value.error_message) return generateInfo.value.error_message;
+  if (generateInfo.value.status !== "failed" && !tasksMissing.value && !allTasksFailed.value) {
+    return "";
+  }
   const failed = tasks.value.find((item) => item.status === "failed");
-  return failed?.error_message || failed?.provider_error_message || "";
+  return formatGenerationTaskFailureMessage(
+    generateInfo.value.error_message || failed?.error_message || failed?.provider_error_message || "",
+    Boolean(failed?.credit_refunded),
+  );
 });
+const isLoadingResults = computed(() => (
+  resultSlots.value.some((slot) => (
+    slot.status === "loading"
+    || (slot.status === "success" && !!slot.url && !loadedImageKeys.value.has(slot.key))
+  ))
+));
 const statusLabel = computed(() => {
   if (generateInfo.value.status === "cancelled") return "已取消";
   if (generateInfo.value.status === "failed" || tasksMissing.value) return "生成失败";
-  if (tasksSettled.value) {
-    if (tasks.value.every((item) => item.status === "failed")) return "生成失败";
-    if (tasks.value.some((item) => item.status === "success")) return "已生成";
-  }
+  if (tasksSettled.value && tasks.value.every((item) => item.status === "failed")) return "生成失败";
   if (isGenerating.value) return "正在生成…";
+  if (isLoadingResults.value) return "加载中…";
   if (generateInfo.value.status === "success" || resultSlots.value.some((slot) => slot.status === "success")) {
     return "已生成";
   }
   return modeLabel.value;
 });
+
+function isImageReady(slot: { key: string; status: string; url: string }) {
+  return slot.status === "success" && !!slot.url && loadedImageKeys.value.has(slot.key);
+}
+
+function markImageReady(key: string) {
+  if (loadedImageKeys.value.has(key)) return;
+  const next = new Set(loadedImageKeys.value);
+  next.add(key);
+  loadedImageKeys.value = next;
+}
 
 function firstOptionValue(items?: { value: string }[]) {
   return (items?.[0]?.value || "").trim();
@@ -266,6 +297,15 @@ watch(selectedModel, () => {
 });
 
 watch(
+  () => `${props.sessionId}:${props.messageId}`,
+  () => {
+    tasks.value = [];
+    tasksFetched.value = false;
+    loadedImageKeys.value = new Set();
+  },
+);
+
+watch(
   () => generateInfo.value.status,
   (status) => {
     if (status !== "pending_confirm") confirming.value = false;
@@ -304,7 +344,7 @@ watch(
         ...generateInfo.value,
         status: nextStatus,
         error_message: nextStatus === "failed"
-          ? (failedMessage.value || generateInfo.value.error_message || "生图失败")
+          ? (failedMessage.value || GENERATION_TASK_FAILURE_MESSAGE)
           : "",
       },
     } as ChatMessage);
@@ -471,14 +511,23 @@ onBeforeUnmount(() => {
         :key="slot.key"
         type="button"
         class="chat-generate-result"
-        :class="`is-${slot.status}`"
+        :class="`is-${slot.status === 'success' && !isImageReady(slot) ? 'loading' : slot.status}`"
         :style="{ aspectRatio: resultAspectRatio }"
         @click="handlePreviewSlot(slot)"
       >
-        <img v-if="slot.status === 'success' && slot.url" :src="imageSrc(slot.url)" alt="" />
-        <span v-else class="chat-generate-result-state">
-          <span v-if="slot.status === 'pending'" class="chat-generate-result-spin" />
-          {{ slot.status === "failed" ? "生成失败" : "生成中" }}
+        <img
+          v-if="slot.url && slot.status === 'success'"
+          :src="imageSrc(slot.url)"
+          alt=""
+          :class="{ 'is-pending-src': !isImageReady(slot) }"
+          @load="markImageReady(slot.key)"
+          @error="markImageReady(slot.key)"
+        />
+        <span v-if="slot.status === 'failed' || !isImageReady(slot)" class="chat-generate-result-state">
+          <span v-if="slot.status !== 'failed'" class="chat-generate-result-loader" aria-hidden="true">
+            <span class="chat-generate-result-spin" />
+          </span>
+          {{ slot.status === "failed" ? "生成失败" : (slot.status === "pending" ? "生成中" : "加载中") }}
         </span>
       </button>
     </div>
@@ -572,20 +621,42 @@ onBeforeUnmount(() => {
 }
 
 .chat-generate-result {
+  position: relative;
   width: 112px;
   height: auto;
   min-height: 112px;
+  isolation: isolate;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--theme-title, #3d2f22) 8%, transparent);
   background: color-mix(in srgb, var(--theme-title, #3d2f22) 4%, #fff);
 }
 
-.chat-generate-result.is-pending {
+.chat-generate-result.is-pending,
+.chat-generate-result.is-loading {
   cursor: default;
+  border-color: color-mix(in srgb, var(--theme-accent, #f7a831) 22%, var(--theme-panel-border, rgba(0, 0, 0, 0.08)));
   background:
-    linear-gradient(120deg, transparent 0%, color-mix(in srgb, var(--theme-accent, #f7a831) 16%, transparent) 46%, transparent 100%),
-    color-mix(in srgb, var(--theme-title, #3d2f22) 5%, #fff);
-  background-size: 180% 100%, 100% 100%;
-  animation: chat-generate-shimmer 1.6s ease-in-out infinite;
+    radial-gradient(120% 80% at 50% 12%, color-mix(in srgb, var(--theme-accent, #f7a831) 18%, transparent), transparent 56%),
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-panel-bg, #fff9f0) 88%, #fff), color-mix(in srgb, var(--theme-title, #3d2f22) 5%, #fff));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent);
+}
+
+.chat-generate-result.is-pending::before,
+.chat-generate-result.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: -8% auto -8% -28%;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, #fff 58%, var(--theme-accent, #f7a831)) 48%,
+    transparent 100%
+  );
+  opacity: 0.42;
+  transform: translate3d(-30%, 0, 0);
+  animation: chat-generate-shimmer 2.4s linear infinite;
 }
 
 .chat-generate-result.is-failed {
@@ -607,6 +678,8 @@ onBeforeUnmount(() => {
 }
 
 .chat-generate-result-state {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -619,17 +692,52 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.chat-generate-result.is-pending .chat-generate-result-state,
+.chat-generate-result.is-loading .chat-generate-result-state {
+  gap: 10px;
+  color: var(--theme-title, #3d2f22);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.chat-generate-result img.is-pending-src {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .chat-generate-result.is-failed .chat-generate-result-state {
   color: #b42318;
 }
 
-.chat-generate-result-spin {
-  width: 18px;
-  height: 18px;
-  border: 2px solid color-mix(in srgb, var(--theme-accent, #f7a831) 28%, transparent);
-  border-top-color: var(--theme-accent, #f7a831);
+.chat-generate-result-loader {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+}
+
+.chat-generate-result-loader::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
   border-radius: 50%;
-  animation: chat-generate-spin 0.8s linear infinite;
+  background: radial-gradient(circle, color-mix(in srgb, var(--theme-accent, #f7a831) 34%, transparent), transparent 68%);
+  animation: chat-generate-glow 1.8s ease-in-out infinite;
+}
+
+.chat-generate-result-spin {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 2px solid color-mix(in srgb, var(--theme-accent, #f7a831) 18%, transparent);
+  border-top-color: var(--theme-accent, #f7a831);
+  border-right-color: color-mix(in srgb, var(--theme-accent, #f7a831) 62%, transparent);
+  border-radius: 50%;
+  animation: chat-generate-spin 0.85s linear infinite;
 }
 
 @keyframes chat-generate-spin {
@@ -637,8 +745,13 @@ onBeforeUnmount(() => {
 }
 
 @keyframes chat-generate-shimmer {
-  0% { background-position: 120% 0, 0 0; }
-  100% { background-position: -80% 0, 0 0; }
+  from { transform: translate3d(-30%, 0, 0); }
+  to { transform: translate3d(260%, 0, 0); }
+}
+
+@keyframes chat-generate-glow {
+  0%, 100% { opacity: 0.42; transform: scale(0.92); }
+  50% { opacity: 0.9; transform: scale(1); }
 }
 
 .chat-generate-fields {

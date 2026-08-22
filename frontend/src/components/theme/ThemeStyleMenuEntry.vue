@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { message } from "ant-design-vue";
-import { BgColorsOutlined, CheckOutlined, RightOutlined } from "@ant-design/icons-vue";
+import { CheckOutlined, RightOutlined } from "@ant-design/icons-vue";
 import { appThemes, getAppThemeGroups, type AppThemeName } from "@/config/theme";
 import { setAppTheme } from "@/lib/theme";
 
@@ -9,6 +10,10 @@ const props = defineProps<{
 }>();
 
 const themeMenuGroups = getAppThemeGroups();
+const themeDropdownAlign = ref({
+  offset: [0, 0] as [number, number],
+  overflow: { adjustX: false, adjustY: false },
+});
 
 function applyTheme(theme: AppThemeName) {
   if (theme === props.currentTheme) return;
@@ -19,20 +24,30 @@ function applyTheme(theme: AppThemeName) {
 function getThemePopupContainer(trigger: HTMLElement) {
   return trigger.closest(".ant-dropdown") || document.body;
 }
+
+function updateThemeDropdownAlign(event: MouseEvent) {
+  const trigger = event.currentTarget as HTMLElement;
+  const menu = trigger.closest(".ant-dropdown-menu");
+  if (!menu) return;
+  const extra = Math.round(menu.getBoundingClientRect().right - trigger.getBoundingClientRect().right);
+  themeDropdownAlign.value = {
+    offset: [Math.max(0, extra), 0],
+    overflow: { adjustX: false, adjustY: false },
+  };
+}
 </script>
 
 <template>
   <a-dropdown
     :trigger="['hover']"
     placement="rightBottom"
-    :auto-adjust-overflow="true"
+    :auto-adjust-overflow="false"
     :mouse-enter-delay="0.05"
-    :align="{ offset: [10, 0], overflow: { adjustX: true, adjustY: true } }"
+    :align="themeDropdownAlign"
     :get-popup-container="getThemePopupContainer"
     overlay-class-name="theme-style-overlay"
   >
-    <div class="theme-style-entry" @click.stop>
-      <BgColorsOutlined />
+    <div class="theme-style-entry" @click.stop @mouseenter="updateThemeDropdownAlign">
       <span>主题风格</span>
       <RightOutlined class="theme-style-entry-arrow" />
     </div>
@@ -85,44 +100,33 @@ function getThemePopupContainer(trigger: HTMLElement) {
 .theme-style-entry {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-shrink: 0;
   width: 100%;
-  min-height: 50px;
-  padding: 10px 16px;
-  border-radius: 14px;
-  color: var(--theme-title);
-  font-weight: 700;
-  line-height: 1.2;
+  min-width: max-content;
+  min-height: 0;
+  padding: 0;
+  color: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: nowrap;
   cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-soft),
-    color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
-    transform var(--motion-duration-fast) var(--motion-ease-soft);
 }
 
-.theme-style-entry:hover {
-  background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong));
-  color: var(--theme-accent-text-hover);
-  box-shadow: 0 10px 22px var(--theme-card-shadow);
-  transform: translateY(-1px);
-}
-
-.theme-style-entry :deep(.anticon) {
-  font-size: 16px;
+.theme-style-entry > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .theme-style-entry-arrow {
-  margin-left: auto;
-  font-size: 10px !important;
+  position: absolute;
+  font-size: 12px !important;
 }
 
 .theme-style-panel {
   min-width: 176px;
-  max-height: min(64vh, 420px);
   padding: 10px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .theme-style-group + .theme-style-group {
@@ -173,16 +177,19 @@ function getThemePopupContainer(trigger: HTMLElement) {
 
 <style lang="scss">
 .theme-style-overlay {
+  top: auto !important;
+  right: auto !important;
+  bottom: 0 !important;
+  left: 100% !important;
   z-index: 1400 !important;
   overflow: visible;
 }
 
 .theme-style-overlay .theme-style-panel {
   min-width: 176px;
-  max-height: min(70vh, 440px);
+  max-height: none;
   padding: 10px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
   border-radius: 18px;
   border: 1px solid var(--theme-panel-border);
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));

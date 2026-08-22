@@ -136,9 +136,9 @@ const showGenerateTutorialDock = computed(() => {
 const SUGGESTION_FAB_POSITION_KEY = "userSuggestionFabPosition";
 const INVITE_CODE_SESSION_KEY = "bananaInviteCode";
 const PROMO_CODE_SESSION_KEY = "bananaPromoCode";
-const SUGGESTION_FAB_DESKTOP_GAP = 24;
-const SUGGESTION_FAB_MOBILE_GAP = 16;
-const SUGGESTION_FAB_DEFAULT_BOTTOM_EXTRA = 24;
+const SUGGESTION_FAB_EDGE_GAP = 0;
+const SUGGESTION_FAB_SNAP_THRESHOLD = 40;
+const SUGGESTION_FAB_LEGACY_EDGE_GAP = 24;
 const SUGGESTION_FAB_DESKTOP_SIZE = 40;
 const SUGGESTION_FAB_MOBILE_SIZE = 36;
 const USER_NOTICE_CARD_STYLE = {
@@ -154,6 +154,7 @@ const routeTransitionName = ref("route-page-forward");
 const canManagePromoCodes = computed(() => auth.user?.is_whitelisted === true);
 const canAccessCanvasMenu = computed(() => auth.isLoggedIn);
 const suggestionFabWrapRef = ref<HTMLElement | null>(null);
+const desktopSideNavRef = ref<HTMLElement | null>(null);
 const suggestionFabPosition = ref<{ x: number; y: number } | null>(null);
 let suggestionFabDragState: {
   pointerId: number;
@@ -226,6 +227,14 @@ const suggestionFabWrapStyle = computed(() => {
     right: "auto",
     bottom: "auto",
   };
+});
+
+const suggestionFabTooltipPlacement = computed(() => {
+  const position = suggestionFabPosition.value;
+  if (!position || typeof window === "undefined") return "left";
+  const minX = getSuggestionFabMinX();
+  const mid = minX + (window.innerWidth - minX) / 2;
+  return position.x < mid ? "right" : "left";
 });
 
 const routeOrder = new Map<string, number>([
@@ -1521,38 +1530,71 @@ function resetPurchaseState() {
   purchaseLoading.value = false;
 }
 
-function getSuggestionFabGap() {
-  if (typeof window === "undefined") return SUGGESTION_FAB_DESKTOP_GAP;
-  return window.innerWidth <= 920 ? SUGGESTION_FAB_MOBILE_GAP : SUGGESTION_FAB_DESKTOP_GAP;
-}
-
 function getSuggestionFabSize() {
   if (typeof window === "undefined") return SUGGESTION_FAB_DESKTOP_SIZE;
   return window.innerWidth <= 920 ? SUGGESTION_FAB_MOBILE_SIZE : SUGGESTION_FAB_DESKTOP_SIZE;
 }
 
-function clampSuggestionFabPosition(position: { x: number; y: number }) {
-  if (typeof window === "undefined") return position;
-  const gap = getSuggestionFabGap();
+function getSuggestionFabMinX() {
+  const sideNav = desktopSideNavRef.value;
+  if (!sideNav) return SUGGESTION_FAB_EDGE_GAP;
+  const rect = sideNav.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return SUGGESTION_FAB_EDGE_GAP;
+  return Math.max(SUGGESTION_FAB_EDGE_GAP, Math.round(rect.right));
+}
+
+function getSuggestionFabBounds() {
   const width = suggestionFabWrapRef.value?.offsetWidth || getSuggestionFabSize();
   const height = suggestionFabWrapRef.value?.offsetHeight || getSuggestionFabSize();
-  const maxX = Math.max(gap, window.innerWidth - width - gap);
-  const maxY = Math.max(gap, window.innerHeight - height - gap);
+  const minX = getSuggestionFabMinX();
   return {
-    x: Math.min(Math.max(position.x, gap), maxX),
-    y: Math.min(Math.max(position.y, gap), maxY),
+    width,
+    height,
+    minX,
+    maxX: Math.max(minX, window.innerWidth - width - SUGGESTION_FAB_EDGE_GAP),
+    maxY: Math.max(SUGGESTION_FAB_EDGE_GAP, window.innerHeight - height - SUGGESTION_FAB_EDGE_GAP),
   };
+}
+
+function clampSuggestionFabPosition(position: { x: number; y: number }) {
+  if (typeof window === "undefined") return position;
+  const { minX, maxX, maxY } = getSuggestionFabBounds();
+  return {
+    x: Math.min(Math.max(position.x, minX), maxX),
+    y: Math.min(Math.max(position.y, SUGGESTION_FAB_EDGE_GAP), maxY),
+  };
+}
+
+function snapSuggestionFabToNearbyEdge(position: { x: number; y: number }) {
+  if (typeof window === "undefined") return position;
+  const { minX, maxX, maxY } = getSuggestionFabBounds();
+  let { x, y } = position;
+  if (x <= minX + SUGGESTION_FAB_SNAP_THRESHOLD) x = minX;
+  else if (x >= maxX - SUGGESTION_FAB_SNAP_THRESHOLD) x = maxX;
+  if (y <= SUGGESTION_FAB_SNAP_THRESHOLD) y = SUGGESTION_FAB_EDGE_GAP;
+  else if (y >= maxY - SUGGESTION_FAB_SNAP_THRESHOLD) y = maxY;
+  return { x, y };
+}
+
+function migrateLegacySuggestionFabPosition(position: { x: number; y: number }) {
+  if (typeof window === "undefined") return position;
+  const { minX, maxX, maxY } = getSuggestionFabBounds();
+  let { x, y } = position;
+  if (x >= maxX - SUGGESTION_FAB_LEGACY_EDGE_GAP) x = maxX;
+  if (x <= minX + SUGGESTION_FAB_LEGACY_EDGE_GAP) x = minX;
+  if (y >= maxY - SUGGESTION_FAB_LEGACY_EDGE_GAP) y = maxY;
+  if (y <= SUGGESTION_FAB_LEGACY_EDGE_GAP) y = SUGGESTION_FAB_EDGE_GAP;
+  return { x, y };
 }
 
 function getDefaultSuggestionFabPosition() {
   if (typeof window === "undefined") {
     return { x: 0, y: 0 };
   }
-  const gap = getSuggestionFabGap();
-  const size = getSuggestionFabSize();
+  const { maxX, maxY } = getSuggestionFabBounds();
   return {
-    x: window.innerWidth - size - gap,
-    y: window.innerHeight - size - gap - SUGGESTION_FAB_DEFAULT_BOTTOM_EXTRA,
+    x: maxX,
+    y: maxY,
   };
 }
 
@@ -1579,7 +1621,14 @@ function restoreSuggestionFabPosition() {
 }
 
 function syncSuggestionFabPosition() {
-  const basePosition = suggestionFabPosition.value || restoreSuggestionFabPosition() || getDefaultSuggestionFabPosition();
+  if (suggestionFabPosition.value) {
+    suggestionFabPosition.value = clampSuggestionFabPosition(suggestionFabPosition.value);
+    return;
+  }
+  const storedPosition = restoreSuggestionFabPosition();
+  const basePosition = storedPosition
+    ? migrateLegacySuggestionFabPosition(storedPosition)
+    : getDefaultSuggestionFabPosition();
   suggestionFabPosition.value = clampSuggestionFabPosition(basePosition);
 }
 
@@ -1617,7 +1666,9 @@ function handleSuggestionFabPointerUp(event: PointerEvent) {
   if (!suggestionFabDragState || suggestionFabDragState.pointerId !== event.pointerId) return;
   const moved = suggestionFabDragState.moved;
   if (suggestionFabPosition.value) {
-    suggestionFabPosition.value = clampSuggestionFabPosition(suggestionFabPosition.value);
+    suggestionFabPosition.value = clampSuggestionFabPosition(
+      snapSuggestionFabToNearbyEdge(suggestionFabPosition.value),
+    );
     saveSuggestionFabPosition(suggestionFabPosition.value);
   }
   suggestionFabDragState = null;
@@ -1629,6 +1680,13 @@ function handleSuggestionFabPointerUp(event: PointerEvent) {
 function handleWindowResize() {
   syncSuggestionFabPosition();
 }
+
+watch(showDesktopSideNav, async () => {
+  await nextTick();
+  if (suggestionFabPosition.value) {
+    suggestionFabPosition.value = clampSuggestionFabPosition(suggestionFabPosition.value);
+  }
+});
 
 onMounted(async () => {
   unsubscribeAdminFeedbackCount = subscribeAdminUnresolvedFeedbackCount((count) => {
@@ -2149,6 +2207,7 @@ watch(
                     </a-menu-item>
                   </a-sub-menu>
                   <a-menu-item key="theme-style-entry" class="theme-style-menu-item">
+                    <template #icon><BgColorsOutlined /></template>
                     <ThemeStyleMenuEntry :current-theme="currentTheme" />
                   </a-menu-item>
                   <a-menu-item
@@ -2186,7 +2245,7 @@ watch(
       </div>
     </a-layout-header>
 
-    <aside v-if="showDesktopSideNav" class="canvas-side-nav" aria-label="全局导航">
+    <aside v-if="showDesktopSideNav" ref="desktopSideNavRef" class="canvas-side-nav" aria-label="全局导航">
       <div class="canvas-side-brand-wrap">
         <button type="button" class="canvas-side-brand" title="返回首页" @click="router.push('/')">
           <img src="/香蕉.svg" alt="80AI" class="brand-mark-image" />
@@ -2484,6 +2543,7 @@ watch(
                 </a-menu-item>
               </a-sub-menu>
               <a-menu-item key="theme-style-entry" class="theme-style-menu-item">
+                <template #icon><BgColorsOutlined /></template>
                 <ThemeStyleMenuEntry :current-theme="currentTheme" />
               </a-menu-item>
               <a-menu-item v-for="item in userMenuSettingsItems" :key="item.key">
@@ -2838,7 +2898,7 @@ watch(
       :style="suggestionFabWrapStyle"
       @pointerdown="handleSuggestionFabPointerDown"
     >
-      <a-tooltip title="提交建议" placement="left">
+      <a-tooltip title="提交建议" :placement="suggestionFabTooltipPlacement">
         <button type="button" class="suggestion-fab" aria-label="提交建议">
           <MessageOutlined />
         </button>
@@ -3735,8 +3795,8 @@ watch(
 
 .suggestion-fab-wrap {
   position: fixed;
-  right: 24px;
-  bottom: 48px;
+  right: 0;
+  bottom: 0;
   z-index: 1080;
   touch-action: none;
   user-select: none;
@@ -3997,9 +4057,23 @@ watch(
 
   :deep(.mobile-theme-menu-item .ant-menu-title-content) {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+  }
+
+  :deep(.mobile-theme-menu-item .theme-menu-item-title) {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  :deep(.mobile-theme-menu-item .theme-menu-swatches-inline) {
+    flex: none;
+    margin-left: auto;
   }
 }
 
@@ -5064,8 +5138,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   }
 
   .suggestion-fab-wrap {
-    right: 16px;
-    bottom: 40px;
+    right: 0;
+    bottom: 0;
   }
 
   .suggestion-fab {
@@ -5317,7 +5391,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   padding: 0 !important;
 }
 
-.warm-dropdown .ant-dropdown-menu-submenu-title {
+.warm-dropdown .ant-dropdown-menu-submenu-title,
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item {
+  position: relative;
   width: 100%;
   padding-inline-end: 32px !important;
 }
@@ -5327,7 +5403,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
+  width: 16px;
   min-width: 16px !important;
+  height: 16px;
   margin: 0 !important;
   font-size: 16px !important;
   line-height: 1;
@@ -5346,9 +5424,31 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 }
 
 .warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-expand-icon,
-.warm-dropdown .ant-dropdown-menu-submenu-title .ant-menu-submenu-arrow {
-  inset-inline-end: 16px;
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-arrow,
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-menu-submenu-arrow,
+.warm-dropdown .theme-style-entry-arrow {
+  position: absolute !important;
+  top: 50%;
+  inset-inline-end: 16px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin: 0 !important;
   color: currentColor;
+  font-size: 12px !important;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-arrow .anticon,
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-expand-icon .anticon,
+.warm-dropdown .theme-style-entry-arrow.anticon,
+.warm-dropdown .theme-style-entry-arrow .anticon {
+  width: 12px !important;
+  height: 12px !important;
+  font-size: 12px !important;
 }
 
 .warm-dropdown .ant-dropdown-menu-submenu-title:hover {
@@ -5394,6 +5494,12 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   font-size: 16px !important;
   line-height: 1;
   color: currentColor;
+}
+
+.warm-dropdown .ant-dropdown-menu-item .theme-style-entry-arrow.anticon,
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-arrow .anticon,
+.warm-dropdown .ant-dropdown-menu-submenu-title .ant-dropdown-menu-submenu-expand-icon .anticon {
+  font-size: 12px !important;
 }
 
 .warm-dropdown .ant-dropdown-menu-item.admin-feedback-dropdown-item,
@@ -5468,30 +5574,33 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   font-size: 14px;
 }
 
-.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item {
-  padding: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item:hover {
-  background: transparent !important;
-  box-shadow: none !important;
-  transform: none !important;
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item,
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .ant-dropdown-menu-title-content,
+.warm-dropdown .theme-style-entry,
+.warm-dropdown .theme-style-entry > span {
+  overflow: visible;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .ant-dropdown-menu-title-content {
   width: 100%;
+  min-width: max-content;
 }
 
-.theme-style-overlay {
+.warm-dropdown .theme-style-overlay {
+  top: auto !important;
+  right: auto !important;
+  bottom: 0 !important;
+  left: 100% !important;
   z-index: 1400 !important;
 }
 
 .theme-style-overlay .theme-style-panel {
   min-width: 176px;
+  max-height: none;
   padding: 12px 10px;
+  overflow: visible;
   border-radius: 18px;
   border: 1px solid var(--theme-panel-border);
   background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
