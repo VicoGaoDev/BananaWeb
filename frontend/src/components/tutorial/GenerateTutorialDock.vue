@@ -10,7 +10,7 @@ import {
 } from "@/lib/generateTutorialDock";
 import {
   DEFAULT_TUTORIAL_MODULE,
-  resolveTutorialModule,
+  resolveTutorialModuleFromPath,
   tutorialModuleMeta,
   type TutorialModule,
 } from "@/lib/tutorial";
@@ -37,9 +37,7 @@ function revealTab() {
 function openDock() {
   window.clearTimeout(tabRevealTimer);
   requestCloseAiAssistantDock();
-  currentModule.value = isTutorialPage.value
-    ? resolveTutorialModule(String(route.params.module || ""))
-    : DEFAULT_TUTORIAL_MODULE;
+  currentModule.value = resolveTutorialModuleFromPath(route.path);
   tabVisible.value = false;
   open.value = true;
 }

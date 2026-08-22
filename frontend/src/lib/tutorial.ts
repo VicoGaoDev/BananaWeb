@@ -17,19 +17,16 @@ export const tutorialModuleMeta: Record<
     label: "AI 对话",
     path: "/tutorial/chat",
     doc: "docs/chat-tutorial.html",
-    placeholder: true,
   },
   video: {
     label: "AI 视频",
     path: "/tutorial/video",
     doc: "docs/video-tutorial.html",
-    placeholder: true,
   },
   canvas: {
     label: "无限画布",
     path: "/tutorial/canvas",
     doc: "docs/canvas-tutorial.html",
-    placeholder: true,
   },
 };
 
@@ -52,10 +49,70 @@ export const generateTutorialSections = [
   { id: "tips", label: "14. 使用建议" },
 ] as const;
 
+export const chatTutorialSections = [
+  { id: "overview", label: "1. 进入页面与布局" },
+  { id: "sessions", label: "2. 新建与管理对话" },
+  { id: "scenes", label: "3. 选择对话场景" },
+  { id: "send", label: "4. 发送文字消息" },
+  { id: "images", label: "5. 发送图片" },
+  { id: "starters", label: "6. 快捷提问" },
+  { id: "replies", label: "7. 处理回复" },
+  { id: "generate", label: "8. 从对话去生图" },
+  { id: "assistant", label: "9. 生图页的 AI 助手" },
+  { id: "tips", label: "10. 使用建议" },
+] as const;
+
+export const videoTutorialSections = [
+  { id: "overview", label: "1. 进入页面与布局" },
+  { id: "modes", label: "2. 选择创作模式" },
+  { id: "text-generate", label: "3. 文生视频" },
+  { id: "image-to-video", label: "4. 图生视频" },
+  { id: "first-last-frame", label: "5. 首尾帧" },
+  { id: "model-params", label: "6. 模型与参数" },
+  { id: "prompt-assets", label: "7. 提示词与素材" },
+  { id: "submit", label: "8. 开始生成" },
+  { id: "results", label: "9. 查看与处理结果" },
+  { id: "from-image", label: "10. 从生图结果生成视频" },
+  { id: "tips", label: "11. 使用建议" },
+] as const;
+
+export const canvasTutorialSections = [
+  { id: "overview", label: "1. 进入页面与布局" },
+  { id: "projects", label: "2. 新建与管理画布" },
+  { id: "navigate", label: "3. 浏览与缩放" },
+  { id: "image-generate", label: "4. 在画布里生图" },
+  { id: "video-generate", label: "5. 在画布里生视频" },
+  { id: "free-nodes", label: "6. 添加自由节点" },
+  { id: "node-actions", label: "7. 处理节点结果" },
+  { id: "references", label: "8. 选择参考图" },
+  { id: "groups", label: "9. 分组与关联线" },
+  { id: "search-arrange", label: "10. 搜索与一键整理" },
+  { id: "assets-feedback", label: "11. 素材与反馈" },
+  { id: "tips", label: "12. 使用建议" },
+] as const;
+
+export function getTutorialSections(module: TutorialModule) {
+  if (module === "generate") return generateTutorialSections;
+  if (module === "chat") return chatTutorialSections;
+  if (module === "video") return videoTutorialSections;
+  if (module === "canvas") return canvasTutorialSections;
+  return [];
+}
+
 export function isTutorialModule(value: string | undefined): value is TutorialModule {
   return TUTORIAL_MODULES.includes(value as TutorialModule);
 }
 
 export function resolveTutorialModule(value: string | undefined): TutorialModule {
   return isTutorialModule(value) ? value : DEFAULT_TUTORIAL_MODULE;
+}
+
+export function resolveTutorialModuleFromPath(path: string): TutorialModule {
+  if (path.startsWith("/tutorial/")) {
+    return resolveTutorialModule(path.split("/")[2]);
+  }
+  if (path.startsWith("/chat")) return "chat";
+  if (path.startsWith("/canvas")) return "canvas";
+  if (path.startsWith("/video")) return "video";
+  return DEFAULT_TUTORIAL_MODULE;
 }

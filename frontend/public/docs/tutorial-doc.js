@@ -39,10 +39,24 @@
     });
   }
 
+  function hydrateSectionImages(section) {
+    if (!section) return;
+    section.querySelectorAll("img[loading='lazy']").forEach((img) => {
+      img.loading = "eager";
+    });
+    const next = section.nextElementSibling;
+    if (next && next.matches("section[id]")) {
+      next.querySelectorAll("img[loading='lazy']").forEach((img) => {
+        img.loading = "eager";
+      });
+    }
+  }
+
   function scrollToId(id, behavior) {
     if (!id) return false;
     const target = document.getElementById(id);
     if (!target) return false;
+    hydrateSectionImages(target);
     target.scrollIntoView({ behavior: behavior || "smooth", block: "start" });
     postActiveSection(target.id);
     return true;

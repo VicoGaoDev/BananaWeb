@@ -5,7 +5,7 @@ import { withBaseUrl } from "@/lib/assets";
 import { APP_THEME_ATTRIBUTE } from "@/config/theme";
 import { getCurrentTheme } from "@/lib/theme";
 import {
-  generateTutorialSections,
+  getTutorialSections,
   tutorialModuleMeta,
   tutorialNavOrder,
   type TutorialModule,
@@ -33,10 +33,18 @@ const preview = ref<{ src: string; alt: string; caption: string } | null>(null);
 const showBackTop = ref(false);
 const openGroups = reactive<Record<TutorialModule, boolean>>({
   chat: false,
-  generate: true,
+  generate: false,
   video: false,
   canvas: false,
 });
+
+function setExclusiveOpen(module: TutorialModule) {
+  for (const item of tutorialNavOrder) {
+    openGroups[item] = item === module;
+  }
+}
+
+setExclusiveOpen(props.module);
 
 const currentMeta = computed(() => tutorialModuleMeta[props.module]);
 const tutorialSrc = computed(() => withBaseUrl(currentMeta.value.doc));
@@ -69,7 +77,7 @@ function selectModule(module: TutorialModule) {
     toggleGroup(module);
     return;
   }
-  openGroups[module] = true;
+  setExclusiveOpen(module);
   emit("update:module", module);
 }
 
@@ -85,11 +93,11 @@ function scrollToSection(id: string) {
   }
 }
 
-function openGenerateSection(id: string) {
-  if (props.module !== "generate") {
+function openModuleSection(module: TutorialModule, id: string) {
+  if (props.module !== module) {
     pendingSectionId.value = id;
-    openGroups.generate = true;
-    emit("update:module", "generate");
+    setExclusiveOpen(module);
+    emit("update:module", module);
     emit("update:section", id);
     return;
   }
@@ -118,7 +126,7 @@ function handleFrameLoad() {
   const id = pendingSectionId.value || props.sectionId;
   pendingSectionId.value = "";
   showBackTop.value = false;
-  if (props.module === "generate" && id) {
+  if (getTutorialSections(props.module).length && id) {
     window.setTimeout(() => scrollToSection(id), 80);
   }
 }
@@ -175,8 +183,8 @@ watch(preview, (value) => {
 watch(
   () => props.module,
   (module) => {
-    openGroups[module] = true;
-    activeSectionId.value = props.sectionId || (module === "generate" ? "overview" : module);
+    setExclusiveOpen(module);
+    activeSectionId.value = props.sectionId || (getTutorialSections(module).length ? "overview" : module);
     closePreview();
   },
 );
@@ -250,14 +258,14 @@ onBeforeUnmount(() => {
         </button>
         <div class="nav-group-children">
           <div class="nav-group-children-inner">
-            <template v-if="item === 'generate'">
+            <template v-if="getTutorialSections(item).length">
               <button
-                v-for="section in generateTutorialSections"
+                v-for="section in getTutorialSections(item)"
                 :key="section.id"
                 type="button"
                 class="nav-link"
-                :class="{ 'is-active': module === 'generate' && activeSectionId === section.id }"
-                @click="openGenerateSection(section.id)"
+                :class="{ 'is-active': module === item && activeSectionId === section.id }"
+                @click="openModuleSection(item, section.id)"
               >
                 {{ section.label }}
               </button>

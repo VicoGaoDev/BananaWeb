@@ -247,9 +247,9 @@ const routeOrder = new Map<string, number>([
   ["/history", 6],
   ["/tutorial", 6.5],
   ["/tutorial/generate", 6.5],
-  ["/tutorial/chat", 6.51],
-  ["/tutorial/video", 6.52],
-  ["/tutorial/canvas", 6.53],
+  ["/tutorial/chat", 6.5],
+  ["/tutorial/video", 6.5],
+  ["/tutorial/canvas", 6.5],
   ["/profile", 7],
   ["/api-keys", 8],
   ["/system-messages", 9],
@@ -571,6 +571,7 @@ function getRouteRank(path: string) {
   if (path.startsWith("/system-messages/")) return routeOrder.get("/system-messages/:messageId") ?? 0;
   if (path.startsWith("/admin/feedbacks/")) return routeOrder.get("/admin/feedbacks/:feedbackId") ?? 0;
   if (path.startsWith("/chat")) return routeOrder.get("/chat") ?? 0;
+  if (path.startsWith("/tutorial")) return routeOrder.get("/tutorial") ?? 6.5;
   if (path.startsWith("/canvas")) return routeOrder.get("/canvas") ?? 0;
   if (path.startsWith("/history")) return routeOrder.get("/history") ?? 0;
   return routeOrder.get(path) ?? 0;
@@ -579,6 +580,7 @@ function getRouteRank(path: string) {
 /** 同页内参数切换（如对话 session）使用稳定 key，避免整页淡出重挂载 */
 function getRoutePageKey(currentRoute: { path: string; name?: string | symbol | null }) {
   if (currentRoute.path.startsWith("/chat")) return "chat";
+  if (currentRoute.path.startsWith("/tutorial")) return "tutorial";
   if (currentRoute.path.startsWith("/admin/user-conversations")) return "admin-user-conversations";
   return currentRoute.path;
 }

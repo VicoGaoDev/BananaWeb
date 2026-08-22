@@ -18,7 +18,7 @@
       <h2>1. 进入页面与布局</h2>
       <p>在顶部或左侧导航中点击「AI 生图」，即可进入创作页。未登录时，部分操作会先弹出登录框。</p>
       <figure>
-        <img src="./tutorial/01-entry.png" alt="从导航进入 AI 生图" />
+        <img loading="eager" fetchpriority="high" decoding="async" src="./tutorial/01-entry.png" alt="从导航进入 AI 生图" />
         <figcaption>图 1：从导航进入 AI 生图</figcaption>
       </figure>
       <p>页面分成左右两块：</p>
@@ -27,7 +27,7 @@
         <li><strong>右侧</strong>：查看生成任务、筛选结果，并对单张图片继续操作。</li>
       </ul>
       <figure>
-        <img src="./tutorial/02-layout.png" alt="AI 生图页面左右布局" />
+        <img loading="eager" decoding="async" src="./tutorial/02-layout.png" alt="AI 生图页面左右布局" />
         <figcaption>图 2：左侧配置，右侧查看生成任务</figcaption>
       </figure>
     </section>
@@ -42,7 +42,7 @@
         <li><strong>提示词反推</strong>：上传一张图，让系统帮你写出可用的提示词。</li>
       </ul>
       <figure>
-        <img src="./tutorial/03-modes.png" alt="四种创作模式切换" />
+        <img loading="lazy" decoding="async" src="./tutorial/03-modes.png" alt="四种创作模式切换" />
         <figcaption>图 3：模式切换与扩展工具</figcaption>
       </figure>
     </section>
@@ -58,7 +58,7 @@
         <li>点击「开始生成」。按钮上会显示本次预计消耗的积分。</li>
       </ol>
       <figure>
-        <img src="./tutorial/04-text-generate.png" alt="文生图配置区" />
+        <img loading="lazy" decoding="async" src="./tutorial/04-text-generate.png" alt="文生图配置区" />
         <figcaption>图 4：文生图的提示词与参数</figcaption>
       </figure>
       <div class="tip">不知道怎么写时，可以先用「提示词优化」，或从「创意模版」套用一套现成参数再改。</div>
@@ -74,7 +74,7 @@
         <li>按需要调整模型、比例和数量，再点击「开始生成」。</li>
       </ol>
       <figure>
-        <img src="./tutorial/05-image-edit.png" alt="图编辑上传参考图" />
+        <img loading="lazy" decoding="async" src="./tutorial/05-image-edit.png" alt="图编辑上传参考图" />
         <figcaption>图 5：上传参考图并填写修改说明</figcaption>
       </figure>
       <p>参考图数量上限由当前模型决定。上传成功后，可以把常用图点「加入我的素材」，下次就不用重新找文件。</p>
@@ -91,7 +91,7 @@
         <li>写下重绘后希望看到的效果，再提交。</li>
       </ol>
       <figure>
-        <img src="./tutorial/06-inpaint.png" alt="局部重绘涂抹区域" />
+        <img loading="lazy" decoding="async" src="./tutorial/06-inpaint.png" alt="局部重绘涂抹区域" />
         <figcaption>图 6：涂抹要修改的区域后提交</figcaption>
       </figure>
     </section>
@@ -105,7 +105,7 @@
         <li>结果会显示在左侧，可以复制，或点「带入文生图」继续出图。</li>
       </ol>
       <figure>
-        <img src="./tutorial/07-prompt-reverse.png" alt="提示词反推结果" />
+        <img loading="lazy" decoding="async" src="./tutorial/07-prompt-reverse.png" alt="提示词反推结果" />
         <figcaption>图 7：反推出提示词后带入文生图</figcaption>
       </figure>
     </section>
@@ -120,7 +120,7 @@
         <li><strong>提示词灵感</strong>：查看更多现成写法，适合快速起步。</li>
       </ul>
       <figure>
-        <img src="./tutorial/08-prompt-tools.png" alt="提示词优化和我的提示词" />
+        <img loading="lazy" decoding="async" src="./tutorial/08-prompt-tools.png" alt="提示词优化和我的提示词" />
         <figcaption>图 8：提示词优化与提示词库</figcaption>
       </figure>
     </section>
@@ -135,7 +135,7 @@
         <li><strong>图片数量</strong>：一次可发 1 到 12 张，会占用对应数量的并发名额。</li>
       </ul>
       <figure>
-        <img src="./tutorial/14-model-params.png" alt="模型对比和参数选择" />
+        <img loading="lazy" decoding="async" src="./tutorial/14-model-params.png" alt="模型对比和参数选择" />
         <figcaption>图 9：模型对比与生成参数</figcaption>
       </figure>
     </section>
@@ -150,7 +150,7 @@
         <li>每天前 20 次失败通常不扣积分，具体以页面提示为准。</li>
       </ul>
       <figure>
-        <img src="./tutorial/09-submit.png" alt="开始生成按钮" />
+        <img loading="lazy" decoding="async" src="./tutorial/09-submit.png" alt="开始生成按钮" />
         <figcaption>图 10：提交任务并并行继续创作</figcaption>
       </figure>
     </section>
@@ -159,7 +159,7 @@
       <h2>10. 查看与处理结果</h2>
       <p>右侧可以按类型、模型、状态、日期、来源或提示词筛选任务。也可以改卡片形状和每行列数，方便对比。</p>
       <figure>
-        <img src="./tutorial/10-results.png" alt="右侧生成任务列表" />
+        <img loading="lazy" decoding="async" src="./tutorial/10-results.png" alt="右侧生成任务列表" />
         <figcaption>图 11：在右侧查看最近生成的图片</figcaption>
       </figure>
       <p>把鼠标移到结果图上，可以继续处理：</p>
@@ -173,7 +173,7 @@
         <li><strong>反馈</strong>：结果有问题或不符合预期时，可以直接提交反馈。</li>
       </ul>
       <figure>
-        <img src="./tutorial/11-result-actions.png" alt="结果图操作按钮" />
+        <img loading="lazy" decoding="async" src="./tutorial/11-result-actions.png" alt="结果图操作按钮" />
         <figcaption>图 12：对单张结果继续编辑或下载</figcaption>
       </figure>
       <p>结果区还有「画布模式」入口，适合把多轮尝试放到无限画布里继续组织。</p>
@@ -189,7 +189,7 @@
         <li><strong>历史图片</strong>：从「更多 → 历史图片」回看过往任务。需要登录。可按提示词查找，也能重新编辑或批量下载。</li>
       </ul>
       <figure>
-        <img src="./tutorial/15-assets-boards.png" alt="我的素材、看板分类和历史图片" />
+        <img loading="lazy" decoding="async" src="./tutorial/15-assets-boards.png" alt="我的素材、看板分类和历史图片" />
         <figcaption>图 13：素材库、看板分类与历史入口</figcaption>
       </figure>
     </section>
@@ -204,7 +204,7 @@
         <li>完成后可以下载结果，或清空已完成 / 失败的卡片。</li>
       </ol>
       <figure>
-        <img src="./tutorial/12-batch.png" alt="批量生图页面" />
+        <img loading="lazy" decoding="async" src="./tutorial/12-batch.png" alt="批量生图页面" />
         <figcaption>图 14：用多张卡片一次提交多组任务</figcaption>
       </figure>
     </section>
@@ -218,7 +218,7 @@
         <li>需要更完整的会话记录时，点「在对话页打开」。</li>
       </ul>
       <figure>
-        <img src="./tutorial/16-assistant.png" alt="生图页的 AI 助手" />
+        <img loading="lazy" decoding="async" src="./tutorial/16-assistant.png" alt="生图页的 AI 助手" />
         <figcaption>图 15：用 AI 助手辅助写提示词并去生图</figcaption>
       </figure>
     </section>
@@ -234,7 +234,7 @@
         <li>多轮对比、分支试错时，可以从结果区进入「画布模式」。</li>
       </ul>
       <figure>
-        <img src="./tutorial/13-more-menu.png" alt="更多菜单中的创意模版和历史图片" />
+        <img loading="lazy" decoding="async" src="./tutorial/13-more-menu.png" alt="更多菜单中的创意模版和历史图片" />
         <figcaption>图 16：从「更多」进入模版、历史和本教程</figcaption>
       </figure>
     </section>
