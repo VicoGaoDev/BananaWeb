@@ -122,7 +122,7 @@ class ChatGenerateActionRequest(BaseModel):
     @classmethod
     def validate_action(cls, value: str) -> str:
         cleaned = (value or "").strip().lower()
-        if cleaned not in {"confirm", "cancel"}:
+        if cleaned not in {"confirm", "cancel", "retry"}:
             raise ValueError("不支持的操作")
         return cleaned
 

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.chat_message import ChatMessage
@@ -119,6 +120,82 @@ def parse_generate_extra(raw: str | None) -> ChatGenerateOut | None:
 
 def dump_generate_extra(payload: ChatGenerateOut) -> str:
     return json.dumps(payload.model_dump(), ensure_ascii=False)
+
+
+ACTIVE_TASK_STATUSES = ("pending", "queued", "processing")
+
+
+def sync_chat_generate_status_for_tasks(db: Session, task_ids: list[str]) -> None:
+    from app.services.business_id_service import get_task_by_business_id
+    from app.utils.business_id import normalize_business_id
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in task_ids:
+        task_id = normalize_business_id(raw)
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        normalized.append(task_id)
+    if not normalized:
+        return
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.extra_json.is_not(None),
+            or_(*[ChatMessage.extra_json.contains(task_id) for task_id in normalized]),
+        )
+        .all()
+    )
+    changed = False
+    for message in messages:
+        extra = parse_generate_extra(getattr(message, "extra_json", None))
+        if not extra or extra.status != "running" or not extra.task_ids:
+            continue
+        tasks = [get_task_by_business_id(db, task_id) for task_id in extra.task_ids]
+        loaded = [task for task in tasks if task is not None]
+        if not loaded:
+            continue
+        if any((task.status or "") in ACTIVE_TASK_STATUSES for task in loaded):
+            continue
+        failed = [task for task in loaded if (task.status or "") == "failed"]
+        if any((task.status or "") == "success" for task in loaded):
+            extra.status = "success"
+            extra.error_message = ""
+        else:
+            extra.status = "failed"
+            extra.error_message = next(
+                (
+                    (task.error_message or task.provider_error_message or "").strip()
+                    for task in failed
+                    if (task.error_message or task.provider_error_message or "").strip()
+                ),
+                extra.error_message or "生图失败",
+            )
+        message.extra_json = dump_generate_extra(extra)
+        db.add(message)
+        changed = True
+    if changed:
+        db.commit()
+
+
+def reconcile_running_chat_generates(db: Session, messages: list[ChatMessage]) -> None:
+    task_ids: list[str] = []
+    for message in messages:
+        extra = parse_generate_extra(getattr(message, "extra_json", None))
+        if extra and extra.status == "running" and extra.task_ids:
+            task_ids.extend(extra.task_ids)
+    if not task_ids:
+        return
+    from app.services.task_service import _expire_stale_processing_tasks
+    from app.utils.business_id import normalize_business_id
+
+    normalized = [normalize_business_id(task_id) for task_id in task_ids]
+    normalized = [task_id for task_id in normalized if task_id]
+    if normalized:
+        _expire_stale_processing_tasks(db, business_ids=normalized)
+    sync_chat_generate_status_for_tasks(db, task_ids)
 
 
 def strip_generate_image_fence(text: str) -> str:
@@ -381,53 +458,39 @@ def _dispatch_created_tasks(db: Session, user: User, tasks: list, *, mode: str, 
         ) from exc
 
 
-def confirm_or_cancel_chat_generate(
+def _chat_generate_can_retry(db: Session, extra: ChatGenerateOut) -> bool:
+    if extra.status == "failed":
+        return True
+    if extra.status != "running":
+        return False
+    if not extra.task_ids:
+        return True
+    from app.services.business_id_service import get_task_by_business_id
+
+    tasks = [get_task_by_business_id(db, task_id) for task_id in extra.task_ids]
+    loaded = [task for task in tasks if task is not None]
+    if not loaded:
+        return True
+    if any((task.status or "") in ACTIVE_TASK_STATUSES for task in loaded):
+        return False
+    return all((task.status or "") == "failed" for task in loaded)
+
+
+def _start_chat_generate_tasks(
     db: Session,
+    *,
     user: User,
-    session_id: str,
-    message_id: int,
+    message: ChatMessage,
+    extra: ChatGenerateOut,
     body: ChatGenerateActionRequest,
-) -> ChatMessageOut:
-    from app.services.chat_service import _require_session, _serialize_message
-
-    session = _require_session(db, user.id, session_id)
-    message = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.id == message_id,
-            ChatMessage.session_id == session.id,
-            ChatMessage.role == "assistant",
-        )
-        .with_for_update()
-        .first()
-    )
-    if not message:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
-
-    extra = parse_generate_extra(getattr(message, "extra_json", None))
-    if not extra or extra.status not in {"pending_confirm", "running", "success", "failed", "cancelled"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="这条消息没有可确认的生图")
-
-    public_id = (session.session_id or "").strip()
-    if extra.status != "pending_confirm":
-        return _serialize_message(message, public_session_id=public_id)
-
-    if body.action == "cancel":
-        extra.status = "cancelled"
-        extra.error_message = ""
-        message.extra_json = dump_generate_extra(extra)
-        db.add(message)
-        db.commit()
-        db.refresh(message)
-        return _serialize_message(message, public_session_id=public_id)
-
+) -> ChatMessage:
     prompt = extra.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有可生成的提示词")
 
     refs = extra.reference_images
     expected_type = SCENE_TYPE_IMAGE_EDIT if refs else SCENE_TYPE_GENERATE
-    model_key = (body.model or "").strip()
+    model_key = (body.model or extra.model or "").strip()
     if not model_key:
         model_key = _default_image_edit_model_key(db) if refs else get_default_generation_model_key(db)
     binding = _enabled_scene(db, model_key)
@@ -439,9 +502,9 @@ def confirm_or_cancel_chat_generate(
         )
     require_scene_config(db, model_key)
 
-    size = "" if binding.hide_aspect_ratio else (body.size or "").strip()
-    resolution = "" if binding.hide_resolution else (body.resolution or "").strip()
-    custom_size = "" if binding.hide_custom_size else (body.custom_size or "").strip()
+    size = "" if binding.hide_aspect_ratio else (body.size or extra.size or "").strip()
+    resolution = "" if binding.hide_resolution else (body.resolution or extra.resolution or "").strip()
+    custom_size = "" if binding.hide_custom_size else (body.custom_size or extra.custom_size or "").strip()
     num_images = max(1, min(8, int(body.num_images or extra.num_images or 1)))
 
     try:
@@ -495,5 +558,56 @@ def confirm_or_cancel_chat_generate(
         db.add(message)
         db.commit()
         db.refresh(message)
+    return message
 
+
+def confirm_or_cancel_chat_generate(
+    db: Session,
+    user: User,
+    session_id: str,
+    message_id: int,
+    body: ChatGenerateActionRequest,
+) -> ChatMessageOut:
+    from app.services.chat_service import _require_session, _serialize_message
+
+    session = _require_session(db, user.id, session_id)
+    message = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.id == message_id,
+            ChatMessage.session_id == session.id,
+            ChatMessage.role == "assistant",
+        )
+        .with_for_update()
+        .first()
+    )
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+
+    extra = parse_generate_extra(getattr(message, "extra_json", None))
+    if not extra or extra.status not in {"pending_confirm", "running", "success", "failed", "cancelled"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="这条消息没有可确认的生图")
+
+    public_id = (session.session_id or "").strip()
+    if body.action == "cancel":
+        if extra.status != "pending_confirm":
+            return _serialize_message(message, public_session_id=public_id)
+        extra.status = "cancelled"
+        extra.error_message = ""
+        message.extra_json = dump_generate_extra(extra)
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return _serialize_message(message, public_session_id=public_id)
+
+    if body.action == "retry":
+        if not _chat_generate_can_retry(db, extra):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前生图任务还不能重试")
+        message = _start_chat_generate_tasks(db, user=user, message=message, extra=extra, body=body)
+        return _serialize_message(message, public_session_id=public_id)
+
+    if extra.status != "pending_confirm":
+        return _serialize_message(message, public_session_id=public_id)
+
+    message = _start_chat_generate_tasks(db, user=user, message=message, extra=extra, body=body)
     return _serialize_message(message, public_session_id=public_id)

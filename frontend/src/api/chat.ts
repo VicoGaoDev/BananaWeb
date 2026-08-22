@@ -51,7 +51,7 @@ export function confirmChatMessageGenerate(
   sessionId: string,
   messageId: number,
   payload: {
-    action: "confirm" | "cancel";
+    action: "confirm" | "cancel" | "retry";
     model?: string;
     num_images?: number;
     size?: string;

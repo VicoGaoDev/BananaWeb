@@ -18,6 +18,7 @@ from datetime import timedelta
 import httpx
 from pathlib import Path
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 
 from app.config import settings
 from app.database import SessionLocal
@@ -378,6 +379,30 @@ def _is_async_provider_poll_timed_out(task: Task, poll_timeout_seconds: int, *, 
         return False
     current_time = now_value or now_local()
     return started_at <= current_time - timedelta(seconds=max(int(poll_timeout_seconds or 0), 1))
+
+
+def _mark_async_provider_poll_timeout(
+    db,
+    task: Task,
+    *,
+    poll_timeout_seconds: int,
+    provider_task_id: str,
+    request_url: str,
+    response_preview: str = "",
+    poll_count: int | None = None,
+) -> ApiCallResult:
+    request_context = _build_async_request_context(provider_task_id, request_url)
+    task.provider_error_message = _clip_error_message(
+        f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
+    )
+    task.provider_status = "timeout"
+    task.provider_response_preview = _clip_response_preview(response_preview) if response_preview else task.provider_response_preview
+    task.last_polled_at = now_local()
+    if poll_count is not None:
+        task.poll_count = poll_count
+    task.next_poll_at = None
+    db.commit()
+    return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
 
 
 def _parse_poll_retry_status(status_value: str) -> int:
@@ -937,16 +962,6 @@ def _poll_async_generation_once(
         failed_values = {"failed", "error", "cancelled"}
 
     current_poll_count = int(task.poll_count or 0)
-    if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
-        request_context = _build_async_request_context(provider_task_id, "")
-        task.provider_error_message = _clip_error_message(
-            f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
-        )
-        task.provider_status = "timeout"
-        task.last_polled_at = now_local()
-        task.next_poll_at = None
-        db.commit()
-        return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
 
     mapped_resolution = resolve_mapped_resolution(
         db,
@@ -973,6 +988,16 @@ def _poll_async_generation_once(
             response = client.request(rendered.method, rendered.request_url, **request_kwargs)
         preview = (response.text or "")[:MAX_RESPONSE_PREVIEW_LENGTH]
         if response.status_code < 200 or response.status_code >= 300:
+            if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
+                return _mark_async_provider_poll_timeout(
+                    db,
+                    task,
+                    poll_timeout_seconds=poll_timeout_seconds,
+                    provider_task_id=provider_task_id,
+                    request_url=rendered.request_url,
+                    response_preview=preview,
+                    poll_count=current_poll_count + 1,
+                )
             return _defer_async_poll_retry(
                 db,
                 task,
@@ -987,6 +1012,16 @@ def _poll_async_generation_once(
         try:
             payload = response.json()
         except Exception as exc:
+            if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
+                return _mark_async_provider_poll_timeout(
+                    db,
+                    task,
+                    poll_timeout_seconds=poll_timeout_seconds,
+                    provider_task_id=provider_task_id,
+                    request_url=rendered.request_url,
+                    response_preview=preview,
+                    poll_count=current_poll_count + 1,
+                )
             return _defer_async_poll_retry(
                 db,
                 task,
@@ -1042,17 +1077,15 @@ def _poll_async_generation_once(
             return ApiCallResult(result=None, error_message=provider_error, http_status_code=None, attempts=[])
 
         if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
-            request_context = _build_async_request_context(provider_task_id, rendered.request_url)
-            task.provider_error_message = _clip_error_message(
-                f"异步生图轮询超时（超过 {poll_timeout_seconds} 秒，{request_context}）"
+            return _mark_async_provider_poll_timeout(
+                db,
+                task,
+                poll_timeout_seconds=poll_timeout_seconds,
+                provider_task_id=provider_task_id,
+                request_url=rendered.request_url,
+                response_preview=response_preview,
+                poll_count=next_poll_count,
             )
-            task.provider_status = "timeout"
-            task.provider_response_preview = response_preview
-            task.last_polled_at = now_local()
-            task.poll_count = next_poll_count
-            task.next_poll_at = None
-            db.commit()
-            return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
 
         task.provider_status = provider_status
         task.provider_response_preview = response_preview
@@ -1068,6 +1101,15 @@ def _poll_async_generation_once(
             started_perf=request_started_perf,
         )
         logger.error(log_message, *log_args)
+        if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
+            return _mark_async_provider_poll_timeout(
+                db,
+                task,
+                poll_timeout_seconds=poll_timeout_seconds,
+                provider_task_id=provider_task_id,
+                request_url=rendered.request_url,
+                poll_count=current_poll_count + 1,
+            )
         return _defer_async_poll_retry(
             db,
             task,
@@ -1508,7 +1550,7 @@ def _is_async_provider_task_still_polling(db, task: Task) -> bool:
     if poll_timeout_seconds is None:
         return False
 
-    started_at = task.updated_at or task.request_started_at or task.enqueued_at or task.created_at
+    started_at = _get_async_provider_started_at(task)
     if started_at is None:
         return False
 
@@ -1550,6 +1592,7 @@ def _expire_processing_task(
         task.status = "failed"
     task.error_message = "" if task.status == "success" else normalized_error
     db.commit()
+    _sync_chat_generate_for_task(db, task)
     logger.error(
         "Task processing timed out: task_id=%s, timeout_seconds=%s",
         task.id,
@@ -1583,6 +1626,7 @@ def _recover_task_after_exception(task_id: int, error_message: str) -> None:
         task.error_message = "" if task.status == "success" else normalized_error
         refund_task_credit_for_generation_failure_if_needed(recovery_db, task)
         recovery_db.commit()
+        _sync_chat_generate_for_task(recovery_db, task)
     except Exception:
         _rollback_session_safely(recovery_db)
         logger.exception("Failed to recover task after exception: task_id=%s", task_id)
@@ -1720,6 +1764,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             )
             refund_task_credit_for_generation_failure_if_needed(db, task)
             db.commit()
+            _sync_chat_generate_for_task(db, task)
             logger.info(
                 "Task finished without pending images",
                 extra={
@@ -1807,6 +1852,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             task.error_message = _resolve_generation_error(task.error_message, task.provider_error_message)
         refund_task_credit_for_generation_failure_if_needed(db, task)
         db.commit()
+        _sync_chat_generate_for_task(db, task)
         logger.info(
             "Task processing finished",
             extra={
@@ -2010,6 +2056,14 @@ def _is_async_poll_failed_status(config: ExternalApiConfig, provider_status: str
     return (provider_status or "").strip().lower() in failed_values
 
 
+def _sync_chat_generate_for_task(db, task: Task) -> None:
+    try:
+        from app.services.chat_generate_service import sync_chat_generate_status_for_tasks
+        sync_chat_generate_status_for_tasks(db, [task_external_id(task)])
+    except Exception:
+        logger.exception("Failed to sync chat generate status: task_id=%s", task.id)
+
+
 def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
     db.refresh(task)
     _mark_task_request_finished(task)
@@ -2023,6 +2077,7 @@ def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
         task.provider_error_message = ""
     refund_task_credit_for_generation_failure_if_needed(db, task)
     db.commit()
+    _sync_chat_generate_for_task(db, task)
 
 
 def _lock_async_result_entities(db, task_id: int, image_id: int) -> tuple[Task | None, Image | None]:
@@ -2437,14 +2492,21 @@ def _recover_due_async_poll_tasks_once() -> int:
     db = SessionLocal()
     try:
         now_value = now_local()
+        stale_cutoff = now_value - timedelta(seconds=ASYNC_POLL_RECOVERY_INTERVAL_SECONDS)
         tasks = (
             db.query(Task)
             .filter(
                 Task.status == "processing",
                 Task.provider_task_id != "",
-                Task.next_poll_at.is_not(None),
-                Task.next_poll_at <= now_value,
                 Task.is_deleted.is_(False),
+                or_(
+                    and_(Task.next_poll_at.is_not(None), Task.next_poll_at <= now_value),
+                    and_(
+                        Task.next_poll_at.is_(None),
+                        Task.updated_at.is_not(None),
+                        Task.updated_at <= stale_cutoff,
+                    ),
+                ),
             )
             .order_by(Task.next_poll_at.asc(), Task.id.asc())
             .limit(ASYNC_POLL_RECOVERY_BATCH_SIZE)
@@ -2453,6 +2515,9 @@ def _recover_due_async_poll_tasks_once() -> int:
         recovered_count = 0
         for task in tasks:
             try:
+                if task.next_poll_at is None:
+                    task.next_poll_at = now_value
+                    db.commit()
                 _schedule_async_poll_task(task.id, delay_seconds=0)
                 recovered_count += 1
             except Exception:

@@ -38,6 +38,7 @@ const size = ref("");
 const resolution = ref("");
 const customSize = ref("");
 const tasks = ref<TaskResult[]>([]);
+const tasksFetched = ref(false);
 let pollTimer: number | null = null;
 
 const generateInfo = computed(() => props.generate);
@@ -93,12 +94,33 @@ const tasksSettled = computed(() => (
   tasks.value.length > 0
   && tasks.value.every((item) => item.status === "success" || item.status === "failed")
 ));
+const tasksMissing = computed(() => (
+  tasksFetched.value
+  && (generateInfo.value.task_ids || []).length > 0
+  && tasks.value.length === 0
+));
 const isGenerating = computed(() => {
-  if (tasksSettled.value) return false;
+  if (tasksSettled.value || tasksMissing.value) return false;
   if (confirming.value) return true;
+  if (tasks.value.length) {
+    return tasks.value.some((item) => item.status === "processing" || item.status === "queued" || item.status === "pending");
+  }
   if (generateInfo.value.status === "running") return true;
-  return tasks.value.some((item) => item.status === "processing" || item.status === "queued" || item.status === "pending");
+  return false;
 });
+const allTasksFailed = computed(() => (
+  tasksSettled.value && tasks.value.every((item) => item.status === "failed")
+));
+const canRetry = computed(() => (
+  !props.readonly
+  && !props.adminViewer
+  && !isGenerating.value
+  && (
+    generateInfo.value.status === "failed"
+    || tasksMissing.value
+    || allTasksFailed.value
+  )
+));
 const resultSlots = computed(() => {
   if (generateInfo.value.status === "cancelled" && !tasks.value.length) return [];
   if (isPending.value && !confirming.value) return [];
@@ -108,7 +130,7 @@ const resultSlots = computed(() => {
     tasks.value.length,
     resultImages.value.length,
   );
-  if (!count || (!isGenerating.value && !tasks.value.length && generateInfo.value.status !== "success" && generateInfo.value.status !== "failed")) {
+  if (!count || (!isGenerating.value && !tasks.value.length && generateInfo.value.status !== "success" && generateInfo.value.status !== "failed" && !tasksMissing.value)) {
     return [];
   }
   return Array.from({ length: count }, (_, index) => {
@@ -124,7 +146,7 @@ const resultSlots = computed(() => {
     if (task?.status === "failed" || image?.status === "failed") {
       return { key: `fail-${task?.id || index}`, status: "failed" as const, url: "", previewUrl: "" };
     }
-    if (!task && generateInfo.value.status === "failed") {
+    if (!task && (generateInfo.value.status === "failed" || tasksMissing.value)) {
       return { key: `fail-${index}`, status: "failed" as const, url: "", previewUrl: "" };
     }
     return { key: `pending-${task?.id || index}`, status: "pending" as const, url: "", previewUrl: "" };
@@ -145,7 +167,7 @@ const failedMessage = computed(() => {
 });
 const statusLabel = computed(() => {
   if (generateInfo.value.status === "cancelled") return "已取消";
-  if (generateInfo.value.status === "failed") return "生成失败";
+  if (generateInfo.value.status === "failed" || tasksMissing.value) return "生成失败";
   if (tasksSettled.value) {
     if (tasks.value.every((item) => item.status === "failed")) return "生成失败";
     if (tasks.value.some((item) => item.status === "success")) return "已生成";
@@ -217,6 +239,7 @@ async function refreshTasks() {
   if (!ids.length) return;
   try {
     tasks.value = props.adminViewer ? await getAdminTasks(ids) : await getTasks(ids);
+    tasksFetched.value = true;
   } catch {
     // keep last snapshot
   }
@@ -253,12 +276,38 @@ watch(
 );
 
 watch(
-  () => tasks.value.map((item) => item.status).join(","),
+  () => [tasksMissing.value, tasks.value.map((item) => item.status).join(",")].join("|"),
   () => {
+    if (tasksMissing.value) {
+      stopPolling();
+      return;
+    }
     if (!tasks.value.length) return;
     if (tasks.value.every((item) => item.status === "success" || item.status === "failed")) {
       stopPolling();
     }
+  },
+);
+
+watch(
+  () => {
+    if (tasksMissing.value) return "failed";
+    if (!tasksSettled.value) return "";
+    return tasks.value.every((item) => item.status === "failed") ? "failed" : "success";
+  },
+  (nextStatus) => {
+    if (!nextStatus || generateInfo.value.status === nextStatus) return;
+    emit("updated", {
+      id: props.messageId,
+      session_id: props.sessionId,
+      generate: {
+        ...generateInfo.value,
+        status: nextStatus,
+        error_message: nextStatus === "failed"
+          ? (failedMessage.value || generateInfo.value.error_message || "生图失败")
+          : "",
+      },
+    } as ChatMessage);
   },
 );
 
@@ -298,6 +347,32 @@ async function handleCancel() {
     replaceMessage(next);
   } catch (err: any) {
     message.error(err?.response?.data?.detail || err?.message || "取消失败");
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function handleRetry() {
+  if (!canRetry.value || submitting.value) return;
+  confirming.value = true;
+  submitting.value = true;
+  tasks.value = [];
+  tasksFetched.value = false;
+  try {
+    const next = await confirmChatMessageGenerate(props.sessionId, props.messageId, {
+      action: "retry",
+      model: selectedModel.value || generateInfo.value.model || "",
+      num_images: generateInfo.value.num_images || numImages.value,
+      size: generateInfo.value.size || size.value,
+      resolution: generateInfo.value.resolution || resolution.value,
+      custom_size: generateInfo.value.custom_size || customSize.value,
+    });
+    tasks.value = [];
+    tasksFetched.value = false;
+    replaceMessage(next);
+  } catch (err: any) {
+    confirming.value = false;
+    message.error(err?.response?.data?.detail || err?.message || "重试失败");
   } finally {
     submitting.value = false;
   }
@@ -407,12 +482,18 @@ onBeforeUnmount(() => {
         </span>
       </button>
     </div>
-    <p v-if="failedMessage" class="chat-generate-error">{{ failedMessage }}</p>
+    <p v-if="failedMessage && !isGenerating" class="chat-generate-error">{{ failedMessage }}</p>
     <div v-if="canEdit" class="chat-generate-actions">
       <span class="chat-generate-cost">预计 {{ estimatedCost }} 积分</span>
       <button type="button" class="chat-generate-cancel" :disabled="submitting" @click="handleCancel">取消</button>
       <button type="button" class="chat-generate-confirm" :disabled="submitting" @click="handleConfirm">
         {{ submitting ? "提交中…" : "确认生图" }}
+      </button>
+    </div>
+    <div v-else-if="canRetry" class="chat-generate-actions">
+      <span class="chat-generate-cost">预计 {{ estimatedCost }} 积分</span>
+      <button type="button" class="chat-generate-confirm" :disabled="submitting" @click="handleRetry">
+        {{ submitting ? "提交中…" : "重试" }}
       </button>
     </div>
   </div>

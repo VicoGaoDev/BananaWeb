@@ -251,7 +251,7 @@ def _expire_stale_processing_tasks(
     now_value = now_local()
     cutoff = now_value - timedelta(seconds=timeout_seconds)
     query = db.query(Task).filter(
-        Task.status == "processing",
+        Task.status.in_(ACTIVE_TASK_STATUSES),
         Task.is_deleted.is_(False),
         Task.updated_at.is_not(None),
         Task.updated_at <= cutoff,
@@ -269,7 +269,33 @@ def _expire_stale_processing_tasks(
     if not stale_tasks:
         return
 
+    recoverable_tasks = []
+    expire_tasks = []
     for task in stale_tasks:
+        provider_task_id = (task.provider_task_id or "").strip()
+        provider_status = (task.provider_status or "").strip().lower()
+        if provider_task_id and provider_status != "timeout" and (task.status or "") == "processing":
+            recoverable_tasks.append(task)
+        else:
+            expire_tasks.append(task)
+
+    if recoverable_tasks:
+        for task in recoverable_tasks:
+            task.next_poll_at = now_value
+        db.commit()
+        task_logger.warning(
+            "stale async processing tasks marked due for last poll",
+            extra={
+                "event": "task.processing.rescheduled",
+                "task_ids": [task_external_id(task) for task in recoverable_tasks],
+                "task_count": len(recoverable_tasks),
+            },
+        )
+
+    if not expire_tasks:
+        return
+
+    for task in expire_tasks:
         has_success_image = False
         for image in task.images:
             if image.status == "success":
@@ -291,8 +317,8 @@ def _expire_stale_processing_tasks(
         "stale processing tasks expired",
         extra={
             "event": "task.processing.expired",
-            "task_ids": [task_external_id(task) for task in stale_tasks],
-            "task_count": len(stale_tasks),
+            "task_ids": [task_external_id(task) for task in expire_tasks],
+            "task_count": len(expire_tasks),
             "timeout_seconds": timeout_seconds,
         },
     )
@@ -684,6 +710,14 @@ def get_task_details(db: Session, task_ids: list[str], user_id: int | None = Non
         return []
 
     _expire_stale_processing_tasks(db, user_id=user_id, business_ids=normalized_ids)
+    try:
+        from app.services.chat_generate_service import sync_chat_generate_status_for_tasks
+        sync_chat_generate_status_for_tasks(db, normalized_ids)
+    except Exception:
+        task_logger.exception(
+            "failed to sync chat generate status",
+            extra={"event": "task.chat_generate.sync_failed", "task_ids": normalized_ids},
+        )
 
     query = db.query(Task).filter(Task.business_id.in_(normalized_ids))
     if user_id is not None:

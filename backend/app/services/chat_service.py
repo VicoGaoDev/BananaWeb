@@ -57,6 +57,7 @@ from app.services.chat_generate_service import (
     GENERATE_IMAGE_SYSTEM_HINT,
     apply_generate_proposal,
     parse_generate_extra,
+    reconcile_running_chat_generates,
 )
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_balance
 
@@ -378,6 +379,7 @@ def list_messages(
     has_more = len(rows) > normalized_page_size
     page_rows = rows[:normalized_page_size]
     page_rows.reverse()
+    reconcile_running_chat_generates(db, page_rows)
     return ChatMessageListOut(
         items=[_serialize_message(item, public_session_id=public_session_id) for item in page_rows],
         has_more=has_more,
@@ -493,6 +495,7 @@ def list_admin_messages(
     has_more = len(rows) > normalized_page_size
     page_rows = rows[:normalized_page_size]
     page_rows.reverse()
+    reconcile_running_chat_generates(db, page_rows)
     return ChatMessageListOut(
         items=[_serialize_message(item, public_session_id=public_session_id) for item in page_rows],
         has_more=has_more,
