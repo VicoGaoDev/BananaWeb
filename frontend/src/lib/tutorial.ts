@@ -1,13 +1,18 @@
-export const TUTORIAL_MODULES = ["generate", "chat", "video", "canvas"] as const;
+export const TUTORIAL_MODULES = ["general", "generate", "chat", "video", "canvas"] as const;
 
 export type TutorialModule = (typeof TUTORIAL_MODULES)[number];
 
-export const DEFAULT_TUTORIAL_MODULE: TutorialModule = "generate";
+export const DEFAULT_TUTORIAL_MODULE: TutorialModule = "general";
 
 export const tutorialModuleMeta: Record<
   TutorialModule,
   { label: string; path: string; doc: string; placeholder?: boolean }
 > = {
+  general: {
+    label: "通用教程",
+    path: "/tutorial/general",
+    doc: "docs/general-tutorial.html",
+  },
   generate: {
     label: "AI 生图",
     path: "/tutorial/generate",
@@ -30,7 +35,11 @@ export const tutorialModuleMeta: Record<
   },
 };
 
-export const tutorialNavOrder: TutorialModule[] = ["chat", "generate", "video", "canvas"];
+export const tutorialNavOrder: TutorialModule[] = ["general", "chat", "generate", "video", "canvas"];
+
+export const generalTutorialSections = [
+  { id: "redeem", label: "1. 兑换积分" },
+] as const;
 
 export const generateTutorialSections = [
   { id: "overview", label: "1. 进入页面与布局" },
@@ -92,6 +101,7 @@ export const canvasTutorialSections = [
 ] as const;
 
 export function getTutorialSections(module: TutorialModule) {
+  if (module === "general") return generalTutorialSections;
   if (module === "generate") return generateTutorialSections;
   if (module === "chat") return chatTutorialSections;
   if (module === "video") return videoTutorialSections;
@@ -114,5 +124,5 @@ export function resolveTutorialModuleFromPath(path: string): TutorialModule {
   if (path.startsWith("/chat")) return "chat";
   if (path.startsWith("/canvas")) return "canvas";
   if (path.startsWith("/video")) return "video";
-  return DEFAULT_TUTORIAL_MODULE;
+  return "generate";
 }

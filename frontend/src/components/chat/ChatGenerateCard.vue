@@ -8,6 +8,7 @@ import { getTaskScenes } from "@/api/config";
 import { getTasks } from "@/api/tasks";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
+import { notifyGeneratePageOfChatTasks } from "@/lib/chatGenerateDraft";
 import { formatGenerationTaskFailureMessage, GENERATION_TASK_FAILURE_MESSAGE } from "@/lib/generationErrors";
 import type { ChatGenerateInfo, ChatMessage, SceneOptionItem, TaskResult, TaskSceneConfig } from "@/types";
 
@@ -249,6 +250,24 @@ function replaceMessage(next: ChatMessage) {
   emit("updated", next);
 }
 
+function notifyGeneratePage(next: ChatMessage) {
+  if (props.adminViewer) return;
+  const generate = next.generate;
+  const taskIds = generate?.task_ids || [];
+  if (!generate || !taskIds.length) return;
+  notifyGeneratePageOfChatTasks({
+    taskIds,
+    prompt: generate.prompt,
+    model: generate.model || selectedModel.value,
+    numImages: generate.num_images || numImages.value,
+    size: generate.size || size.value,
+    resolution: generate.resolution || resolution.value,
+    customSize: generate.custom_size || customSize.value,
+    referenceImages: generate.reference_images || [],
+    modeHint: generate.mode_hint,
+  });
+}
+
 async function loadScenes() {
   try {
     scenes.value = await getTaskScenes();
@@ -369,6 +388,7 @@ async function handleConfirm() {
       custom_size: showCustomSize.value ? customSize.value : "",
     });
     replaceMessage(next);
+    notifyGeneratePage(next);
   } catch (err: any) {
     confirming.value = false;
     message.error(err?.response?.data?.detail || err?.message || "创建生图任务失败");
@@ -410,6 +430,7 @@ async function handleRetry() {
     tasks.value = [];
     tasksFetched.value = false;
     replaceMessage(next);
+    notifyGeneratePage(next);
   } catch (err: any) {
     confirming.value = false;
     message.error(err?.response?.data?.detail || err?.message || "重试失败");

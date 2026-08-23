@@ -3,7 +3,12 @@ import { ref, computed, defineAsyncComponent, defineComponent, h, inject, nextTi
 import { message, Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRoute, useRouter } from "vue-router";
-import { APPLY_CHAT_GENERATE_DRAFT_EVENT, CHAT_DRAFT_KEY } from "@/lib/chatGenerateDraft";
+import {
+  APPLY_CHAT_GENERATE_DRAFT_EVENT,
+  CHAT_DRAFT_KEY,
+  CHAT_GENERATE_TASKS_CREATED_EVENT,
+  type ChatGenerateTasksPayload,
+} from "@/lib/chatGenerateDraft";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
 import {
   FontSizeOutlined,
@@ -179,6 +184,63 @@ function handleChatGenerateDraft() {
     "已从 AI 对话回填提示词，可继续编辑后生成",
     CHAT_DRAFT_KEY,
   );
+}
+
+function handleChatGenerateTasksCreated(event: Event) {
+  const detail = (event as CustomEvent<ChatGenerateTasksPayload>).detail;
+  upsertChatGeneratedTasks(detail);
+}
+
+function upsertChatGeneratedTasks(payload?: ChatGenerateTasksPayload | null) {
+  const taskIds = (payload?.taskIds || [])
+    .map((taskId) => String(taskId || "").trim())
+    .filter(Boolean);
+  if (!taskIds.length) return;
+
+  const existingIds = new Set(
+    generatedTasks.value
+      .map((task) => task.taskId)
+      .filter((taskId): taskId is string => Boolean(taskId)),
+  );
+  const referenceImages = Array.isArray(payload?.referenceImages)
+    ? payload.referenceImages.map((url) => String(url || "").trim()).filter(Boolean)
+    : [];
+  const mode: SubmitMode = payload?.modeHint === "image_edit" || referenceImages.length
+    ? "imageEdit"
+    : "textGenerate";
+  const perCardImageCount = taskIds.length > 1
+    ? 1
+    : Math.max(1, Number(payload?.numImages) || 1);
+  const newcomers = taskIds
+    .filter((taskId) => !existingIds.has(taskId))
+    .map((taskId) => ({
+      localId: `chat-${taskId}`,
+      taskId,
+      mode,
+      prompt: payload?.prompt || "",
+      model: payload?.model || undefined,
+      numImages: perCardImageCount,
+      size: payload?.size || "1:1",
+      resolution: payload?.resolution || "2K",
+      customSize: payload?.customSize || "",
+      referenceImages,
+      referenceImageThumbs: referenceImages,
+      createdAt: new Date().toISOString(),
+      status: "pending" as const,
+      errorMessage: "",
+      creditRefunded: false,
+      failureRefundRemainingCount: null,
+      images: createPendingImages(perCardImageCount),
+    }));
+
+  if (newcomers.length) {
+    generatedTasks.value = [...newcomers, ...generatedTasks.value];
+    if (resultBodyRef.value) resultBodyRef.value.scrollTop = 0;
+  }
+
+  startTaskPolling();
+  void refreshTasks(taskIds);
+  getMe().then((user) => auth.updateUser(user)).catch(() => {});
 }
 
 const failedResultAsset = withBaseUrl("failed-result.svg");
@@ -1439,8 +1501,18 @@ async function loadGeneratedTaskHistoryPages({
 
   generatedTaskHistoryPage.value = lastLoadedPage;
   generatedTaskHistoryTotal.value = total === Infinity ? 0 : total;
+  const preserveInFlightTasks = reset
+    ? generatedTasks.value.filter((task) => {
+      if (task.status === "submitting" && !task.taskId) return true;
+      if (!task.taskId || seenTaskIds.has(task.taskId)) return false;
+      return task.status === "submitting"
+        || task.status === "pending"
+        || task.status === "queued"
+        || task.status === "processing";
+    })
+    : [];
   generatedTasks.value = reset
-    ? loadedTasks
+    ? [...preserveInFlightTasks, ...loadedTasks]
     : [
         ...generatedTasks.value,
         ...loadedTasks.filter((task) => {
@@ -1603,7 +1675,7 @@ async function goCanvas() {
 }
 
 function goTutorial() {
-  void router.push("/tutorial");
+  void router.push("/tutorial/generate");
 }
 
 function triggerUpload() {
@@ -3277,6 +3349,7 @@ onMounted(async () => {
   window.addEventListener("paste", handleReferencePaste);
   window.addEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
   window.addEventListener(APPLY_CHAT_GENERATE_DRAFT_EVENT, handleChatGenerateDraft);
+  window.addEventListener(CHAT_GENERATE_TASKS_CREATED_EVENT, handleChatGenerateTasksCreated);
   document.addEventListener("visibilitychange", handleDocumentVisibilityChange);
   await Promise.all([loadTaskSceneConfigs(), loadBoardsForGenerate()]);
   await Promise.all([loadRecentGeneratedTasks(), loadGlobalActiveGenerationStatus()]);
@@ -3320,6 +3393,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("paste", handleReferencePaste);
   window.removeEventListener(GENERATE_MENU_ENTRY_EVENT, handleGenerateMenuEntry);
   window.removeEventListener(APPLY_CHAT_GENERATE_DRAFT_EVENT, handleChatGenerateDraft);
+  window.removeEventListener(CHAT_GENERATE_TASKS_CREATED_EVENT, handleChatGenerateTasksCreated);
   document.removeEventListener("visibilitychange", handleDocumentVisibilityChange);
   clearFilePickerRecoveryTimer();
   unbindReferenceDragHandlers?.();

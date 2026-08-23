@@ -246,6 +246,7 @@ const routeOrder = new Map<string, number>([
   ["/templates", 5],
   ["/history", 6],
   ["/tutorial", 6.5],
+  ["/tutorial/general", 6.5],
   ["/tutorial/generate", 6.5],
   ["/tutorial/chat", 6.5],
   ["/tutorial/video", 6.5],
@@ -5586,8 +5587,22 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 }
 
 .warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .ant-dropdown-menu-title-content {
+  position: static;
   width: 100%;
   min-width: max-content;
+}
+
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .ant-dropdown-trigger,
+.warm-dropdown .ant-dropdown-menu-item.theme-style-menu-item .theme-style-entry {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding-inline-start: 40px;
+  box-sizing: border-box;
 }
 
 .warm-dropdown .theme-style-overlay {

@@ -27,11 +27,16 @@ const emit = defineEmits<{
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 let themeObserver: MutationObserver | null = null;
 const navCollapsed = ref(false);
-const activeSectionId = ref(props.sectionId || "overview");
+function firstSectionId(module: TutorialModule) {
+  return getTutorialSections(module)[0]?.id || "";
+}
+
+const activeSectionId = ref(props.sectionId || firstSectionId(props.module));
 const pendingSectionId = ref("");
 const preview = ref<{ src: string; alt: string; caption: string } | null>(null);
 const showBackTop = ref(false);
 const openGroups = reactive<Record<TutorialModule, boolean>>({
+  general: false,
   chat: false,
   generate: false,
   video: false,
@@ -184,7 +189,7 @@ watch(
   () => props.module,
   (module) => {
     setExclusiveOpen(module);
-    activeSectionId.value = props.sectionId || (getTutorialSections(module).length ? "overview" : module);
+    activeSectionId.value = props.sectionId || firstSectionId(module);
     closePreview();
   },
 );

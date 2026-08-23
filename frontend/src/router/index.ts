@@ -54,7 +54,7 @@ const router = createRouter({
         },
         {
           path: "tutorial",
-          redirect: "/tutorial/generate",
+          redirect: "/tutorial/general",
         },
         {
           path: "tutorial/:module",

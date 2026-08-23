@@ -102,8 +102,9 @@ function updateThemeDropdownAlign(event: MouseEvent) {
   align-items: center;
   flex-shrink: 0;
   width: 100%;
+  height: 100%;
   min-width: max-content;
-  min-height: 0;
+  min-height: 100%;
   padding: 0;
   color: inherit;
   font-weight: inherit;
