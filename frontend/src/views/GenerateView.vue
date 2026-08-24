@@ -63,8 +63,9 @@ import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import GenerateStylePicker from "@/components/generate/GenerateStylePicker.vue";
+import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
-import { composeGeneratePrompt } from "@/lib/generateStyles";
+import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
@@ -658,10 +659,11 @@ const hasBlockedUploads = computed(() => {
   }
   return false;
 });
+const hasSelectedGenerateStyles = computed(() => Boolean(selectedColorStyleId.value || selectedLightingStyleId.value));
 const canClickGenerate = computed(() => {
   if (hasBlockedUploads.value) return false;
   if (isImageEditMode.value) return true;
-  return !!activePrompt.value.trim();
+  return !!activePrompt.value.trim() || hasSelectedGenerateStyles.value;
 });
 const localUncountedActiveGenerationImageCount = computed(() => (
   generatedTasks.value.reduce((total, task) => {
@@ -1565,9 +1567,15 @@ function startTaskPolling() {
   }, 5000);
 }
 
-function clearSelectedGenerateStyles() {
-  selectedColorStyleId.value = "";
-  selectedLightingStyleId.value = "";
+function applyPromptWithGenerateStyles(fullPrompt: string, target: "prompt" | "repaintPrompt") {
+  const parsed = parseGeneratePrompt(fullPrompt);
+  selectedColorStyleId.value = parsed.colorStyleId;
+  selectedLightingStyleId.value = parsed.lightingStyleId;
+  if (target === "repaintPrompt") {
+    repaintPrompt.value = parsed.userPrompt;
+    return;
+  }
+  prompt.value = parsed.userPrompt;
 }
 
 function buildSubmitPrompt(userPrompt: string) {
@@ -1788,8 +1796,22 @@ function isQuickSavePromptPending(promptKey: string) {
   return quickSavingPromptKeys.value.includes(promptKey);
 }
 
+function composeLibraryPromptContent(userPrompt: string) {
+  return composeGeneratePrompt(
+    userPrompt,
+    selectedColorStyleId.value,
+    selectedLightingStyleId.value,
+  );
+}
+
+function buildLibraryPromptTitle(userPrompt: string) {
+  const userTitle = (userPrompt || "").replace(/\s+/g, " ").trim();
+  if (userTitle) return buildQuickSavePromptTitle(userTitle);
+  return formatSelectedGenerateStyleLabel(selectedColorStyleId.value, selectedLightingStyleId.value) || "我的提示词";
+}
+
 function canQuickSavePrompt(content: string, lastSavedContent: string) {
-  const normalized = content.trim();
+  const normalized = composeLibraryPromptContent(content);
   return !!normalized && normalized !== lastSavedContent.trim();
 }
 
@@ -1834,15 +1856,15 @@ function confirmSaveReferenceItem(item: UploadPreviewItem) {
   });
 }
 
-async function savePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
+async function savePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void, title?: string) {
   const normalized = content.trim();
   if (!normalized) return;
   if (!(await ensureAuthenticated())) return;
   if (isQuickSavePromptPending(promptKey)) return;
   quickSavingPromptKeys.value = [...quickSavingPromptKeys.value, promptKey];
   try {
-    const title = buildQuickSavePromptTitle(normalized);
-    await createUserPrompt({ title, content: normalized });
+    const promptTitle = (title || "").trim() || buildQuickSavePromptTitle(normalized);
+    await createUserPrompt({ title: promptTitle, content: normalized });
     onSaved(normalized);
     message.success("已加入我的提示词");
   } catch (err: any) {
@@ -1853,9 +1875,13 @@ async function savePromptToLibrary(content: string, promptKey: string, onSaved: 
 }
 
 function confirmSavePromptToLibrary(content: string, promptKey: string, onSaved: (value: string) => void) {
-  const normalized = content.trim();
+  const normalized = composeLibraryPromptContent(content);
   if (!normalized) return;
-  const title = buildQuickSavePromptTitle(normalized);
+  if (normalized.length > TASK_PROMPT_MAX_LENGTH) {
+    message.warning("加上风格后超出长度限制，请缩短提示词或取消部分风格");
+    return;
+  }
+  const title = buildLibraryPromptTitle(content);
   Modal.confirm({
     title: "加入我的提示词",
     content: `确认将当前提示词加入我的提示词吗？将使用“${title}”作为默认标题。`,
@@ -1863,7 +1889,7 @@ function confirmSavePromptToLibrary(content: string, promptKey: string, onSaved:
     okText: "确认加入",
     cancelText: "取消",
     async onOk() {
-      await savePromptToLibrary(normalized, promptKey, onSaved);
+      await savePromptToLibrary(normalized, promptKey, onSaved, title);
     },
   });
 }
@@ -2614,7 +2640,7 @@ async function handleGenerate() {
     promptSwitchToTextGenerate("图编辑必须先上传参考图。若你现在没有参考图，请切换到文生图发起任务。");
     return;
   }
-  if (!activePrompt.value.trim()) {
+  if (!activePrompt.value.trim() && !hasSelectedGenerateStyles.value) {
     message.warning("请输入提示词");
     return;
   }
@@ -2733,14 +2759,13 @@ async function handleGenerate() {
 
 function handleReeditTask(task: GeneratedTaskItem) {
   expandConfigPanelForEditing();
-  clearSelectedGenerateStyles();
   generateMode.value = task.mode;
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
   customSize.value = task.customSize || "";
 
   if (task.mode === "inpaint") {
-    repaintPrompt.value = task.prompt;
+    applyPromptWithGenerateStyles(task.prompt, "repaintPrompt");
     prompt.value = "";
     syncReferenceItems([]);
     revokeObjectUrl(sourcePreviewUrl.value);
@@ -2752,7 +2777,7 @@ function handleReeditTask(task: GeneratedTaskItem) {
     canRedoMask.value = false;
   } else {
     generateMode.value = task.referenceImages.length ? "imageEdit" : "textGenerate";
-    prompt.value = task.prompt;
+    applyPromptWithGenerateStyles(task.prompt, "prompt");
     repaintPrompt.value = "";
     if (task.model) selectedModel.value = task.model;
     numImages.value = Math.min(MAX_ACTIVE_GENERATION_IMAGES, Math.max(1, Number(task.numImages || 1)));
@@ -2776,9 +2801,8 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
     return;
   }
   expandConfigPanelForEditing();
-  clearSelectedGenerateStyles();
   generateMode.value = "imageEdit";
-  prompt.value = task.prompt;
+  applyPromptWithGenerateStyles(task.prompt, "prompt");
   repaintPrompt.value = "";
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
@@ -3269,11 +3293,10 @@ function useLibraryPrompt(item: UserPrompt) {
     message.warning("该提示词内容为空");
     return;
   }
-  if (generateMode.value === "inpaint") {
-    repaintPrompt.value = content;
-  } else {
-    prompt.value = content;
-  }
+  applyPromptWithGenerateStyles(
+    content,
+    generateMode.value === "inpaint" ? "repaintPrompt" : "prompt",
+  );
   message.success("已回填到编辑区");
 }
 
@@ -3309,7 +3332,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     customSize.value = draft.custom_size || "";
 
     if (draftMode === "inpaint") {
-      repaintPrompt.value = draft.prompt || "";
+      applyPromptWithGenerateStyles(draft.prompt || "", "repaintPrompt");
       revokeObjectUrl(sourcePreviewUrl.value);
       sourceImageUrl.value = draft.source_image || "";
       sourcePreviewUrl.value = "";
@@ -3337,7 +3360,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       canRedoMask.value = false;
       numImages.value = 1;
     } else {
-      prompt.value = draft.prompt || "";
+      applyPromptWithGenerateStyles(draft.prompt || "", "prompt");
       selectedModel.value = draft.model || selectedModel.value;
       syncReferenceItems(Array.isArray(draft.reference_images) ? draft.reference_images.slice(0, maxReferenceImages.value) : []);
       numImages.value = Math.min(MAX_ACTIVE_GENERATION_IMAGES, Math.max(1, Number(draft.num_images || 1)));
@@ -3801,11 +3824,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap">
+                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                  <GenerateStyleTags
+                    v-model:color-style-id="selectedColorStyleId"
+                    v-model:lighting-style-id="selectedLightingStyleId"
+                  />
                   <a-textarea
                     v-model:value="prompt"
                     :rows="5"
-                    placeholder="描述您想要生成的图片..."
+                    :placeholder="hasSelectedGenerateStyles ? '' : '描述您想要生成的图片...'"
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
                     :allow-clear="!isPromptOptimizeOnMainPrompt"
@@ -4193,11 +4220,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap">
+                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                  <GenerateStyleTags
+                    v-model:color-style-id="selectedColorStyleId"
+                    v-model:lighting-style-id="selectedLightingStyleId"
+                  />
                   <a-textarea
                     v-model:value="prompt"
                     :rows="5"
-                    placeholder="描述您想要生成的图片..."
+                    :placeholder="hasSelectedGenerateStyles ? '' : '描述您想要生成的图片...'"
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
                     :allow-clear="!isPromptOptimizeOnMainPrompt"
@@ -4639,11 +4670,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap">
+                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                  <GenerateStyleTags
+                    v-model:color-style-id="selectedColorStyleId"
+                    v-model:lighting-style-id="selectedLightingStyleId"
+                  />
                   <a-textarea
                     v-model:value="repaintPrompt"
                     :rows="5"
-                    placeholder="描述需要局部重绘后的效果..."
+                    :placeholder="hasSelectedGenerateStyles ? '' : '描述需要局部重绘后的效果...'"
                     class="prompt-input"
                     :maxlength="TASK_PROMPT_MAX_LENGTH"
                     :allow-clear="!isPromptOptimizeOnRepaintPrompt"
@@ -6130,6 +6165,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   :deep(textarea::placeholder) {
     color: var(--text-muted);
   }
+}
+
+.generate-config-panel .prompt-input-wrap.has-style-tags .prompt-input :deep(textarea) {
+  padding-top: 48px !important;
 }
 
 .prompt-quick-save-btn {

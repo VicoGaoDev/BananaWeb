@@ -63,6 +63,46 @@ export function composeGeneratePrompt(
   return parts.join("\n\n");
 }
 
+export interface ParsedGeneratePrompt {
+  userPrompt: string;
+  colorStyleId: string;
+  lightingStyleId: string;
+}
+
+function stripMatchedStylePrompt(source: string, stylePrompt: string): string | null {
+  const needle = stylePrompt.trim();
+  if (!needle) return null;
+  const index = source.indexOf(needle);
+  if (index < 0) return null;
+  const next = `${source.slice(0, index)}\n\n${source.slice(index + needle.length)}`;
+  return next.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function pickMatchedStyleId(source: string, categoryId: GenerateStyleCategoryId): { styleId: string; remaining: string } {
+  const items = [...(getGenerateStyleCategory(categoryId)?.items || [])]
+    .filter((item) => item.prompt?.trim())
+    .sort((left, right) => right.prompt.trim().length - left.prompt.trim().length);
+  for (const item of items) {
+    const remaining = stripMatchedStylePrompt(source, item.prompt);
+    if (remaining === null) continue;
+    return { styleId: item.id, remaining };
+  }
+  return { styleId: "", remaining: source };
+}
+
+export function parseGeneratePrompt(fullPrompt: string): ParsedGeneratePrompt {
+  let remaining = (fullPrompt || "").trim();
+  const colorMatch = pickMatchedStyleId(remaining, "color");
+  remaining = colorMatch.remaining;
+  const lightingMatch = pickMatchedStyleId(remaining, "lighting");
+  remaining = lightingMatch.remaining;
+  return {
+    userPrompt: remaining,
+    colorStyleId: colorMatch.styleId,
+    lightingStyleId: lightingMatch.styleId,
+  };
+}
+
 export function formatSelectedGenerateStyleLabel(
   colorStyleId?: string | null,
   lightingStyleId?: string | null,
