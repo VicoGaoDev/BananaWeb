@@ -269,14 +269,22 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-style-trigger {
 }
 
 .style-category-grid {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px 28px;
+  gap: 20px 32px;
 }
 
-.style-category + .style-category {
-  padding-left: 20px;
-  border-left: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.1));
+.style-category-grid::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--theme-panel-border, rgba(0, 0, 0, 0.1));
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .style-category-title {
@@ -390,10 +398,14 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-style-trigger {
 
 .style-card-name {
   display: block;
+  min-height: 1.4em;
   padding: 0 2px 4px;
+  overflow: hidden;
   color: var(--theme-title);
   font-size: 12px;
   line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .style-dialog-footer {
@@ -412,6 +424,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-style-trigger {
   .style-category-grid,
   .style-card-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .style-category-grid::before {
+    display: none;
   }
 
   .style-dialog-footer {
