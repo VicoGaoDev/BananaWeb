@@ -40,6 +40,7 @@ import {
   CalendarOutlined,
   ExpandOutlined,
   ReadOutlined,
+  StarOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -61,7 +62,9 @@ import { createUserPrompt } from "@/api/userPrompts";
 import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import GenerateStylePicker from "@/components/generate/GenerateStylePicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
+import { composeGeneratePrompt } from "@/lib/generateStyles";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
@@ -258,6 +261,8 @@ const resolution = ref("2K");
 const size = ref("");
 const customSize = ref("");
 const aspectRatioAutoDetectEnabled = ref(readStoredAspectRatioAutoDetectEnabled());
+const selectedColorStyleId = ref("");
+const selectedLightingStyleId = ref("");
 const selectedNumImages = computed({
   get: () => String(numImages.value),
   set: (value: string) => {
@@ -381,7 +386,7 @@ const activePromptOptimizeRequestId = ref<number | null>(null);
 const promptOptimizeStyleDialogOpen = ref(false);
 const pendingPromptOptimizePayload = ref<Omit<PromptOptimizePayload, "style_name" | "style_prompt"> | null>(null);
 const pendingPromptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
-const PROMPT_OPTIMIZE_TOOLTIP = "免费。保留原意，并结合参考图理解画面，自动补全构图、光线、画风和细节，让提示词更适合出图";
+const PROMPT_OPTIMIZE_TOOLTIP = "提示词优化：免费。保留原意，并结合参考图理解画面，自动补全构图、光线、画风和细节，让提示词更适合出图";
 let promptOptimizeRequestSeq = 0;
 let promptOptimizeAbortController: AbortController | null = null;
 const cancelledPromptOptimizeRequestIds = new Set<number>();
@@ -1560,6 +1565,24 @@ function startTaskPolling() {
   }, 5000);
 }
 
+function clearSelectedGenerateStyles() {
+  selectedColorStyleId.value = "";
+  selectedLightingStyleId.value = "";
+}
+
+function buildSubmitPrompt(userPrompt: string) {
+  const assembled = composeGeneratePrompt(
+    userPrompt,
+    selectedColorStyleId.value,
+    selectedLightingStyleId.value,
+  );
+  if (assembled.length > TASK_PROMPT_MAX_LENGTH) {
+    message.warning("加上风格提示词后超出长度限制，请缩短提示词或取消部分风格");
+    return "";
+  }
+  return assembled;
+}
+
 function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
   if (task.mode === "inpaint") return inpaintCreditCost.value;
   const perImageCost = task.model ? resolveSceneCreditCost(task.model, task.resolution) : selectedModelCreditCost.value;
@@ -2618,6 +2641,9 @@ async function handleGenerate() {
       return;
     }
 
+    const submitPrompt = buildSubmitPrompt(activePrompt.value);
+    if (!submitPrompt) return;
+
     let payload: GenerateTaskPayload;
     let requestedImageCount = 1;
 
@@ -2647,7 +2673,7 @@ async function handleGenerate() {
       }
       payload = {
         mode: "inpaint",
-        prompt: repaintPrompt.value,
+        prompt: submitPrompt,
         num_images: 1,
         size: size.value,
         resolution: resolution.value,
@@ -2660,7 +2686,7 @@ async function handleGenerate() {
       payload = {
         mode: "generate",
         model: selectedModel.value,
-        prompt: prompt.value,
+        prompt: submitPrompt,
         num_images: requestedImageCount,
         size: hideAspectRatio.value ? "" : size.value,
         resolution: hideResolution.value ? "" : resolution.value,
@@ -2679,7 +2705,7 @@ async function handleGenerate() {
         : "inpaint";
     await submitGeneratedTask(payload, {
       mode: submitMode,
-      prompt: activePrompt.value.trim(),
+      prompt: submitPrompt,
       model: payload.model,
       numImages: payload.num_images,
       size: payload.size,
@@ -2707,6 +2733,7 @@ async function handleGenerate() {
 
 function handleReeditTask(task: GeneratedTaskItem) {
   expandConfigPanelForEditing();
+  clearSelectedGenerateStyles();
   generateMode.value = task.mode;
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
@@ -2749,6 +2776,7 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
     return;
   }
   expandConfigPanelForEditing();
+  clearSelectedGenerateStyles();
   generateMode.value = "imageEdit";
   prompt.value = task.prompt;
   repaintPrompt.value = "";
@@ -3750,15 +3778,27 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateStylePicker
+                      v-model:color-style-id="selectedColorStyleId"
+                      v-model:lighting-style-id="selectedLightingStyleId"
+                    />
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
-                      <span>
-                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ExperimentOutlined /></template>
-                          提示词优化
-                        </a-button>
-                      </span>
+                      <button
+                        type="button"
+                        class="prompt-icon-btn"
+                        aria-label="提示词优化"
+                        :disabled="promptOptimizeLoading"
+                        @click="handlePromptOptimize"
+                      >
+                        <LoadingOutlined v-if="promptOptimizeLoading" />
+                        <ExperimentOutlined v-else />
+                      </button>
                     </a-tooltip>
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
+                    <a-tooltip title="我的提示词">
+                      <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
+                        <StarOutlined />
+                      </button>
+                    </a-tooltip>
                   </div>
                 </div>
                 <div class="prompt-input-wrap">
@@ -4130,15 +4170,27 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateStylePicker
+                      v-model:color-style-id="selectedColorStyleId"
+                      v-model:lighting-style-id="selectedLightingStyleId"
+                    />
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
-                      <span>
-                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ExperimentOutlined /></template>
-                          提示词优化
-                        </a-button>
-                      </span>
+                      <button
+                        type="button"
+                        class="prompt-icon-btn"
+                        aria-label="提示词优化"
+                        :disabled="promptOptimizeLoading"
+                        @click="handlePromptOptimize"
+                      >
+                        <LoadingOutlined v-if="promptOptimizeLoading" />
+                        <ExperimentOutlined v-else />
+                      </button>
                     </a-tooltip>
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
+                    <a-tooltip title="我的提示词">
+                      <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
+                        <StarOutlined />
+                      </button>
+                    </a-tooltip>
                   </div>
                 </div>
                 <div class="prompt-input-wrap">
@@ -4564,15 +4616,27 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateStylePicker
+                      v-model:color-style-id="selectedColorStyleId"
+                      v-model:lighting-style-id="selectedLightingStyleId"
+                    />
                     <a-tooltip :title="PROMPT_OPTIMIZE_TOOLTIP">
-                      <span>
-                        <a-button type="text" class="prompt-library-btn" :loading="promptOptimizeLoading" @click="handlePromptOptimize">
-                          <template #icon><ExperimentOutlined /></template>
-                          提示词优化
-                        </a-button>
-                      </span>
+                      <button
+                        type="button"
+                        class="prompt-icon-btn"
+                        aria-label="提示词优化"
+                        :disabled="promptOptimizeLoading"
+                        @click="handlePromptOptimize"
+                      >
+                        <LoadingOutlined v-if="promptOptimizeLoading" />
+                        <ExperimentOutlined v-else />
+                      </button>
                     </a-tooltip>
-                    <a-button type="text" class="prompt-library-btn" @click="openPromptLibrary">我的提示词</a-button>
+                    <a-tooltip title="我的提示词">
+                      <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
+                        <StarOutlined />
+                      </button>
+                    </a-tooltip>
                   </div>
                 </div>
                 <div class="prompt-input-wrap">
@@ -5976,6 +6040,49 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
   &:active {
     transform: scale(0.97);
+  }
+}
+
+.prompt-icon-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--theme-control-border-strong);
+  border-radius: 12px;
+  background: var(--theme-control-bg);
+  color: var(--theme-title);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-press) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-visible {
+    background: var(--theme-control-hover-bg);
+    border-color: var(--theme-border-strong);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  :deep(.anticon) {
+    margin: 0;
+    font-size: 15px;
   }
 }
 
@@ -9127,7 +9234,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-f
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .history-btn,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-library-btn,
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-library-btn {
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-library-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page :deep(.generate-style-trigger) {
   color: var(--text-secondary) !important;
   background: var(--theme-panel-bg-soft) !important;
   border-color: var(--theme-panel-border) !important;
@@ -9137,6 +9245,22 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .asset-libr
     background: var(--theme-control-hover-bg) !important;
     border-color: var(--theme-border-strong) !important;
     box-shadow: 0 10px 20px var(--theme-shadow-soft);
+  }
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .prompt-icon-btn,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page :deep(.generate-style-trigger) {
+  color: var(--text-secondary);
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
+  box-shadow: none;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--theme-title);
+    background: var(--theme-control-hover-bg);
+    border-color: var(--theme-border-strong);
+    box-shadow: none;
   }
 }
 
