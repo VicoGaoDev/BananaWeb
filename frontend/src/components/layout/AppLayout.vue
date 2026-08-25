@@ -36,6 +36,7 @@ import {
   subscribeUnreadSystemMessageCount,
 } from "@/lib/systemMessageNotice";
 import { NEW_USER_TRIAL_CREDITS, PROMO_CODE_REWARD_CREDITS } from "@/lib/auth";
+import { contentLooksLikeHtml } from "@/lib/htmlContent";
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import {
   isTutorialDockTabEnabled,
@@ -1459,6 +1460,7 @@ const authInputPrefixStyle = { color: "var(--theme-input-prefix-color)" };
 
 const avatarUrl = computed(() => getAvatarImageSrc(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
+const announcementLooksLikeHtml = computed(() => contentLooksLikeHtml(announcementConfig.value.announcement_content));
 
 function getTodayString() {
   return new Date().toLocaleDateString("en-CA");
@@ -3058,14 +3060,16 @@ watch(
       v-model:open="announcementVisible"
       title="系统公告"
       :footer="null"
-      :width="520"
+      :width="640"
       centered
       @cancel="handleAnnouncementClose"
     >
       <div class="announcement-modal">
-        <div class="announcement-content">
-          {{ announcementConfig.announcement_content }}
-        </div>
+        <div
+          class="announcement-content"
+          :class="{ 'is-html': announcementLooksLikeHtml }"
+          v-html="announcementConfig.announcement_content"
+        />
         <a-checkbox v-model:checked="announcementDismissToday">
           今日不再弹出
         </a-checkbox>
@@ -4826,8 +4830,69 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .warm-dropdown .ant-dropdo
   border-radius: 18px;
   background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
+  word-break: break-word;
   scrollbar-width: thin;
   scrollbar-color: var(--theme-border-strong) var(--theme-panel-bg-muted);
+
+  &.is-html {
+    white-space: normal;
+  }
+
+  &.is-html :deep(p) {
+    margin: 0 0 12px;
+  }
+
+  &.is-html :deep(h1),
+  &.is-html :deep(h2),
+  &.is-html :deep(h3),
+  &.is-html :deep(h4) {
+    margin: 16px 0 8px;
+    color: var(--theme-heading);
+    line-height: 1.35;
+  }
+
+  &.is-html :deep(ul),
+  &.is-html :deep(ol) {
+    margin: 0 0 12px 20px;
+    padding-left: 16px;
+  }
+
+  &.is-html :deep(li) {
+    margin: 4px 0;
+  }
+
+  &.is-html :deep(a) {
+    color: var(--theme-accent-text);
+  }
+
+  &.is-html :deep(img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 8px 0 4px;
+    border-radius: 12px;
+    border: 1px solid var(--theme-panel-border);
+    background: var(--theme-empty-bg);
+  }
+
+  &.is-html :deep(figcaption) {
+    margin: 0 0 14px;
+    color: var(--theme-muted-text);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  &.is-html :deep(blockquote) {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-left: 4px solid var(--theme-panel-border-strong);
+    background: var(--theme-panel-bg);
+  }
+
+  &.is-html :deep(strong),
+  &.is-html :deep(b) {
+    color: var(--theme-title);
+  }
 }
 
 .announcement-content::-webkit-scrollbar {

@@ -49,13 +49,14 @@ export const generateTutorialSections = [
   { id: "inpaint", label: "5. 局部重绘" },
   { id: "prompt-reverse", label: "6. 提示词反推" },
   { id: "prompt-tools", label: "7. 提示词工具" },
-  { id: "model-params", label: "8. 模型与参数" },
-  { id: "submit", label: "9. 开始生成" },
-  { id: "results", label: "10. 查看与处理结果" },
-  { id: "assets-boards", label: "11. 素材、看板与历史" },
-  { id: "batch", label: "12. 批量生图" },
-  { id: "assistant", label: "13. AI 助手联动" },
-  { id: "tips", label: "14. 使用建议" },
+  { id: "style-camera", label: "8. 风格与摄像机参数" },
+  { id: "model-params", label: "9. 模型与参数" },
+  { id: "submit", label: "10. 开始生成" },
+  { id: "results", label: "11. 查看与处理结果" },
+  { id: "assets-boards", label: "12. 素材、看板与历史" },
+  { id: "batch", label: "13. 批量生图" },
+  { id: "assistant", label: "14. AI 助手联动" },
+  { id: "tips", label: "15. 使用建议" },
 ] as const;
 
 export const chatTutorialSections = [

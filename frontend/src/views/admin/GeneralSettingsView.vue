@@ -4,6 +4,7 @@ import { message, Modal } from "ant-design-vue";
 import { DeleteOutlined, SaveOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons-vue";
 import { deleteAdminConfig, getAdminConfig, setAdminConfig } from "@/api/admin";
 import { uploadReferenceImage } from "@/api/upload";
+import { contentLooksLikeHtml } from "@/lib/htmlContent";
 
 const contactQrImage = ref("");
 const announcementEnabled = ref(false);
@@ -16,6 +17,7 @@ const qrInput = ref<HTMLInputElement | null>(null);
 const hasConfig = computed(() => (
   Boolean(contactQrImage.value.trim() || announcementEnabled.value || announcementContent.value.trim())
 ));
+const announcementLooksLikeHtml = computed(() => contentLooksLikeHtml(announcementContent.value));
 
 onMounted(async () => {
   loading.value = true;
@@ -155,13 +157,23 @@ async function handleQrUpload(event: Event) {
             checked-children="开启"
             un-checked-children="关闭"
           />
+          <div class="announcement-hint">
+            支持 HTML。可用标题、加粗、列表、链接和换行。不写标签时，仍按纯文本换行展示。
+          </div>
           <a-textarea
             v-model:value="announcementContent"
             class="announcement-textarea warm-textarea"
-            :rows="6"
-            :maxlength="2000"
+            :rows="8"
+            :maxlength="5000"
             show-count
-            placeholder="请输入系统公告内容。用户每次登录成功或刷新网站时会触发公告检查，并可选择今日不再弹出。"
+            placeholder="可直接写文字，或填 HTML。例如：&#10;<p><strong>【2026-08-25】</strong></p>&#10;<p>生图页新增风格设置和摄像机参数，欢迎试用。</p>"
+          />
+          <div v-if="announcementContent.trim()" class="announcement-preview-label">预览</div>
+          <div
+            v-if="announcementContent.trim()"
+            class="announcement-preview"
+            :class="{ 'is-html': announcementLooksLikeHtml }"
+            v-html="announcementContent"
           />
         </div>
       </div>
@@ -269,11 +281,74 @@ async function handleQrUpload(event: Event) {
   gap: 12px;
 }
 
+.announcement-hint {
+  color: var(--theme-muted-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .announcement-textarea {
   :deep(textarea) {
     border-radius: 16px;
     border-color: var(--theme-control-border);
     background: var(--theme-control-bg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+}
+
+.announcement-preview-label {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--theme-subtitle);
+  letter-spacing: 0.06em;
+}
+
+.announcement-preview {
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--theme-panel-bg-soft);
+  border: 1px solid var(--theme-panel-border);
+  color: var(--theme-text);
+  font-size: 14px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  &.is-html {
+    white-space: normal;
+  }
+
+  &.is-html :deep(p) {
+    margin: 0 0 10px;
+  }
+
+  &.is-html :deep(h1),
+  &.is-html :deep(h2),
+  &.is-html :deep(h3),
+  &.is-html :deep(h4) {
+    margin: 14px 0 8px;
+    color: var(--theme-heading);
+    line-height: 1.35;
+  }
+
+  &.is-html :deep(ul),
+  &.is-html :deep(ol) {
+    margin: 0 0 10px 20px;
+    padding-left: 16px;
+  }
+
+  &.is-html :deep(a) {
+    color: var(--theme-accent-text);
+  }
+
+  &.is-html :deep(strong),
+  &.is-html :deep(b) {
+    color: var(--theme-title);
   }
 }
 </style>
