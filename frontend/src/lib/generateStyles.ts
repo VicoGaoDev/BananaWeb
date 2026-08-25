@@ -1,4 +1,9 @@
 import generateStylesData from "@/config/generate-styles.json";
+import {
+  composeCameraPromptParts,
+  parseCameraPrompt,
+  type GenerateCameraSelection,
+} from "@/lib/generateCameras";
 
 export type GenerateStyleCategoryId = "color" | "lighting";
 export type GenerateStylePreviewPattern = "soft" | "rim" | "top" | "bottom" | "silhouette" | "hard" | "blinds";
@@ -54,12 +59,14 @@ export function composeGeneratePrompt(
   userPrompt: string,
   colorStyleId?: string | null,
   lightingStyleId?: string | null,
+  camera?: GenerateCameraSelection | null,
 ): string {
   const parts = [(userPrompt || "").trim()].filter(Boolean);
   const colorStyle = getGenerateStyleById(colorStyleId);
   const lightingStyle = getGenerateStyleById(lightingStyleId);
   if (colorStyle?.prompt) parts.push(colorStyle.prompt.trim());
   if (lightingStyle?.prompt) parts.push(lightingStyle.prompt.trim());
+  parts.push(...composeCameraPromptParts(camera));
   return parts.join("\n\n");
 }
 
@@ -67,6 +74,7 @@ export interface ParsedGeneratePrompt {
   userPrompt: string;
   colorStyleId: string;
   lightingStyleId: string;
+  camera: GenerateCameraSelection;
 }
 
 function stripMatchedStylePrompt(source: string, stylePrompt: string): string | null {
@@ -96,10 +104,12 @@ export function parseGeneratePrompt(fullPrompt: string): ParsedGeneratePrompt {
   remaining = colorMatch.remaining;
   const lightingMatch = pickMatchedStyleId(remaining, "lighting");
   remaining = lightingMatch.remaining;
+  const cameraMatch = parseCameraPrompt(remaining);
   return {
-    userPrompt: remaining,
+    userPrompt: cameraMatch.userPrompt,
     colorStyleId: colorMatch.styleId,
     lightingStyleId: lightingMatch.styleId,
+    camera: cameraMatch.selection,
   };
 }
 

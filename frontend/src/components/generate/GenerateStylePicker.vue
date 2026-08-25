@@ -209,13 +209,20 @@ function confirmSelection() {
 
   &.active {
     color: var(--theme-accent-text, var(--theme-title));
-    border-color: var(--theme-border-accent, var(--theme-border-strong));
+    background: color-mix(in srgb, var(--theme-accent) 28%, var(--theme-control-bg));
+    border-color: var(--theme-border-accent, var(--theme-accent));
+  }
+
+  &.active:hover,
+  &.active.open {
+    background: color-mix(in srgb, var(--theme-accent) 38%, var(--theme-control-bg));
+    border-color: var(--theme-border-accent, var(--theme-accent));
   }
 }
 
 .generate-style-trigger-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -237,6 +244,17 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-style-trigger {
     color: var(--theme-title);
     background: var(--theme-control-hover-bg);
     border-color: var(--theme-border-strong);
+  }
+
+  &.active {
+    color: var(--theme-title);
+    background: color-mix(in srgb, var(--theme-accent) 34%, var(--theme-panel-bg-soft));
+    border-color: var(--theme-border-accent, var(--theme-accent));
+  }
+
+  &.active:hover,
+  &.active.open {
+    background: color-mix(in srgb, var(--theme-accent) 44%, var(--theme-panel-bg-soft));
   }
 }
 

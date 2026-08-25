@@ -62,9 +62,11 @@ import { createUserPrompt } from "@/api/userPrompts";
 import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import GenerateCameraPicker from "@/components/generate/GenerateCameraPicker.vue";
 import GenerateStylePicker from "@/components/generate/GenerateStylePicker.vue";
 import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
+import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
@@ -264,6 +266,10 @@ const customSize = ref("");
 const aspectRatioAutoDetectEnabled = ref(readStoredAspectRatioAutoDetectEnabled());
 const selectedColorStyleId = ref("");
 const selectedLightingStyleId = ref("");
+const selectedCameraBodyId = ref("");
+const selectedCameraLensId = ref("");
+const selectedCameraFocalId = ref("");
+const selectedCameraApertureId = ref("");
 const selectedNumImages = computed({
   get: () => String(numImages.value),
   set: (value: string) => {
@@ -659,7 +665,23 @@ const hasBlockedUploads = computed(() => {
   }
   return false;
 });
-const hasSelectedGenerateStyles = computed(() => Boolean(selectedColorStyleId.value || selectedLightingStyleId.value));
+function currentCameraSelection(): GenerateCameraSelection {
+  return {
+    bodyId: selectedCameraBodyId.value,
+    lensId: selectedCameraLensId.value,
+    focalId: selectedCameraFocalId.value,
+    apertureId: selectedCameraApertureId.value,
+  };
+}
+
+const selectedPromptTagCount = computed(() => (
+  [
+    selectedColorStyleId.value,
+    selectedLightingStyleId.value,
+    selectedCameraBodyId.value || selectedCameraLensId.value || selectedCameraFocalId.value || selectedCameraApertureId.value,
+  ].filter(Boolean).length
+));
+const hasSelectedGenerateStyles = computed(() => selectedPromptTagCount.value > 0);
 const canClickGenerate = computed(() => {
   if (hasBlockedUploads.value) return false;
   if (isImageEditMode.value) return true;
@@ -1571,6 +1593,10 @@ function applyPromptWithGenerateStyles(fullPrompt: string, target: "prompt" | "r
   const parsed = parseGeneratePrompt(fullPrompt);
   selectedColorStyleId.value = parsed.colorStyleId;
   selectedLightingStyleId.value = parsed.lightingStyleId;
+  selectedCameraBodyId.value = parsed.camera.bodyId;
+  selectedCameraLensId.value = parsed.camera.lensId;
+  selectedCameraFocalId.value = parsed.camera.focalId;
+  selectedCameraApertureId.value = parsed.camera.apertureId;
   if (target === "repaintPrompt") {
     repaintPrompt.value = parsed.userPrompt;
     return;
@@ -1583,6 +1609,7 @@ function buildSubmitPrompt(userPrompt: string) {
     userPrompt,
     selectedColorStyleId.value,
     selectedLightingStyleId.value,
+    currentCameraSelection(),
   );
   if (assembled.length > TASK_PROMPT_MAX_LENGTH) {
     message.warning("加上风格提示词后超出长度限制，请缩短提示词或取消部分风格");
@@ -1801,13 +1828,18 @@ function composeLibraryPromptContent(userPrompt: string) {
     userPrompt,
     selectedColorStyleId.value,
     selectedLightingStyleId.value,
+    currentCameraSelection(),
   );
 }
 
 function buildLibraryPromptTitle(userPrompt: string) {
   const userTitle = (userPrompt || "").replace(/\s+/g, " ").trim();
   if (userTitle) return buildQuickSavePromptTitle(userTitle);
-  return formatSelectedGenerateStyleLabel(selectedColorStyleId.value, selectedLightingStyleId.value) || "我的提示词";
+  const labels = [
+    formatSelectedGenerateStyleLabel(selectedColorStyleId.value, selectedLightingStyleId.value),
+    formatSelectedGenerateCameraLabel(currentCameraSelection()),
+  ].filter(Boolean);
+  return labels.join(" · ") || "我的提示词";
 }
 
 function canQuickSavePrompt(content: string, lastSavedContent: string) {
@@ -3801,6 +3833,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateCameraPicker
+                      v-model:body-id="selectedCameraBodyId"
+                      v-model:lens-id="selectedCameraLensId"
+                      v-model:focal-id="selectedCameraFocalId"
+                      v-model:aperture-id="selectedCameraApertureId"
+                    />
                     <GenerateStylePicker
                       v-model:color-style-id="selectedColorStyleId"
                       v-model:lighting-style-id="selectedLightingStyleId"
@@ -3824,10 +3862,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                <div
+                  class="prompt-input-wrap"
+                  :class="{
+                    'has-style-tags': hasSelectedGenerateStyles,
+                    'has-style-tags-stacked': selectedPromptTagCount > 3,
+                  }"
+                >
                   <GenerateStyleTags
                     v-model:color-style-id="selectedColorStyleId"
                     v-model:lighting-style-id="selectedLightingStyleId"
+                    v-model:camera-body-id="selectedCameraBodyId"
+                    v-model:camera-lens-id="selectedCameraLensId"
+                    v-model:camera-focal-id="selectedCameraFocalId"
+                    v-model:camera-aperture-id="selectedCameraApertureId"
                   />
                   <a-textarea
                     v-model:value="prompt"
@@ -4197,6 +4245,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateCameraPicker
+                      v-model:body-id="selectedCameraBodyId"
+                      v-model:lens-id="selectedCameraLensId"
+                      v-model:focal-id="selectedCameraFocalId"
+                      v-model:aperture-id="selectedCameraApertureId"
+                    />
                     <GenerateStylePicker
                       v-model:color-style-id="selectedColorStyleId"
                       v-model:lighting-style-id="selectedLightingStyleId"
@@ -4220,10 +4274,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                <div
+                  class="prompt-input-wrap"
+                  :class="{
+                    'has-style-tags': hasSelectedGenerateStyles,
+                    'has-style-tags-stacked': selectedPromptTagCount > 3,
+                  }"
+                >
                   <GenerateStyleTags
                     v-model:color-style-id="selectedColorStyleId"
                     v-model:lighting-style-id="selectedLightingStyleId"
+                    v-model:camera-body-id="selectedCameraBodyId"
+                    v-model:camera-lens-id="selectedCameraLensId"
+                    v-model:camera-focal-id="selectedCameraFocalId"
+                    v-model:camera-aperture-id="selectedCameraApertureId"
                   />
                   <a-textarea
                     v-model:value="prompt"
@@ -4647,6 +4711,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <GenerateCameraPicker
+                      v-model:body-id="selectedCameraBodyId"
+                      v-model:lens-id="selectedCameraLensId"
+                      v-model:focal-id="selectedCameraFocalId"
+                      v-model:aperture-id="selectedCameraApertureId"
+                    />
                     <GenerateStylePicker
                       v-model:color-style-id="selectedColorStyleId"
                       v-model:lighting-style-id="selectedLightingStyleId"
@@ -4670,10 +4740,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                 </div>
-                <div class="prompt-input-wrap" :class="{ 'has-style-tags': hasSelectedGenerateStyles }">
+                <div
+                  class="prompt-input-wrap"
+                  :class="{
+                    'has-style-tags': hasSelectedGenerateStyles,
+                    'has-style-tags-stacked': selectedPromptTagCount > 3,
+                  }"
+                >
                   <GenerateStyleTags
                     v-model:color-style-id="selectedColorStyleId"
                     v-model:lighting-style-id="selectedLightingStyleId"
+                    v-model:camera-body-id="selectedCameraBodyId"
+                    v-model:camera-lens-id="selectedCameraLensId"
+                    v-model:camera-focal-id="selectedCameraFocalId"
+                    v-model:camera-aperture-id="selectedCameraApertureId"
                   />
                   <a-textarea
                     v-model:value="repaintPrompt"
@@ -6090,7 +6170,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   border-radius: 12px;
   background: var(--theme-control-bg);
   color: var(--theme-title);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -6169,6 +6249,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .generate-config-panel .prompt-input-wrap.has-style-tags .prompt-input :deep(textarea) {
   padding-top: 48px !important;
+}
+
+.generate-config-panel .prompt-input-wrap.has-style-tags-stacked .prompt-input :deep(textarea) {
+  padding-top: 80px !important;
 }
 
 .prompt-quick-save-btn {
