@@ -52,7 +52,14 @@ function setExclusiveOpen(module: TutorialModule) {
 setExclusiveOpen(props.module);
 
 const currentMeta = computed(() => tutorialModuleMeta[props.module]);
-const tutorialSrc = computed(() => withBaseUrl(currentMeta.value.doc));
+
+function resolveFrameSrc(module: TutorialModule, sectionId?: string) {
+  const base = withBaseUrl(tutorialModuleMeta[module].doc);
+  const id = (sectionId || "").trim();
+  return id ? `${base}#${encodeURIComponent(id)}` : base;
+}
+
+const frameSrc = ref(resolveFrameSrc(props.module, props.sectionId));
 
 function closePreview() {
   preview.value = null;
@@ -190,6 +197,7 @@ watch(
   (module) => {
     setExclusiveOpen(module);
     activeSectionId.value = props.sectionId || firstSectionId(module);
+    frameSrc.value = resolveFrameSrc(module, props.sectionId || firstSectionId(module));
     closePreview();
   },
 );
@@ -285,7 +293,7 @@ onBeforeUnmount(() => {
       <iframe
         ref="iframeRef"
         class="tutorial-frame"
-        :src="tutorialSrc"
+        :src="frameSrc"
         :title="currentMeta.label + '教程'"
         @load="handleFrameLoad"
       />

@@ -6,8 +6,20 @@
     window.parent.postMessage(payload, origin);
   }
 
+  let pinnedSectionId = "";
+  let pinTimer = 0;
+
+  function pinSection(id) {
+    pinnedSectionId = id;
+    window.clearTimeout(pinTimer);
+    pinTimer = window.setTimeout(() => {
+      pinnedSectionId = "";
+    }, 1000);
+  }
+
   function postActiveSection(id) {
     if (!id) return;
+    if (pinnedSectionId && id !== pinnedSectionId) return;
     postToParent({ type: "banana-tutorial-section", id });
   }
 
@@ -57,6 +69,7 @@
     const target = document.getElementById(id);
     if (!target) return false;
     hydrateSectionImages(target);
+    pinSection(target.id);
     target.scrollIntoView({ behavior: behavior || "smooth", block: "start" });
     postActiveSection(target.id);
     return true;
@@ -77,7 +90,10 @@
     if (event.data?.type === "banana-tutorial-scroll-top") {
       window.scrollTo({ top: 0, behavior: "smooth" });
       const firstSection = document.querySelector("section[id]");
-      if (firstSection?.id) postActiveSection(firstSection.id);
+      if (firstSection?.id) {
+        pinSection(firstSection.id);
+        postActiveSection(firstSection.id);
+      }
     }
   });
 
@@ -101,16 +117,21 @@
 
   const anchors = Array.from(document.querySelectorAll("section[id]"));
   if (anchors.length) {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (visible?.target?.id) postActiveSection(visible.target.id);
-      },
-      { rootMargin: "-20% 0px -60% 0px", threshold: [0.1, 0.25, 0.5] },
-    );
-    anchors.forEach((anchor) => observer.observe(anchor));
+    function sectionAtSpyLine() {
+      const line = window.innerHeight * 0.22;
+      let current = anchors[0];
+      for (const el of anchors) {
+        if (el.getBoundingClientRect().top - line <= 2) current = el;
+        else break;
+      }
+      return current?.id || "";
+    }
+
+    function syncActiveSection() {
+      postActiveSection(sectionAtSpyLine());
+    }
+
+    window.addEventListener("scroll", syncActiveSection, { passive: true });
     const initialId = currentHashId();
     if (!scrollToId(initialId, "auto")) {
       postActiveSection(anchors[0].id);
