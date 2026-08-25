@@ -398,7 +398,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-style-trigger {
   }
 
   &.is-silhouette::after {
-    background: radial-gradient(circle at 50% 58%, #111 28%, transparent 42%);
+    background: radial-gradient(circle at 50% 52%, rgba(36, 32, 28, 0.42) 20%, rgba(20, 18, 16, 0.22) 38%, transparent 54%);
   }
 
   &.is-top::after {

@@ -147,7 +147,7 @@
         {
           "id": "silhouette",
           "name": "剪影",
-          "prompt": "Lighting: silhouette lighting, subject almost black against a bright background, outline-only form, no facial detail, graphic backlit shape.",
+          "prompt": "Lighting: backlit silhouette, bright background halo, subject in shadow with readable facial features, soft fill on the face, rim light on hair and shoulders, not a solid black cutout.",
           "thumbnail": "/generate-styles/lighting/silhouette.jpg",
           "preview": { "from": "#f5e6c4", "to": "#0d0d0d", "pattern": "silhouette" }
         },
