@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref } from "vue";
 import { CheckOutlined, DownOutlined, UpOutlined } from "@ant-design/icons-vue";
 import { withBaseUrl } from "@/lib/assets";
 import {
@@ -54,6 +54,57 @@ const hasSelection = computed(() => hasSelectedGenerateCamera({
 const activePresetId = computed(() => matchGenerateCameraPreset(draft.value)?.id || "");
 const brokenThumbnails = ref<Record<string, boolean>>({});
 
+const WHEEL_SLOT_PX = 56;
+const WHEEL_VIEWPORT_PX = 168;
+const WHEEL_THRESHOLD = 36;
+const WHEEL_STEP_MS = 108;
+const WHEEL_EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
+const CAMERA_CATEGORY_IDS: GenerateCameraCategoryId[] = ["body", "lens", "focal", "aperture"];
+
+const visualIndex = reactive<Record<GenerateCameraCategoryId, number>>({
+  body: 0,
+  lens: 0,
+  focal: 0,
+  aperture: 0,
+});
+const wheelInstant = reactive<Record<GenerateCameraCategoryId, boolean>>({
+  body: false,
+  lens: false,
+  focal: false,
+  aperture: false,
+});
+const wheelCarry = reactive<Record<GenerateCameraCategoryId, number>>({
+  body: 0,
+  lens: 0,
+  focal: 0,
+  aperture: 0,
+});
+const wheelDuration = reactive<Record<GenerateCameraCategoryId, number>>({
+  body: WHEEL_STEP_MS,
+  lens: WHEEL_STEP_MS,
+  focal: WHEEL_STEP_MS,
+  aperture: WHEEL_STEP_MS,
+});
+const recenterTimers: Record<GenerateCameraCategoryId, number> = {
+  body: 0,
+  lens: 0,
+  focal: 0,
+  aperture: 0,
+};
+const presetRolling = ref(false);
+const pendingTimers: number[] = [];
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    const id = window.setTimeout(resolve, ms);
+    pendingTimers.push(id);
+  });
+}
+
 function currentId(categoryId: GenerateCameraCategoryId) {
   if (categoryId === "body") return draft.value.bodyId;
   if (categoryId === "lens") return draft.value.lensId;
@@ -78,28 +129,124 @@ function currentIndex(categoryId: GenerateCameraCategoryId) {
   return categoryItems(categoryId).findIndex((item) => item.id === id);
 }
 
-function neighborItem(categoryId: GenerateCameraCategoryId, offset: number): GenerateCameraItem | null {
+function loopedItems(categoryId: GenerateCameraCategoryId) {
+  const items = categoryItems(categoryId);
+  return items.length ? [...items, ...items, ...items] : [];
+}
+
+function syncVisualIndex(categoryId: GenerateCameraCategoryId) {
+  const items = categoryItems(categoryId);
+  const count = items.length;
+  if (!count) {
+    visualIndex[categoryId] = 0;
+    return;
+  }
+  const index = currentIndex(categoryId);
+  visualIndex[categoryId] = count + Math.max(0, index);
+}
+
+function syncAllVisualIndices() {
+  for (const categoryId of CAMERA_CATEGORY_IDS) syncVisualIndex(categoryId);
+}
+
+function itemAtVisualIndex(categoryId: GenerateCameraCategoryId, index: number) {
   const items = categoryItems(categoryId);
   if (!items.length) return null;
-  const index = currentIndex(categoryId);
-  if (index < 0) return offset === 0 ? null : items[offset < 0 ? items.length - 1 : 0] || null;
-  const next = (index + offset + items.length) % items.length;
-  if (offset !== 0 && next === index) return null;
-  return items[next] || null;
+  return items[((index % items.length) + items.length) % items.length] || null;
+}
+
+function recenterVisualIndex(categoryId: GenerateCameraCategoryId) {
+  const count = categoryItems(categoryId).length;
+  if (!count) return;
+  const current = visualIndex[categoryId];
+  if (current >= count && current < count * 2) return;
+  const middle = count + ((current % count) + count) % count;
+  if (current === middle) return;
+  wheelInstant[categoryId] = true;
+  visualIndex[categoryId] = middle;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      wheelInstant[categoryId] = false;
+    });
+  });
+}
+
+function scheduleRecenter(categoryId: GenerateCameraCategoryId, duration: number) {
+  window.clearTimeout(recenterTimers[categoryId]);
+  const id = window.setTimeout(() => recenterVisualIndex(categoryId), duration + 40);
+  recenterTimers[categoryId] = id;
+  pendingTimers.push(id);
+}
+
+function applyWheelDelta(categoryId: GenerateCameraCategoryId, steps: number, duration = WHEEL_STEP_MS) {
+  const items = categoryItems(categoryId);
+  if (!items.length || !steps) return;
+  visualIndex[categoryId] += steps;
+  const next = itemAtVisualIndex(categoryId, visualIndex[categoryId]);
+  if (next) setCurrentId(categoryId, next.id);
+  const motion = prefersReducedMotion() ? 0 : duration;
+  wheelDuration[categoryId] = motion;
+  scheduleRecenter(categoryId, motion);
+}
+
+function trackTranslate(categoryId: GenerateCameraCategoryId) {
+  return (WHEEL_VIEWPORT_PX / 2) - (visualIndex[categoryId] * WHEEL_SLOT_PX + WHEEL_SLOT_PX / 2);
+}
+
+function trackStyle(categoryId: GenerateCameraCategoryId) {
+  const style: Record<string, string> = {
+    transform: `translateY(${trackTranslate(categoryId)}px)`,
+  };
+  if (wheelInstant[categoryId] || prefersReducedMotion()) {
+    style.transition = "none";
+  } else if (wheelDuration[categoryId] !== WHEEL_STEP_MS) {
+    style.transition = `transform ${wheelDuration[categoryId]}ms ${WHEEL_EASE}`;
+  }
+  return style;
 }
 
 function step(categoryId: GenerateCameraCategoryId, offset: number) {
-  const next = neighborItem(categoryId, offset);
-  if (next) setCurrentId(categoryId, next.id);
+  applyWheelDelta(categoryId, offset > 0 ? 1 : offset < 0 ? -1 : 0, WHEEL_STEP_MS);
 }
 
-function selectItem(categoryId: GenerateCameraCategoryId, item: GenerateCameraItem) {
-  setCurrentId(categoryId, currentId(categoryId) === item.id ? "" : item.id);
+function handleWheelItemClick(categoryId: GenerateCameraCategoryId, index: number) {
+  const current = visualIndex[categoryId];
+  if (index === current) return;
+  applyWheelDelta(categoryId, index - current, WHEEL_STEP_MS);
 }
 
 function handleWheel(categoryId: GenerateCameraCategoryId, event: WheelEvent) {
   event.preventDefault();
-  step(categoryId, event.deltaY > 0 ? 1 : -1);
+  if (presetRolling.value) return;
+  const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+  wheelCarry[categoryId] += delta;
+  let steps = 0;
+  while (Math.abs(wheelCarry[categoryId]) >= WHEEL_THRESHOLD) {
+    steps += wheelCarry[categoryId] > 0 ? 1 : -1;
+    wheelCarry[categoryId] -= Math.sign(wheelCarry[categoryId]) * WHEEL_THRESHOLD;
+  }
+  if (!steps) return;
+  applyWheelDelta(categoryId, steps);
+}
+
+async function rollCategoryTo(categoryId: GenerateCameraCategoryId, targetId: string) {
+  const items = categoryItems(categoryId);
+  const targetIndex = items.findIndex((item) => item.id === targetId);
+  if (targetIndex < 0) {
+    setCurrentId(categoryId, targetId);
+    syncVisualIndex(categoryId);
+    return;
+  }
+  const count = items.length;
+  const from = ((visualIndex[categoryId] % count) + count) % count;
+  if (from === targetIndex) return;
+  const forward = (targetIndex - from + count) % count;
+  const backward = (from - targetIndex + count) % count;
+  const direction = forward <= backward ? 1 : -1;
+  const steps = Math.min(forward, backward);
+  const duration = prefersReducedMotion() ? 0 : Math.min(180, 100 + steps * 14);
+  applyWheelDelta(categoryId, direction * steps, duration);
+  await wait(duration);
 }
 
 function firstItemId(categoryId: GenerateCameraCategoryId) {
@@ -123,8 +270,20 @@ function defaultDraft(selection: GenerateCameraSelection): GenerateCameraSelecti
   return firstPreset ? selectionFromCameraPreset(firstPreset) : withDefaultFirstItems(selection);
 }
 
-function applyPreset(preset: GenerateCameraPreset) {
-  draft.value = selectionFromCameraPreset(preset);
+async function applyPreset(preset: GenerateCameraPreset) {
+  if (presetRolling.value) return;
+  const target = selectionFromCameraPreset(preset);
+  presetRolling.value = true;
+  try {
+    await Promise.all([
+      rollCategoryTo("body", target.bodyId),
+      rollCategoryTo("lens", target.lensId),
+      rollCategoryTo("focal", target.focalId),
+      rollCategoryTo("aperture", target.apertureId),
+    ]);
+  } finally {
+    presetRolling.value = false;
+  }
 }
 
 function openDialog() {
@@ -134,8 +293,14 @@ function openDialog() {
     focalId: props.focalId,
     apertureId: props.apertureId,
   });
+  syncAllVisualIndices();
   open.value = true;
 }
+
+onBeforeUnmount(() => {
+  pendingTimers.forEach((id) => window.clearTimeout(id));
+  CAMERA_CATEGORY_IDS.forEach((categoryId) => window.clearTimeout(recenterTimers[categoryId]));
+});
 
 function closeDialog() {
   open.value = false;
@@ -212,77 +377,68 @@ function markPresetThumbnailBroken(presetId: string) {
             <UpOutlined />
           </button>
           <div class="camera-wheel">
-            <button
-              type="button"
-              class="camera-wheel-item is-prev"
-              :disabled="!neighborItem(category.id, -1)"
-              @click="neighborItem(category.id, -1) && selectItem(category.id, neighborItem(category.id, -1)!)"
-            >
-              <span v-if="category.id === 'focal'" class="camera-wheel-number">
-                {{ neighborItem(category.id, -1)?.name.replace('mm', '') || '' }}
-              </span>
-              <span v-else class="camera-wheel-ghost">{{ displayName(neighborItem(category.id, -1), "") }}</span>
-            </button>
-            <button
-              type="button"
-              class="camera-wheel-item is-current"
-              :class="{ 'is-empty': !currentId(category.id) }"
-              @click="currentId(category.id) && selectItem(category.id, neighborItem(category.id, 0)!)"
-            >
-              <span
-                v-if="thumbnailUrl(neighborItem(category.id, 0))"
-                class="camera-wheel-photo-wrap"
+            <div class="camera-wheel-highlight" />
+            <div class="camera-wheel-track" :style="trackStyle(category.id)">
+              <button
+                v-for="(item, index) in loopedItems(category.id)"
+                :key="`${category.id}-${index}-${item.id}`"
+                type="button"
+                class="camera-wheel-item"
+                :class="{ 'is-current': index === visualIndex[category.id] }"
+                @click="handleWheelItemClick(category.id, index)"
               >
-                <img
-                  :src="thumbnailUrl(neighborItem(category.id, 0))"
-                  :alt="displayName(neighborItem(category.id, 0))"
-                  class="camera-wheel-photo"
-                />
-              </span>
-              <svg
-                v-else-if="category.id === 'aperture'"
-                class="camera-wheel-iris"
-                viewBox="0 0 64 64"
-                aria-hidden="true"
-              >
-                <circle cx="32" cy="32" r="28" />
-                <circle
-                  class="camera-wheel-iris-opening"
-                  cx="32"
-                  cy="32"
-                  :r="neighborItem(category.id, 0) ? apertureOpeningRadius(neighborItem(category.id, 0)?.name) : 10"
-                />
-                <path d="M32 6l8 16H24L32 6Zm18 8 2 17-16-7 14-10ZM14 14l16 10-17 7 1-17Zm-2 20 17-6 9 15-26-9Zm34 0L32 49l9-15 15 9Z" />
-              </svg>
-              <svg v-else-if="category.id === 'body'" class="camera-wheel-icon" viewBox="0 0 64 40" aria-hidden="true">
-                <rect x="6" y="12" width="36" height="20" rx="3" />
-                <rect x="12" y="8" width="10" height="5" rx="1" />
-                <circle cx="48" cy="22" r="10" />
-                <circle cx="48" cy="22" r="5" />
-              </svg>
-              <svg v-else-if="category.id === 'lens'" class="camera-wheel-icon" viewBox="0 0 64 40" aria-hidden="true">
-                <rect x="8" y="14" width="22" height="12" rx="2" />
-                <path d="M30 12h18l6 8-6 8H30V12Z" />
-                <circle cx="22" cy="20" r="4" />
-              </svg>
-              <span v-if="category.id === 'focal'" class="camera-wheel-number is-main">
-                {{ currentId(category.id) ? neighborItem(category.id, 0)?.name.replace('mm', '') : "—" }}
-              </span>
-              <span class="camera-wheel-name">
-                {{ category.id === 'focal' && currentId(category.id) ? 'mm' : displayName(neighborItem(category.id, 0)) }}
-              </span>
-            </button>
-            <button
-              type="button"
-              class="camera-wheel-item is-next"
-              :disabled="!neighborItem(category.id, 1)"
-              @click="neighborItem(category.id, 1) && selectItem(category.id, neighborItem(category.id, 1)!)"
-            >
-              <span v-if="category.id === 'focal'" class="camera-wheel-number">
-                {{ neighborItem(category.id, 1)?.name.replace('mm', '') || '' }}
-              </span>
-              <span v-else class="camera-wheel-ghost">{{ displayName(neighborItem(category.id, 1), "") }}</span>
-            </button>
+                <template v-if="index === visualIndex[category.id]">
+                  <span
+                    v-if="thumbnailUrl(item)"
+                    class="camera-wheel-photo-wrap"
+                  >
+                    <img
+                      :src="thumbnailUrl(item)"
+                      :alt="displayName(item)"
+                      class="camera-wheel-photo"
+                    />
+                  </span>
+                  <svg
+                    v-else-if="category.id === 'aperture'"
+                    class="camera-wheel-iris"
+                    viewBox="0 0 64 64"
+                    aria-hidden="true"
+                  >
+                    <circle cx="32" cy="32" r="28" />
+                    <circle
+                      class="camera-wheel-iris-opening"
+                      cx="32"
+                      cy="32"
+                      :r="apertureOpeningRadius(item.name)"
+                    />
+                    <path d="M32 6l8 16H24L32 6Zm18 8 2 17-16-7 14-10ZM14 14l16 10-17 7 1-17Zm-2 20 17-6 9 15-26-9Zm34 0L32 49l9-15 15 9Z" />
+                  </svg>
+                  <svg v-else-if="category.id === 'body'" class="camera-wheel-icon" viewBox="0 0 64 40" aria-hidden="true">
+                    <rect x="6" y="12" width="36" height="20" rx="3" />
+                    <rect x="12" y="8" width="10" height="5" rx="1" />
+                    <circle cx="48" cy="22" r="10" />
+                    <circle cx="48" cy="22" r="5" />
+                  </svg>
+                  <svg v-else-if="category.id === 'lens'" class="camera-wheel-icon" viewBox="0 0 64 40" aria-hidden="true">
+                    <rect x="8" y="14" width="22" height="12" rx="2" />
+                    <path d="M30 12h18l6 8-6 8H30V12Z" />
+                    <circle cx="22" cy="20" r="4" />
+                  </svg>
+                  <span v-if="category.id === 'focal'" class="camera-wheel-number is-main">
+                    {{ item.name.replace('mm', '') }}
+                  </span>
+                  <span class="camera-wheel-name">
+                    {{ category.id === 'focal' ? 'mm' : displayName(item) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span v-if="category.id === 'focal'" class="camera-wheel-number">
+                    {{ item.name.replace('mm', '') }}
+                  </span>
+                  <span v-else class="camera-wheel-ghost">{{ displayName(item) }}</span>
+                </template>
+              </button>
+            </div>
           </div>
           <button type="button" class="camera-nav" aria-label="下一项" @click="step(category.id, 1)">
             <DownOutlined />
@@ -303,8 +459,9 @@ function markPresetThumbnailBroken(presetId: string) {
                 :key="preset.id"
                 type="button"
                 class="camera-preset-card"
-                :class="{ 'is-active': activePresetId === preset.id }"
+                :class="{ 'is-active': activePresetId === preset.id, 'is-rolling': presetRolling }"
                 :aria-pressed="activePresetId === preset.id"
+                :disabled="presetRolling"
                 @click="applyPreset(preset)"
               >
                 <span class="camera-preset-preview">
@@ -504,9 +661,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
   text-align: center;
   cursor: pointer;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--theme-control-hover-bg, rgba(0, 0, 0, 0.04));
     border-color: var(--theme-border-strong, rgba(0, 0, 0, 0.16));
+  }
+
+  &:disabled {
+    cursor: default;
   }
 
   &.is-active {
@@ -615,13 +776,35 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 .camera-wheel {
+  position: relative;
+  width: 100%;
+  height: 168px;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+}
+
+.camera-wheel-highlight {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  height: 88px;
+  border-radius: 12px;
+  background: var(--theme-control-hover-bg, rgba(0, 0, 0, 0.04));
+  box-shadow: inset 0 0 0 1px var(--theme-panel-border, rgba(0, 0, 0, 0.06));
+  pointer-events: none;
+}
+
+.camera-wheel-track {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   width: 100%;
-  min-height: 128px;
-  gap: 2px;
+  will-change: transform;
+  transition: transform 108ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .camera-wheel-item {
@@ -630,44 +813,39 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  flex: 0 0 56px;
   width: 100%;
-  min-height: 24px;
-  padding: 1px 6px;
+  height: 56px;
+  padding: 0 6px;
   border: none;
   border-radius: 12px;
   background: transparent;
   color: inherit;
+  opacity: 0.34;
   cursor: pointer;
-
-  &:disabled {
-    cursor: default;
-    opacity: 0;
-  }
-
-  &.is-prev,
-  &.is-next {
-    opacity: 0.35;
-  }
+  transition: opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);
 
   &.is-current {
-    min-height: 88px;
-    background: var(--theme-control-hover-bg, rgba(0, 0, 0, 0.04));
-    box-shadow: inset 0 0 0 1px var(--theme-panel-border, rgba(0, 0, 0, 0.06));
+    opacity: 1;
+    cursor: default;
   }
+}
 
-  &.is-empty {
-    opacity: 0.7;
+@media (prefers-reduced-motion: reduce) {
+  .camera-wheel-track,
+  .camera-wheel-item {
+    transition: none;
   }
 }
 
 .camera-wheel-photo-wrap {
   display: block;
   box-sizing: border-box;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 2px;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 1px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .camera-wheel-photo {
@@ -679,9 +857,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 .camera-wheel-iris {
-  width: 32px;
-  height: 32px;
-  margin-bottom: 2px;
+  width: 22px;
+  height: 22px;
+  margin-bottom: 1px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -696,9 +874,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 .camera-wheel-icon {
-  width: 36px;
-  height: 22px;
-  margin-bottom: 2px;
+  width: 28px;
+  height: 16px;
+  margin-bottom: 1px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -714,7 +892,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 
   &.is-main {
     color: var(--theme-title);
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.04em;
   }
