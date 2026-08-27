@@ -81,6 +81,7 @@ import {
   FontSizeOutlined,
   SearchOutlined,
   HighlightOutlined,
+  ScissorOutlined,
   ShareAltOutlined,
   CloseOutlined,
   ReadOutlined,
@@ -316,16 +317,19 @@ type PrimaryMenuItem = {
   badgeText?: string;
 };
 
-type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
+type GenerateEntryMode = "textGenerate" | "imageEdit" | "inpaint" | "smartCutout" | "promptReverse";
 const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
 const SHOW_PRIMARY_MENU_BADGES = true;
 const INVITE_REWARDS_BADGE_TEXT = "";
 const ADMIN_BADGE_OFFSET: [number, number] = [-8, 2];
 
-const generateEntryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
+const generateEntryPrimaryMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
   { key: "textGenerate", label: "文生图", icon: FontSizeOutlined },
   { key: "imageEdit", label: "图编辑", icon: PictureOutlined },
+];
+const generateEntryToolMenuItems: Array<{ key: GenerateEntryMode; label: string; icon: Component }> = [
   { key: "inpaint", label: "局部重绘", icon: HighlightOutlined },
+  { key: "smartCutout", label: "智能抠图", icon: ScissorOutlined },
   { key: "promptReverse", label: "提示词反推", icon: SearchOutlined },
 ];
 
@@ -621,7 +625,7 @@ const activeMoreFeatureKey = computed<MoreFeatureMenuKey | "">(() => {
 const activeGenerateEntryMode = computed<GenerateEntryMode>(() => {
   if (route.path !== "/generate") return "imageEdit";
   const mode = Array.isArray(route.query.mode) ? route.query.mode[0] : route.query.mode;
-  if (mode === "textGenerate" || mode === "imageEdit" || mode === "inpaint" || mode === "promptReverse") {
+  if (mode === "textGenerate" || mode === "imageEdit" || mode === "inpaint" || mode === "smartCutout" || mode === "promptReverse") {
     return mode;
   }
   return "imageEdit";
@@ -721,7 +725,7 @@ function openGenerateEntry(mode: GenerateEntryMode) {
 }
 
 function handleGenerateEntryMenu({ key }: { key: string }) {
-  if (key === "textGenerate" || key === "imageEdit" || key === "inpaint" || key === "promptReverse") {
+  if (key === "textGenerate" || key === "imageEdit" || key === "inpaint" || key === "smartCutout" || key === "promptReverse") {
     openGenerateEntry(key);
   }
 }
@@ -2281,7 +2285,12 @@ watch(
             </button>
             <template #overlay>
               <a-menu :selected-keys="[activeGenerateEntryMode]" @click="handleGenerateEntryMenu">
-                <a-menu-item v-for="subItem in generateEntryMenuItems" :key="subItem.key">
+                <a-menu-item v-for="subItem in generateEntryPrimaryMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+                <a-menu-divider />
+                <a-menu-item v-for="subItem in generateEntryToolMenuItems" :key="subItem.key">
                   <template #icon><component :is="subItem.icon" /></template>
                   {{ subItem.label }}
                 </a-menu-item>

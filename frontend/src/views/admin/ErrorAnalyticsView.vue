@@ -274,6 +274,7 @@ const modelOptions = computed(() => {
       optionMap.set(item.scene_key, item.display_name || item.scene_label);
     });
   optionMap.set("inpaint", "局部重绘");
+  optionMap.set("smart_cutout", "智能抠图");
   return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
 });
 
@@ -287,7 +288,8 @@ const imageModelOptions = computed(() => {
     .forEach((item) => {
       optionMap.set(item.scene_key, item.display_name || item.scene_label);
     });
-  optionMap.set("inpaint", "局部重绘");
+    optionMap.set("inpaint", "局部重绘");
+    optionMap.set("smart_cutout", "智能抠图");
   return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
 });
 
@@ -535,6 +537,7 @@ function modeLabel(value: string) {
   if (value === "text_generate") return "文生图";
   if (value === "image_edit") return "图编辑";
   if (value === "inpaint") return "局部重绘";
+  if (value === "smart_cutout") return "智能抠图";
   if (value === "promptReverse") return "提示词反推";
   if (value === "promptOptimize") return "提示词优化";
   if (value === "text_to_video") return "文生视频";

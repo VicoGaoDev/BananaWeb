@@ -14,7 +14,7 @@ export function createTask(data: {
   size: string;
   resolution: string;
   custom_size?: string;
-  mode?: "generate" | "inpaint";
+  mode?: "generate" | "inpaint" | "smart_cutout";
   reference_images?: string[];
   source_image?: string;
   mask_image?: string;

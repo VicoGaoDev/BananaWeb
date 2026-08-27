@@ -14,7 +14,7 @@ from app.models.credit_log import CreditLog
 from app.models.prompt_history import PromptHistory
 from app.services.business_id_service import task_external_id, user_external_id
 from app.services.distributed_lock_service import RedisLockHandle, acquire_redis_lock, release_redis_lock
-from app.services.external_api_config_service import SCENE_INPAINT, get_scene_credit_cost
+from app.services.external_api_config_service import SCENE_INPAINT, SCENE_SMART_CUTOUT, get_scene_credit_cost
 from app.services.user_credit_service import apply_user_credit_delta, get_user_credit_account
 from app.utils.datetime_utils import now_local
 from app.utils.business_id import normalize_business_id
@@ -158,19 +158,26 @@ def refund_task_credit_for_generation_failure_if_needed(
     return True
 
 
+SMART_CUTOUT_PROMPT = "智能抠图"
+
+
 def _validate_task_create_payload(
     mode: str,
     prompt: str,
     num_images: int,
     source_image: str,
     mask_image: str,
-) -> tuple[str, int]:
+    reference_images: list[str] | None = None,
+) -> tuple[str, int, str]:
     mode = (mode or "generate").strip().lower()
-    if mode not in {"generate", "inpaint"}:
+    if mode not in {"generate", "inpaint", "smart_cutout"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的生成模式")
-    if not prompt or not prompt.strip():
+    normalized_prompt = (prompt or "").strip()
+    if mode == "smart_cutout":
+        normalized_prompt = normalized_prompt or SMART_CUTOUT_PROMPT
+    elif not normalized_prompt:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词不能为空")
-    if len(prompt.strip()) > MAX_TASK_PROMPT_LENGTH:
+    if len(normalized_prompt) > MAX_TASK_PROMPT_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"提示词不能超过 {MAX_TASK_PROMPT_LENGTH} 个字符",
@@ -183,7 +190,12 @@ def _validate_task_create_payload(
         if not mask_image.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先涂抹需要重绘的区域")
         num_images = 1
-    return mode, num_images
+    if mode == "smart_cutout":
+        refs = [item.strip() for item in (reference_images or []) if item and str(item).strip()]
+        if len(refs) > 2:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="智能抠图最多支持原图和涂抹蒙版各一张")
+        num_images = 1
+    return mode, num_images, normalized_prompt
 
 
 def _validate_user_board_id(db: Session, user_id: int, board_id: int | None) -> int | None:
@@ -413,12 +425,13 @@ def create_tasks(
     mask_image: str = "",
     board_id: int | None = None,
 ) -> list[Task]:
-    mode, num_images = _validate_task_create_payload(
+    mode, num_images, prompt = _validate_task_create_payload(
         mode=mode,
         prompt=prompt,
         num_images=num_images,
         source_image=source_image,
         mask_image=mask_image,
+        reference_images=reference_images,
     )
     submission_lock = _acquire_task_submission_lock(user_id)
     if submission_lock.status == "contended":
@@ -465,7 +478,13 @@ def create_tasks(
             )
         credit_account = get_user_credit_account(db, user.id, for_update=True)
         current_balance = int(credit_account.remain_credit or 0) if credit_account else 0
-        scene_key = SCENE_INPAINT if mode == "inpaint" else model.strip()
+        if mode == "inpaint":
+            scene_key = SCENE_INPAINT
+        elif mode == "smart_cutout":
+            scene_key = SCENE_SMART_CUTOUT
+        else:
+            scene_key = model.strip()
+        single_image_tool = mode in {"inpaint", "smart_cutout"}
         task_logger.info(
             "task submission accepted",
             extra={
@@ -473,12 +492,12 @@ def create_tasks(
                 "user_id": user_external_id(user),
                 "mode": mode,
                 "model": model.strip(),
-                "task_count": 1 if mode == "inpaint" else num_images,
+                "task_count": 1 if single_image_tool else num_images,
                 "prompt_length": len((prompt or "").strip()),
             },
         )
         unit_cost = get_scene_credit_cost(db, scene_key, resolution=resolution)
-        task_count = 1 if mode == "inpaint" else num_images
+        task_count = 1 if single_image_tool else num_images
         task_count = ensure_task_submission_capacity(db, user_id=user_id, new_task_count=task_count)
         total_cost = task_count * unit_cost
         per_task_credit_cost = 0 if _is_credit_exempt_user(user) else unit_cost
@@ -503,7 +522,12 @@ def create_tasks(
         normalized_source_image = source_image.strip()
         normalized_mask_image = mask_image.strip()
         normalized_board_id = _validate_user_board_id(db, user_id, board_id)
-        credit_log_description = "局部重绘 1 张图片" if mode == "inpaint" else "生成 1 张图片"
+        if mode == "inpaint":
+            credit_log_description = "局部重绘 1 张图片"
+        elif mode == "smart_cutout":
+            credit_log_description = "智能抠图 1 张图片"
+        else:
+            credit_log_description = "生成 1 张图片"
         if normalized_source == "api":
             credit_log_description = f"API {credit_log_description}"
 

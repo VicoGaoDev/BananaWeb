@@ -3,6 +3,9 @@ import { ref, nextTick, watch } from "vue";
 
 const EXPORT_MASK_COLOR = "#fff";
 const EXPORT_MASK_BG = "#000";
+const PREVIEW_MASK_ALPHA = 0.75;
+const PREVIEW_SHAPE_FILL_ALPHA = 0.4;
+const PREVIEW_TEXT_ALPHA = 0.92;
 
 const props = withDefaults(defineProps<{
   imageUrl: string;
@@ -96,7 +99,7 @@ function normalizeHexColor(color: string) {
   return "#ffab25";
 }
 
-function getPreviewMaskColor(alpha = 0.5) {
+function getPreviewMaskColor(alpha = PREVIEW_MASK_ALPHA) {
   const normalized = normalizeHexColor(props.lineColor);
   const r = Number.parseInt(normalized.slice(1, 3), 16);
   const g = Number.parseInt(normalized.slice(3, 5), 16);
@@ -242,7 +245,7 @@ function renderPreviewFromExport() {
   if (!canvas || !exportCtx || !exportCanvas.width || !exportCanvas.height) return;
   const viewCtx = canvas.getContext("2d");
   if (!viewCtx) return;
-  const previewColor = getPreviewMaskColor(0.5);
+  const previewColor = getPreviewMaskColor();
 
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -269,7 +272,7 @@ function renderPreviewFromExport() {
   viewCtx.drawImage(tempCanvas, 0, 0, rect.width, rect.height);
   if (textOverlay?.text) {
     const scale = rect.width / exportCanvas.width;
-    drawTextOverlayOnContext(viewCtx, textOverlay, getPreviewMaskColor(0.9).css, scale);
+    drawTextOverlayOnContext(viewCtx, textOverlay, getPreviewMaskColor(PREVIEW_TEXT_ALPHA).css, scale);
   }
 }
 
@@ -356,7 +359,7 @@ function drawPreviewShape(
   const canvas = canvasRef.value;
   const viewCtx = canvas?.getContext("2d");
   if (!canvas || !viewCtx) return;
-  const previewColor = getPreviewMaskColor(0.2);
+  const previewColor = getPreviewMaskColor(PREVIEW_SHAPE_FILL_ALPHA);
   viewCtx.save();
   viewCtx.lineWidth = Math.max(2, width);
   viewCtx.strokeStyle = getPreviewMaskColor(0.95).css;

@@ -11,6 +11,7 @@ from app.services.external_api_config_service import (
     get_default_generation_model_key,
     require_scene_config,
     SCENE_INPAINT,
+    SCENE_SMART_CUTOUT,
 )
 from app.services.task_service import (
     create_tasks,
@@ -46,6 +47,10 @@ def create(
     if body.mode == "inpaint":
         require_scene_config(db, SCENE_INPAINT)
         task_model = SCENE_INPAINT
+        resolved_resolution = body.resolution
+    elif body.mode == "smart_cutout":
+        require_scene_config(db, SCENE_SMART_CUTOUT)
+        task_model = SCENE_SMART_CUTOUT
         resolved_resolution = body.resolution
     else:
         task_model = body.model.strip() or get_default_generation_model_key(db)

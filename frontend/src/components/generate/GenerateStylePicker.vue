@@ -26,6 +26,11 @@ const selectedLabel = computed(() => (
   formatSelectedGenerateStyleLabel(props.colorStyleId, props.lightingStyleId) || "未选择"
 ));
 const hasSelection = computed(() => Boolean(props.colorStyleId || props.lightingStyleId));
+const triggerTooltip = computed(() => (
+  hasSelection.value
+    ? `风格设置：${selectedLabel.value}`
+    : "风格设置：可补充画风与光线倾向，让生成效果更统一、更有质感"
+));
 const draftHasSelection = computed(() => Boolean(draftColorStyleId.value || draftLightingStyleId.value));
 const brokenThumbnails = ref<Record<string, boolean>>({});
 
@@ -86,7 +91,7 @@ function confirmSelection() {
 
 <template>
   <div class="generate-style-picker">
-    <a-tooltip :title="hasSelection ? selectedLabel : '风格设置'">
+    <a-tooltip :title="triggerTooltip">
       <button
         type="button"
         class="generate-style-trigger"

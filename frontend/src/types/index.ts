@@ -32,7 +32,7 @@ export interface UserApiKey {
 export interface PromptHistoryItem {
   id: number;
   prompt: string;
-  mode: "generate" | "inpaint" | "promptReverse" | "promptOptimize";
+  mode: "generate" | "inpaint" | "smart_cutout" | "promptReverse" | "promptOptimize";
   source_image: string;
   created_at: string;
 }
@@ -49,8 +49,8 @@ export interface ImageResult {
   is_deleted?: boolean;
 }
 
-export type TaskMode = "generate" | "inpaint" | "promptReverse" | "promptOptimize";
-export type TaskType = "text_generate" | "image_edit" | "inpaint" | "promptReverse" | "promptOptimize";
+export type TaskMode = "generate" | "inpaint" | "smart_cutout" | "promptReverse" | "promptOptimize";
+export type TaskType = "text_generate" | "image_edit" | "inpaint" | "smart_cutout" | "promptReverse" | "promptOptimize";
 export type TaskSource = "web" | "app" | "api";
 export type HistoryItemType = "task" | "prompt_history" | "prompt_optimize_task";
 
@@ -467,7 +467,7 @@ export interface CanvasTaskPayload {
   size: string;
   resolution: string;
   custom_size?: string;
-  mode?: "generate" | "inpaint";
+  mode?: "generate" | "inpaint" | "smart_cutout";
   reference_images?: string[];
   source_node_ids?: number[];
   source_image?: string;
@@ -1468,7 +1468,7 @@ export type ExternalApiConfigStatus = "enabled" | "disabled";
 export type ExternalApiRequestFormat = "json" | "multipart";
 export type ExternalApiCallMode = "sync" | "async";
 export type ExternalApiPollMethod = "GET" | "POST";
-export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "prompt_optimize" | "inpaint";
+export type ExternalApiSceneType = "generate" | "image_edit" | "prompt_reverse" | "prompt_optimize" | "inpaint" | "smart_cutout";
 
 export interface SceneOptionItem {
   label: string;

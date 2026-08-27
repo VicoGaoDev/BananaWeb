@@ -232,6 +232,7 @@ function sceneTypeLabel(sceneType: ExternalApiSceneBinding["scene_type"]) {
   if (sceneType === "generate") return "文生图";
   if (sceneType === "image_edit") return "图编辑";
   if (sceneType === "inpaint") return "局部重绘";
+  if (sceneType === "smart_cutout") return "智能抠图";
   if (sceneType === "prompt_reverse") return "提示词反推";
   if (sceneType === "prompt_optimize") return "提示词优化";
   return sceneType;
@@ -1444,6 +1445,7 @@ function copySecret(value: string, label: string) {
               <a-select-option value="prompt_reverse" label="提示词反推">提示词反推</a-select-option>
               <a-select-option value="prompt_optimize" label="提示词优化">提示词优化</a-select-option>
               <a-select-option value="inpaint" label="局部重绘">局部重绘</a-select-option>
+              <a-select-option value="smart_cutout" label="智能抠图">智能抠图</a-select-option>
             </a-select>
             <a-button type="primary" class="api-primary-btn" :icon="h(PlusOutlined)" @click="openCreateScene">
               新增场景

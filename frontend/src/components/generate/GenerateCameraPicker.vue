@@ -51,6 +51,11 @@ const hasSelection = computed(() => hasSelectedGenerateCamera({
   focalId: props.focalId,
   apertureId: props.apertureId,
 }));
+const triggerTooltip = computed(() => (
+  hasSelection.value
+    ? `摄像机参数：${selectedLabel.value}`
+    : "摄像机参数：可模拟镜头、焦距和光圈效果，增强构图、景别与画面氛围"
+));
 const activePresetId = computed(() => matchGenerateCameraPreset(draft.value)?.id || "");
 const brokenThumbnails = ref<Record<string, boolean>>({});
 
@@ -333,7 +338,7 @@ function markPresetThumbnailBroken(presetId: string) {
 
 <template>
   <div class="generate-camera-picker">
-    <a-tooltip :title="hasSelection ? selectedLabel : '摄像机参数'">
+    <a-tooltip :title="triggerTooltip">
       <button
         type="button"
         class="generate-camera-trigger"

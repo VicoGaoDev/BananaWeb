@@ -141,6 +141,7 @@ function modeLabel(mode: CreditLog["mode"]) {
   if (mode === "text_generate") return "文生图";
   if (mode === "image_edit") return "图编辑";
   if (mode === "inpaint") return "局部重绘";
+  if (mode === "smart_cutout") return "智能抠图";
   if (mode === "promptReverse") return "提示词反推";
   if (mode === "promptOptimize") return "提示词优化";
   if (mode === "redeem") return "兑换积分";
@@ -210,6 +211,7 @@ onMounted(() => {
         <a-select-option value="text_generate">文生图</a-select-option>
         <a-select-option value="image_edit">图编辑</a-select-option>
         <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="smart_cutout">智能抠图</a-select-option>
         <a-select-option value="promptReverse">提示词反推</a-select-option>
         <a-select-option value="promptOptimize">提示词优化</a-select-option>
         <a-select-option value="redeem">兑换积分</a-select-option>

@@ -40,7 +40,9 @@ from app.services.external_api_config_service import (
     render_poll_config,
     resolve_scene_generation_configs,
     resolve_mapped_resolution,
+    resolve_smart_cutout_prompt,
     SCENE_INPAINT,
+    SCENE_SMART_CUTOUT,
     should_use_multipart_request,
 )
 from app.services.image_delivery_service import get_optional_cos_config, serialize_asset_urls
@@ -308,6 +310,20 @@ def _build_reference_image_payload(image_url: str) -> dict[str, object] | None:
         "mime_type": mime_type,
         "data_url": f"data:{mime_type};base64,{b64_data}",
     }
+
+
+def _resolve_smart_cutout_prompt(prompt: str, reference_count: int) -> str:
+    return resolve_smart_cutout_prompt(prompt, reference_count)
+
+
+def _apply_smart_cutout_rendered_payload(payload: object, cutout_prompt: str) -> object:
+    if not isinstance(payload, dict):
+        return payload
+    next_payload = dict(payload)
+    next_payload["prompt"] = cutout_prompt
+    if isinstance(next_payload.get("size"), str) and not next_payload["size"].strip():
+        next_payload.pop("size", None)
+    return next_payload
 
 
 def _build_inline_image_part(image_url: str) -> dict | None:
@@ -703,7 +719,12 @@ def _call_generation_api_once(
                 render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
                 render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
             render_variables["reference_image_count"] = reference_count
-            parts.append({"text": prompt})
+            if mode == "smart_cutout":
+                cutout_prompt = _resolve_smart_cutout_prompt(prompt, reference_count)
+                render_variables["prompt"] = cutout_prompt
+                parts.append({"text": cutout_prompt})
+            else:
+                parts.append({"text": prompt})
 
         generation_config = {"responseModalities": ["IMAGE"]}
         if mode != "inpaint":
@@ -716,6 +737,11 @@ def _call_generation_api_once(
         render_variables["contents_parts"] = parts
         render_variables["generation_config"] = generation_config
         rendered = render_config(config, render_variables)
+        if mode == "smart_cutout":
+            rendered.payload = _apply_smart_cutout_rendered_payload(
+                rendered.payload,
+                str(render_variables.get("prompt") or _resolve_smart_cutout_prompt(prompt, int(render_variables.get("reference_image_count") or 0))),
+            )
         request_kwargs = build_external_request_kwargs(rendered)
         # End the read transaction before the slow HTTP call without detaching
         # task/image ORM objects that the caller still needs to update.
@@ -860,7 +886,12 @@ def _submit_async_generation_api_once(
                 render_variables[f"reference_image_{index}_mime_type"] = reference_payload["mime_type"]
                 render_variables[f"reference_image_{index}_data_url"] = reference_payload["data_url"]
             render_variables["reference_image_count"] = reference_count
-            parts.append({"text": prompt})
+            if mode == "smart_cutout":
+                cutout_prompt = _resolve_smart_cutout_prompt(prompt, reference_count)
+                render_variables["prompt"] = cutout_prompt
+                parts.append({"text": cutout_prompt})
+            else:
+                parts.append({"text": prompt})
 
         generation_config = {"responseModalities": ["IMAGE"]}
         if mode != "inpaint":
@@ -871,6 +902,11 @@ def _submit_async_generation_api_once(
         render_variables["contents_parts"] = parts
         render_variables["generation_config"] = generation_config
         rendered = render_config(config, render_variables)
+        if mode == "smart_cutout":
+            rendered.payload = _apply_smart_cutout_rendered_payload(
+                rendered.payload,
+                str(render_variables.get("prompt") or _resolve_smart_cutout_prompt(prompt, int(render_variables.get("reference_image_count") or 0))),
+            )
         request_kwargs = build_external_request_kwargs(rendered)
         db.commit()
 
@@ -965,7 +1001,7 @@ def _poll_async_generation_once(
 
     mapped_resolution = resolve_mapped_resolution(
         db,
-        SCENE_INPAINT if (task.mode or "").lower() == "inpaint" else (task.model or ""),
+        _resolve_task_mode_and_scene_key(task)[1],
         task.size or "",
         task.resolution or "",
     )
@@ -1301,8 +1337,11 @@ def _record_api_attempts(
 
 def _resolve_task_mode_and_scene_key(task: Task) -> tuple[str, str]:
     task_mode = (task.mode or "generate").lower()
-    scene_key = SCENE_INPAINT if task_mode == "inpaint" else (task.model or "")
-    return task_mode, scene_key
+    if task_mode == "inpaint":
+        return task_mode, SCENE_INPAINT
+    if task_mode == "smart_cutout":
+        return task_mode, SCENE_SMART_CUTOUT
+    return task_mode, (task.model or "")
 
 
 def _submit_generation_with_configs(
@@ -2411,6 +2450,14 @@ else:
         raise RuntimeError("Celery not available")
 
 
+def _celery_dispatch_available() -> bool:
+    if celery_app is None:
+        return False
+    if not callable(getattr(generate_images_task, "delay", None)):
+        return False
+    return _redis_reachable()
+
+
 # --- Sync fallbacks (for dev without Redis) ---
 
 def _run_sync_generation_worker(target, *args) -> None:
@@ -2446,7 +2493,7 @@ def _run_sync_async_poll_worker(task_id: int) -> None:
 
 def _schedule_async_poll_task(task_id: int, *, delay_seconds: int) -> None:
     normalized_delay = max(int(delay_seconds or 0), 0)
-    if CELERY_AVAILABLE and celery_app:
+    if _celery_dispatch_available():
         poll_async_generation_task.apply_async(args=[task_id], countdown=normalized_delay)
         logger.info(
             "Scheduled async generation poll via celery",
@@ -2561,7 +2608,7 @@ def _sync_fallback_allowed() -> bool:
 
 
 def get_generation_dispatch_mode() -> str:
-    if CELERY_AVAILABLE and celery_app:
+    if _celery_dispatch_available():
         return "celery"
     if _sync_fallback_allowed():
         return "sync"
@@ -2571,16 +2618,27 @@ def get_generation_dispatch_mode() -> str:
 def dispatch_generation_task(task_id: int) -> str:
     mode = get_generation_dispatch_mode()
     if mode == "celery":
-        logger.info(
-            "Dispatch generation task to celery",
-            extra={
-                "event": "task.worker.dispatched",
-                "task_id": task_id,
-                "dispatch_mode": "celery",
-            },
-        )
-        generate_images_task.delay(task_id)
-        return "queued"
+        try:
+            logger.info(
+                "Dispatch generation task to celery",
+                extra={
+                    "event": "task.worker.dispatched",
+                    "task_id": task_id,
+                    "dispatch_mode": "celery",
+                },
+            )
+            generate_images_task.delay(task_id)
+            return "queued"
+        except Exception:
+            if not _sync_fallback_allowed():
+                raise
+            logger.exception(
+                "Celery dispatch failed, falling back to sync thread mode",
+                extra={
+                    "event": "task.worker.dispatch_fallback",
+                    "task_id": task_id,
+                },
+            )
     logger.info(
         "Dispatch generation task to sync worker",
         extra={
@@ -2596,8 +2654,19 @@ def dispatch_generation_task(task_id: int) -> str:
 def dispatch_regenerate_task(image_id: int) -> str:
     mode = get_generation_dispatch_mode()
     if mode == "celery":
-        regenerate_single_image_task.delay(image_id)
-        return "queued"
+        try:
+            regenerate_single_image_task.delay(image_id)
+            return "queued"
+        except Exception:
+            if not _sync_fallback_allowed():
+                raise
+            logger.exception(
+                "Celery regenerate dispatch failed, falling back to sync thread mode",
+                extra={
+                    "event": "task.worker.regenerate_dispatch_fallback",
+                    "image_id": image_id,
+                },
+            )
     regenerate_single_sync(image_id)
     return "sync"
 

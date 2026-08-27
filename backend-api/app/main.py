@@ -286,6 +286,10 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_inpaint BOOLEAN DEFAULT 0"))
             if "is_active_inpaint" not in external_api_columns:
                 conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_inpaint BOOLEAN DEFAULT 0"))
+            if "supports_smart_cutout" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_smart_cutout BOOLEAN DEFAULT 0"))
+            if "is_active_smart_cutout" not in external_api_columns:
+                conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_smart_cutout BOOLEAN DEFAULT 0"))
             conn.execute(
                 text(
                     """
@@ -494,6 +498,7 @@ def _ensure_schema_compat():
                 "banana_pro_plus_edit",
                 "prompt_reverse",
                 "inpaint",
+                "smart_cutout",
             ]:
                 conn.execute(
                     text(
@@ -1139,6 +1144,14 @@ def _ensure_external_api_config_required_columns():
             conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN poll_interval_seconds INTEGER DEFAULT 5"))
         if "poll_timeout_seconds" not in external_api_columns:
             conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN poll_timeout_seconds INTEGER DEFAULT 600"))
+        if "supports_inpaint" not in external_api_columns:
+            conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_inpaint BOOLEAN DEFAULT 0"))
+        if "is_active_inpaint" not in external_api_columns:
+            conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_inpaint BOOLEAN DEFAULT 0"))
+        if "supports_smart_cutout" not in external_api_columns:
+            conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN supports_smart_cutout BOOLEAN DEFAULT 0"))
+        if "is_active_smart_cutout" not in external_api_columns:
+            conn.execute(text("ALTER TABLE external_api_configs ADD COLUMN is_active_smart_cutout BOOLEAN DEFAULT 0"))
         conn.execute(
             text(
                 """

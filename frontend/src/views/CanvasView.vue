@@ -335,7 +335,7 @@ const isImageEditMode = computed(() => isImageTaskKind.value && canvasMode.value
 const isImageToVideoMode = computed(() => isVideoTaskKind.value && canvasVideoMode.value === "imageToVideo");
 const currentModeSupportsReferences = computed(() => isImageEditMode.value || isImageToVideoMode.value);
 const hasComposerDraftContent = computed(() => !!prompt.value.trim() || referenceItems.value.length > 0);
-const textGenerateModels = computed(() => taskScenes.value.filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint"));
+const textGenerateModels = computed(() => taskScenes.value.filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint" && item.scene_key !== "smart_cutout"));
 const imageEditModels = computed(() => {
   const models = taskScenes.value.filter((item) => item.scene_type === "image_edit");
   return models.length ? models : textGenerateModels.value;

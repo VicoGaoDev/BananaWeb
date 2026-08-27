@@ -597,7 +597,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
 const generationModels = computed(() => (
   taskScenes.value
     .filter((item) => item.scene_type === "generate" || item.scene_type === "image_edit")
-    .filter((item) => item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint")
+    .filter((item) => item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint" && item.scene_key !== "smart_cutout")
     .map(toGenerationModelOption)
     .sort((a, b) => a.sort_order - b.sort_order)
 ));

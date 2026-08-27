@@ -131,6 +131,7 @@ const modelOptions = computed(() => {
       optionMap.set(item.scene_key, item.display_name || item.scene_label);
     });
   optionMap.set("inpaint", "局部重绘");
+  optionMap.set("smart_cutout", "智能抠图");
   optionMap.set("提示词反推", "提示词反推");
   return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
 });
@@ -413,6 +414,7 @@ function modeLabel(taskType: UserHistoryCard["task_type"]) {
   if (taskType === "text_generate") return "文生图";
   if (taskType === "image_edit") return "图编辑";
   if (taskType === "inpaint") return "局部重绘";
+  if (taskType === "smart_cutout") return "智能抠图";
   if (taskType === "promptReverse") return "提示词反推";
   if (taskType === "promptOptimize") return "提示词优化";
   return taskType;
@@ -1096,6 +1098,20 @@ function handleReedit(item: UserHistoryCard) {
         mask_image: item.mask_image,
       })
     );
+  } else if (item.mode === "smart_cutout") {
+    localStorage.setItem(
+      "generateDraftFromHistory",
+      JSON.stringify({
+        mode: "smartCutout",
+        prompt: item.prompt || "智能抠图",
+        size: item.size,
+        resolution: item.resolution,
+        custom_size: item.custom_size,
+        source_image: item.reference_images?.[0] || item.source_image,
+        mask_image: item.reference_images?.[1] || item.mask_image,
+        reference_images: item.reference_images,
+      })
+    );
   } else {
     localStorage.setItem(
       "generateDraftFromHistory",
@@ -1189,6 +1205,7 @@ function handleEditImage(item: UserHistoryCard) {
         <a-select-option value="text_generate">文生图</a-select-option>
         <a-select-option value="image_edit">图编辑</a-select-option>
         <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="smart_cutout">智能抠图</a-select-option>
         <a-select-option value="promptReverse">提示词反推</a-select-option>
         <a-select-option value="promptOptimize">提示词优化</a-select-option>
       </a-select>

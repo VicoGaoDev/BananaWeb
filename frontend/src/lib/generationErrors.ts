@@ -46,6 +46,22 @@ export function isInvalidAspectRatioError(rawMessage?: string) {
   return INVALID_ASPECT_RATIO_PATTERN.test(String(rawMessage || "").trim());
 }
 
+export function extractApiErrorDetail(err: any): string {
+  const detail = err?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => item?.msg || item?.detail || (typeof item === "string" ? item : ""))
+      .filter(Boolean)
+      .join("；");
+  }
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (detail && typeof detail === "object") {
+    return String(detail.msg || detail.message || "").trim();
+  }
+  if (err?.code === "ECONNABORTED") return "请求超时，请稍后重试";
+  return String(err?.message || "").trim();
+}
+
 export function formatGenerationErrorMessage(rawMessage?: string, fallback = "生成失败，请重试") {
   const detail = String(rawMessage || "").trim();
   if (!detail) return fallback;

@@ -37,14 +37,55 @@ SCENE_BANANA_PRO_PLUS_EDIT = "banana_pro_plus_edit"
 SCENE_PROMPT_REVERSE = "prompt_reverse"
 SCENE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_INPAINT = "inpaint"
+SCENE_SMART_CUTOUT = "smart_cutout"
 SCENE_TYPE_GENERATE = "generate"
 SCENE_TYPE_IMAGE_EDIT = "image_edit"
 SCENE_TYPE_PROMPT_REVERSE = "prompt_reverse"
 SCENE_TYPE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_TYPE_INPAINT = "inpaint"
+SCENE_TYPE_SMART_CUTOUT = "smart_cutout"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 _MISSING_PLACEHOLDER = object()
+SMART_CUTOUT_PLACEHOLDER_PROMPT = "智能抠图"
+SMART_CUTOUT_FULL_IMAGE_PROMPT = "将这张图的主体抠出，去除背景，输出干净的主体图。"
+SMART_CUTOUT_MASK_PROMPT = "请基于第1张原图和第2张蒙版进行抠图：白色区域是需要抠出的主体，黑色区域作为背景去掉。"
+
+
+def _is_known_broken_smart_cutout_prompt(value: str) -> bool:
+    return (value or "").strip() == "{标记区域抠图"
+
+
+def normalize_smart_cutout_user_prompt(prompt: str) -> str:
+    text = (prompt or "").strip()
+    if not text or text == SMART_CUTOUT_PLACEHOLDER_PROMPT or _is_known_broken_smart_cutout_prompt(text):
+        return ""
+    return text
+
+
+def resolve_smart_cutout_prompt(prompt: str, reference_count: int) -> str:
+    custom_prompt = normalize_smart_cutout_user_prompt(prompt)
+    if custom_prompt:
+        return custom_prompt
+    if int(reference_count or 0) >= 2:
+        return SMART_CUTOUT_MASK_PROMPT
+    return SMART_CUTOUT_FULL_IMAGE_PROMPT
+
+
+def _fix_rendered_payload_prompt(payload: Any, variables: dict[str, Any]) -> Any:
+    if str(variables.get("mode") or "").strip() != SCENE_TYPE_SMART_CUTOUT:
+        return payload
+    if not isinstance(payload, dict):
+        return payload
+    current = payload.get("prompt")
+    if not isinstance(current, str) or not _is_known_broken_smart_cutout_prompt(current):
+        return payload
+    fallback = str(variables.get("prompt") or "").strip()
+    if _is_known_broken_smart_cutout_prompt(fallback):
+        fallback = ""
+    next_payload = dict(payload)
+    next_payload["prompt"] = fallback or resolve_smart_cutout_prompt("", int(variables.get("reference_image_count") or 0))
+    return next_payload
 MULTIPART_EDIT_FILE_FIELD_ALIASES = {
     "image": "image",
     "images": "image",
@@ -69,6 +110,7 @@ DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_PROMPT_OPTIMIZE, "scene_type": SCENE_TYPE_PROMPT_OPTIMIZE, "scene_label": "提示词优化", "scene_description": "优化当前提示词", "sort_order": 55, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_SMART_CUTOUT, "scene_type": SCENE_TYPE_SMART_CUTOUT, "scene_label": "智能抠图", "scene_description": "涂抹区域后自动抠图", "sort_order": 65, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
 ]
 SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA: 4,
@@ -82,6 +124,7 @@ SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_PROMPT_REVERSE: 1,
     SCENE_PROMPT_OPTIMIZE: 1,
     SCENE_INPAINT: 4,
+    SCENE_SMART_CUTOUT: 4,
 }
 IMAGE_EDIT_SCENE_SOURCE_MAP = {
     SCENE_BANANA_EDIT: SCENE_BANANA,
@@ -91,6 +134,7 @@ IMAGE_EDIT_SCENE_SOURCE_MAP = {
 }
 DEFAULT_SCENE_MAP = {item["scene_key"]: item for item in DEFAULT_SCENE_DEFINITIONS}
 NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_PROMPT_OPTIMIZE, SCENE_INPAINT}
+DEFAULT_SMART_CUTOUT_MAX_REFERENCE_IMAGES = 2
 DEFAULT_ASPECT_RATIO_OPTIONS = [
     {"label": "■  1:1", "value": "1:1"},
     {"label": "▮  2:3", "value": "2:3"},
@@ -121,13 +165,17 @@ def is_builtin_scene(scene_key: str) -> bool:
 
 
 def _get_default_scene_options(scene_type: str) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
-    if scene_type in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT}:
+    if scene_type in {SCENE_TYPE_GENERATE, SCENE_TYPE_IMAGE_EDIT, SCENE_TYPE_SMART_CUTOUT}:
         return DEFAULT_ASPECT_RATIO_OPTIONS, DEFAULT_IMAGE_SIZE_OPTIONS, DEFAULT_CUSTOM_SIZE_OPTIONS
     return [], [], []
 
 
 def get_default_max_reference_images(scene_type: str) -> int:
-    return DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES if scene_type == SCENE_TYPE_IMAGE_EDIT else 0
+    if scene_type == SCENE_TYPE_IMAGE_EDIT:
+        return DEFAULT_IMAGE_EDIT_MAX_REFERENCE_IMAGES
+    if scene_type == SCENE_TYPE_SMART_CUTOUT:
+        return DEFAULT_SMART_CUTOUT_MAX_REFERENCE_IMAGES
+    return 0
 
 
 def _normalize_scene_options(raw: str | None, fallback: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -492,6 +540,8 @@ def get_default_credit_cost(scene_key: str, scene_type: str | None = None) -> in
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_PROMPT_OPTIMIZE]
     if scene_type == SCENE_TYPE_INPAINT:
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_INPAINT]
+    if scene_type == SCENE_TYPE_SMART_CUTOUT:
+        return SCENE_DEFAULT_CREDIT_COSTS[SCENE_SMART_CUTOUT]
     return SCENE_DEFAULT_CREDIT_COSTS[SCENE_BANANA_PRO]
 
 
@@ -955,7 +1005,10 @@ def render_config(config: ExternalApiConfig, variables: dict[str, Any]) -> Rende
     payload_template = _load_json(config.payload_json, "请求 JSON")
 
     rendered_headers = _render_json_template(headers_template, variables)
-    rendered_payload = _render_json_template(payload_template, variables)
+    rendered_payload = _fix_rendered_payload_prompt(
+        _render_json_template(payload_template, variables),
+        variables,
+    )
 
     return RenderedExternalApiConfig(
         request_url=config.request_url.strip(),
@@ -1342,6 +1395,15 @@ def _pick_inpaint_config(db: Session) -> ExternalApiConfig | None:
     return preferred or (candidates[0] if candidates else None)
 
 
+def _pick_smart_cutout_config(db: Session) -> ExternalApiConfig | None:
+    candidates = db.query(ExternalApiConfig).filter(ExternalApiConfig.status == "enabled").order_by(ExternalApiConfig.id.asc()).all()
+    for item in candidates:
+        if getattr(item, "is_active_smart_cutout", False):
+            return item
+    preferred = _pick_generation_config_for_scene(db, SCENE_BANANA_PRO)
+    return preferred or (candidates[0] if candidates else None)
+
+
 def _pick_default_config_for_definition(db: Session, definition: dict[str, Any]) -> ExternalApiConfig | None:
     if definition["scene_type"] == SCENE_TYPE_GENERATE:
         return _pick_generation_config_for_scene(db, definition["scene_key"])
@@ -1354,6 +1416,8 @@ def _pick_default_config_for_definition(db: Session, definition: dict[str, Any])
         return _pick_prompt_optimize_config(db)
     if definition["scene_type"] == SCENE_TYPE_INPAINT:
         return _pick_inpaint_config(db)
+    if definition["scene_type"] == SCENE_TYPE_SMART_CUTOUT:
+        return _pick_smart_cutout_config(db)
     return None
 
 

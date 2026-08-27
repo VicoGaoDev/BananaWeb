@@ -37,7 +37,7 @@ from app.services.content_safety_service import (
     build_exclude_content_safety_failed_task_clause,
     is_content_safety_error_text,
 )
-from app.services.external_api_config_service import SCENE_INPAINT
+from app.services.external_api_config_service import SCENE_INPAINT, SCENE_SMART_CUTOUT
 from app.services.prompt_optimize_service import (
     PROMPT_OPTIMIZE_CREDIT_LOG_DESCRIPTION,
     PROMPT_OPTIMIZE_MODE,
@@ -53,6 +53,7 @@ from app.services.task_service import is_task_generation_failure_credit_refunded
 from app.services.task_type_service import (
     TASK_TYPE_IMAGE_EDIT,
     TASK_TYPE_INPAINT,
+    TASK_TYPE_SMART_CUTOUT,
     TASK_TYPE_PROMPT_OPTIMIZE,
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
@@ -921,6 +922,17 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
                 )
             )
         )
+    if mode == TASK_TYPE_SMART_CUTOUT:
+        return (
+            query
+            .join(Task, Task.id == CreditLog.task_id)
+            .filter(
+                or_(
+                    Task.mode == TASK_TYPE_SMART_CUTOUT,
+                    Task.model == SCENE_SMART_CUTOUT,
+                )
+            )
+        )
     if mode == TASK_TYPE_IMAGE_EDIT:
         image_edit_scene_keys = _credit_log_image_edit_scene_keys_query(db)
         return (
@@ -931,6 +943,8 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
             .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_OPTIMIZE_MODE))
             .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
             .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
+            .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_SMART_CUTOUT))
+            .filter(or_(Task.model.is_(None), Task.model != SCENE_SMART_CUTOUT))
         )
     if mode == TASK_TYPE_TEXT_GENERATE:
         image_edit_scene_keys = _credit_log_image_edit_scene_keys_query(db)
@@ -941,6 +955,8 @@ def _apply_credit_log_mode_filter(query, db: Session, mode: str):
             .filter(or_(Task.mode.is_(None), Task.mode != PROMPT_OPTIMIZE_MODE))
             .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_INPAINT))
             .filter(or_(Task.model.is_(None), Task.model != SCENE_INPAINT))
+            .filter(or_(Task.mode.is_(None), Task.mode != TASK_TYPE_SMART_CUTOUT))
+            .filter(or_(Task.model.is_(None), Task.model != SCENE_SMART_CUTOUT))
             .filter(or_(Task.model.is_(None), ~Task.model.in_(image_edit_scene_keys)))
         )
     if mode == "manual":
@@ -1978,6 +1994,8 @@ def _task_query(
     if mode:
         if mode == TASK_TYPE_INPAINT:
             query = query.filter((Task.mode == "inpaint") | (Task.model == "inpaint"))
+        elif mode == TASK_TYPE_SMART_CUTOUT:
+            query = query.filter((Task.mode == "smart_cutout") | (Task.model == "smart_cutout"))
         elif mode == TASK_TYPE_TEXT_GENERATE:
             text_generate_models = [key for key, value in scene_type_map.items() if value == "generate"]
             query = query.filter(Task.mode == "generate")

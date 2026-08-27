@@ -21,6 +21,7 @@ import {
   PictureOutlined,
   SearchOutlined,
   HighlightOutlined,
+  ScissorOutlined,
   AppstoreOutlined,
   BarChartOutlined,
   LoadingOutlined,
@@ -69,6 +70,7 @@ import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
+import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { useUserAssets } from "@/composables/useUserAssets";
@@ -76,6 +78,7 @@ import { withBaseUrl } from "@/lib/assets";
 import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
 import { buildQuickSavePromptTitle, imageUrlToFile } from "@/lib/userLibraryQuickSave";
 import {
+  extractApiErrorDetail,
   formatGenerationErrorMessage,
   getPreferredGenerationErrorMessage,
 } from "@/lib/generationErrors";
@@ -131,7 +134,7 @@ function showInsufficientCreditsPurchase(detail?: string) {
   openPurchaseEntry?.();
 }
 
-type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "promptReverse";
+type GenerateMode = "textGenerate" | "imageEdit" | "inpaint" | "smartCutout" | "promptReverse";
 type GeneratedTaskStatusFilter = "pending" | "processing" | "success" | "failed";
 type GeneratedTaskDatePreset = "today" | "yesterday" | "week" | "custom";
 type ResultCardAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "16:9" | "9:16";
@@ -168,6 +171,7 @@ const DEFAULT_SCENE_COSTS: Record<string, number> = {
   prompt_reverse: 1,
   prompt_optimize: 1,
   inpaint: 4,
+  smart_cutout: 4,
 };
 
 const GENERATE_MENU_ENTRY_EVENT = "banana:generate-menu-entry";
@@ -393,7 +397,7 @@ const activePromptOptimizeRequestId = ref<number | null>(null);
 const promptOptimizeStyleDialogOpen = ref(false);
 const pendingPromptOptimizePayload = ref<Omit<PromptOptimizePayload, "style_name" | "style_prompt"> | null>(null);
 const pendingPromptOptimizeTarget = ref<PromptOptimizeTarget | null>(null);
-const PROMPT_OPTIMIZE_TOOLTIP = "提示词优化：免费。保留原意，并结合参考图理解画面，自动补全构图、光线、画风和细节，让提示词更适合出图";
+const PROMPT_OPTIMIZE_TOOLTIP = "提示词优化：保留原意，并结合参考图理解画面，自动补全构图、光线、画风和细节，让提示词更适合出图";
 let promptOptimizeRequestSeq = 0;
 let promptOptimizeAbortController: AbortController | null = null;
 const cancelledPromptOptimizeRequestIds = new Set<number>();
@@ -403,6 +407,11 @@ const repaintLineColor = ref<string>("#c38d36");
 const hasRepaintMask = ref(false);
 const canUndoMask = ref(false);
 const canRedoMask = ref(false);
+const smartCutoutPanelRef = ref<{
+  applySource: (sourceUrl: string, maskUrl?: string, promptText?: string) => void;
+  clear: () => void;
+} | null>(null);
+const pendingSmartCutoutApply = ref<{ sourceUrl: string; maskUrl: string; prompt: string } | null>(null);
 const repaintCanvasRef = ref<{
   clearMask: () => void;
   hasDrawnMask: () => boolean;
@@ -537,6 +546,7 @@ const resultEmptyDesc = computed(() => (
     ? "上传图片后点击「开始反推」，即可得到适合 AI 绘画的中文提示词"
     : "在左侧设置提示词和参数后发起任务，右侧会按当前分类分页展示生图任务结果"
 ));
+const firstReferenceItem = computed(() => referenceItems.value[0] || null);
 const referenceUrls = computed(() => (
   referenceItems.value
     .filter((item) => item.status === "success" && item.remoteUrl)
@@ -552,7 +562,7 @@ const isImageEditMode = computed(() => generateMode.value === "imageEdit");
 const SHOW_MODEL_NEW_BADGES = false;
 const textGenerateModels = computed(() => (
   taskScenes.value
-    .filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint")
+    .filter((item) => item.scene_type === "generate" && item.scene_key !== "prompt_reverse" && item.scene_key !== "inpaint" && item.scene_key !== "smart_cutout")
     .map(toGenerationModelOption)
 ));
 const imageEditModels = computed(() => {
@@ -598,6 +608,7 @@ const GENERATED_TASK_TYPE_FILTER_LABELS: Record<string, string> = {
   text_generate: "文生图",
   image_edit: "图编辑",
   inpaint: "局部重绘",
+  smart_cutout: "智能抠图",
 };
 const GENERATED_TASK_SOURCE_FILTER_LABELS: Record<string, string> = {
   web: "Web",
@@ -640,7 +651,7 @@ const generatedTaskFilterSummary = computed(() => {
 
 function normalizeRouteGenerateMode(value: unknown): GenerateMode {
   const normalized = Array.isArray(value) ? value[0] : value;
-  if (normalized === "textGenerate" || normalized === "imageEdit" || normalized === "inpaint" || normalized === "promptReverse") {
+  if (normalized === "textGenerate" || normalized === "imageEdit" || normalized === "inpaint" || normalized === "smartCutout" || normalized === "promptReverse") {
     return normalized;
   }
   return "imageEdit";
@@ -733,6 +744,17 @@ const hideResolution = computed(() => (
 const hideCustomSize = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_custom_size
 ));
+const smartCutoutScene = computed(() => taskScenes.value.find((item) => item.scene_key === "smart_cutout"));
+const smartCutoutSizeOptions = computed(() => (
+  smartCutoutScene.value?.aspect_ratio_options?.length
+    ? smartCutoutScene.value.aspect_ratio_options
+    : DEFAULT_ASPECT_RATIO_OPTIONS
+));
+const smartCutoutResolutionOptions = computed(() => (
+  smartCutoutScene.value?.image_size_options?.length
+    ? smartCutoutScene.value.image_size_options
+    : DEFAULT_IMAGE_SIZE_OPTIONS
+));
 const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
 function resolveSceneCreditCost(sceneKey: string, targetResolution = resolution.value) {
   const scene = generationModels.value.find((item) => item.model_key === sceneKey)
@@ -751,13 +773,16 @@ const selectedModelCreditCost = computed(() => resolveSceneCreditCost(selectedMo
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
 const promptOptimizeCreditCost = computed(() => sceneCostMap.value.prompt_optimize ?? DEFAULT_SCENE_COSTS.prompt_optimize);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
-const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint");
+const smartCutoutCreditCost = computed(() => resolveSceneCreditCost("smart_cutout", resolution.value));
+const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint" || generateMode.value === "smartCutout");
 const activeExtendedToolLabel = computed(() => (
   generateMode.value === "promptReverse"
     ? "提示词反推"
     : generateMode.value === "inpaint"
       ? "局部重绘"
-      : "更多工具"
+      : generateMode.value === "smartCutout"
+        ? "智能抠图"
+        : "更多工具"
 ));
 const activeExtendedToolMenuKeys = computed(() => (
   isExtendedToolMode.value ? [generateMode.value] : []
@@ -785,7 +810,7 @@ type GenerateTaskPayload = {
   size: string;
   resolution: string;
   custom_size?: string;
-  mode?: "generate" | "inpaint";
+  mode?: "generate" | "inpaint" | "smart_cutout";
   reference_images?: string[];
   source_image?: string;
   mask_image?: string;
@@ -1080,7 +1105,7 @@ function stopAllTaskPolling() {
 }
 
 function handleExtendedToolMenuClick({ key }: { key: string }) {
-  if (key === "promptReverse" || key === "inpaint") {
+  if (key === "promptReverse" || key === "inpaint" || key === "smartCutout") {
     generateMode.value = key;
   }
 }
@@ -1168,9 +1193,11 @@ function convertHistoryCardToGeneratedTask(item: UserHistoryCard): GeneratedTask
   const fallbackImageCount = Math.max(1, Number(item.num_images || item.images.length || 1));
   const taskMode: SubmitMode = item.mode === "inpaint"
     ? "inpaint"
-    : Array.isArray(item.reference_images) && item.reference_images.length
-      ? "imageEdit"
-      : "textGenerate";
+    : item.mode === "smart_cutout"
+      ? "smartCutout"
+      : Array.isArray(item.reference_images) && item.reference_images.length
+        ? "imageEdit"
+        : "textGenerate";
   return {
     localId: `history-${item.task_id || item.history_id || "unknown"}`,
     taskId: item.task_id || null,
@@ -1620,6 +1647,7 @@ function buildSubmitPrompt(userPrompt: string) {
 
 function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
   if (task.mode === "inpaint") return inpaintCreditCost.value;
+  if (task.mode === "smartCutout") return smartCutoutCreditCost.value;
   const perImageCost = task.model ? resolveSceneCreditCost(task.model, task.resolution) : selectedModelCreditCost.value;
   return nextNumImages * perImageCost;
 }
@@ -2358,27 +2386,27 @@ function getRepaintBrushPreviewStyle() {
   return {
     width: `${size}px`,
     height: `${size}px`,
-    background: hexToRgba(repaintLineColor.value, 0.45),
+    background: hexToRgba(repaintLineColor.value, 0.75),
     borderColor: hexToRgba(repaintLineColor.value, 0.9),
     boxShadow: `0 0 0 6px ${hexToRgba(repaintLineColor.value, 0.12)}, 0 4px 10px rgba(0, 0, 0, 0.16)`,
   };
 }
 
-const creditCost = computed(() => (
-  generateMode.value === "inpaint"
-    ? inpaintCreditCost.value
-    : numImages.value * selectedModelCreditCost.value
-));
+const creditCost = computed(() => {
+  if (generateMode.value === "inpaint") return inpaintCreditCost.value;
+  if (generateMode.value === "smartCutout") return smartCutoutCreditCost.value;
+  return numImages.value * selectedModelCreditCost.value;
+});
 const actualSubmitImageCount = computed(() => (
   generateMode.value === "inpaint"
     ? Math.min(1, remainingGenerationImageSlots.value)
     : Math.min(numImages.value, remainingGenerationImageSlots.value)
 ));
-const actualSubmitCreditCost = computed(() => (
-  generateMode.value === "inpaint"
-    ? inpaintCreditCost.value
-    : actualSubmitImageCount.value * selectedModelCreditCost.value
-));
+const actualSubmitCreditCost = computed(() => {
+  if (generateMode.value === "inpaint") return inpaintCreditCost.value;
+  if (generateMode.value === "smartCutout") return smartCutoutCreditCost.value;
+  return actualSubmitImageCount.value * selectedModelCreditCost.value;
+});
 const userCredits = computed(() => auth.user?.credits ?? 0);
 const canCreateTemplateFromTask = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
@@ -2660,6 +2688,7 @@ function promptSwitchToTextGenerate(messageText: string) {
 }
 
 async function handleGenerate() {
+  if (generateMode.value === "smartCutout") return;
   if (isImageEditMode.value && hasPendingReferenceUploads.value) {
     message.warning("参考图仍在上传中，请稍候再发起任务");
     return;
@@ -2771,14 +2800,85 @@ async function handleGenerate() {
       customSize: payload.custom_size || "",
       referenceImages: payload.reference_images ? [...payload.reference_images] : [],
       referenceImageThumbs: payload.reference_images ? [...payload.reference_images] : [],
-      sourceImage: payload.source_image,
-      sourceImageThumb: payload.source_image,
-      maskImage: payload.mask_image,
-      maskImageThumb: payload.mask_image,
+      sourceImage: payload.source_image || payload.reference_images?.[0],
+      sourceImageThumb: payload.source_image || payload.reference_images?.[0],
+      maskImage: payload.mask_image || payload.reference_images?.[1],
+      maskImageThumb: payload.mask_image || payload.reference_images?.[1],
     });
     void loadGlobalActiveGenerationStatus();
   } catch (err: any) {
-    const detail = err.response?.data?.detail || "";
+    const detail = extractApiErrorDetail(err);
+    if (isInsufficientCreditsError(err)) {
+      showInsufficientCreditsPurchase(detail);
+      return;
+    }
+    message.error(formatGenerationErrorMessage(detail, "创建任务失败"));
+  } finally {
+    submittingGenerate.value = false;
+  }
+}
+
+function applySmartCutoutSource(sourceUrl: string, maskUrl = "", promptText = "") {
+  if (smartCutoutPanelRef.value) {
+    smartCutoutPanelRef.value.applySource(sourceUrl, maskUrl, promptText);
+    pendingSmartCutoutApply.value = null;
+    return;
+  }
+  pendingSmartCutoutApply.value = { sourceUrl, maskUrl, prompt: promptText };
+}
+
+async function handleSmartCutoutSubmit(payload: { prompt: string; sourceImageUrl: string; maskImageUrl: string }) {
+  if (!auth.isLoggedIn) {
+    loginModalVisible.value = true;
+    return;
+  }
+
+  submittingGenerate.value = true;
+  await nextTick();
+  try {
+    const [authenticated] = await Promise.all([
+      ensureAuthenticated(),
+      loadGlobalActiveGenerationStatus(),
+    ]);
+    if (!authenticated) return;
+    if (remainingGenerationImageSlots.value <= 0) {
+      message.warning(`当前最多允许同时生成 ${MAX_ACTIVE_GENERATION_IMAGES} 张图片，请等待部分任务完成后再试`);
+      return;
+    }
+    if (!isSuperAdmin.value && userCredits.value < smartCutoutCreditCost.value) {
+      showInsufficientCreditsPurchase(`积分不足，需要 ${smartCutoutCreditCost.value} 积分，当前余额 ${userCredits.value}`);
+      return;
+    }
+
+    const submitPrompt = payload.prompt.trim() || "智能抠图";
+    const referenceImages = [payload.sourceImageUrl, payload.maskImageUrl].filter(Boolean);
+    const taskPayload: GenerateTaskPayload = {
+      mode: "smart_cutout",
+      prompt: submitPrompt,
+      num_images: 1,
+      size: size.value,
+      resolution: resolution.value,
+      custom_size: customSize.value,
+      reference_images: referenceImages.length ? referenceImages : undefined,
+    };
+    await submitGeneratedTask(taskPayload, {
+      mode: "smartCutout",
+      prompt: submitPrompt,
+      model: taskPayload.model,
+      numImages: 1,
+      size: taskPayload.size,
+      resolution: taskPayload.resolution,
+      customSize: taskPayload.custom_size || "",
+      referenceImages,
+      referenceImageThumbs: [...referenceImages],
+      sourceImage: payload.sourceImageUrl || undefined,
+      sourceImageThumb: payload.sourceImageUrl || undefined,
+      maskImage: payload.maskImageUrl || undefined,
+      maskImageThumb: payload.maskImageUrl || undefined,
+    });
+    void loadGlobalActiveGenerationStatus();
+  } catch (err: any) {
+    const detail = extractApiErrorDetail(err);
     if (isInsufficientCreditsError(err)) {
       showInsufficientCreditsPurchase(detail);
       return;
@@ -2802,11 +2902,20 @@ function handleReeditTask(task: GeneratedTaskItem) {
     syncReferenceItems([]);
     revokeObjectUrl(sourcePreviewUrl.value);
     sourcePreviewUrl.value = "";
-    sourceImageUrl.value = task.sourceImage || "";
-    repaintMaskUrl.value = task.maskImage || "";
+    sourceImageUrl.value = task.sourceImage || task.referenceImages[0] || "";
+    repaintMaskUrl.value = task.maskImage || task.referenceImages[1] || "";
     hasRepaintMask.value = false;
     canUndoMask.value = false;
     canRedoMask.value = false;
+  } else if (task.mode === "smartCutout") {
+    prompt.value = "";
+    repaintPrompt.value = "";
+    syncReferenceItems([]);
+    applySmartCutoutSource(
+      task.sourceImage || task.referenceImages[0] || "",
+      task.maskImage || task.referenceImages[1] || "",
+      task.prompt || "",
+    );
   } else {
     generateMode.value = task.referenceImages.length ? "imageEdit" : "textGenerate";
     applyPromptWithGenerateStyles(task.prompt, "prompt");
@@ -2856,6 +2965,10 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
 }
 
 async function handleRegenerate(task: GeneratedTaskItem) {
+  const smartCutoutRefs = [
+    task.referenceImages[0] || task.sourceImage || "",
+    task.referenceImages[1] || task.maskImage || "",
+  ].filter(Boolean);
   const payload: GenerateTaskPayload = task.mode === "inpaint"
     ? {
         mode: "inpaint",
@@ -2866,6 +2979,16 @@ async function handleRegenerate(task: GeneratedTaskItem) {
         custom_size: task.customSize,
         source_image: task.sourceImage,
         mask_image: task.maskImage,
+      }
+    : task.mode === "smartCutout"
+      ? {
+        mode: "smart_cutout",
+        prompt: task.prompt || "智能抠图",
+        num_images: 1,
+        size: task.size,
+        resolution: task.resolution,
+        custom_size: task.customSize,
+        reference_images: smartCutoutRefs,
       }
     : {
         mode: "generate",
@@ -2880,6 +3003,10 @@ async function handleRegenerate(task: GeneratedTaskItem) {
 
   if (task.mode === "inpaint" && (!task.sourceImage || !task.maskImage)) {
     message.warning("当前局部重绘任务缺少完整参数，请使用重新编辑后再提交");
+    return;
+  }
+  if (task.mode === "smartCutout" && smartCutoutRefs.length > 2) {
+    message.warning("当前智能抠图任务参数异常，请使用重新编辑后再提交");
     return;
   }
   const regenerateCost = getTaskDraftCreditCost(task, 1);
@@ -2925,10 +3052,16 @@ function convertGeneratedTaskToHistoryCard(task: GeneratedTaskItem, focusedImage
     || task.images[0];
   const taskType = task.mode === "inpaint"
     ? "inpaint"
+    : task.mode === "smartCutout"
+      ? "smart_cutout"
     : task.referenceImages.length
       ? "image_edit"
       : "text_generate";
-  const mode = task.mode === "inpaint" ? "inpaint" : "generate";
+  const mode = task.mode === "inpaint"
+    ? "inpaint"
+    : task.mode === "smartCutout"
+      ? "smart_cutout"
+      : "generate";
   const status = task.status === "submitting" ? "pending" : task.status;
 
   return {
@@ -3021,7 +3154,11 @@ function handleDetailReedit(item: UserHistoryCard) {
   handleReeditTask({
     localId: detailTaskLocalId.value || `detail-${item.task_id || "unknown"}`,
     taskId: item.task_id || null,
-    mode: item.mode === "inpaint" ? "inpaint" : (item.reference_images.length ? "imageEdit" : "textGenerate"),
+    mode: item.mode === "inpaint"
+      ? "inpaint"
+      : item.mode === "smart_cutout"
+        ? "smartCutout"
+        : (item.reference_images.length ? "imageEdit" : "textGenerate"),
     prompt: item.prompt || "",
     model: item.model || undefined,
     numImages: Math.max(1, Number(item.num_images || 1)),
@@ -3201,6 +3338,55 @@ function handleInpaintGeneratedImage(task: GeneratedTaskItem, img: ImageResult) 
   message.success("已带入局部重绘");
 }
 
+function handleSmartCutoutGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
+  const sourceImage = img.image_url || img.preview_url || img.thumb_url || "";
+  if (!sourceImage) {
+    message.warning("当前结果图暂不可用于智能抠图");
+    return;
+  }
+  expandConfigPanelForEditing();
+  generateMode.value = "smartCutout";
+  prompt.value = "";
+  repaintPrompt.value = "";
+  size.value = task.size || sizeOptions.value[0]?.value || "1:1";
+  resolution.value = task.resolution || "2K";
+  customSize.value = task.customSize || "";
+  numImages.value = 1;
+  syncReferenceItems([]);
+  applySmartCutoutSource(sourceImage);
+  message.success("已带入智能抠图");
+}
+
+function openSmartCutoutFromImageEdit() {
+  const firstReference = firstReferenceItem.value;
+  const firstReferenceUrl = firstReference?.remoteUrl?.trim() || "";
+  expandConfigPanelForEditing();
+  generateMode.value = "smartCutout";
+  prompt.value = "";
+  repaintPrompt.value = "";
+  numImages.value = 1;
+  syncReferenceItems([]);
+
+  if (!firstReference) {
+    applySmartCutoutSource("");
+    message.success("已切换到智能抠图");
+    return;
+  }
+
+  if (firstReference.status === "success" && firstReferenceUrl) {
+    applySmartCutoutSource(firstReferenceUrl);
+    message.success("已带第一张参考图进入智能抠图");
+    return;
+  }
+
+  applySmartCutoutSource("");
+  message.warning(
+    firstReference.status === "uploading"
+      ? "已切换到智能抠图，第一张参考图仍在上传中，未自动带入"
+      : "已切换到智能抠图，第一张参考图上传失败，未自动带入",
+  );
+}
+
 async function ensureTemplateTagsLoaded() {
   if (templateTags.value.length) return;
   try {
@@ -3336,7 +3522,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
   if (!raw) return;
   try {
     const draft = JSON.parse(raw) as {
-      mode?: "generate" | "imageEdit" | "textGenerate" | "inpaint" | "promptReverse";
+      mode?: "generate" | "imageEdit" | "textGenerate" | "inpaint" | "smartCutout" | "smart_cutout" | "promptReverse";
       prompt?: string;
       model?: string;
       reference_images?: string[];
@@ -3349,6 +3535,8 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     };
     const draftMode: GenerateMode = draft.mode === "inpaint"
       ? "inpaint"
+      : draft.mode === "smartCutout" || draft.mode === "smart_cutout"
+        ? "smartCutout"
       : draft.mode === "promptReverse"
         ? "promptReverse"
         : draft.mode === "imageEdit"
@@ -3366,9 +3554,9 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     if (draftMode === "inpaint") {
       applyPromptWithGenerateStyles(draft.prompt || "", "repaintPrompt");
       revokeObjectUrl(sourcePreviewUrl.value);
-      sourceImageUrl.value = draft.source_image || "";
+      sourceImageUrl.value = draft.source_image || draft.reference_images?.[0] || "";
       sourcePreviewUrl.value = "";
-      repaintMaskUrl.value = draft.mask_image || "";
+      repaintMaskUrl.value = draft.mask_image || draft.reference_images?.[1] || "";
       hasRepaintMask.value = false;
       canUndoMask.value = false;
       canRedoMask.value = false;
@@ -3377,6 +3565,18 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       numImages.value = 1;
       reverseImageUrl.value = "";
       reversePromptResult.value = "";
+    } else if (draftMode === "smartCutout") {
+      prompt.value = "";
+      repaintPrompt.value = "";
+      syncReferenceItems([]);
+      numImages.value = 1;
+      reverseImageUrl.value = "";
+      reversePromptResult.value = "";
+      applySmartCutoutSource(
+        draft.source_image || draft.reference_images?.[0] || "",
+        draft.mask_image || draft.reference_images?.[1] || "",
+        draft.prompt || "",
+      );
     } else if (draftMode === "promptReverse") {
       reverseImageUrl.value = draft.source_image || "";
       reversePromptResult.value = draft.prompt || "";
@@ -3526,12 +3726,41 @@ watch(
   },
 );
 
+watch(smartCutoutPanelRef, (panel) => {
+  if (!panel || !pendingSmartCutoutApply.value) return;
+  const pending = pendingSmartCutoutApply.value;
+  pendingSmartCutoutApply.value = null;
+  panel.applySource(pending.sourceUrl, pending.maskUrl, pending.prompt);
+});
+
 watch(sizeOptions, (options) => {
   if (hideAspectRatio.value || !options.length) return;
   if (!size.value || !options.some((item) => item.value === size.value)) {
     size.value = options[0].value;
   }
 }, { immediate: true });
+
+watch(
+  [() => generateMode.value, smartCutoutSizeOptions],
+  ([mode, options]) => {
+    if (mode !== "smartCutout" || !options.length) return;
+    if (!size.value || !options.some((item) => item.value === size.value)) {
+      size.value = options[0].value;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  [() => generateMode.value, smartCutoutResolutionOptions],
+  ([mode, options]) => {
+    if (mode !== "smartCutout" || !options.length) return;
+    if (!resolution.value || !options.some((item) => item.value === resolution.value)) {
+      resolution.value = options[0].value;
+    }
+  },
+  { immediate: true },
+);
 
 watch(aspectRatioAutoDetectEnabled, (enabled) => {
   writeStoredAspectRatioAutoDetectEnabled(enabled);
@@ -3646,6 +3875,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         <span class="generate-tool-menu-item-label">
                           <HighlightOutlined />
                           <span>局部重绘</span>
+                        </span>
+                      </a-menu-item>
+                      <a-menu-item key="smartCutout">
+                        <span class="generate-tool-menu-item-label">
+                          <ScissorOutlined />
+                          <span>智能抠图</span>
                         </span>
                       </a-menu-item>
                     </a-menu>
@@ -4245,6 +4480,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
+                    <a-tooltip title="智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域">
+                      <a-button
+                        type="text"
+                        size="small"
+                        class="prompt-library-btn smart-cutout-entry-btn"
+                        @click="openSmartCutoutFromImageEdit"
+                      >
+                        <template #icon><ScissorOutlined /></template>
+                        智能抠图
+                      </a-button>
+                    </a-tooltip>
                     <GenerateCameraPicker
                       v-model:body-id="selectedCameraBodyId"
                       v-model:lens-id="selectedCameraLensId"
@@ -4514,7 +4760,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </section>
 
             <section
-              v-else
+              v-else-if="generateMode === 'inpaint'"
               key="inpaint"
               class="work-panel settings-panel inpaint-panel"
             >
@@ -4555,7 +4801,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       {{ hasRepaintMask ? "已选择重绘区域" : "请在图片上涂抹需要重绘的区域" }}
                     </div>
                     <div class="repaint-status-desc">
-                      {{ hasRepaintMask ? "提交后只会修改已涂抹部分，未涂抹区域保持不变。" : "先上传原图，再直接在图片上绘制需要重绘的局部范围。" }}
+                      {{ hasRepaintMask
+                        ? "提交后只会修改已涂抹部分，未涂抹区域保持不变。"
+                        : "先上传原图，再直接在图片上绘制需要重绘的局部范围。" }}
                     </div>
                     <div v-if="sourceUploading || (!sourceImageUrl && sourcePreviewUrl)" class="repaint-status-uploading">
                       {{ sourceUploading ? "原图上传中，完成后可提交任务" : "原图上传未完成，请重新上传后再试" }}
@@ -4804,6 +5052,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 </a-button>
               </div>
             </section>
+
+            <SmartCutoutPanel
+              v-else-if="generateMode === 'smartCutout'"
+              key="smartCutout"
+              ref="smartCutoutPanelRef"
+              class="work-panel settings-panel smart-cutout-panel"
+              v-model:size="size"
+              v-model:resolution="resolution"
+              :size-options="smartCutoutSizeOptions"
+              :resolution-options="smartCutoutResolutionOptions"
+              :credit-cost="smartCutoutCreditCost"
+              :submitting="submittingGenerate"
+              :is-super-admin="isSuperAdmin"
+              :queue-full="remainingGenerationImageSlots <= 0"
+              @submit="handleSmartCutoutSubmit"
+              @request-login="loginModalVisible = true"
+            />
           </transition>
           </div>
         </div>
@@ -5014,6 +5279,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         <a-select-option value="text_generate">文生图</a-select-option>
                         <a-select-option value="image_edit">图编辑</a-select-option>
                         <a-select-option value="inpaint">局部重绘</a-select-option>
+                        <a-select-option value="smart_cutout">智能抠图</a-select-option>
                       </a-select>
                     </label>
                     <label class="generate-filter-field generate-filter-field-third">
@@ -5228,6 +5494,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                             <template #icon><HighlightOutlined /></template>
                           </a-button>
                         </a-tooltip>
+                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                          <a-button
+                            shape="circle"
+                            class="icon-chip"
+                            @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                          >
+                            <template #icon><ScissorOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
                         <a-tooltip title="重新生成">
                           <a-button
                             shape="circle"
@@ -5273,6 +5548,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                             @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
                           >
                             <template #icon><HighlightOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
+                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                          <a-button
+                            shape="circle"
+                            class="icon-chip"
+                            @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                          >
+                            <template #icon><ScissorOutlined /></template>
                           </a-button>
                         </a-tooltip>
                         <a-tooltip title="重新生成">
@@ -5878,6 +6162,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   align-items: center;
   gap: 10px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 /* --- Prompt (standalone) --- */
@@ -6155,6 +6440,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
   &:active {
     transform: scale(0.97);
+  }
+}
+
+.smart-cutout-entry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  white-space: nowrap;
+
+  :deep(.ant-btn-icon) {
+    margin-inline-end: 3px !important;
+  }
+
+  :deep(.anticon) {
+    margin: 0;
+    font-size: 14px;
   }
 }
 
@@ -7349,7 +7651,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   max-width: 34px;
   max-height: 34px;
   border-radius: 50%;
-  background: rgba(255, 171, 37, 0.5);
+  background: rgba(255, 171, 37, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.56);
   box-shadow:
     0 0 0 6px rgba(255, 255, 255, 0.06),
@@ -9180,48 +9482,64 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   opacity: 0.78;
 }
 
-.generate-tool-dropdown .generate-tool-menu {
-  min-width: 156px;
-  padding: 8px;
+.generate-tool-dropdown .generate-tool-menu,
+.generate-tool-dropdown .ant-dropdown-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 176px;
+  padding: 10px;
   border-radius: 16px;
   border: 1px solid var(--theme-panel-border);
-  background: linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft));
+  background: var(--theme-dropdown-bg);
   box-shadow: 0 16px 28px var(--theme-shadow-soft);
 }
 
-.generate-tool-dropdown .generate-tool-menu .ant-menu-item {
-  display: flex;
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item,
+.generate-tool-dropdown .ant-dropdown-menu-item {
+  display: flex !important;
   align-items: center;
-  min-height: 42px;
+  width: 100%;
+  min-height: 46px;
   margin: 0 !important;
-  padding: 8px 12px !important;
+  padding: 10px 14px !important;
   border-radius: 12px;
-  color: var(--theme-title);
+  background: transparent !important;
+  color: var(--theme-title) !important;
   font-weight: 700;
+  line-height: 1.2;
   transition:
     background var(--motion-duration-fast) var(--motion-ease-soft),
-    color var(--motion-duration-fast) var(--motion-ease-soft),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
-    transform var(--motion-duration-fast) var(--motion-ease-soft);
+    color var(--motion-duration-fast) var(--motion-ease-soft);
 }
 
-.generate-tool-dropdown .generate-tool-menu .ant-menu-item + .ant-menu-item {
-  margin-top: 6px !important;
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item::after,
+.generate-tool-dropdown .ant-dropdown-menu-item::after {
+  display: none !important;
 }
 
-.generate-tool-dropdown .generate-tool-menu .ant-menu-item:hover {
-  color: var(--theme-accent-text-hover) !important;
-  background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong)) !important;
-  box-shadow: 0 10px 22px var(--theme-shadow-soft);
-  transform: translateY(-1px);
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item + .ant-menu-item,
+.generate-tool-dropdown .ant-dropdown-menu-item + .ant-dropdown-menu-item {
+  margin-top: 0 !important;
 }
 
-.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
-  color: var(--theme-accent-contrast) !important;
-  background: var(--theme-accent) !important;
-  box-shadow:
-    inset 0 1px 0 var(--theme-panel-inset),
-    0 10px 22px var(--theme-shadow-strong);
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item:hover,
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-active,
+.generate-tool-dropdown .ant-dropdown-menu-item:hover,
+.generate-tool-dropdown .ant-dropdown-menu-item-active {
+  color: var(--theme-accent-text) !important;
+  background: var(--theme-nav-hover-bg) !important;
+  box-shadow: none;
+  transform: none;
+}
+
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected,
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected:hover,
+.generate-tool-dropdown .ant-dropdown-menu-item-selected,
+.generate-tool-dropdown .ant-dropdown-menu-item-selected:hover {
+  color: var(--theme-dropdown-selected-text) !important;
+  background: var(--theme-dropdown-selected-bg) !important;
+  box-shadow: none;
 }
 
 .model-help-popover {
@@ -9622,8 +9940,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-ret
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-btn,
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-action-btn-primary,
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-action-btn-primary {
   background: var(--theme-control-active) !important;
   color: var(--theme-accent-contrast) !important;
   border-color: var(--theme-control-active) !important;
@@ -9639,8 +9956,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-ac
 }
 
 html[data-theme="midnight"] .generate-page .generate-btn,
-html[data-theme="midnight"] .generate-page .reverse-action-btn-primary,
-html[data-theme="midnight"] .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
+html[data-theme="midnight"] .generate-page .reverse-action-btn-primary {
   color: #ffffff !important;
 }
 
@@ -9750,13 +10066,19 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .brush-prev
   border-color: var(--theme-border-strong);
 }
 
-html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected {
-  box-shadow: 0 10px 22px var(--theme-shadow-medium) !important;
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item .anticon,
+.generate-tool-dropdown .ant-dropdown-menu-item .anticon {
+  font-size: 16px;
+  color: currentColor;
 }
 
-.generate-tool-dropdown .generate-tool-menu .ant-menu-item .anticon {
-  font-size: 18px;
-  color: currentColor;
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected .anticon,
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected span,
+.generate-tool-dropdown .generate-tool-menu .ant-menu-item-selected .generate-tool-menu-item-label,
+.generate-tool-dropdown .ant-dropdown-menu-item-selected .anticon,
+.generate-tool-dropdown .ant-dropdown-menu-item-selected span,
+.generate-tool-dropdown .ant-dropdown-menu-item-selected .generate-tool-menu-item-label {
+  color: inherit !important;
 }
 
 .generate-page .result-panel,

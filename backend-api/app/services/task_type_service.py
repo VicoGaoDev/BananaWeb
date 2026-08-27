@@ -4,20 +4,22 @@ from sqlalchemy.orm import Session
 
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.task import Task
-from app.services.external_api_config_service import SCENE_INPAINT
+from app.services.external_api_config_service import SCENE_INPAINT, SCENE_SMART_CUTOUT
 from app.services.prompt_reverse_service import PROMPT_REVERSE_MODE
 
 TASK_TYPE_TEXT_GENERATE = "text_generate"
 TASK_TYPE_IMAGE_EDIT = "image_edit"
 TASK_TYPE_INPAINT = "inpaint"
+TASK_TYPE_SMART_CUTOUT = "smart_cutout"
 TASK_TYPE_PROMPT_REVERSE = PROMPT_REVERSE_MODE
 
 
-def list_task_type_values() -> tuple[str, str, str, str]:
+def list_task_type_values() -> tuple[str, str, str, str, str]:
     return (
         TASK_TYPE_TEXT_GENERATE,
         TASK_TYPE_IMAGE_EDIT,
         TASK_TYPE_INPAINT,
+        TASK_TYPE_SMART_CUTOUT,
         TASK_TYPE_PROMPT_REVERSE,
     )
 
@@ -46,6 +48,8 @@ def resolve_task_type(
         return TASK_TYPE_PROMPT_REVERSE
     if normalized_mode == "inpaint" or normalized_model == SCENE_INPAINT:
         return TASK_TYPE_INPAINT
+    if normalized_mode == "smart_cutout" or normalized_model == SCENE_SMART_CUTOUT:
+        return TASK_TYPE_SMART_CUTOUT
     scene_type = (scene_type_map or {}).get(normalized_model, "").strip()
     if scene_type == "image_edit":
         return TASK_TYPE_IMAGE_EDIT

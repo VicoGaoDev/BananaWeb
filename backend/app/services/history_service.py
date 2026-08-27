@@ -29,6 +29,7 @@ from app.services.prompt_reverse_service import (
 from app.services.task_type_service import (
     TASK_TYPE_IMAGE_EDIT,
     TASK_TYPE_INPAINT,
+    TASK_TYPE_SMART_CUTOUT,
     TASK_TYPE_PROMPT_OPTIMIZE,
     TASK_TYPE_PROMPT_REVERSE,
     TASK_TYPE_TEXT_GENERATE,
@@ -55,6 +56,7 @@ from app.services.external_api_config_service import (
     render_config,
     resolve_mapped_resolution,
     resolve_scene_generation_configs,
+    resolve_smart_cutout_prompt,
 )
 from app.utils.datetime_utils import now_local
 from app.utils.business_id import normalize_business_id
@@ -262,7 +264,12 @@ def _inline_image_part_placeholder(raw: str) -> dict:
 
 def _build_task_render_variables(db: Session, task: Task, *, cos_config) -> dict[str, Any]:
     mode = (task.mode or "generate").strip() or "generate"
-    scene_key = TASK_TYPE_INPAINT if mode == "inpaint" else (task.model or "")
+    if mode == "inpaint":
+        scene_key = TASK_TYPE_INPAINT
+    elif mode == "smart_cutout":
+        scene_key = TASK_TYPE_SMART_CUTOUT
+    else:
+        scene_key = task.model or ""
     mapped_resolution = resolve_mapped_resolution(db, scene_key, task.size or "", task.resolution or "")
     parts: list[dict] = []
     variables: dict[str, Any] = {
@@ -312,7 +319,12 @@ def _build_task_render_variables(db: Session, task: Task, *, cos_config) -> dict
             variables[f"reference_image_{index}_mime_type"] = _image_mime_from_data_url(ref_url)
             variables[f"reference_image_{index}_data_url"] = _base64_data_url_placeholder(ref_url)
         variables["reference_image_count"] = reference_count
-        parts.append({"text": task.prompt or ""})
+        if mode == "smart_cutout":
+            cutout_prompt = resolve_smart_cutout_prompt(task.prompt or "", reference_count)
+            variables["prompt"] = cutout_prompt
+            parts.append({"text": cutout_prompt})
+        else:
+            parts.append({"text": task.prompt or ""})
 
     generation_config = {"responseModalities": ["IMAGE"]}
     if mode != "inpaint":
@@ -341,7 +353,12 @@ def _render_request_preview(config: ExternalApiConfig, variables: dict[str, Any]
 
 def _resolve_task_bound_generation_configs(db: Session, task: Task) -> tuple[ExternalApiConfig | None, ExternalApiConfig | None]:
     mode = (task.mode or "generate").strip() or "generate"
-    scene_key = TASK_TYPE_INPAINT if mode == "inpaint" else (task.model or "")
+    if mode == "inpaint":
+        scene_key = TASK_TYPE_INPAINT
+    elif mode == "smart_cutout":
+        scene_key = TASK_TYPE_SMART_CUTOUT
+    else:
+        scene_key = task.model or ""
     if not scene_key:
         return None, None
     try:
@@ -819,6 +836,10 @@ def get_user_history(
             image_query = image_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
             prompt_reverse_query = None
             prompt_optimize_query = None
+        elif mode == TASK_TYPE_SMART_CUTOUT:
+            image_query = image_query.filter(or_(Task.mode == "smart_cutout", Task.model == "smart_cutout"))
+            prompt_reverse_query = None
+            prompt_optimize_query = None
         elif mode == TASK_TYPE_TEXT_GENERATE:
             text_generate_models = [key for key, value in scene_type_map.items() if value == "generate"]
             image_query = image_query.filter(Task.mode == "generate")
@@ -1273,6 +1294,8 @@ def get_all_history(
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
         elif mode == TASK_TYPE_INPAINT:
             task_query = task_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
+        elif mode == TASK_TYPE_SMART_CUTOUT:
+            task_query = task_query.filter(or_(Task.mode == "smart_cutout", Task.model == "smart_cutout"))
             reverse_query = reverse_query.filter(CreditLog.id.is_(None))
             prompt_optimize_query = prompt_optimize_query.filter(PromptOptimizeTask.id.is_(None))
         elif mode == TASK_TYPE_TEXT_GENERATE:
@@ -1617,6 +1640,8 @@ def get_admin_history_cards(
             prompt_reverse_query = None
         elif mode == TASK_TYPE_INPAINT:
             task_query = task_query.filter(or_(Task.mode == "inpaint", Task.model == "inpaint"))
+        elif mode == TASK_TYPE_SMART_CUTOUT:
+            task_query = task_query.filter(or_(Task.mode == "smart_cutout", Task.model == "smart_cutout"))
             prompt_reverse_query = None
             prompt_optimize_query = None
         elif mode == TASK_TYPE_TEXT_GENERATE:
