@@ -52,6 +52,7 @@ const redoStack: Array<{
 }> = [];
 
 const hasMask = ref(false);
+let initializedImageUrl = "";
 let drawing = false;
 let lastViewPoint: { x: number; y: number } | null = null;
 let lastExportPoint: { x: number; y: number } | null = null;
@@ -305,20 +306,34 @@ async function applyInitialMask() {
   recomputeMaskState();
 }
 
-async function initializeCanvas() {
+async function initializeCanvas(force = false) {
   const image = imageRef.value;
   const canvas = canvasRef.value;
-  if (!image || !image.naturalWidth || !image.naturalHeight) return;
+  if (!image || !image.naturalWidth || !image.naturalHeight || !canvas) return;
+  const currentUrl = (props.imageUrl || "").trim();
+  if (
+    !force
+    && currentUrl
+    && initializedImageUrl === currentUrl
+    && exportCanvas.width === image.naturalWidth
+    && exportCanvas.height === image.naturalHeight
+  ) {
+    setupViewCanvas();
+    renderPreviewFromExport();
+    recomputeMaskState();
+    return;
+  }
   setupViewCanvas();
   resetExportCanvas(image.naturalWidth, image.naturalHeight);
-  const viewCtx = canvas?.getContext("2d");
-  if (viewCtx && canvas) {
+  const viewCtx = canvas.getContext("2d");
+  if (viewCtx) {
     viewCtx.clearRect(0, 0, canvas.width, canvas.height);
   }
   historyStack.length = 0;
   redoStack.length = 0;
   hasMask.value = false;
   textOverlay = null;
+  initializedImageUrl = currentUrl;
   closeTextDialog();
   emit("mask-change", false);
   await applyInitialMask();
@@ -326,7 +341,7 @@ async function initializeCanvas() {
 
 async function handleImageLoad() {
   await nextTick();
-  await initializeCanvas();
+  await initializeCanvas(false);
 }
 
 function drawLine(
@@ -533,6 +548,7 @@ function handlePointerMove(event: PointerEvent) {
   lastViewPoint = points.viewPoint;
   lastExportPoint = points.exportPoint;
   renderPreviewFromExport();
+  recomputeMaskState();
 }
 
 function stopDrawing(event?: PointerEvent) {
@@ -561,7 +577,8 @@ function stopDrawing(event?: PointerEvent) {
 }
 
 function clearMask() {
-  initializeCanvas();
+  initializedImageUrl = "";
+  void initializeCanvas(true);
 }
 
 function undo() {
@@ -635,20 +652,25 @@ defineExpose({
   clearMask,
   hasDrawnMask,
   exportMaskBlob,
+  commitPendingMask: stopDrawing,
   undo,
   canUndo,
   redo,
   canRedo,
 });
 
-watch(() => props.imageUrl, async () => {
+watch(() => props.imageUrl, async (nextUrl, prevUrl) => {
+  if ((nextUrl || "").trim() === (prevUrl || "").trim()) return;
+  initializedImageUrl = "";
   await nextTick();
-  await initializeCanvas();
+  await initializeCanvas(true);
 });
 
-watch(() => props.maskUrl, async () => {
+watch(() => props.maskUrl, async (nextUrl, prevUrl) => {
+  if ((nextUrl || "").trim() === (prevUrl || "").trim()) return;
+  initializedImageUrl = "";
   await nextTick();
-  await initializeCanvas();
+  await initializeCanvas(true);
 });
 
 watch(() => props.lineColor, () => {

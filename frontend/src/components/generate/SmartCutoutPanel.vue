@@ -75,6 +75,7 @@ const repaintCanvasRef = ref<{
   clearMask: () => void;
   hasDrawnMask: () => boolean;
   exportMaskBlob: () => Promise<Blob | null>;
+  commitPendingMask: () => void;
   undo: () => boolean;
   redo: () => boolean;
   canUndo: () => boolean;
@@ -223,7 +224,9 @@ function applySource(sourceUrl: string, maskUrl = "", promptText = "") {
   maskOverlayUrl.value = maskUrl;
   const nextPrompt = (promptText || "").trim();
   prompt.value = nextPrompt === "智能抠图" ? "" : nextPrompt;
-  inputMode.value = maskUrl ? "smear" : "prompt";
+  if (maskUrl) {
+    inputMode.value = "smear";
+  }
   resetMaskState();
   void nextTick(() => {
     if (!maskUrl) {
@@ -251,8 +254,13 @@ async function handleSubmit() {
 
   const sourceUrl = sourceImageUrl.value.trim();
   let maskUrl = "";
-  const shouldUploadMask = isSmearMode.value && !!sourceUrl && hasRepaintMask.value && !!repaintCanvasRef.value?.hasDrawnMask();
-  if (shouldUploadMask) {
+  repaintCanvasRef.value?.commitPendingMask();
+  const paintedMask = hasRepaintMask.value || Boolean(repaintCanvasRef.value?.hasDrawnMask());
+  if (paintedMask) {
+    if (!sourceUrl) {
+      message.warning("请先上传原图后再涂抹");
+      return;
+    }
     const maskBlob = await repaintCanvasRef.value?.exportMaskBlob();
     if (!maskBlob) {
       message.warning("蒙版生成失败，请重新涂抹后再试");
@@ -264,6 +272,10 @@ async function handleSubmit() {
       const maskFile = new File([maskBlob], `mask-${Date.now()}.png`, { type: "image/png" });
       const uploaded = await uploadReferenceImage(maskFile, "mask");
       maskUrl = uploaded.url;
+      if (!maskUrl) {
+        message.error("蒙版上传失败，请重试");
+        return;
+      }
     } catch {
       message.error("蒙版上传失败，请重试");
       return;
@@ -355,15 +367,8 @@ defineExpose({
           </template>
         </div>
 
-        <div v-else-if="!isSmearMode" class="source-preview-shell">
-          <button type="button" class="canvas-remove-btn" @click.stop="removeSourceImage">
-            <CloseOutlined />
-          </button>
-          <img :src="sourceDisplayUrl" alt="参考图" class="source-preview-image" />
-        </div>
-
         <template v-else>
-          <div class="repaint-status-card" :class="{ ready: hasRepaintMask }">
+          <div v-if="isSmearMode" class="repaint-status-card" :class="{ ready: hasRepaintMask }">
             <div class="repaint-status-title">
               {{ hasRepaintMask ? "已选择抠图区域" : "可涂抹需要抠出的区域" }}
             </div>
@@ -377,7 +382,7 @@ defineExpose({
             </div>
           </div>
 
-          <div class="repaint-canvas-shell">
+          <div class="repaint-canvas-shell" :class="{ preview: !isSmearMode }">
             <button type="button" class="canvas-remove-btn" @click.stop="removeSourceImage">
               <CloseOutlined />
             </button>
@@ -391,6 +396,8 @@ defineExpose({
               @mask-change="handleMaskChange"
             />
           </div>
+
+          <template v-if="isSmearMode">
 
           <div class="repaint-toolbar">
             <a-tooltip title="画笔">
@@ -501,6 +508,7 @@ defineExpose({
           <div class="mask-tip">
             支持画笔、擦除、矩形、圆形和文字选区，可切换圈选线条颜色；选择文字工具后点击图片即可原地输入。
           </div>
+          </template>
         </template>
       </div>
 
@@ -786,6 +794,11 @@ defineExpose({
 .repaint-canvas-shell {
   position: relative;
   border-radius: 18px;
+}
+
+.repaint-canvas-shell.preview :deep(.mask-canvas) {
+  pointer-events: none;
+  cursor: default;
 }
 
 .canvas-remove-btn {
