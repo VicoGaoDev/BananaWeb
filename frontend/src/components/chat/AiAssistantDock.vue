@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
-import { CloseOutlined } from "@ant-design/icons-vue";
+import { CloseOutlined, PlusOutlined } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
 import { withBaseUrl } from "@/lib/assets";
 import { CLOSE_AI_ASSISTANT_DOCK_EVENT } from "@/lib/chatGenerateDraft";
@@ -17,6 +17,7 @@ const open = ref(false);
 const tabVisible = ref(true);
 const workspaceReady = ref(false);
 const sessionId = ref<string | null>(null);
+const workspaceRef = ref<{ createSession: () => Promise<void> } | null>(null);
 let tabRevealTimer = 0;
 
 const chatPageHref = computed(() => (sessionId.value ? `/chat/${sessionId.value}` : "/chat"));
@@ -53,6 +54,10 @@ function closeDock() {
 function openFullChat() {
   closeDock();
   void router.push(chatPageHref.value);
+}
+
+function createNewChat() {
+  void workspaceRef.value?.createSession();
 }
 
 function handleWindowKeydown(event: KeyboardEvent) {
@@ -102,6 +107,14 @@ onBeforeUnmount(() => {
       <div class="ai-assistant-panel-title">
         <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-panel-icon" />
         <strong>AI助手</strong>
+        <button
+          type="button"
+          class="ai-assistant-new-chat"
+          @click="createNewChat"
+        >
+          <PlusOutlined />
+          <span>新建对话</span>
+        </button>
       </div>
       <div class="ai-assistant-panel-actions">
         <button type="button" class="ai-assistant-open-full" @click="openFullChat">
@@ -115,6 +128,7 @@ onBeforeUnmount(() => {
     <div class="ai-assistant-panel-body">
       <ChatWorkspace
         v-if="workspaceReady"
+        ref="workspaceRef"
         embedded
         :sync-route="false"
         @update:session-id="sessionId = $event"
@@ -226,6 +240,27 @@ onBeforeUnmount(() => {
 .ai-assistant-panel-head strong {
   color: var(--theme-title, #3d2f22);
   font-size: 16px;
+}
+
+.ai-assistant-new-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: var(--theme-panel-bg-muted, #fff);
+  color: var(--theme-title, #3d2f22);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-assistant-new-chat:hover {
+  background: var(--theme-control-hover-bg, rgba(0, 0, 0, 0.04));
+  border-color: var(--theme-border-strong, rgba(0, 0, 0, 0.16));
 }
 
 .ai-assistant-panel-actions {

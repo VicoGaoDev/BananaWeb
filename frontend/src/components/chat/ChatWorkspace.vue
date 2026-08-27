@@ -1645,6 +1645,10 @@ onBeforeUnmount(() => {
   clearDraftImages();
   document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
 });
+
+defineExpose({
+  createSession: handleCreateSession,
+});
 </script>
 
 <template>

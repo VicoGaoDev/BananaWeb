@@ -54,8 +54,8 @@ const hasSelection = computed(() => hasSelectedGenerateCamera({
 const activePresetId = computed(() => matchGenerateCameraPreset(draft.value)?.id || "");
 const brokenThumbnails = ref<Record<string, boolean>>({});
 
-const WHEEL_SLOT_PX = 56;
-const WHEEL_VIEWPORT_PX = 168;
+const WHEEL_SLOT_PX = 72;
+const WHEEL_VIEWPORT_PX = 176;
 const WHEEL_THRESHOLD = 36;
 const WHEEL_STEP_MS = 108;
 const WHEEL_EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -365,7 +365,7 @@ function markPresetThumbnailBroken(presetId: string) {
       </template>
 
       <div class="camera-dialog">
-        <div class="camera-wheels">
+        <div class="camera-wheels" @wheel.prevent>
         <section
           v-for="category in generateCameraCategories"
           :key="category.id"
@@ -446,14 +446,23 @@ function markPresetThumbnailBroken(presetId: string) {
         </section>
         </div>
 
-        <div v-if="generateCameraPresetGroups.length" class="camera-preset-stack">
-          <section
-            v-for="group in generateCameraPresetGroups"
-            :key="group.name"
-            class="camera-preset-panel"
-          >
-            <h4 class="camera-preset-title">{{ group.name }}</h4>
-            <div class="camera-preset-grid">
+        <div v-if="generateCameraPresetGroups.length" class="camera-preset-sections">
+          <div class="camera-preset-head">
+            <h4
+              v-for="group in generateCameraPresetGroups"
+              :key="`${group.name}-title`"
+              class="camera-preset-title"
+            >
+              {{ group.name }}
+            </h4>
+          </div>
+          <div class="camera-preset-stack">
+            <section
+              v-for="group in generateCameraPresetGroups"
+              :key="group.name"
+              class="camera-preset-panel"
+            >
+              <div class="camera-preset-grid">
               <button
                 v-for="preset in group.presets"
                 :key="preset.id"
@@ -479,8 +488,9 @@ function markPresetThumbnailBroken(presetId: string) {
                 <span class="camera-preset-name">{{ preset.name }}</span>
                 <span class="camera-preset-meta">{{ formatGenerateCameraPresetMeta(preset) }}</span>
               </button>
-            </div>
-          </section>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
 
@@ -603,22 +613,58 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 .camera-dialog {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+
+.camera-preset-sections {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+}
+
+.camera-preset-head {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex-shrink: 0;
+  gap: 0 24px;
+  padding: 0 2px 10px;
+}
+
+.camera-preset-head::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--theme-panel-border, rgba(0, 0, 0, 0.1));
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .camera-preset-stack {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 16px 24px;
-  padding-top: 14px;
-  border-top: 1px solid var(--theme-panel-border, rgba(0, 0, 0, 0.08));
+  padding: 0 2px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .camera-preset-stack::before {
   content: "";
   position: absolute;
-  top: 14px;
+  top: 0;
   bottom: 0;
   left: 50%;
   width: 1px;
@@ -629,14 +675,14 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 
 .camera-preset-title,
 .camera-column-title {
-  margin: 0 0 6px;
+  margin: 0 0 2px;
   color: var(--theme-title);
   font-size: 14px;
   font-weight: 700;
 }
 
 .camera-preset-title {
-  margin-bottom: 10px;
+  margin-bottom: 0;
   font-size: 15px;
 }
 
@@ -739,6 +785,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 .camera-wheels {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex-shrink: 0;
   gap: 0;
 }
 
@@ -760,8 +807,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -778,9 +825,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 .camera-wheel {
   position: relative;
   width: 100%;
-  height: 168px;
+  height: 176px;
   overflow: hidden;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 
 .camera-wheel-highlight {
@@ -789,7 +836,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
   right: 0;
   left: 0;
   z-index: 0;
-  height: 88px;
+  height: 96px;
   border-radius: 12px;
   background: var(--theme-control-hover-bg, rgba(0, 0, 0, 0.04));
   box-shadow: inset 0 0 0 1px var(--theme-panel-border, rgba(0, 0, 0, 0.06));
@@ -813,9 +860,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 0 0 56px;
+  flex: 0 0 72px;
   width: 100%;
-  height: 56px;
+  height: 72px;
   padding: 0 6px;
   border: none;
   border-radius: 12px;
@@ -841,11 +888,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 .camera-wheel-photo-wrap {
   display: block;
   box-sizing: border-box;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 1px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .camera-wheel-photo {
@@ -857,8 +904,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 .camera-wheel-iris {
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   margin-bottom: 1px;
   fill: none;
   stroke: currentColor;
@@ -874,8 +921,8 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 .camera-wheel-icon {
-  width: 28px;
-  height: 16px;
+  width: 40px;
+  height: 24px;
   margin-bottom: 1px;
   fill: none;
   stroke: currentColor;
@@ -929,11 +976,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 }
 
 @media (max-width: 767px) {
+  .camera-preset-head,
   .camera-preset-stack,
   .camera-preset-grid {
     grid-template-columns: 1fr 1fr;
   }
 
+  .camera-preset-head::before,
   .camera-preset-stack::before {
     display: none;
   }
@@ -959,8 +1008,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-camera-trigger {
 </style>
 
 <style lang="scss">
-.generate-camera-modal .ant-modal-body {
+.generate-camera-modal .ant-modal-content {
   max-height: min(84vh, 820px);
-  overflow: auto;
+}
+
+.generate-camera-modal .ant-modal-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 </style>
