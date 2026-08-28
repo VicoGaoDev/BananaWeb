@@ -1,4 +1,3 @@
-import COS from "cos-js-sdk-v5";
 import client from "./client";
 import type { UploadCredential, UploadPurpose } from "@/types";
 
@@ -92,7 +91,9 @@ function getUploadCredential(file: File, purpose: UploadPurpose): Promise<Upload
   });
 }
 
-function createCosClient(credential: UploadCredential) {
+async function createCosClient(credential: UploadCredential) {
+  const cosModule = await import("cos-js-sdk-v5");
+  const COS = cosModule.default || cosModule;
   return new COS({
     Domain: credential.upload_domain || undefined,
     Protocol: "https:",
@@ -117,7 +118,7 @@ export function uploadReferenceImage(
     try {
       const uploadFile = await prepareUploadFile(file);
       const credential = await getUploadCredential(uploadFile, purpose);
-      const cos = createCosClient(credential);
+      const cos = await createCosClient(credential);
 
       cos.putObject(
         {

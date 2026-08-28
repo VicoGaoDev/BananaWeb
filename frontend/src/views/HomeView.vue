@@ -29,10 +29,10 @@ const generationModels = ref<GenerationModelOption[]>([]);
 const detailOpen = ref(false);
 const detailLoading = ref(false);
 const detail = ref<CreativeTemplate | null>(null);
-const canvasModelSourceImage = "/homepage/canvas-model-source.png";
-const canvasJeansImage = "/homepage/canvas-jeans.png";
-const canvasJacketImage = "/homepage/canvas-jacket.png";
-const canvasResultImage = "/homepage/canvas-result.png";
+const canvasModelSourceImage = "/homepage/canvas-model-source.webp";
+const canvasJeansImage = "/homepage/canvas-jeans.webp";
+const canvasJacketImage = "/homepage/canvas-jacket.webp";
+const canvasResultImage = "/homepage/canvas-result.webp";
 const canvasResultVideo = "/homepage/canvas-result-video.mp4";
 const canvasFlowViewBox = { width: 1000, height: 760 };
 
@@ -474,14 +474,29 @@ onBeforeUnmount(() => {
         <article :ref="canvasNodeRefs.source" class="canvas-media-card canvas-card canvas-card-source">
           <span class="canvas-card-label">上传</span>
           <div class="fashion-frame fashion-frame-source">
-            <img class="canvas-photo canvas-photo-model" :src="canvasModelSourceImage" alt="上传的模特参考图" />
+            <img
+              class="canvas-photo canvas-photo-model"
+              :src="canvasModelSourceImage"
+              alt="上传的模特参考图"
+              width="574"
+              height="1024"
+              decoding="async"
+            />
           </div>
         </article>
 
         <article :ref="canvasNodeRefs.result" class="canvas-media-card canvas-card canvas-card-result">
           <div class="canvas-result-badge">改图 1</div>
           <div class="fashion-frame fashion-frame-result">
-            <img class="canvas-photo canvas-photo-model" :src="canvasResultImage" alt="改图结果图" />
+            <img
+              class="canvas-photo canvas-photo-model"
+              :src="canvasResultImage"
+              alt="改图结果图"
+              width="574"
+              height="1024"
+              decoding="async"
+              fetchpriority="high"
+            />
           </div>
         </article>
 
@@ -505,14 +520,30 @@ onBeforeUnmount(() => {
         <article :ref="canvasNodeRefs.jeans" class="canvas-garment-card canvas-card canvas-card-jeans">
           <span class="canvas-card-label">上传</span>
           <div class="garment-shape garment-jeans">
-            <img class="canvas-photo canvas-photo-garment" :src="canvasJeansImage" alt="上传的裤子参考图" />
+            <img
+              class="canvas-photo canvas-photo-garment"
+              :src="canvasJeansImage"
+              alt="上传的裤子参考图"
+              width="1024"
+              height="1024"
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         </article>
 
         <article :ref="canvasNodeRefs.jacket" class="canvas-garment-card canvas-card canvas-card-jacket">
           <span class="canvas-card-label">上传</span>
           <div class="garment-shape garment-jacket">
-            <img class="canvas-photo canvas-photo-garment" :src="canvasJacketImage" alt="上传的衣服参考图" />
+            <img
+              class="canvas-photo canvas-photo-garment"
+              :src="canvasJacketImage"
+              alt="上传的衣服参考图"
+              width="1024"
+              height="1024"
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         </article>
       </div>

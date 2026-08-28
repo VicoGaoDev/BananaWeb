@@ -197,7 +197,6 @@ function hideAppBootScreen() {
 async function revealApp() {
   try {
     await router.isReady();
-    mountApp();
     await nextTick();
     await waitForFirstPaint();
   } catch {
@@ -209,6 +208,7 @@ async function revealApp() {
 
 app.use(createPinia());
 app.use(router);
+mountApp();
 window.setTimeout(() => {
   mountApp();
   hideAppBootScreen();

@@ -146,6 +146,8 @@ function confirmSelection() {
                     :src="thumbnailUrl(item)"
                     :alt="item.name"
                     class="style-card-photo"
+                    loading="lazy"
+                    decoding="async"
                     @error="markThumbnailBroken(item.id)"
                   />
                   <span v-if="isSelected(category.id, item.id)" class="style-card-check" aria-hidden="true">

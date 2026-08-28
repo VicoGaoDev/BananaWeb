@@ -63,8 +63,6 @@ import { createUserPrompt } from "@/api/userPrompts";
 import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
-import GenerateCameraPicker from "@/components/generate/GenerateCameraPicker.vue";
-import GenerateStylePicker from "@/components/generate/GenerateStylePicker.vue";
 import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
@@ -103,6 +101,8 @@ const route = useRoute();
 const loginModalVisible = inject<Ref<boolean>>("loginModalVisible")!;
 const openPurchaseEntry = inject<() => void>("openPurchaseEntry");
 const RepaintCanvas = defineAsyncComponent(() => import("@/components/generate/RepaintCanvas.vue"));
+const GenerateCameraPicker = defineAsyncComponent(() => import("@/components/generate/GenerateCameraPicker.vue"));
+const GenerateStylePicker = defineAsyncComponent(() => import("@/components/generate/GenerateStylePicker.vue"));
 const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
 const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
 const PromptOptimizeStyleDialog = defineAsyncComponent(() => import("@/components/generate/PromptOptimizeStyleDialog.vue"));
@@ -4484,7 +4484,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <a-tooltip overlay-class-name="smart-cutout-entry-tooltip">
                       <template #title>
                         <div class="smart-cutout-entry-tip">
-                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域</p>
+                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域，结果图为透明背景 PNG</p>
                           <img
                             :src="smartCutoutTipAsset"
                             alt="智能抠图前后对比：左边是原图，右边是透明背景结果"

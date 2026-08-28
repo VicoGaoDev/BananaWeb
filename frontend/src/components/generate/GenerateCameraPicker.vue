@@ -401,6 +401,8 @@ function markPresetThumbnailBroken(presetId: string) {
                       :src="thumbnailUrl(item)"
                       :alt="displayName(item)"
                       class="camera-wheel-photo"
+                      loading="lazy"
+                      decoding="async"
                     />
                   </span>
                   <svg
@@ -484,6 +486,8 @@ function markPresetThumbnailBroken(presetId: string) {
                     :src="presetThumbnailUrl(preset)"
                     :alt="preset.name"
                     class="camera-preset-photo"
+                    loading="lazy"
+                    decoding="async"
                     @error="markPresetThumbnailBroken(preset.id)"
                   />
                   <span v-if="activePresetId === preset.id" class="camera-preset-check" aria-hidden="true">

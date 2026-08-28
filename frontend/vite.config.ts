@@ -1,13 +1,44 @@
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { visualizer } from "rollup-plugin-visualizer";
 import { resolve } from "path";
+
+const shouldAnalyzeBundle = process.env.ANALYZE === "true";
+const plugins: PluginOption[] = [
+  vue(),
+];
+
+if (shouldAnalyzeBundle) {
+  plugins.push(visualizer({
+    filename: "stats.html",
+    gzipSize: true,
+    brotliSize: true,
+    template: "treemap",
+  }) as PluginOption);
+}
 
 export default defineConfig({
   base: "/",
-  plugins: [vue()],
+  plugins,
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vue: ["vue", "vue-router", "pinia"],
+          antd: ["ant-design-vue"],
+          icons: ["@ant-design/icons-vue"],
+          charts: ["echarts", "vue-echarts"],
+          editor: ["@wangeditor/editor", "@wangeditor/editor-for-vue"],
+          cloudbase: ["@cloudbase/js-sdk"],
+          markdown: ["markdown-it"],
+          uploads: ["cos-js-sdk-v5"],
+        },
+      },
     },
   },
   server: {
