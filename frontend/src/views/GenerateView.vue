@@ -256,6 +256,7 @@ function upsertChatGeneratedTasks(payload?: ChatGenerateTasksPayload | null) {
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const canvasNavIcon = withBaseUrl("nav-canvas.svg");
+const smartCutoutTipAsset = withBaseUrl("docs/tutorial/20-smart-cutout-compare-tip.jpg");
 const expiredResultAsset = useExpiredResultAsset();
 const prompt = ref("");
 const repaintPrompt = ref("");
@@ -4480,7 +4481,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
-                    <a-tooltip title="智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域">
+                    <a-tooltip overlay-class-name="smart-cutout-entry-tooltip">
+                      <template #title>
+                        <div class="smart-cutout-entry-tip">
+                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域</p>
+                          <img
+                            :src="smartCutoutTipAsset"
+                            alt="智能抠图前后对比：左边是原图，右边是透明背景结果"
+                            class="smart-cutout-entry-tip-img"
+                          />
+                        </div>
+                      </template>
                       <a-button
                         type="text"
                         size="small"
@@ -9451,6 +9462,34 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 </style>
 
 <style lang="scss">
+.smart-cutout-entry-tooltip {
+  max-width: none;
+}
+
+.smart-cutout-entry-tooltip .ant-tooltip-inner {
+  box-sizing: border-box;
+  width: 264px;
+  padding: 10px 12px;
+}
+
+.smart-cutout-entry-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.smart-cutout-entry-tip p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.smart-cutout-entry-tip-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 .generate-dropdown.ant-select-dropdown {
   border-radius: 14px;
   padding: 6px;
