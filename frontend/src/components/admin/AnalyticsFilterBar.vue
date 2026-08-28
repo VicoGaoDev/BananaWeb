@@ -170,6 +170,7 @@ const presetOptions = computed(() => {
         <a-select-option value="text_generate">文生图</a-select-option>
         <a-select-option value="image_edit">图编辑</a-select-option>
         <a-select-option value="inpaint">局部重绘</a-select-option>
+        <a-select-option value="smart_cutout">智能抠图</a-select-option>
         <a-select-option value="promptReverse">提示词反推</a-select-option>
       </a-select>
 
