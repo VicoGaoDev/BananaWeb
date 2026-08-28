@@ -291,8 +291,6 @@ function detailMetaList(item: UserHistoryCard) {
       : "",
     item.run_time != null ? `接口调用耗时：${formatDuration((item.run_time || 0) * 1000)}` : "",
     item.request_started_at ? `开始时间：${formatTime(item.request_started_at)}` : "",
-    item.request_finished_at ? `完成时间：${formatTime(item.request_finished_at)}` : "",
-    `时间：${formatTime(item.created_at)}`,
   ].filter(Boolean);
 }
 
@@ -947,6 +945,9 @@ function handleGenerateVideo(item: UserHistoryCard) {
                           <span>接口：{{ attempt.api_config_name || "-" }}</span>
                           <span>HTTP：{{ typeof attempt.http_status === "number" ? attempt.http_status : "-" }}</span>
                           <span>耗时：{{ formatDuration(attempt.duration_ms) }}</span>
+                          <span>第三方响应：{{ formatDuration(attempt.external_http_ms) }}</span>
+                          <span>结果下载：{{ formatDuration(attempt.result_download_ms) }}</span>
+                          <span>COS上传：{{ formatDuration(attempt.cos_upload_ms) }}</span>
                         </div>
                         <div v-if="attempt.error_message" class="detail-attempt-error">{{ attempt.error_message }}</div>
                       </a-collapse-panel>

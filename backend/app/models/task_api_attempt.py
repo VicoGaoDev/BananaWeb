@@ -19,6 +19,9 @@ class TaskApiAttempt(Base):
     http_status = Column(Integer, nullable=True)
     error_message = Column(Text, default="")
     duration_ms = Column(Integer, nullable=True)
+    external_http_ms = Column(Integer, nullable=True)
+    result_download_ms = Column(Integer, nullable=True)
+    cos_upload_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     task = relationship("Task", back_populates="api_attempts")

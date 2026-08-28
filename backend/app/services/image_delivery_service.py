@@ -254,6 +254,9 @@ def _serialize_task_api_attempts(attempts: list[TaskApiAttempt] | None) -> list[
             "http_status": attempt.http_status,
             "error_message": attempt.error_message or "",
             "duration_ms": attempt.duration_ms,
+            "external_http_ms": attempt.external_http_ms,
+            "result_download_ms": attempt.result_download_ms,
+            "cos_upload_ms": attempt.cos_upload_ms,
             "created_at": attempt.created_at,
             "request_preview": None,
         })

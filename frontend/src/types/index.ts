@@ -159,6 +159,9 @@ export interface TaskApiAttempt {
   http_status?: number | null;
   error_message?: string;
   duration_ms?: number | null;
+  external_http_ms?: number | null;
+  result_download_ms?: number | null;
+  cos_upload_ms?: number | null;
   created_at?: string | null;
   request_preview?: {
     request_url: string;

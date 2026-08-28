@@ -89,6 +89,9 @@ class ApiAttemptRecord:
     http_status: int | None
     error_message: str
     duration_ms: int | None
+    external_http_ms: int | None = None
+    result_download_ms: int | None = None
+    cos_upload_ms: int | None = None
 
 
 @dataclass
@@ -98,6 +101,7 @@ class ApiCallResult:
     http_status_code: int | None
     attempts: list[ApiAttemptRecord]
     deferred: bool = False
+    result_download_ms: int | None = None
 
 
 @dataclass
@@ -108,6 +112,7 @@ class AsyncSubmitResult:
     http_status_code: int | None
     duration_ms: int | None
     response_preview: str
+    external_http_ms: int | None = None
 
 
 def _clip_error_message(message: str) -> str:
@@ -472,40 +477,42 @@ def _extract_async_result_data(
     *,
     base64_field_path: str,
     url_field_path: str,
-) -> tuple[tuple[bytes, str] | None, str]:
+) -> tuple[tuple[bytes, str] | None, str, int | None]:
     normalized_base64_field = (base64_field_path or "").strip()
     normalized_url_field = (url_field_path or "").strip()
 
     if normalized_base64_field:
-        result, error_message = _extract_configured_image_data(payload, normalized_base64_field)
+        result, error_message, result_download_ms = _extract_configured_image_data(payload, normalized_base64_field)
         if result:
-            return result, ""
+            return result, "", result_download_ms
         if error_message and not normalized_url_field:
-            return None, error_message
+            return None, error_message, result_download_ms
 
     if normalized_url_field:
         image_url, _parent = _read_value_by_path(payload, normalized_url_field)
-        result, error_message = _extract_image_from_url_value(image_url)
+        result, error_message, result_download_ms = _extract_image_from_url_value(image_url)
         if result:
-            return result, ""
+            return result, "", result_download_ms
         if error_message:
-            return None, error_message
+            return None, error_message, result_download_ms
 
     if normalized_base64_field:
-        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_base64_field} 或配置的图片 URL 字段中解析结果图")
+        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_base64_field} 或配置的图片 URL 字段中解析结果图"), None
     if normalized_url_field:
-        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_url_field} 解析结果图")
-    return None, "轮询成功，但未配置结果图解析字段"
+        return None, _clip_error_message(f"轮询成功，但未能从 {normalized_url_field} 解析结果图"), None
+    return None, "轮询成功，但未配置结果图解析字段", None
 
 
-def _extract_image_from_url_value(image_url: object) -> tuple[tuple[bytes, str] | None, str]:
+def _extract_image_from_url_value(image_url: object) -> tuple[tuple[bytes, str] | None, str, int | None]:
     if not isinstance(image_url, str) or not image_url.strip():
-        return None, ""
+        return None, "", None
 
+    started_perf = time.perf_counter()
     result = load_image_bytes(image_url.strip())
+    result_download_ms = _measure_elapsed_ms(started_perf)
     if not result:
-        return None, _clip_error_message(f"生图接口返回了结果图地址，但图片下载失败：{image_url}")
-    return result, ""
+        return None, _clip_error_message(f"生图接口返回了结果图地址，但图片下载失败：{image_url}"), result_download_ms
+    return result, "", result_download_ms
 
 
 def _extract_first_inline_image_from_parts(payload: dict) -> tuple[tuple[bytes, str] | None, str]:
@@ -540,7 +547,7 @@ def _extract_configured_image_url_data(
     payload: dict,
     field_path: str,
     parent: object | None = None,
-) -> tuple[tuple[bytes, str] | None, str]:
+) -> tuple[tuple[bytes, str] | None, str, int | None]:
     candidate_paths: list[str] = []
     if isinstance(parent, dict):
         candidate_paths.append(f"{field_path.rsplit('.', 1)[0]}.url" if "." in field_path else "url")
@@ -554,14 +561,14 @@ def _extract_configured_image_url_data(
             continue
         seen_paths.add(normalized_path)
         image_url, _ = _read_value_by_path(payload, normalized_path)
-        result, error_message = _extract_image_from_url_value(image_url)
+        result, error_message, result_download_ms = _extract_image_from_url_value(image_url)
         if result:
             logger.info(
                 "Generation API fallback to image url succeeded: configured_field=%s, url_field=%s",
                 field_path,
                 normalized_path,
             )
-            return result, ""
+            return result, "", result_download_ms
         if error_message:
             logger.warning(
                 "Generation API fallback image url download failed: configured_field=%s, url_field=%s, error=%s",
@@ -570,25 +577,25 @@ def _extract_configured_image_url_data(
                 error_message,
             )
             last_error_message = error_message
-    return None, last_error_message
+    return None, last_error_message, None
 
 
 def _extract_configured_image_data(
     payload: dict,
     field_path: str,
-) -> tuple[tuple[bytes, str] | None, str]:
+) -> tuple[tuple[bytes, str] | None, str, int | None]:
     image_b64, parent = _read_value_by_path(payload, field_path)
     if not isinstance(image_b64, str) or not image_b64.strip():
-        fallback_result, fallback_error = _extract_configured_image_url_data(payload, field_path, parent)
+        fallback_result, fallback_error, result_download_ms = _extract_configured_image_url_data(payload, field_path, parent)
         if fallback_result:
-            return fallback_result, ""
+            return fallback_result, "", result_download_ms
         parts_result, parts_error = _extract_first_inline_image_from_parts(payload)
         if parts_result:
             logger.info(
                 "Generation API fallback to first inlineData part succeeded: configured_field=%s",
                 field_path,
             )
-            return parts_result, ""
+            return parts_result, "", None
         preview = _clip_response_preview(payload)
         logger.warning(
             "Generation API configured field missing: path=%s, response_preview=%s",
@@ -596,21 +603,21 @@ def _extract_configured_image_data(
             preview,
         )
         if parts_error:
-            return None, parts_error
+            return None, parts_error, result_download_ms
         if fallback_error:
-            return None, fallback_error
+            return None, fallback_error, result_download_ms
         return None, _clip_error_message(
             f"生图接口返回内容缺少配置路径 {field_path} 对应的 base64 数据；响应摘要：{preview}"
-        )
+        ), result_download_ms
 
     mime = "image/png"
     if isinstance(parent, dict):
         mime = str(parent.get("mimeType") or parent.get("mime_type") or mime)
 
     try:
-        return (base64.b64decode(image_b64), mime), ""
+        return (base64.b64decode(image_b64), mime), "", None
     except Exception as exc:
-        return None, _clip_error_message(f"生图接口返回的 base64 数据解析失败: {exc}")
+        return None, _clip_error_message(f"生图接口返回的 base64 数据解析失败: {exc}"), None
 
 
 def _extract_legacy_image_data(payload: dict) -> tuple[tuple[bytes, str] | None, str]:
@@ -644,8 +651,9 @@ def _call_generation_api_once(
     mode: str = "generate",
     source_image: str = "",
     mask_image: str = "",
-) -> tuple[tuple[bytes, str] | None, str, int | None, int | None]:
+) -> tuple[tuple[bytes, str] | None, str, int | None, int | None, int | None, int | None]:
     request_started_perf: float | None = None
+    external_http_ms: int | None = None
     try:
         config_name = config.name
         configured_field_path = (config.result_base64_field or "").strip()
@@ -668,11 +676,11 @@ def _call_generation_api_once(
             source_payload = _build_reference_image_payload(source_image)
             if not source_payload:
                 logger.warning("Inpaint source image not found: %s", source_image)
-                return None, "图编辑原图不存在或无法读取", None, None
+                return None, "图编辑原图不存在或无法读取", None, None, None, None
             source_inline_part = source_payload.get("inline_part")
             if not isinstance(source_inline_part, dict):
                 logger.warning("Inpaint source image payload malformed: %s", source_image)
-                return None, "图编辑原图格式无效", None, None
+                return None, "图编辑原图格式无效", None, None, None, None
             parts.append(source_inline_part)
             render_variables["source_image"] = source_inline_part
             render_variables["source_image_url"] = serialize_asset_urls(source_image, cos_config=cos_config)["image_url"]
@@ -683,11 +691,11 @@ def _call_generation_api_once(
             mask_payload = _build_reference_image_payload(mask_image)
             if not mask_payload:
                 logger.warning("Inpaint mask image not found: %s", mask_image)
-                return None, "图编辑蒙版不存在或无法读取", None, None
+                return None, "图编辑蒙版不存在或无法读取", None, None, None, None
             mask_inline_part = mask_payload.get("inline_part")
             if not isinstance(mask_inline_part, dict):
                 logger.warning("Inpaint mask image payload malformed: %s", mask_image)
-                return None, "图编辑蒙版格式无效", None, None
+                return None, "图编辑蒙版格式无效", None, None, None, None
             parts.append(mask_inline_part)
             render_variables["mask_image"] = mask_inline_part
             render_variables["mask_image_base64"] = mask_payload["base64"]
@@ -763,7 +771,9 @@ def _call_generation_api_once(
 
         request_started_perf = time.perf_counter()
         with httpx.Client(timeout=settings.AI_TIMEOUT, trust_env=False) as client:
+            http_started_perf = time.perf_counter()
             resp = client.post(rendered.request_url, **request_kwargs)
+            external_http_ms = _measure_elapsed_ms(http_started_perf)
 
             if resp.status_code != 200:
                 logger.error("Generation API HTTP %s: %s", resp.status_code, resp.text[:500])
@@ -772,38 +782,41 @@ def _call_generation_api_once(
                     _clip_error_message(f"生图接口返回 HTTP {resp.status_code}: {resp.text[:500] or '(空响应)'}"),
                     resp.status_code,
                     _measure_elapsed_ms(request_started_perf),
+                    external_http_ms,
+                    None,
                 )
 
             data = resp.json()
 
         if configured_field_path:
-            result, error_message = _extract_configured_image_data(data, configured_field_path)
+            result, error_message, result_download_ms = _extract_configured_image_data(data, configured_field_path)
             if result:
                 img_bytes, mime = result
                 logger.info(
                     "Generation API success, configured field=%s, mime=%s, image size: %d bytes",
                     configured_field_path, mime, len(img_bytes),
                 )
-                return result, "", None, _measure_elapsed_ms(request_started_perf)
+                return result, "", None, _measure_elapsed_ms(request_started_perf), external_http_ms, result_download_ms
             logger.warning("Generation API configured field extraction failed: %s", error_message)
-            return None, error_message, None, _measure_elapsed_ms(request_started_perf)
+            return None, error_message, None, _measure_elapsed_ms(request_started_perf), external_http_ms, result_download_ms
 
         result, error_message = _extract_legacy_image_data(data)
-        return result, error_message, None, _measure_elapsed_ms(request_started_perf)
+        return result, error_message, None, _measure_elapsed_ms(request_started_perf), external_http_ms, None
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         logger.error("Generation API config error: %s", detail)
-        return None, _clip_error_message(detail), None, _measure_elapsed_ms(request_started_perf)
+        return None, _clip_error_message(detail), None, _measure_elapsed_ms(request_started_perf), external_http_ms, None
     except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError) as exc:
+        external_http_ms = external_http_ms or _measure_elapsed_ms(request_started_perf)
         log_message, log_args, user_message = _classify_generation_request_exception(
             exc,
             started_perf=request_started_perf,
         )
         logger.error(log_message, *log_args)
-        return None, user_message, None, _measure_elapsed_ms(request_started_perf)
+        return None, user_message, None, _measure_elapsed_ms(request_started_perf), external_http_ms, None
     except Exception as exc:
         logger.error("Generation API error: %s", exc, exc_info=True)
-        return None, _clip_error_message(f"生图接口调用异常: {exc}"), None, _measure_elapsed_ms(request_started_perf)
+        return None, _clip_error_message(f"生图接口调用异常: {exc}"), None, _measure_elapsed_ms(request_started_perf), external_http_ms, None
 
 
 def _submit_async_generation_api_once(
@@ -821,6 +834,7 @@ def _submit_async_generation_api_once(
     mask_image: str = "",
 ) -> AsyncSubmitResult:
     request_started_perf: float | None = None
+    external_http_ms: int | None = None
     try:
         mapped_resolution = resolve_mapped_resolution(db, scene_key, aspect_ratio, image_size)
         cos_config = get_optional_cos_config(db)
@@ -912,7 +926,9 @@ def _submit_async_generation_api_once(
 
         request_started_perf = time.perf_counter()
         with httpx.Client(timeout=settings.AI_TIMEOUT, trust_env=False) as client:
+            http_started_perf = time.perf_counter()
             resp = client.post(rendered.request_url, **request_kwargs)
+            external_http_ms = _measure_elapsed_ms(http_started_perf)
         preview = (resp.text or "")[:MAX_RESPONSE_PREVIEW_LENGTH]
         success_statuses = parse_http_statuses_json(config.submit_success_statuses_json) or [200, 201, 202]
         if resp.status_code not in success_statuses:
@@ -923,6 +939,7 @@ def _submit_async_generation_api_once(
                 resp.status_code,
                 _measure_elapsed_ms(request_started_perf),
                 preview,
+                external_http_ms,
             )
         try:
             payload = resp.json()
@@ -934,6 +951,7 @@ def _submit_async_generation_api_once(
                 resp.status_code,
                 _measure_elapsed_ms(request_started_perf),
                 preview,
+                external_http_ms,
             )
         task_id_value, _parent = _read_value_by_path(payload, config.task_id_field or "")
         provider_task_id = str(task_id_value or "").strip()
@@ -945,6 +963,7 @@ def _submit_async_generation_api_once(
                 resp.status_code,
                 _measure_elapsed_ms(request_started_perf),
                 _clip_response_preview(payload),
+                external_http_ms,
             )
         provider_status_value = ""
         if (config.result_status_field or "").strip():
@@ -957,20 +976,22 @@ def _submit_async_generation_api_once(
             resp.status_code,
             _measure_elapsed_ms(request_started_perf),
             _clip_response_preview(payload),
+            external_http_ms,
         )
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-        return AsyncSubmitResult(None, "", _clip_error_message(detail), None, _measure_elapsed_ms(request_started_perf), "")
+        return AsyncSubmitResult(None, "", _clip_error_message(detail), None, _measure_elapsed_ms(request_started_perf), "", external_http_ms)
     except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError) as exc:
+        external_http_ms = external_http_ms or _measure_elapsed_ms(request_started_perf)
         log_message, log_args, user_message = _classify_generation_request_exception(
             exc,
             started_perf=request_started_perf,
         )
         logger.error(log_message, *log_args)
-        return AsyncSubmitResult(None, "", user_message, None, _measure_elapsed_ms(request_started_perf), "")
+        return AsyncSubmitResult(None, "", user_message, None, _measure_elapsed_ms(request_started_perf), "", external_http_ms)
     except Exception as exc:
         logger.error("Async generation submit error: %s", exc, exc_info=True)
-        return AsyncSubmitResult(None, "", _clip_error_message(f"异步生图提交异常: {exc}"), None, _measure_elapsed_ms(request_started_perf), "")
+        return AsyncSubmitResult(None, "", _clip_error_message(f"异步生图提交异常: {exc}"), None, _measure_elapsed_ms(request_started_perf), "", external_http_ms)
 
 
 def _poll_async_generation_once(
@@ -1075,7 +1096,7 @@ def _poll_async_generation_once(
         normalized_status = provider_status.strip().lower()
 
         if normalized_status in success_values:
-            result, error_message = _extract_async_result_data(
+            result, error_message, result_download_ms = _extract_async_result_data(
                 payload,
                 base64_field_path=config.poll_result_base64_field or "",
                 url_field_path=config.poll_result_url_field or "",
@@ -1088,7 +1109,13 @@ def _poll_async_generation_once(
             if result:
                 task.provider_error_message = ""
                 db.commit()
-                return ApiCallResult(result=result, error_message="", http_status_code=None, attempts=[])
+                return ApiCallResult(
+                    result=result,
+                    error_message="",
+                    http_status_code=None,
+                    attempts=[],
+                    result_download_ms=result_download_ms,
+                )
             request_context = _build_async_request_context(provider_task_id, rendered.request_url)
             task.provider_error_message = _clip_error_message(
                 f"{error_message or '异步生图已完成，但结果图解析失败'}（{request_context}）"
@@ -1307,6 +1334,15 @@ def _mark_generation_failure(image: Image, error_message: str) -> None:
     image.error_message = _to_user_facing_generation_error(error_message, fallback="生图失败")
 
 
+def _set_last_attempt_cos_upload_ms(attempts: list[ApiAttemptRecord], cos_upload_ms: int | None) -> None:
+    if cos_upload_ms is None:
+        return
+    for attempt in reversed(attempts):
+        if attempt.status == "success":
+            attempt.cos_upload_ms = cos_upload_ms
+            return
+
+
 def _record_api_attempts(
     db,
     *,
@@ -1330,9 +1366,38 @@ def _record_api_attempts(
             http_status=attempt.http_status,
             error_message=_clip_error_message(attempt.error_message),
             duration_ms=attempt.duration_ms,
+            external_http_ms=attempt.external_http_ms,
+            result_download_ms=attempt.result_download_ms,
+            cos_upload_ms=attempt.cos_upload_ms,
         ))
     if any(attempt.is_fallback for attempt in attempts):
         task.used_fallback_api = True
+
+
+def _record_api_attempts_safely(
+    db,
+    *,
+    task: Task,
+    image: Image,
+    image_index: int,
+    attempts: list[ApiAttemptRecord],
+) -> None:
+    try:
+        _record_api_attempts(
+            db,
+            task=task,
+            image=image,
+            image_index=image_index,
+            attempts=attempts,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to record task API attempts; generation result is preserved: task_id=%s image_id=%s",
+            task.id,
+            image.id,
+        )
 
 
 def _resolve_task_mode_and_scene_key(task: Task) -> tuple[str, str]:
@@ -1362,7 +1427,7 @@ def _submit_generation_with_configs(
         current_call_mode = (config.call_mode or "sync").strip().lower() or "sync"
         has_more_configs = attempt_index < len(configs_to_try)
         if current_call_mode != "async":
-            result, error_message, http_status_code, duration_ms = _call_generation_api_once(
+            result, error_message, http_status_code, duration_ms, external_http_ms, result_download_ms = _call_generation_api_once(
                 db,
                 config=config,
                 scene_key=scene_key,
@@ -1384,6 +1449,8 @@ def _submit_generation_with_configs(
                 http_status=http_status_code,
                 error_message="" if result else _clip_error_message(error_message),
                 duration_ms=duration_ms,
+                external_http_ms=external_http_ms,
+                result_download_ms=result_download_ms,
             ))
             if result:
                 return ApiCallResult(
@@ -1421,6 +1488,7 @@ def _submit_generation_with_configs(
             http_status=submit_result.http_status_code,
             error_message="" if submit_result.provider_task_id else _clip_error_message(submit_result.error_message),
             duration_ms=submit_result.duration_ms,
+            external_http_ms=submit_result.external_http_ms,
         ))
         if submit_result.provider_task_id:
             provider_started_at = now_local()
@@ -1830,16 +1898,16 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             call_result, async_submit_attempts = _execute_task_generation(db, task)
             if not call_result.deferred:
                 _mark_task_request_finished(task)
-            _record_api_attempts(
-                db,
-                task=task,
-                image=image,
-                image_index=image_index_map.get(image.id, 1),
-                attempts=async_submit_attempts or call_result.attempts,
-            )
-            db.commit()
+            attempts_to_record = async_submit_attempts or call_result.attempts
 
             if call_result.deferred:
+                _record_api_attempts_safely(
+                    db,
+                    task=task,
+                    image=image,
+                    image_index=image_index_map.get(image.id, 1),
+                    attempts=attempts_to_record,
+                )
                 logger.info(
                     "Async generation submitted; polling scheduled",
                     extra={
@@ -1860,13 +1928,20 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                 image.status = "success"
                 image.error_message = ""
                 db.commit()
+                cos_upload_started_perf: float | None = None
                 try:
                     local_preview_url = image.preview_url
+                    cos_upload_started_perf = time.perf_counter()
                     image.image_url = _save_image_bytes(db, img_bytes, mime)
+                    _set_last_attempt_cos_upload_ms(attempts_to_record, _measure_elapsed_ms(cos_upload_started_perf))
                     image.preview_url = ""
                     db.commit()
                     _remove_local_preview(local_preview_url)
                 except Exception as exc:
+                    _set_last_attempt_cos_upload_ms(
+                        attempts_to_record,
+                        _measure_elapsed_ms(cos_upload_started_perf),
+                    )
                     logger.exception("Failed to persist generated image to storage")
                     _mark_image_storage_fallback(image, f"图片已生成，但保存结果失败: {exc}")
                     if image.status == "failed":
@@ -1880,6 +1955,13 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
                 all_success = False
                 db.commit()
 
+            _record_api_attempts_safely(
+                db,
+                task=task,
+                image=image,
+                image_index=image_index_map.get(image.id, 1),
+                attempts=attempts_to_record,
+            )
             _clear_provider_context_if_more_images_pending(task, images)
             db.commit()
 
@@ -1977,16 +2059,16 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         call_result, async_submit_attempts = _execute_task_generation(db, task)
         if not call_result.deferred:
             _mark_task_request_finished(task)
-        _record_api_attempts(
-            db,
-            task=task,
-            image=image,
-            image_index=image_index_map.get(image.id, 1),
-            attempts=async_submit_attempts or call_result.attempts,
-        )
-        db.commit()
+        attempts_to_record = async_submit_attempts or call_result.attempts
 
         if call_result.deferred:
+            _record_api_attempts_safely(
+                db,
+                task=task,
+                image=image,
+                image_index=image_index_map.get(image.id, 1),
+                attempts=attempts_to_record,
+            )
             logger.info(
                 "Async regeneration submitted; polling scheduled",
                 extra={
@@ -2008,9 +2090,12 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
             image.status = "success"
             image.error_message = ""
             db.commit()
+            cos_upload_started_perf: float | None = None
             try:
                 local_preview_url = image.preview_url
+                cos_upload_started_perf = time.perf_counter()
                 new_url = _save_image_bytes(db, img_bytes, mime)
+                _set_last_attempt_cos_upload_ms(attempts_to_record, _measure_elapsed_ms(cos_upload_started_perf))
                 log = (
                     db.query(RegenerateLog)
                     .filter(RegenerateLog.image_id == image_id, RegenerateLog.new_image_url == "")
@@ -2024,6 +2109,7 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
                 db.commit()
                 _remove_local_preview(local_preview_url)
             except Exception as exc:
+                _set_last_attempt_cos_upload_ms(attempts_to_record, _measure_elapsed_ms(cos_upload_started_perf))
                 logger.exception("Failed to persist regenerated image to storage")
                 _mark_image_storage_fallback(image, f"图片已生成，但保存结果失败: {exc}")
                 log = (
@@ -2039,6 +2125,14 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
             task.next_poll_at = None
             _mark_generation_failure(image, call_result.error_message)
             db.commit()
+
+        _record_api_attempts_safely(
+            db,
+            task=task,
+            image=image,
+            image_index=image_index_map.get(image.id, 1),
+            attempts=attempts_to_record,
+        )
 
         db.refresh(task)
         task.status = _resolve_task_status(list(task.images))
@@ -2351,14 +2445,13 @@ def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True)
                 ),
                 1,
             )
-            _record_api_attempts(
+            _record_api_attempts_safely(
                 db,
                 task=task,
                 image=image,
                 image_index=image_index,
                 attempts=fallback_attempts,
             )
-            db.commit()
             if fallback_result.deferred:
                 logger.info(
                     "Async poll switched to fallback submit",

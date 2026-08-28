@@ -35,6 +35,9 @@ class TaskApiAttemptOut(BaseModel):
     http_status: int | None = None
     error_message: str = ""
     duration_ms: int | None = None
+    external_http_ms: int | None = None
+    result_download_ms: int | None = None
+    cos_upload_ms: int | None = None
     created_at: datetime | None = None
     request_preview: TaskApiRequestPreviewOut | None = None
 
