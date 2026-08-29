@@ -52,6 +52,19 @@ const selectedUserInfo = ref<AdminUser | null>(null);
 const TASK_PAGE_SIZE = 20;
 const TASK_TABLE_SCROLL_X = 1320;
 
+type PeriodCardItem = {
+  key: string;
+  label: string;
+  color: string;
+  current: number;
+  previous?: number;
+  delta?: number;
+  delta_pct?: number | null;
+  suffix?: string;
+  chipText?: string;
+  deltaText?: string;
+};
+
 const filters = reactive<{
   status: string | undefined;
   user_id: string | undefined;
@@ -90,7 +103,11 @@ const modelOptions = computed(() => (
   }))
 ));
 
-const periodCards = computed(() => {
+const processingTaskCount = computed(() => (
+  breakdown.value?.status_breakdown.find((item) => item.name === "processing")?.count ?? 0
+));
+
+const periodCards = computed<PeriodCardItem[]>(() => {
   if (!summary.value) return [];
   const successRateCurrent = summary.value.tasks_created.current
     ? Number(((summary.value.success_tasks.current / summary.value.tasks_created.current) * 100).toFixed(1))
@@ -103,6 +120,7 @@ const periodCards = computed(() => {
     { key: "tasks_created", label: "周期任务数", color: "#1890ff", current: summary.value.tasks_created.current, previous: summary.value.tasks_created.previous, delta: summary.value.tasks_created.delta, delta_pct: summary.value.tasks_created.delta_pct },
     { key: "success_tasks", label: "周期成功数", color: "#52c41a", current: summary.value.success_tasks.current, previous: summary.value.success_tasks.previous, delta: summary.value.success_tasks.delta, delta_pct: summary.value.success_tasks.delta_pct },
     { key: "failed_tasks", label: "周期失败数", color: "#ff4d4f", current: summary.value.failed_tasks.current, previous: summary.value.failed_tasks.previous, delta: summary.value.failed_tasks.delta, delta_pct: summary.value.failed_tasks.delta_pct },
+    { key: "processing_tasks", label: "周期进行中数", color: "#2f54eb", current: processingTaskCount.value, chipText: "当前周期", deltaText: "来自任务状态占比" },
     { key: "credits_consumed", label: "周期积分消耗", color: "#fa8c16", current: summary.value.credits_consumed.current, previous: summary.value.credits_consumed.previous, delta: summary.value.credits_consumed.delta, delta_pct: summary.value.credits_consumed.delta_pct },
     { key: "active_users", label: "周期活跃用户", color: "#13c2c2", current: summary.value.active_users.current, previous: summary.value.active_users.previous, delta: summary.value.active_users.delta, delta_pct: summary.value.active_users.delta_pct },
     { key: "success_rate", label: "周期成功率", color: getSuccessRateColor(successRateCurrent), current: successRateCurrent, previous: successRatePrevious, delta: successRateDelta, delta_pct: successRatePrevious === 0 ? null : Number(((successRateDelta / successRatePrevious) * 100).toFixed(1)), suffix: "%" },
@@ -872,15 +890,15 @@ watch(filterSignature, async () => {
                 <span class="kpi-dot" :style="{ background: card.color }" />
                 <div class="kpi-label">{{ card.label }}</div>
               </div>
-              <div class="kpi-chip">周期对比</div>
+              <div class="kpi-chip">{{ card.chipText || "周期对比" }}</div>
             </div>
             <div class="kpi-value" :style="{ color: card.color }">{{ card.current }}{{ card.suffix || "" }}</div>
-            <div class="kpi-meta">
+            <div v-if="card.previous !== undefined" class="kpi-meta">
               <span class="kpi-meta-label">上期</span>
               <span class="kpi-meta-value">{{ card.previous }}{{ card.suffix || "" }}</span>
             </div>
-            <div class="kpi-delta" :class="{ positive: card.delta > 0, negative: card.delta < 0 }">
-              {{ formatDelta(card.current, card.previous, card.delta, card.delta_pct, card.suffix) }}
+            <div class="kpi-delta" :class="{ positive: (card.delta || 0) > 0, negative: (card.delta || 0) < 0 }">
+              {{ card.deltaText || formatDelta(card.current, card.previous || 0, card.delta || 0, card.delta_pct, card.suffix) }}
             </div>
           </div>
         </div>

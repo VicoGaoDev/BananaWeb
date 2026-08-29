@@ -12,6 +12,8 @@ type CardItem = {
   plainValue?: number;
   clickable?: boolean;
   suffix?: string;
+  chipText?: string;
+  deltaText?: string;
 };
 
 function buildSuccessRateMetric(
@@ -38,6 +40,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  processingTasks: {
+    type: Number,
+    default: 0,
+  },
 });
 
 const emit = defineEmits<{
@@ -51,6 +57,7 @@ const cards = computed<CardItem[]>(() => {
     { key: "tasks_created", label: "任务总数", color: "#1890ff", metric: props.summary.tasks_created },
     { key: "success_tasks", label: "成功任务数", color: "#52c41a", metric: props.summary.success_tasks },
     { key: "failed_tasks", label: "失败任务数", color: "#ff4d4f", metric: props.summary.failed_tasks, clickable: true },
+    { key: "processing_tasks", label: "进行中任务数", color: "#2f54eb", plainValue: props.processingTasks, chipText: "当前周期", deltaText: "来自任务状态占比" },
     { key: "credits_consumed", label: "消耗积分", color: "#fa8c16", metric: props.summary.credits_consumed },
     { key: "new_users", label: "新增用户数", color: "#722ed1", metric: props.summary.new_users, clickable: true },
     { key: "active_users", label: "活跃用户数", color: "#13c2c2", metric: props.summary.active_users },
@@ -93,10 +100,10 @@ function handleCardClick(card: CardItem) {
             <span class="kpi-dot" :style="{ background: card.color }" />
             <div class="kpi-label">{{ card.label }}</div>
           </div>
-          <div class="kpi-chip">{{ card.metric ? "周期对比" : "累计" }}</div>
+          <div class="kpi-chip">{{ card.chipText || (card.metric ? "周期对比" : "累计") }}</div>
         </div>
         <div class="kpi-value" :style="{ color: card.color }">
-          {{ card.metric ? card.metric.current : card.plainValue }}{{ card.suffix || "" }}
+          {{ card.metric ? card.metric.current : (card.plainValue ?? 0) }}{{ card.suffix || "" }}
         </div>
         <div v-if="card.metric" class="kpi-meta">
           <span class="kpi-meta-label">上期</span>
@@ -106,7 +113,7 @@ function handleCardClick(card: CardItem) {
           class="kpi-delta"
           :class="{ positive: (card.metric?.delta || 0) > 0, negative: (card.metric?.delta || 0) < 0 }"
         >
-          {{ card.metric ? formatDelta(card.metric, card.suffix) : "当前总量" }}
+          {{ card.deltaText || (card.metric ? formatDelta(card.metric, card.suffix) : "当前总量") }}
         </div>
       </div>
     </div>

@@ -187,6 +187,10 @@ const fallbackSummaryCards = computed<FallbackCardItem[]>(() => {
   ];
 });
 
+const processingTaskCount = computed(() => (
+  breakdown.value?.status_breakdown.find((item) => item.name === "processing")?.count ?? 0
+));
+
 const filterSignature = computed(() => JSON.stringify({
   granularity: granularity.value,
   preset: preset.value,
@@ -653,7 +657,12 @@ watch(filterSignature, async () => {
         <h3 class="section-title">核心指标</h3>
         <span class="section-kicker">Overview</span>
       </div>
-      <KpiCards :summary="summary" :loading="analyticsLoading" @card-click="handleKpiCardClick" />
+      <KpiCards
+        :summary="summary"
+        :loading="analyticsLoading"
+        :processing-tasks="processingTaskCount"
+        @card-click="handleKpiCardClick"
+      />
     </section>
 
     <section class="dashboard-section">
