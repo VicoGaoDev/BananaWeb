@@ -624,6 +624,7 @@ watch(
     :loading="taskDetailLoading"
     :model-options="detailModelOptions"
     :show-error-message="mode === 'admin'"
+    :show-attempt-response-preview="mode === 'admin'"
   />
 </template>
 

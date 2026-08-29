@@ -801,6 +801,7 @@ watch(filterSignature, async () => {
       :request-preview-loading="detailRequestPreviewLoading"
       :model-options="modelOptions"
       show-error-message
+      show-attempt-response-preview
       @update:open="detailOpen = $event"
     />
     <AdminUserInfoDialog

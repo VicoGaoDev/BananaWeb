@@ -1523,6 +1523,7 @@ function handleEditImage(item: UserHistoryCard) {
       :preloaded-media-keys="detailPreloadedMediaKeys"
       :model-options="modelOptions"
       :show-error-message="isAdminHistoryView"
+      :show-attempt-response-preview="isAdminHistoryView"
       :has-prev="hasDetailPrev"
       :has-next="hasDetailNext"
       show-actions

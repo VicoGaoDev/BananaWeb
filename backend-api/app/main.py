@@ -1107,6 +1107,8 @@ def _ensure_task_api_attempt_schema():
             conn.execute(text("ALTER TABLE task_api_attempts ADD COLUMN result_download_ms INTEGER NULL"))
         if "cos_upload_ms" not in attempt_columns:
             conn.execute(text("ALTER TABLE task_api_attempts ADD COLUMN cos_upload_ms INTEGER NULL"))
+        if "response_preview" not in attempt_columns:
+            conn.execute(text("ALTER TABLE task_api_attempts ADD COLUMN response_preview TEXT"))
         if "created_at" not in attempt_columns:
             conn.execute(text("ALTER TABLE task_api_attempts ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
 

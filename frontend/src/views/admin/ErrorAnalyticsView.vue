@@ -950,6 +950,7 @@ onMounted(async () => {
     :loading="imageDetailLoading"
     :model-options="imageModelOptions"
     show-error-message
+    show-attempt-response-preview
     @update:open="imageDetailOpen = $event"
   />
   <VideoTaskDetailDialog

@@ -162,6 +162,7 @@ export interface TaskApiAttempt {
   external_http_ms?: number | null;
   result_download_ms?: number | null;
   cos_upload_ms?: number | null;
+  response_preview?: string;
   created_at?: string | null;
   request_preview?: {
     request_url: string;

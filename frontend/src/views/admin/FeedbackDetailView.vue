@@ -383,6 +383,7 @@ onMounted(() => {
       :loading="taskDetailLoading"
       :model-options="detailModelOptions"
       show-error-message
+      show-attempt-response-preview
     />
   </div>
 </template>

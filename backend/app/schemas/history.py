@@ -38,6 +38,7 @@ class TaskApiAttemptOut(BaseModel):
     external_http_ms: int | None = None
     result_download_ms: int | None = None
     cos_upload_ms: int | None = None
+    response_preview: str = ""
     created_at: datetime | None = None
     request_preview: TaskApiRequestPreviewOut | None = None
 
