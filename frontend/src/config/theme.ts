@@ -119,7 +119,7 @@ export const appThemes = {
     palette: [
       { label: "背景", color: "#181818" },
       { label: "卡片", color: "#1f1f1f" },
-      { label: "强调", color: "#3a3a3a" },
+      { label: "强调", color: "#e8a43a" },
       { label: "文字", color: "#e6e6e6" },
     ],
   },

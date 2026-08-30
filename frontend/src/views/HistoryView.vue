@@ -2604,6 +2604,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .history-page .history-ove
   }
 }
 
+html[data-theme="midnight"] .history-page .history-overlay-btn-active:hover,
+html[data-theme="midnight"] .history-page .history-overlay-btn-active:focus {
+  color: var(--theme-accent-contrast) !important;
+}
+
 .detail-section + .detail-section {
   margin-top: 18px;
 }

@@ -8909,6 +8909,10 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   box-shadow: 0 10px 20px var(--theme-shadow-medium);
 }
 
+html[data-theme="midnight"] .generate-page .result-more-trigger.icon-chip {
+  color: #ffffff !important;
+}
+
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-more-trigger.icon-chip:hover,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-more-trigger.icon-chip:focus {
   background: rgba(var(--theme-page-base-rgb), 0.94) !important;
@@ -9910,7 +9914,7 @@ html[data-theme="midnight"] .generate-page .source-upload-empty {
 
 html[data-theme="midnight"] .generate-page .generate-config-panel .upload-add-icon,
 html[data-theme="midnight"] .generate-page .source-upload-icon {
-  color: #ffffff !important;
+  color: var(--theme-accent) !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-config-panel .flat-select {
@@ -9978,7 +9982,14 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-ac
 
 html[data-theme="midnight"] .generate-page .generate-btn,
 html[data-theme="midnight"] .generate-page .reverse-action-btn-primary {
-  color: #ffffff !important;
+  color: var(--theme-action-contrast) !important;
+}
+
+html[data-theme="midnight"] .generate-page .generate-btn:hover,
+html[data-theme="midnight"] .generate-page .generate-btn:focus,
+html[data-theme="midnight"] .generate-page .reverse-action-btn-primary:hover,
+html[data-theme="midnight"] .generate-page .reverse-action-btn-primary:focus {
+  background: var(--theme-action-hover) !important;
 }
 
 html[data-theme="midnight"] .generate-page .aspect-ratio-auto-row .aspect-ratio-auto-switch.ant-switch {

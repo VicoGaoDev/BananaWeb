@@ -551,6 +551,7 @@ onMounted(loadLedger);
       title="支出详情"
       placement="right"
       width="420"
+      root-class-name="ledger-expense-drawer"
     >
       <div v-if="detailExpense" class="expense-detail-drawer">
         <div class="detail-row">
@@ -1039,5 +1040,134 @@ onMounted(loadLedger);
     max-height: min(70vh, calc(100vh - 180px));
     padding-right: 12px;
   }
+}
+
+:global(html[data-theme="midnight"]) {
+  .ledger-action-btn-secondary {
+    border-color: var(--theme-pill-border) !important;
+    color: var(--theme-accent-text) !important;
+    background: var(--theme-panel-bg-strong) !important;
+    box-shadow: none !important;
+  }
+
+  .ledger-action-btn-secondary:hover {
+    border-color: var(--theme-accent) !important;
+    color: var(--theme-accent-text-hover) !important;
+    background: var(--theme-control-hover-bg) !important;
+  }
+
+  .ledger-status {
+    color: var(--text-secondary);
+  }
+
+  .ledger-table-action-btn {
+    border-color: var(--theme-pill-border);
+    color: var(--theme-accent-text);
+    background: var(--theme-panel-bg);
+  }
+
+  .ledger-table-action-btn:hover {
+    border-color: var(--theme-accent) !important;
+    color: var(--theme-accent-text-hover) !important;
+    background: var(--theme-control-hover-bg) !important;
+  }
+
+  .ledger-table-action-btn-danger {
+    border-color: rgba(220, 38, 38, 0.36);
+    color: #ff7875;
+    background: color-mix(in srgb, #cf3f36 14%, var(--theme-panel-bg));
+  }
+
+  .ledger-table-action-btn-danger:hover {
+    border-color: #ff4d4f !important;
+    color: #ffa39e !important;
+    background: color-mix(in srgb, #cf3f36 22%, var(--theme-panel-bg)) !important;
+  }
+
+  .expense-amount,
+  .metric-value,
+  .summary-card strong,
+  .log-summary,
+  .detail-row strong,
+  .detail-block-content,
+  .screenshot-dropzone-title {
+    color: var(--theme-title) !important;
+  }
+
+  .metric-card,
+  .summary-card,
+  .detail-block,
+  .screenshot-item,
+  .drawer-screenshot-item {
+    border-color: var(--theme-panel-border);
+    background: var(--theme-panel-bg);
+  }
+
+  .metric-card-strong {
+    background: var(--theme-panel-bg-strong);
+  }
+
+  .metric-label,
+  .summary-card span,
+  .log-meta,
+  .screenshot-dropzone-desc,
+  .detail-row span,
+  .detail-block-title {
+    color: var(--text-secondary) !important;
+  }
+
+  .upload-button {
+    border-color: var(--theme-control-border);
+    background: var(--theme-control-bg);
+    color: var(--text);
+  }
+
+  .upload-button:hover {
+    border-color: var(--theme-accent);
+    color: var(--theme-accent-text);
+  }
+
+  .screenshot-dropzone {
+    border-color: var(--theme-pill-border);
+    background: var(--theme-panel-bg-muted);
+  }
+
+  .screenshot-dropzone:focus,
+  .screenshot-dropzone:hover {
+    border-color: var(--theme-accent);
+    background: var(--theme-control-hover-bg);
+  }
+
+  .detail-row {
+    border-bottom-color: var(--theme-panel-border);
+  }
+
+  :deep(.ledger-card .ant-card-head),
+  :deep(.ledger-card .ant-card-head-title),
+  :deep(.section-title-row) {
+    color: var(--theme-title);
+    background: transparent;
+    border-color: var(--theme-panel-border);
+  }
+
+  :deep(.ledger-card .ant-card-body),
+  :deep(.ant-form-item-label > label) {
+    color: var(--text);
+  }
+
+  :deep(.ant-empty-description) {
+    color: var(--text-secondary);
+  }
+}
+
+:global(html[data-theme="midnight"] .ledger-expense-drawer .ant-drawer-header),
+:global(html[data-theme="midnight"] .ledger-expense-drawer .ant-drawer-body) {
+  background: var(--theme-panel-bg);
+  color: var(--theme-title);
+  border-color: var(--theme-panel-border);
+}
+
+:global(html[data-theme="midnight"] .ledger-expense-drawer .ant-drawer-title) {
+  color: var(--theme-title);
 }
 </style>

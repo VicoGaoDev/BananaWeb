@@ -2,7 +2,12 @@
 import { computed } from "vue";
 import type { PropType } from "vue";
 import type { AdminAnalyticsTimeseries } from "@/types";
+import { getCurrentTheme } from "@/lib/theme";
 import { VChart } from "./charting";
+
+function chartLabelColor() {
+  return getCurrentTheme() === "midnight" ? "#d8d8d8" : "#8c7458";
+}
 
 const props = defineProps({
   data: {
@@ -135,7 +140,7 @@ function buildStatusStackData(
       label: {
         show: isTop && periodTotal(item) !== 0,
         position: "top",
-        color: "#8c7458",
+        color: chartLabelColor(),
         fontSize: 10,
         fontWeight: 600,
         formatter: String(periodTotal(item)),

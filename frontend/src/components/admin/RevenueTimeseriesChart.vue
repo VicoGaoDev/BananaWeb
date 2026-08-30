@@ -7,7 +7,12 @@ import type { Dayjs } from "dayjs";
 import { getAdminAnalyticsRevenueTimeseries } from "@/api/admin";
 import { isSessionExpiredError } from "@/lib/authError";
 import type { AdminAnalyticsRevenueTimeseries } from "@/types";
+import { getCurrentTheme } from "@/lib/theme";
 import { VChart } from "./charting";
+
+function chartLabelColor() {
+  return getCurrentTheme() === "midnight" ? "#d8d8d8" : "#8c7458";
+}
 
 type RevenueChannel = "total" | "online" | "redeem";
 
@@ -183,7 +188,7 @@ const chartOption = computed(() => {
           label: {
             show: topStackKey(item) === "online" && barLabelAmount(index) !== 0,
             position: "top",
-            color: "#8c7458",
+            color: chartLabelColor(),
             fontSize: 10,
             fontWeight: 600,
             formatter: `¥${formatMoney(barLabelAmount(index))}`,
@@ -205,7 +210,7 @@ const chartOption = computed(() => {
           label: {
             show: topStackKey(item) === "redeem" && barLabelAmount(index) !== 0,
             position: "top",
-            color: "#8c7458",
+            color: chartLabelColor(),
             fontSize: 10,
             fontWeight: 600,
             formatter: `¥${formatMoney(barLabelAmount(index))}`,
@@ -227,7 +232,7 @@ const chartOption = computed(() => {
             label: {
               show: topStackKey(item) === "offline" && barLabelAmount(index) !== 0,
               position: "top",
-              color: "#8c7458",
+              color: chartLabelColor(),
               fontSize: 10,
               fontWeight: 600,
               formatter: `¥${formatMoney(barLabelAmount(index))}`,

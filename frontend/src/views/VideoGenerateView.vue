@@ -3120,7 +3120,7 @@ html[data-theme="midnight"] .generate-page .upload-add {
 }
 
 html[data-theme="midnight"] .generate-page .upload-add-icon {
-  color: #ffffff !important;
+  color: var(--theme-accent) !important;
 }
 
 html[data-theme="midnight"] .generate-page .prompt-input.ant-input-textarea-show-count::after,

@@ -1553,6 +1553,12 @@ onBeforeUnmount(() => {
   }
 }
 
+:global(html[data-theme="midnight"]) {
+  .home-page .showcase-card-prompt {
+    color: var(--theme-title) !important;
+  }
+}
+
 @keyframes showcase-scroll-left {
   from {
     transform: translate3d(0, 0, 0);

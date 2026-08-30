@@ -132,8 +132,8 @@ html[data-theme="midnight"] {
   --text: #e6e6e6;
   --muted: #9aa0a6;
   --line: #2c2c2c;
-  --accent: #d4d4d4;
-  --accent-deep: #ffffff;
+  --accent: rgb(232, 164, 58);
+  --accent-deep: #f0b85c;
   --card: #1f1f1f;
   --placeholder: #1c1c1c;
   --tip-bg: rgba(255, 255, 255, 0.06);
