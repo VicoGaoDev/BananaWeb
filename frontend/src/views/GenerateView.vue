@@ -4492,15 +4492,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                           />
                         </div>
                       </template>
-                      <a-button
-                        type="text"
-                        size="small"
-                        class="prompt-library-btn smart-cutout-entry-btn"
+                      <button
+                        type="button"
+                        class="prompt-icon-btn"
+                        aria-label="智能抠图"
                         @click="openSmartCutoutFromImageEdit"
                       >
-                        <template #icon><ScissorOutlined /></template>
-                        智能抠图
-                      </a-button>
+                        <ScissorOutlined />
+                      </button>
                     </a-tooltip>
                     <GenerateCameraPicker
                       v-model:body-id="selectedCameraBodyId"
@@ -6316,7 +6315,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .prompt-optimize-status {
   position: absolute;
-  right: 12px;
+  right: 48px;
   bottom: 34px;
   left: 14px;
   display: flex;
@@ -6451,23 +6450,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
   &:active {
     transform: scale(0.97);
-  }
-}
-
-.smart-cutout-entry-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-  white-space: nowrap;
-
-  :deep(.ant-btn-icon) {
-    margin-inline-end: 3px !important;
-  }
-
-  :deep(.anticon) {
-    margin: 0;
-    font-size: 14px;
   }
 }
 

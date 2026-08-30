@@ -359,6 +359,8 @@ onMounted(() => {
       </a-button>
     </div>
 
+    <RevenueTimeseriesChart ref="revenueChartRef" />
+
     <div class="analytics-filter warm-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
       <div class="analytics-filter-row">
         <a-range-picker
@@ -397,8 +399,6 @@ onMounted(() => {
         </div>
       </div>
     </div>
-
-    <RevenueTimeseriesChart ref="revenueChartRef" />
 
     <div class="revenue-section-stack">
       <RedeemRevenueTable
@@ -534,10 +534,6 @@ onMounted(() => {
   overflow-x: hidden;
 }
 
-.analytics-filter {
-  margin-bottom: 16px;
-}
-
 .analytics-filter-month {
   width: 148px;
 }
@@ -566,7 +562,7 @@ onMounted(() => {
   display: grid;
   gap: 16px;
   min-width: 0;
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .offline-order-detail-card {

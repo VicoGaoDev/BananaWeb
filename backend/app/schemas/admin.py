@@ -231,6 +231,16 @@ class AnalyticsModelCompareItemOut(BaseModel):
     avg_duration_seconds: float = 0
 
 
+class AnalyticsApiAttemptPerformanceItemOut(BaseModel):
+    api_config_id: int | None = None
+    name: str
+    call_count: int = 0
+    task_duration_count: int = 0
+    avg_task_duration_seconds: float = 0
+    download_count: int = 0
+    avg_result_download_ms: float = 0
+
+
 class AnalyticsBreakdownOut(BaseModel):
     range_label: str
     status_breakdown: list[AnalyticsBreakdownItemOut]
@@ -239,6 +249,7 @@ class AnalyticsBreakdownOut(BaseModel):
     canvas_breakdown: list[AnalyticsBreakdownItemOut] = Field(default_factory=list)
     model_breakdown: list[AnalyticsBreakdownItemOut]
     model_compare: list[AnalyticsModelCompareItemOut] = Field(default_factory=list)
+    api_attempt_performance: list[AnalyticsApiAttemptPerformanceItemOut] = Field(default_factory=list)
     top_users_by_tasks: list[AnalyticsBreakdownItemOut]
     top_users_by_credit: list[AnalyticsBreakdownItemOut]
 

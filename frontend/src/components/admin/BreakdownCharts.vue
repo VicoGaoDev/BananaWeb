@@ -20,6 +20,11 @@ const emit = defineEmits<{
 }>();
 
 const modelCompare = computed(() => props.data?.model_compare || []);
+const apiAttemptPerformance = computed(() => props.data?.api_attempt_performance || []);
+
+const hasApiAttemptPerformance = computed(() => (
+  apiAttemptPerformance.value.some((item) => item.call_count > 0 || item.task_duration_count > 0 || item.download_count > 0)
+));
 
 function formatDurationSeconds(value: number | undefined) {
   const seconds = Number(value || 0);
@@ -29,9 +34,16 @@ function formatDurationSeconds(value: number | undefined) {
   return `${seconds.toFixed(2)} s`;
 }
 
+function formatDurationMs(value: number | undefined) {
+  const durationMs = Number(value || 0);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return "-";
+  if (durationMs < 1000) return `${Math.round(durationMs)} ms`;
+  return `${(durationMs / 1000).toFixed(2)} s`;
+}
+
 const hasBreakdownData = computed(() => {
   if (!props.data) return false;
-  return [
+  return hasApiAttemptPerformance.value || [
     ...props.data.status_breakdown,
     ...props.data.source_breakdown,
     ...props.data.mode_breakdown,
@@ -242,6 +254,77 @@ const modelCompareOption = computed(() => ({
   ],
 }));
 
+const apiAttemptPerformanceOption = computed(() => ({
+  color: ["#2f54eb", "#fa8c16", "#52c41a"],
+  tooltip: {
+    trigger: "axis",
+    backgroundColor: "rgba(76, 52, 26, 0.92)",
+    borderWidth: 0,
+    textStyle: { color: "#fffdf8" },
+    formatter: (params: Array<{ axisValue?: string; dataIndex?: number }>) => {
+      const dataIndex = params[0]?.dataIndex ?? 0;
+      const item = apiAttemptPerformance.value[dataIndex];
+      const name = item?.name || params[0]?.axisValue || "";
+      if (!item) return name;
+      return [
+        name,
+        `调用次数：${item.call_count}`,
+        `平均任务耗时：${formatDurationSeconds(item.avg_task_duration_seconds)}`,
+        `平均下载耗时：${formatDurationMs(item.avg_result_download_ms)}`,
+        `下载样本数：${item.download_count}`,
+      ].join("<br/>");
+    },
+  },
+  legend: { top: 0 },
+  grid: { left: 40, right: 72, top: 44, bottom: 56 },
+  xAxis: {
+    type: "category",
+    data: apiAttemptPerformance.value.map((item) => item.name),
+    axisLabel: { interval: 0, rotate: 18 },
+  },
+  yAxis: [
+    {
+      type: "value",
+      name: "调用次数",
+    },
+    {
+      type: "value",
+      name: "平均耗时",
+      splitLine: { show: false },
+      axisLabel: { formatter: "{value}秒" },
+    },
+  ],
+  series: [
+    {
+      name: "调用次数",
+      type: "bar",
+      yAxisIndex: 0,
+      data: apiAttemptPerformance.value.map((item) => item.call_count),
+      itemStyle: { color: "#2f54eb", borderRadius: [8, 8, 0, 0] },
+    },
+    {
+      name: "平均任务耗时",
+      type: "line",
+      yAxisIndex: 1,
+      smooth: true,
+      symbolSize: 8,
+      lineStyle: { width: 3 },
+      data: apiAttemptPerformance.value.map((item) => item.avg_task_duration_seconds ?? 0),
+      itemStyle: { color: "#fa8c16" },
+    },
+    {
+      name: "平均下载耗时",
+      type: "line",
+      yAxisIndex: 1,
+      smooth: true,
+      symbolSize: 8,
+      lineStyle: { width: 3 },
+      data: apiAttemptPerformance.value.map((item) => (item.avg_result_download_ms || 0) / 1000),
+      itemStyle: { color: "#52c41a" },
+    },
+  ],
+}));
+
 const userTaskOption = computed(() => ({
   tooltip: {
     trigger: "axis",
@@ -355,6 +438,16 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
           </div>
           <VChart class="breakdown-chart" :option="modePieOption" autoresize @click="handleModeClick" />
         </div>
+        <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 340ms">
+          <div class="breakdown-head">
+            <div>
+              <div class="breakdown-title">Canvas / 普通生图占比</div>
+              <div class="breakdown-desc">看画布任务是否在分流普通生图的用量。</div>
+            </div>
+            <div class="breakdown-badge">饼图</div>
+          </div>
+          <VChart class="breakdown-chart" :option="canvasPieOption" autoresize @click="handleCanvasClick" />
+        </div>
       </div>
       <div class="breakdown-grid">
       <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 340ms">
@@ -366,6 +459,16 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
           <div class="breakdown-badge">对照</div>
         </div>
         <VChart class="breakdown-chart" :option="modelCompareOption" autoresize @click="handleModelClick" />
+      </div>
+      <div v-if="hasApiAttemptPerformance" class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 360ms">
+        <div class="breakdown-head">
+          <div>
+            <div class="breakdown-title">接口调用次数 / 任务耗时 / 下载耗时</div>
+            <div class="breakdown-desc">按实际调用接口统计结果 URL 图片下载速度和任务耗时。</div>
+          </div>
+          <div class="breakdown-badge">接口</div>
+        </div>
+        <VChart class="breakdown-chart" :option="apiAttemptPerformanceOption" autoresize />
       </div>
       <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 380ms">
         <div class="breakdown-head">
@@ -386,16 +489,6 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
           <div class="breakdown-badge">排行</div>
         </div>
         <VChart class="breakdown-chart" :option="userCreditOption" autoresize @click="handleUserCreditClick" />
-      </div>
-      <div class="breakdown-card warm-card motion-card-lift motion-fade-up" style="--motion-delay: 460ms">
-        <div class="breakdown-head">
-          <div>
-            <div class="breakdown-title">Canvas / 普通生图占比</div>
-            <div class="breakdown-desc">看画布任务是否在分流普通生图的用量。</div>
-          </div>
-          <div class="breakdown-badge">饼图</div>
-        </div>
-        <VChart class="breakdown-chart" :option="canvasPieOption" autoresize @click="handleCanvasClick" />
       </div>
       </div>
     </div>
@@ -419,7 +512,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
 }
 
 .breakdown-pies {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .breakdown-grid {
@@ -495,6 +588,12 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
   margin-top: 6px;
   color: #9a805b;
   font-size: 12px;
+}
+
+@media (max-width: 1200px) {
+  .breakdown-pies {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {

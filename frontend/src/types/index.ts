@@ -1249,6 +1249,16 @@ export interface AdminAnalyticsModelCompareItem {
   avg_duration_seconds?: number;
 }
 
+export interface AdminAnalyticsApiAttemptPerformanceItem {
+  api_config_id?: number | null;
+  name: string;
+  call_count: number;
+  task_duration_count: number;
+  avg_task_duration_seconds: number;
+  download_count: number;
+  avg_result_download_ms: number;
+}
+
 export interface AdminDailyReportTestResult {
   sent: boolean;
   report_date: string;
@@ -1282,6 +1292,7 @@ export interface AdminAnalyticsBreakdown {
   canvas_breakdown?: AdminAnalyticsBreakdownItem[];
   model_breakdown: AdminAnalyticsBreakdownItem[];
   model_compare?: AdminAnalyticsModelCompareItem[];
+  api_attempt_performance?: AdminAnalyticsApiAttemptPerformanceItem[];
   top_users_by_tasks: AdminAnalyticsBreakdownItem[];
   top_users_by_credit: AdminAnalyticsBreakdownItem[];
 }

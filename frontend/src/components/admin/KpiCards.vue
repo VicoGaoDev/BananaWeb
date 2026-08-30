@@ -59,8 +59,6 @@ const cards = computed<CardItem[]>(() => {
     { key: "failed_tasks", label: "失败任务数", color: "#ff4d4f", metric: props.summary.failed_tasks, clickable: true },
     { key: "processing_tasks", label: "进行中任务数", color: "#2f54eb", plainValue: props.processingTasks, chipText: "当前周期", deltaText: "来自任务状态占比" },
     { key: "credits_consumed", label: "消耗积分", color: "#fa8c16", metric: props.summary.credits_consumed },
-    { key: "new_users", label: "新增用户数", color: "#722ed1", metric: props.summary.new_users, clickable: true },
-    { key: "active_users", label: "活跃用户数", color: "#13c2c2", metric: props.summary.active_users },
     {
       key: "success_rate",
       label: "周期成功率",
@@ -68,6 +66,8 @@ const cards = computed<CardItem[]>(() => {
       metric: successRateMetric,
       suffix: "%",
     },
+    { key: "active_users", label: "活跃用户数", color: "#13c2c2", metric: props.summary.active_users },
+    { key: "new_users", label: "新增用户数", color: "#722ed1", metric: props.summary.new_users, clickable: true },
   ];
 });
 

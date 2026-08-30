@@ -2399,6 +2399,81 @@ def _model_compare_rows(
     return rows[:limit]
 
 
+def _api_attempt_performance_rows(
+    db: Session,
+    *,
+    start_date: datetime,
+    end_date: datetime,
+    status_filter: str | None = None,
+    user_id: int | None = None,
+    source: str | None = None,
+    model: str | None = None,
+    mode: str | None = None,
+    canvas_task_filter: str | None = None,
+    include_unsafe_tasks: bool = True,
+    limit: int = 10,
+) -> list[dict]:
+    task_subquery = (
+        _task_query(
+            db,
+            start_date=start_date,
+            end_date=end_date,
+            status_filter=status_filter,
+            user_id=user_id,
+            source=source,
+            model=model,
+            mode=mode,
+            canvas_task_filter=canvas_task_filter,
+            include_unsafe_tasks=include_unsafe_tasks,
+        )
+        .with_entities(Task.id)
+        .subquery()
+    )
+    task_duration_seconds = case(
+        (Task.request_finished_at.is_not(None), _dialog_task_run_time_expr()),
+        else_=TaskApiAttempt.duration_ms / 1000.0,
+    )
+    download_duration_ms = case(
+        (
+            (TaskApiAttempt.status == "success")
+            & TaskApiAttempt.result_download_ms.is_not(None)
+            & (TaskApiAttempt.result_download_ms > 0),
+            TaskApiAttempt.result_download_ms,
+        ),
+        else_=None,
+    )
+    rows = (
+        db.query(
+            TaskApiAttempt.api_config_id,
+            TaskApiAttempt.api_config_name,
+            func.count(TaskApiAttempt.id).label("call_count"),
+            func.count(task_duration_seconds).label("task_duration_count"),
+            func.avg(task_duration_seconds).label("avg_task_duration_seconds"),
+            func.count(download_duration_ms).label("download_count"),
+            func.avg(download_duration_ms).label("avg_result_download_ms"),
+        )
+        .join(Task, Task.id == TaskApiAttempt.task_id)
+        .join(task_subquery, task_subquery.c.id == Task.id)
+        .group_by(TaskApiAttempt.api_config_id, TaskApiAttempt.api_config_name)
+        .all()
+    )
+    result: list[dict] = []
+    for row in rows:
+        api_config_id = row.api_config_id
+        api_config_name = (row.api_config_name or "").strip()
+        result.append({
+            "api_config_id": int(api_config_id) if api_config_id is not None else None,
+            "name": api_config_name or (f"接口 {api_config_id}" if api_config_id is not None else "未记录接口"),
+            "call_count": int(row.call_count or 0),
+            "task_duration_count": int(row.task_duration_count or 0),
+            "avg_task_duration_seconds": round(float(row.avg_task_duration_seconds or 0), 2),
+            "download_count": int(row.download_count or 0),
+            "avg_result_download_ms": round(float(row.avg_result_download_ms or 0), 1),
+        })
+    result.sort(key=lambda item: (item["call_count"], item["download_count"], item["name"]), reverse=True)
+    return result[:limit]
+
+
 def get_analytics_breakdown(
     db: Session,
     *,
@@ -2514,6 +2589,18 @@ def get_analytics_breakdown(
                 canvas_task_filter=canvas_task_filter,
                 include_unsafe_tasks=include_unsafe_tasks,
             ),
+        ),
+        "api_attempt_performance": _api_attempt_performance_rows(
+            db,
+            start_date=current_start,
+            end_date=current_end,
+            status_filter=status_filter,
+            user_id=user_id,
+            source=source,
+            model=model,
+            mode=mode,
+            canvas_task_filter=canvas_task_filter,
+            include_unsafe_tasks=include_unsafe_tasks,
         ),
         "top_users_by_tasks": top_users_by_tasks,
         "top_users_by_credit": top_users_by_credit[:10],
