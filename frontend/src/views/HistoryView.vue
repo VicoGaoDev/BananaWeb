@@ -36,6 +36,7 @@ import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
 import TemplateFormDialog from "@/components/templates/TemplateFormDialog.vue";
+import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
 import { withBaseUrl } from "@/lib/assets";
 import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
 import { useAuthStore } from "@/stores/auth";
@@ -108,6 +109,7 @@ const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<UserHistoryCard | null>(null);
 const pinningKeys = ref<string[]>([]);
 const loadedHistoryCardMediaKeys = ref<Set<string>>(new Set());
+const historyCardImageLoad = useTransientImageLoad();
 const detailPreloadedMediaKeys = ref<string[]>([]);
 const templateDialogOpen = ref(false);
 const templateDialogSaving = ref(false);
@@ -386,6 +388,7 @@ onMounted(loadModels);
 onMounted(loadBoardsForHistory);
 onBeforeUnmount(() => {
   stopHistoryPolling();
+  historyCardImageLoad.dispose();
   if (filterDebounceTimer) {
     clearTimeout(filterDebounceTimer);
     filterDebounceTimer = null;
@@ -529,7 +532,7 @@ function getHistoryImageSrc(image: Pick<UserHistoryCard, "thumb_url" | "image_ur
   return image.status === "failed" ? failedResultAsset : "";
 }
 
-function getHistoryCardMedia(item: UserHistoryCard) {
+function getHistoryCardBaseMedia(item: UserHistoryCard) {
   if (isHistoryItemExpired(item)) {
     return expiredResultAsset.value;
   }
@@ -542,16 +545,29 @@ function getHistoryCardMedia(item: UserHistoryCard) {
   return getHistoryImageSrc(item);
 }
 
+function getHistoryCardMedia(item: UserHistoryCard) {
+  const source = getHistoryCardBaseMedia(item);
+  if (!source || isHistoryItemExpired(item)) return source;
+  const state = historyCardImageLoad.getState(getHistoryCardMediaLoadKey(item));
+  return appendTransientImageNonce(source, state.nonce);
+}
+
 function shouldShowHistoryLargeImagePreviewNotice(item: UserHistoryCard) {
   return !isPromptHistoryMode(item.mode) && item.status === "success" && exceedsRealtimeImagePreviewLimit(item.image_size_bytes);
 }
 
-function handleHistoryImageError(event: Event) {
+function handleHistoryImageError(event: Event, item: UserHistoryCard) {
   const image = event.target as HTMLImageElement;
-  if (image.dataset.expiredFallback === "true") return;
-  image.dataset.expiredFallback = "true";
-  image.classList.add("history-expired-image");
-  image.src = expiredResultAsset.value;
+  if (isHistoryItemExpired(item)) {
+    if (image.dataset.expiredFallback === "true") return;
+    image.dataset.expiredFallback = "true";
+    image.classList.add("history-expired-image");
+    image.src = expiredResultAsset.value;
+    return;
+  }
+  const source = getHistoryCardBaseMedia(item);
+  if (!source) return;
+  historyCardImageLoad.scheduleRetry(getHistoryCardMediaLoadKey(item), source);
 }
 
 function getHistoryCardPreview(item: UserHistoryCard) {
@@ -581,11 +597,26 @@ function getHistoryCardMediaLoadKey(item: UserHistoryCard) {
 
 function markHistoryCardMediaLoaded(item: UserHistoryCard) {
   const key = getHistoryCardMediaLoadKey(item);
+  historyCardImageLoad.markLoaded(key, getHistoryCardBaseMedia(item));
   if (loadedHistoryCardMediaKeys.value.has(key)) return;
   const next = new Set(loadedHistoryCardMediaKeys.value);
   next.add(key);
   loadedHistoryCardMediaKeys.value = next;
 }
+
+watch(
+  items,
+  (currentItems) => {
+    const validKeys = new Set<string>();
+    for (const item of currentItems) {
+      const key = getHistoryCardMediaLoadKey(item);
+      validKeys.add(key);
+      historyCardImageLoad.syncSource(key, getHistoryCardBaseMedia(item));
+    }
+    historyCardImageLoad.clearExcept(validKeys);
+  },
+  { immediate: true },
+);
 
 function getDetailPreloadedMediaKeys(item: UserHistoryCard) {
   if (!loadedHistoryCardMediaKeys.value.has(getHistoryCardMediaLoadKey(item))) return [];
@@ -1375,7 +1406,7 @@ function handleEditImage(item: UserHistoryCard) {
               :class="{ 'failed-result-image': item.status === 'failed' }"
               loading="lazy"
               @load="markHistoryCardMediaLoaded(item)"
-              @error="handleHistoryImageError"
+              @error="handleHistoryImageError($event, item)"
             />
             <div v-else-if="shouldShowHistoryLargeImagePreviewNotice(item)" class="result-card-preview-notice">
               <span>{{ LARGE_IMAGE_PREVIEW_NOTICE }}</span>

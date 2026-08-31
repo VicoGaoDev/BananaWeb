@@ -332,6 +332,14 @@ def _mark_task_request_finished(task: Task) -> None:
     task.request_finished_at = now_local()
 
 
+def _mark_task_external_attempt_started(task: Task) -> None:
+    attempt_started_at = now_local()
+    if task.request_started_at is None or task.request_finished_at is not None:
+        task.request_started_at = attempt_started_at
+    task.request_finished_at = None
+    task.updated_at = attempt_started_at
+
+
 def _elapsed_ms_since(started_at) -> int | None:
     if started_at is None:
         return None
@@ -1504,6 +1512,8 @@ def _submit_generation_with_configs(
     for attempt_index, (config, is_fallback) in enumerate(configs_to_try, start=1):
         current_call_mode = (config.call_mode or "sync").strip().lower() or "sync"
         has_more_configs = attempt_index < len(configs_to_try)
+        _mark_task_external_attempt_started(task)
+        db.commit()
         if current_call_mode != "async":
             result, error_message, http_status_code, duration_ms, external_http_ms, result_download_ms, response_preview = _call_generation_api_once(
                 db,
@@ -1767,8 +1777,9 @@ def _is_sync_request_in_flight(task: Task, *, now_value=None) -> bool:
     if (task.provider_task_id or "").strip():
         return False
     current_time = now_value or now_local()
+    attempt_started_at = task.updated_at or task.request_started_at
     allowed_seconds = max(int(settings.AI_TIMEOUT or 0), 1) + ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS
-    return task.request_started_at > current_time - timedelta(seconds=allowed_seconds)
+    return attempt_started_at > current_time - timedelta(seconds=allowed_seconds)
 
 
 def _expire_processing_task(

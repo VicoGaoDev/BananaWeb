@@ -105,6 +105,8 @@ def _parse_refs(raw: str | None) -> list[str]:
 
 
 def _resolve_history_card_status(task_status: str | None, image_status: str | None) -> str:
+    if task_status in {"pending", "queued", "processing"}:
+        return task_status
     if image_status == "pending" and task_status in {"pending", "queued", "processing", "failed"}:
         return task_status
     return image_status or task_status or "pending"

@@ -327,8 +327,9 @@ def _is_sync_request_in_flight(task: Task, *, now_value) -> bool:
         return False
     if (task.provider_task_id or "").strip():
         return False
+    attempt_started_at = task.updated_at or task.request_started_at
     allowed_seconds = max(int(settings.AI_TIMEOUT or 0), 1) + ASYNC_PROVIDER_TIMEOUT_GRACE_SECONDS
-    return task.request_started_at > now_value - timedelta(seconds=allowed_seconds)
+    return attempt_started_at > now_value - timedelta(seconds=allowed_seconds)
 
 
 def _is_provider_request_still_active(db: Session, task: Task, *, now_value) -> bool:
