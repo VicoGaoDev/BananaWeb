@@ -908,6 +908,56 @@ function resetCustomSizeInput() {
   customSize.value = "";
 }
 
+function parseCustomSizeValue(value?: string | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  const match = normalized.match(/^(\d+)\s*[xX×*]\s*(\d+)$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
+function applyCustomSizeFromValue(value?: string | null) {
+  const parsed = parseCustomSizeValue(value);
+  if (!parsed) {
+    resetCustomSizeInput();
+    return;
+  }
+  customSizeEnabled.value = true;
+  customWidth.value = parsed.width;
+  customHeight.value = parsed.height;
+  customSize.value = `${parsed.width}x${parsed.height}`;
+}
+
+function refillCustomSizeFromValue(value?: string | null) {
+  applyCustomSizeFromValue(value);
+  void nextTick(() => applyCustomSizeFromValue(value));
+}
+
+function syncCustomSizeToCurrentLimits() {
+  if (!supportsCustomSize.value) {
+    if (customSizeEnabled.value || customSize.value) {
+      resetCustomSizeInput();
+    } else {
+      customWidth.value = normalizeCustomDimension(Number(customWidth.value) || 1024);
+      customHeight.value = normalizeCustomDimension(Number(customHeight.value) || 1024);
+    }
+    return;
+  }
+  if (!customSizeEnabled.value) {
+    customWidth.value = normalizeCustomDimension(Number(customWidth.value) || 1024);
+    customHeight.value = normalizeCustomDimension(Number(customHeight.value) || 1024);
+    return;
+  }
+  customWidth.value = normalizeCustomDimension(Number(customWidth.value));
+  customHeight.value = normalizeCustomDimension(Number(customHeight.value));
+  customSize.value = `${Number(customWidth.value)}x${Number(customHeight.value)}`;
+}
+
 function onCustomSizeToggle(checked: boolean) {
   customSizeEnabled.value = checked;
   if (!checked) {
@@ -3110,7 +3160,6 @@ function handleReeditTask(task: GeneratedTaskItem) {
   generateMode.value = task.mode;
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
-  customSize.value = task.customSize || "";
 
   if (task.mode === "inpaint") {
     applyPromptWithGenerateStyles(task.prompt, "repaintPrompt");
@@ -3148,6 +3197,7 @@ function handleReeditTask(task: GeneratedTaskItem) {
     canRedoMask.value = false;
     repaintCanvasRef.value?.clearMask();
   }
+  refillCustomSizeFromValue(task.customSize);
   message.success("已回填到编辑区");
 }
 
@@ -3163,7 +3213,7 @@ function handleEditImageTask(task: GeneratedTaskItem, image: ImageResult) {
   repaintPrompt.value = "";
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
-  customSize.value = task.customSize || "";
+  refillCustomSizeFromValue(task.customSize);
   numImages.value = Math.min(MAX_ACTIVE_GENERATION_IMAGES, Math.max(1, Number(task.numImages || 1)));
   syncReferenceItems([referenceImage]);
   revokeObjectUrl(sourcePreviewUrl.value);
@@ -3540,7 +3590,7 @@ function handleInpaintGeneratedImage(task: GeneratedTaskItem, img: ImageResult) 
   prompt.value = "";
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
-  customSize.value = task.customSize || "";
+  refillCustomSizeFromValue(task.customSize);
   numImages.value = 1;
   syncReferenceItems([]);
   revokeObjectUrl(sourcePreviewUrl.value);
@@ -3566,7 +3616,7 @@ function handleSmartCutoutGeneratedImage(task: GeneratedTaskItem, img: ImageResu
   repaintPrompt.value = "";
   size.value = task.size || sizeOptions.value[0]?.value || "1:1";
   resolution.value = task.resolution || "2K";
-  customSize.value = task.customSize || "";
+  refillCustomSizeFromValue(task.customSize);
   numImages.value = 1;
   syncReferenceItems([]);
   applySmartCutoutSource(sourceImage);
@@ -3765,7 +3815,6 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
     generateMode.value = draftMode;
     size.value = draft.size || sizeOptions.value[0]?.value || "1:1";
     resolution.value = draft.resolution || "2K";
-    customSize.value = draft.custom_size || "";
 
     if (draftMode === "inpaint") {
       applyPromptWithGenerateStyles(draft.prompt || "", "repaintPrompt");
@@ -3824,6 +3873,7 @@ function applyDraft(raw: string | null, successText: string, storageKey: string)
       canRedoMask.value = false;
       repaintCanvasRef.value?.clearMask();
     }
+    refillCustomSizeFromValue(draft.custom_size);
     localStorage.removeItem(storageKey);
     message.success(successText);
   } catch {
@@ -3990,8 +4040,8 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
 }, { immediate: true });
 
 watch(
-  [() => selectedModel.value, () => generateMode.value, customSizeMin, customSizeMax, customSizeStep],
-  resetCustomSizeInput,
+  [() => selectedModel.value, () => generateMode.value, customSizeMin, customSizeMax, customSizeStep, supportsCustomSize],
+  syncCustomSizeToCurrentLimits,
   { immediate: true },
 );
 
