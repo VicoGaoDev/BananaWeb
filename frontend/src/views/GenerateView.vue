@@ -908,6 +908,15 @@ function resetCustomSizeInput() {
   customSize.value = "";
 }
 
+function onCustomSizeToggle(checked: boolean) {
+  customSizeEnabled.value = checked;
+  if (!checked) {
+    customSize.value = "";
+    return;
+  }
+  customSize.value = `${Number(customWidth.value)}x${Number(customHeight.value)}`;
+}
+
 function getCustomDimensionError(value: number, otherValue: number) {
   if (!Number.isInteger(value)) {
     return "必须是16倍数";
@@ -4435,7 +4444,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   </div>
                 </div>
                 <div v-if="supportsCustomSize" class="aspect-ratio-auto-row custom-size-toggle-row">
-                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" @change="onCustomSizeToggle" />
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">自定义分辨率</span>
                     <a-tooltip
@@ -4924,7 +4933,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   </div>
                 </div>
                 <div v-if="supportsCustomSize" class="aspect-ratio-auto-row custom-size-toggle-row">
-                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" @change="onCustomSizeToggle" />
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">自定义分辨率</span>
                     <a-tooltip

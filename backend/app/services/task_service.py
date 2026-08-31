@@ -469,6 +469,10 @@ def create_tasks(
         else:
             scene_key = model.strip()
         normalized_custom_size = _validate_custom_size(db, scene_key, custom_size)
+        billing_resolution = "" if normalized_custom_size else resolution
+        if normalized_custom_size:
+            size = ""
+            resolution = ""
         single_image_tool = mode in {"inpaint", "smart_cutout"}
         task_logger.info(
             "task submission accepted",
@@ -481,7 +485,7 @@ def create_tasks(
                 "prompt_length": len((prompt or "").strip()),
             },
         )
-        unit_cost = get_scene_credit_cost(db, scene_key, resolution=resolution)
+        unit_cost = get_scene_credit_cost(db, scene_key, resolution=billing_resolution)
         task_count = 1 if single_image_tool else num_images
         task_count = ensure_task_submission_capacity(db, user_id=user_id, new_task_count=task_count)
         total_cost = task_count * unit_cost
