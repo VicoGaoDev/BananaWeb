@@ -279,6 +279,7 @@ def _build_task_render_variables(db: Session, task: Task, *, cos_config) -> dict
         "image_size": task.resolution or "",
         "custom_size": task.custom_size or "",
         "mapped_resolution": mapped_resolution,
+        "resolved_resolution": (task.custom_size or "").strip() or mapped_resolution,
         "generation_config": {},
         "mode": mode,
         "reference_image_count": 0,

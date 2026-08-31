@@ -38,6 +38,9 @@ curl --request GET \
     "hide_aspect_ratio": false,
     "hide_resolution": false,
     "hide_custom_size": true,
+    "custom_size_min": 256,
+    "custom_size_max": 4096,
+    "custom_size_step": 8,
     "credit_cost": 10,
     "max_reference_images": 3,
     "aspect_ratio_options": [
@@ -65,7 +68,10 @@ curl --request GET \
 | `sort_order` | number | 排序值。 |
 | `hide_aspect_ratio` | boolean | 是否隐藏比例参数。 |
 | `hide_resolution` | boolean | 是否隐藏清晰度参数。 |
-| `hide_custom_size` | boolean | 是否隐藏自定义尺寸参数。 |
+| `hide_custom_size` | boolean | 是否隐藏自定义尺寸参数；为 `false` 时主生图页可启用手动宽高。 |
+| `custom_size_min` | number | 自定义宽高的最小值。 |
+| `custom_size_max` | number | 自定义宽高的最大值。 |
+| `custom_size_step` | number | 自定义宽高的递增步长。 |
 | `credit_cost` | number | 单张图片消耗积分。 |
 | `max_reference_images` | number | 最多参考图数量。 |
 | `aspect_ratio_options` | array | 可选比例列表，对应任务参数 `size`。 |

@@ -1709,6 +1709,12 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_resolution BOOLEAN DEFAULT 0"))
         if "hide_custom_size" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN hide_custom_size BOOLEAN DEFAULT 1"))
+        if "custom_size_min" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_min INTEGER DEFAULT 256"))
+        if "custom_size_max" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_max INTEGER DEFAULT 4096"))
+        if "custom_size_step" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN custom_size_step INTEGER DEFAULT 8"))
         if "max_reference_images" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN max_reference_images INTEGER DEFAULT 0"))
         if "aspect_ratio_options_json" not in scene_binding_columns:

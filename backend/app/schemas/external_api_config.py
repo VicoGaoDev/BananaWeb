@@ -384,6 +384,9 @@ class GenerationModelOptionOut(BaseModel):
     hide_aspect_ratio: bool
     hide_resolution: bool
     hide_custom_size: bool
+    custom_size_min: int = 256
+    custom_size_max: int = 4096
+    custom_size_step: int = 8
     credit_cost: int
     resolution_credit_costs: dict[str, int] = {}
     max_reference_images: int = 0
@@ -405,6 +408,9 @@ class ExternalApiSceneBindingCreate(BaseModel):
     hide_aspect_ratio: bool = False
     hide_resolution: bool = False
     hide_custom_size: bool = True
+    custom_size_min: int = 256
+    custom_size_max: int = 4096
+    custom_size_step: int = 8
     api_config_id: int | None = None
     backup_api_config_id: int | None = None
     display_name: str = ""
@@ -454,6 +460,16 @@ class ExternalApiSceneBindingCreate(BaseModel):
         if value < 0:
             raise ValueError("最大参考图张数不能小于 0")
         return value
+
+    @model_validator(mode="after")
+    def validate_custom_size_limits(self):
+        if self.custom_size_min <= 0:
+            raise ValueError("自定义分辨率最小值必须大于 0")
+        if self.custom_size_max < self.custom_size_min:
+            raise ValueError("自定义分辨率最大值不能小于最小值")
+        if self.custom_size_step <= 0:
+            raise ValueError("自定义分辨率步长必须大于 0")
+        return self
 
     @field_validator("status")
     @classmethod
@@ -523,6 +539,9 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     hide_aspect_ratio: bool = False
     hide_resolution: bool = False
     hide_custom_size: bool = True
+    custom_size_min: int = 256
+    custom_size_max: int = 4096
+    custom_size_step: int = 8
     max_reference_images: int = 0
     aspect_ratio_options_json: str = "[]"
     image_size_options_json: str = "[]"
@@ -561,6 +580,16 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
         if value < 0:
             raise ValueError("最大参考图张数不能小于 0")
         return value
+
+    @model_validator(mode="after")
+    def validate_custom_size_limits(self):
+        if self.custom_size_min <= 0:
+            raise ValueError("自定义分辨率最小值必须大于 0")
+        if self.custom_size_max < self.custom_size_min:
+            raise ValueError("自定义分辨率最大值不能小于最小值")
+        if self.custom_size_step <= 0:
+            raise ValueError("自定义分辨率步长必须大于 0")
+        return self
 
     @field_validator("aspect_ratio_options_json")
     @classmethod
@@ -611,6 +640,9 @@ class ExternalApiSceneBindingOut(BaseModel):
     hide_aspect_ratio: bool
     hide_resolution: bool
     hide_custom_size: bool
+    custom_size_min: int
+    custom_size_max: int
+    custom_size_step: int
     status: StatusType
     is_builtin: bool
     api_config_id: int | None = None
@@ -641,6 +673,9 @@ class TaskSceneConfigOut(BaseModel):
     hide_aspect_ratio: bool
     hide_resolution: bool
     hide_custom_size: bool
+    custom_size_min: int
+    custom_size_max: int
+    custom_size_step: int
     credit_cost: int
     resolution_credit_costs: dict[str, int]
     max_reference_images: int

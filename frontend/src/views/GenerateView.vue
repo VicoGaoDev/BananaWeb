@@ -268,6 +268,9 @@ const numImages = ref(1);
 const resolution = ref("2K");
 const size = ref("");
 const customSize = ref("");
+const customSizeEnabled = ref(false);
+const customWidth = ref(1024);
+const customHeight = ref(1024);
 const aspectRatioAutoDetectEnabled = ref(readStoredAspectRatioAutoDetectEnabled());
 const selectedColorStyleId = ref("");
 const selectedLightingStyleId = ref("");
@@ -497,12 +500,6 @@ const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
   { label: "2K", value: "2K" },
   { label: "4K", value: "4K" },
 ];
-const DEFAULT_CUSTOM_SIZE_OPTIONS: SceneOptionItem[] = [
-  { label: "1024 x 1024", value: "1024x1024" },
-  { label: "1152 x 896", value: "1152x896" },
-  { label: "896 x 1152", value: "896x1152" },
-  { label: "1280 x 720", value: "1280x720" },
-];
 const DEFAULT_ASPECT_RATIO_OPTIONS: SceneOptionItem[] = [
   { label: "■  1:1", value: "1:1" },
   { label: "▮  2:3", value: "2:3" },
@@ -530,6 +527,9 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     hide_aspect_ratio: scene.hide_aspect_ratio,
     hide_resolution: scene.hide_resolution,
     hide_custom_size: scene.hide_custom_size,
+    custom_size_min: scene.custom_size_min,
+    custom_size_max: scene.custom_size_max,
+    custom_size_step: scene.custom_size_step,
     credit_cost: scene.credit_cost,
     resolution_credit_costs: scene.resolution_credit_costs || {},
     max_reference_images: scene.max_reference_images,
@@ -731,11 +731,6 @@ const resolutionOptions = computed(() => (
     ? selectedModelOption.value.image_size_options
     : DEFAULT_IMAGE_SIZE_OPTIONS
 ));
-const customSizeOptions = computed(() => (
-  selectedModelOption.value?.custom_size_options?.length
-    ? selectedModelOption.value.custom_size_options
-    : DEFAULT_CUSTOM_SIZE_OPTIONS
-));
 const hideAspectRatio = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_aspect_ratio
 ));
@@ -743,8 +738,219 @@ const hideResolution = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_resolution
 ));
 const hideCustomSize = computed(() => (
-  (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_custom_size
+  (isTextGenerateMode.value || isImageEditMode.value)
+  && selectedModelOption.value?.hide_custom_size !== false
 ));
+const supportsCustomSize = computed(() => (
+  (isTextGenerateMode.value || isImageEditMode.value)
+  && selectedModelOption.value?.hide_custom_size === false
+));
+const CUSTOM_SIZE_PIXEL_MULTIPLE = 16;
+const CUSTOM_SIZE_MAX_ASPECT_RATIO = 3;
+const CUSTOM_SIZE_MAX_SIDE = 3840;
+const customSizeMin = computed(() => Math.max(1, Number(selectedModelOption.value?.custom_size_min || 256)));
+const customSizeMax = computed(() => Math.max(customSizeMin.value, Number(selectedModelOption.value?.custom_size_max || 4096)));
+const customSizeLimit = computed(() => Math.min(customSizeMax.value, CUSTOM_SIZE_MAX_SIDE));
+const customSizeStep = computed(() => Math.max(1, Number(selectedModelOption.value?.custom_size_step || 8)));
+
+function snapToCustomSizeMultiple(value: number) {
+  return Math.round(value / CUSTOM_SIZE_PIXEL_MULTIPLE) * CUSTOM_SIZE_PIXEL_MULTIPLE;
+}
+
+function stepCustomDimension(current: number, direction: 1 | -1) {
+  const multiple = CUSTOM_SIZE_PIXEL_MULTIPLE;
+  const next = direction > 0
+    ? Math.ceil((current + multiple) / multiple) * multiple
+    : Math.floor((current - 1) / multiple) * multiple;
+  return Math.min(customSizeLimit.value, Math.max(customSizeMin.value, next));
+}
+
+function parseCustomSizeInput(value: string) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function formatCustomSizeInput(value: string | number) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function bindDigitsOnlyInput(input: HTMLInputElement) {
+  const sanitize = () => {
+    const digits = input.value.replace(/\D/g, "");
+    if (input.value !== digits) {
+      input.value = digits;
+    }
+  };
+
+  const abortIme = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    input.setAttribute("readonly", "readonly");
+    sanitize();
+    requestAnimationFrame(() => {
+      input.removeAttribute("readonly");
+      sanitize();
+    });
+  };
+
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.isComposing || event.key === "Process" || event.key === "Unidentified") {
+      event.preventDefault();
+      abortIme(event);
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (["Backspace", "Delete", "Tab", "Enter", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    if (/^\d$/.test(event.key)) return;
+    event.preventDefault();
+  };
+
+  const onBeforeInput = (event: InputEvent) => {
+    if (event.isComposing || event.inputType === "insertCompositionText") {
+      event.preventDefault();
+      abortIme(event);
+      return;
+    }
+    if (event.data && !/^\d+$/.test(event.data)) {
+      event.preventDefault();
+    }
+  };
+
+  const onPaste = (event: ClipboardEvent) => {
+    event.preventDefault();
+    const digits = (event.clipboardData?.getData("text") ?? "").replace(/\D/g, "");
+    if (!digits) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = `${input.value.slice(0, start)}${digits}${input.value.slice(end)}`.replace(/\D/g, "");
+    const caret = Math.min(input.value.length, start + digits.length);
+    input.setSelectionRange(caret, caret);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  input.setAttribute("inputmode", "numeric");
+  input.setAttribute("pattern", "[0-9]*");
+  input.setAttribute("lang", "en");
+  input.setAttribute("autocomplete", "off");
+  input.addEventListener("keydown", onKeydown, true);
+  input.addEventListener("beforeinput", onBeforeInput as EventListener, true);
+  input.addEventListener("compositionstart", abortIme, true);
+  input.addEventListener("compositionupdate", abortIme, true);
+  input.addEventListener("compositionend", abortIme, true);
+  input.addEventListener("input", sanitize, true);
+  input.addEventListener("paste", onPaste, true);
+
+  return () => {
+    input.removeEventListener("keydown", onKeydown, true);
+    input.removeEventListener("beforeinput", onBeforeInput as EventListener, true);
+    input.removeEventListener("compositionstart", abortIme, true);
+    input.removeEventListener("compositionupdate", abortIme, true);
+    input.removeEventListener("compositionend", abortIme, true);
+    input.removeEventListener("input", sanitize, true);
+    input.removeEventListener("paste", onPaste, true);
+  };
+}
+
+const digitsOnlyCleanups = new WeakMap<HTMLElement, () => void>();
+const digitsOnlyBoundInputs = new WeakMap<HTMLElement, HTMLInputElement>();
+
+const vDigitsOnly = {
+  mounted(el: HTMLElement) {
+    const input = el.tagName === "INPUT" ? el as HTMLInputElement : el.querySelector("input");
+    if (!input) return;
+    digitsOnlyCleanups.set(el, bindDigitsOnlyInput(input));
+    digitsOnlyBoundInputs.set(el, input);
+  },
+  updated(el: HTMLElement) {
+    const input = el.tagName === "INPUT" ? el as HTMLInputElement : el.querySelector("input");
+    if (!input || digitsOnlyBoundInputs.get(el) === input) return;
+    digitsOnlyCleanups.get(el)?.();
+    digitsOnlyCleanups.set(el, bindDigitsOnlyInput(input));
+    digitsOnlyBoundInputs.set(el, input);
+  },
+  unmounted(el: HTMLElement) {
+    digitsOnlyCleanups.get(el)?.();
+    digitsOnlyCleanups.delete(el);
+    digitsOnlyBoundInputs.delete(el);
+  },
+};
+
+function applyCustomDimensionChange(current: number, incoming: number | string | null) {
+  const next = Number(incoming);
+  if (!Number.isFinite(next)) return current;
+  if (Number.isFinite(current) && next === current + CUSTOM_SIZE_PIXEL_MULTIPLE) {
+    return stepCustomDimension(current, 1);
+  }
+  if (Number.isFinite(current) && next === current - CUSTOM_SIZE_PIXEL_MULTIPLE) {
+    return stepCustomDimension(current, -1);
+  }
+  return next;
+}
+
+function handleCustomWidthChange(value: number | string | null) {
+  customWidth.value = applyCustomDimensionChange(Number(customWidth.value), value);
+}
+
+function handleCustomHeightChange(value: number | string | null) {
+  customHeight.value = applyCustomDimensionChange(Number(customHeight.value), value);
+}
+
+function normalizeCustomDimension(value: number) {
+  const snapped = snapToCustomSizeMultiple(Number(value) || customSizeMin.value);
+  return Math.min(customSizeLimit.value, Math.max(customSizeMin.value, snapped));
+}
+
+function resetCustomSizeInput() {
+  customSizeEnabled.value = false;
+  customWidth.value = normalizeCustomDimension(1024);
+  customHeight.value = normalizeCustomDimension(1024);
+  customSize.value = "";
+}
+
+function getCustomDimensionError(value: number, otherValue: number) {
+  if (!Number.isInteger(value)) {
+    return "必须是16倍数";
+  }
+  if (value % CUSTOM_SIZE_PIXEL_MULTIPLE !== 0) {
+    return "必须是16倍数";
+  }
+  if (value > CUSTOM_SIZE_MAX_SIDE) {
+    return `最大边长不超过 ${CUSTOM_SIZE_MAX_SIDE}px`;
+  }
+  if (value < customSizeMin.value || value > customSizeMax.value) {
+    return `须为 ${customSizeMin.value}-${customSizeMax.value} 的整数`;
+  }
+  if (
+    Number.isInteger(otherValue)
+    && otherValue > 0
+    && value > otherValue * CUSTOM_SIZE_MAX_ASPECT_RATIO
+  ) {
+    return `长短边比例不能超过 ${CUSTOM_SIZE_MAX_ASPECT_RATIO}:1`;
+  }
+  return "";
+}
+
+const customWidthError = computed(() => (
+  customSizeEnabled.value ? getCustomDimensionError(Number(customWidth.value), Number(customHeight.value)) : ""
+));
+const customHeightError = computed(() => (
+  customSizeEnabled.value ? getCustomDimensionError(Number(customHeight.value), Number(customWidth.value)) : ""
+));
+
+function validateCustomSizeInput() {
+  if (!customSizeEnabled.value) return true;
+  if (customWidthError.value || customHeightError.value) {
+    const tips = [
+      customWidthError.value ? `宽度${customWidthError.value}` : "",
+      customHeightError.value ? `高度${customHeightError.value}` : "",
+    ].filter(Boolean);
+    message.warning(tips.join("；"));
+    return false;
+  }
+  customSize.value = `${Number(customWidth.value)}x${Number(customHeight.value)}`;
+  return true;
+}
 const smartCutoutScene = computed(() => taskScenes.value.find((item) => item.scene_key === "smart_cutout"));
 const smartCutoutSizeOptions = computed(() => (
   smartCutoutScene.value?.aspect_ratio_options?.length
@@ -2706,6 +2912,7 @@ async function handleGenerate() {
     message.warning("请输入提示词");
     return;
   }
+  if (supportsCustomSize.value && !validateCustomSizeInput()) return;
   if (!auth.isLoggedIn) {
     loginModalVisible.value = true;
     return;
@@ -2765,7 +2972,7 @@ async function handleGenerate() {
         num_images: 1,
         size: size.value,
         resolution: resolution.value,
-        custom_size: customSize.value,
+        custom_size: "",
         source_image: sourceImageUrl.value,
         mask_image: maskUploadUrl,
       };
@@ -2776,9 +2983,9 @@ async function handleGenerate() {
         model: selectedModel.value,
         prompt: submitPrompt,
         num_images: requestedImageCount,
-        size: hideAspectRatio.value ? "" : size.value,
-        resolution: hideResolution.value ? "" : resolution.value,
-        custom_size: hideCustomSize.value ? "" : customSize.value,
+        size: customSizeEnabled.value || hideAspectRatio.value ? "" : size.value,
+        resolution: customSizeEnabled.value || hideResolution.value ? "" : resolution.value,
+        custom_size: customSizeEnabled.value ? customSize.value : "",
         reference_images: isImageEditMode.value && referenceUrls.value.length ? referenceUrls.value : undefined,
       };
       if (requestedImageCount < numImages.value) {
@@ -3774,12 +3981,11 @@ watch([resolutionOptions, hideResolution], ([options, shouldHide]) => {
   }
 }, { immediate: true });
 
-watch([customSizeOptions, hideCustomSize], ([options, shouldHide]) => {
-  if (shouldHide || !options.length) return;
-  if (!options.some((item) => item.value === customSize.value)) {
-    customSize.value = options[0].value;
-  }
-}, { immediate: true });
+watch(
+  [() => selectedModel.value, () => generateMode.value, customSizeMin, customSizeMax, customSizeStep],
+  resetCustomSizeInput,
+  { immediate: true },
+);
 
 watch(selectedBoardKey, async (key) => {
   if (!boardSelectionReady.value) return;
@@ -4147,11 +4353,30 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
-                <div v-if="!hideAspectRatio" class="setting-item setting-item-inline">
+                <div v-if="!hideAspectRatio && !customSizeEnabled" class="setting-item setting-item-inline">
                   <label>宽高比</label>
                   <AspectRatioPicker v-model="size" :options="sizeOptions" />
                 </div>
-                <div v-if="!hideResolution" class="setting-item setting-item-inline">
+                <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline">
+                  <label>宽度</label>
+                    <div class="custom-size-input-wrap">
+                      <a-input-number
+                      v-digits-only
+                      :value="customWidth"
+                      class="warm-input-number custom-size-input"
+                      :class="{ 'is-invalid': !!customWidthError }"
+                      :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                      :precision="0"
+                      :parser="parseCustomSizeInput"
+                      :formatter="formatCustomSizeInput"
+                      :status="customWidthError ? 'error' : undefined"
+                      @update:value="handleCustomWidthChange"
+                    />
+                      <span class="custom-size-unit">px</span>
+                    </div>
+                  <div v-if="customWidthError" class="custom-size-error">{{ customWidthError }}</div>
+                </div>
+                <div v-if="!hideResolution && !customSizeEnabled" class="setting-item setting-item-inline">
                   <label>分辨率</label>
                   <OptionGridPicker
                     v-model="resolution"
@@ -4160,15 +4385,25 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     placeholder="选择分辨率"
                   />
                 </div>
-                <div v-if="!hideCustomSize" class="setting-item setting-item-inline">
-                  <label>分辨率</label>
-                  <OptionGridPicker
-                    v-model="customSize"
-                    :options="customSizeOptions"
-                    panel-title="选择分辨率"
-                    placeholder="选择分辨率"
-                    show-preview
-                  />
+                <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline custom-size-height-col">
+                  <span class="custom-size-x" aria-hidden="true">×</span>
+                  <label>高度</label>
+                    <div class="custom-size-input-wrap">
+                      <a-input-number
+                      v-digits-only
+                      :value="customHeight"
+                      class="warm-input-number custom-size-input"
+                      :class="{ 'is-invalid': !!customHeightError }"
+                      :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                      :precision="0"
+                      :parser="parseCustomSizeInput"
+                      :formatter="formatCustomSizeInput"
+                      :status="customHeightError ? 'error' : undefined"
+                      @update:value="handleCustomHeightChange"
+                    />
+                      <span class="custom-size-unit">px</span>
+                    </div>
+                  <div v-if="customHeightError" class="custom-size-error">{{ customHeightError }}</div>
                 </div>
                 <div class="setting-item setting-item-inline">
                   <label>图片数量</label>
@@ -4180,8 +4415,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   />
                 </div>
               </div>
-              <div v-if="!hideAspectRatio" class="settings-row config-section">
-                <div class="aspect-ratio-auto-row">
+              <div
+                v-if="!hideAspectRatio || supportsCustomSize"
+                class="settings-row config-section custom-size-bottom-row"
+              >
+                <div v-if="!hideAspectRatio" class="aspect-ratio-auto-row">
                   <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" class="aspect-ratio-auto-switch" />
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">比例自动识别</span>
@@ -4191,6 +4429,31 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       :get-popup-container="getBodyPopupContainer"
                     >
                       <button type="button" class="aspect-ratio-auto-help" aria-label="比例自动识别说明">
+                        <QuestionCircleOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
+                </div>
+                <div v-if="supportsCustomSize" class="aspect-ratio-auto-row custom-size-toggle-row">
+                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <div class="aspect-ratio-auto-text">
+                    <span class="aspect-ratio-auto-label">自定义分辨率</span>
+                    <a-tooltip
+                      overlay-class-name="custom-size-help-tooltip"
+                      placement="top"
+                      :get-popup-container="getBodyPopupContainer"
+                    >
+                      <template #title>
+                        <div class="custom-size-help-tip">
+                          <div>开启后可手动输入宽高：</div>
+                          <ul>
+                            <li>宽高须为 16 的倍数</li>
+                            <li>长短边比例不超过 3:1</li>
+                            <li>最大边长不超过 3840px</li>
+                          </ul>
+                        </div>
+                      </template>
+                      <button type="button" class="aspect-ratio-auto-help" aria-label="自定义分辨率说明">
                         <QuestionCircleOutlined />
                       </button>
                     </a-tooltip>
@@ -4579,11 +4842,30 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
-                <div v-if="!hideAspectRatio" class="setting-item setting-item-inline">
+                <div v-if="!hideAspectRatio && !customSizeEnabled" class="setting-item setting-item-inline">
                   <label>宽高比</label>
                   <AspectRatioPicker v-model="size" :options="sizeOptions" />
                 </div>
-                <div v-if="!hideResolution" class="setting-item setting-item-inline">
+                <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline">
+                  <label>宽度</label>
+                    <div class="custom-size-input-wrap">
+                      <a-input-number
+                      v-digits-only
+                      :value="customWidth"
+                      class="warm-input-number custom-size-input"
+                      :class="{ 'is-invalid': !!customWidthError }"
+                      :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                      :precision="0"
+                      :parser="parseCustomSizeInput"
+                      :formatter="formatCustomSizeInput"
+                      :status="customWidthError ? 'error' : undefined"
+                      @update:value="handleCustomWidthChange"
+                    />
+                      <span class="custom-size-unit">px</span>
+                    </div>
+                  <div v-if="customWidthError" class="custom-size-error">{{ customWidthError }}</div>
+                </div>
+                <div v-if="!hideResolution && !customSizeEnabled" class="setting-item setting-item-inline">
                   <label>分辨率</label>
                   <OptionGridPicker
                     v-model="resolution"
@@ -4592,15 +4874,25 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     placeholder="选择分辨率"
                   />
                 </div>
-                <div v-if="!hideCustomSize" class="setting-item setting-item-inline">
-                  <label>分辨率</label>
-                  <OptionGridPicker
-                    v-model="customSize"
-                    :options="customSizeOptions"
-                    panel-title="选择分辨率"
-                    placeholder="选择分辨率"
-                    show-preview
-                  />
+                <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline custom-size-height-col">
+                  <span class="custom-size-x" aria-hidden="true">×</span>
+                  <label>高度</label>
+                    <div class="custom-size-input-wrap">
+                      <a-input-number
+                      v-digits-only
+                      :value="customHeight"
+                      class="warm-input-number custom-size-input"
+                      :class="{ 'is-invalid': !!customHeightError }"
+                      :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                      :precision="0"
+                      :parser="parseCustomSizeInput"
+                      :formatter="formatCustomSizeInput"
+                      :status="customHeightError ? 'error' : undefined"
+                      @update:value="handleCustomHeightChange"
+                    />
+                      <span class="custom-size-unit">px</span>
+                    </div>
+                  <div v-if="customHeightError" class="custom-size-error">{{ customHeightError }}</div>
                 </div>
                 <div class="setting-item setting-item-inline">
                   <label>图片数量</label>
@@ -4612,8 +4904,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   />
                 </div>
               </div>
-              <div v-if="!hideAspectRatio" class="settings-row config-section">
-                <div class="aspect-ratio-auto-row">
+              <div
+                v-if="!hideAspectRatio || supportsCustomSize"
+                class="settings-row config-section custom-size-bottom-row"
+              >
+                <div v-if="!hideAspectRatio" class="aspect-ratio-auto-row">
                   <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" class="aspect-ratio-auto-switch" />
                   <div class="aspect-ratio-auto-text">
                     <span class="aspect-ratio-auto-label">比例自动识别</span>
@@ -4623,6 +4918,31 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       :get-popup-container="getBodyPopupContainer"
                     >
                       <button type="button" class="aspect-ratio-auto-help" aria-label="比例自动识别说明">
+                        <QuestionCircleOutlined />
+                      </button>
+                    </a-tooltip>
+                  </div>
+                </div>
+                <div v-if="supportsCustomSize" class="aspect-ratio-auto-row custom-size-toggle-row">
+                  <a-switch v-model:checked="customSizeEnabled" size="small" class="aspect-ratio-auto-switch" />
+                  <div class="aspect-ratio-auto-text">
+                    <span class="aspect-ratio-auto-label">自定义分辨率</span>
+                    <a-tooltip
+                      overlay-class-name="custom-size-help-tooltip"
+                      placement="top"
+                      :get-popup-container="getBodyPopupContainer"
+                    >
+                      <template #title>
+                        <div class="custom-size-help-tip">
+                          <div>开启后可手动输入宽高：</div>
+                          <ul>
+                            <li>宽高须为 16 的倍数</li>
+                            <li>长短边比例不超过 3:1</li>
+                            <li>最大边长不超过 3840px</li>
+                          </ul>
+                        </div>
+                      </template>
+                      <button type="button" class="aspect-ratio-auto-help" aria-label="自定义分辨率说明">
                         <QuestionCircleOutlined />
                       </button>
                     </a-tooltip>
@@ -6632,6 +6952,81 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.custom-size-bottom-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.custom-size-height-col {
+  position: relative;
+}
+
+.custom-size-x {
+  position: absolute;
+  top: calc(1.4em + 10px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  transform: translateX(calc(-50% - 8px));
+  color: var(--theme-title);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.custom-size-error {
+  color: #d4380d;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.setting-item-inline :deep(.custom-size-input.is-invalid.ant-input-number),
+.setting-item-inline :deep(.custom-size-input.ant-input-number-status-error) {
+  border-color: #d4380d !important;
+}
+
+.custom-size-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.custom-size-unit {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 16px !important;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
+  height: 40px;
+  padding: 0 44px 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 40px;
+  ime-mode: disabled;
+}
+
 .aspect-ratio-auto-row {
   display: inline-flex;
   align-items: center;
@@ -6671,6 +7066,20 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled)) {
   background: var(--theme-control-active) !important;
   box-shadow: none !important;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip {
+  text-align: left;
+  line-height: 1.6;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip ul {
+  margin: 6px 0 0;
+  padding-left: 1.15em;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip li {
+  list-style: disc;
 }
 
 .aspect-ratio-auto-text {
@@ -9371,8 +9780,19 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     white-space: normal;
   }
 
+  .custom-size-x {
+    top: calc(1.4em + 6px);
+    transform: translateX(calc(-50% - 5px));
+  }
+
   .aspect-ratio-auto-row {
     gap: 8px;
+  }
+
+  .custom-size-bottom-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
   }
 
   .generate-config-panel .upload-thumb,

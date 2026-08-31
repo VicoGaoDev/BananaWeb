@@ -1,12 +1,14 @@
 from datetime import timedelta
 import logging
 import json
+import re
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.config import settings
 from app.models.task import Task
 from app.models.image import Image
 from app.models.external_api_config import ExternalApiConfig
+from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.user import User
 from app.models.credit_log import CreditLog
 from app.services.failure_refund_service import (
@@ -138,6 +140,60 @@ def refund_task_credit_for_generation_failure_if_needed(
 
 
 SMART_CUTOUT_PROMPT = "智能抠图"
+CUSTOM_SIZE_PATTERN = re.compile(r"^(\d+)[xX](\d+)$")
+CUSTOM_SIZE_PIXEL_MULTIPLE = 16
+CUSTOM_SIZE_MAX_ASPECT_RATIO = 3
+
+
+def _validate_custom_size(db: Session, scene_key: str, custom_size: str) -> str:
+    normalized = (custom_size or "").strip()
+    if not normalized:
+        return ""
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == scene_key,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
+    if not binding or binding.hide_custom_size:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前模型不支持自定义分辨率")
+    match = CUSTOM_SIZE_PATTERN.fullmatch(normalized)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="自定义分辨率格式应为 宽x高")
+    width, height = (int(match.group(1)), int(match.group(2)))
+    minimum = max(1, int(binding.custom_size_min or 256))
+    maximum = max(minimum, int(binding.custom_size_max or 4096))
+    step = max(1, int(binding.custom_size_step or 8))
+    if not (minimum <= width <= maximum and minimum <= height <= maximum):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"自定义分辨率宽高须在 {minimum}-{maximum} 之间",
+        )
+    if (width - minimum) % step != 0 or (height - minimum) % step != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"自定义分辨率宽高须按 {step} 递增",
+        )
+    if width % 16 != 0 or height % 16 != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="自定义分辨率宽高须为 16px 的倍数",
+        )
+    if max(width, height) > 3840:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="自定义分辨率最大边长不超过 3840px",
+        )
+    short_side = min(width, height)
+    long_side = max(width, height)
+    if short_side <= 0 or long_side / short_side > 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="自定义分辨率长短边比例不能超过 3:1",
+        )
+    return f"{width}x{height}"
 
 
 def _validate_task_create_payload(
@@ -412,6 +468,7 @@ def create_tasks(
             scene_key = SCENE_SMART_CUTOUT
         else:
             scene_key = model.strip()
+        normalized_custom_size = _validate_custom_size(db, scene_key, custom_size)
         single_image_tool = mode in {"inpaint", "smart_cutout"}
         task_logger.info(
             "task submission accepted",
@@ -446,7 +503,6 @@ def create_tasks(
         normalized_prompt = prompt.strip()
         normalized_model = model.strip()
         normalized_source = (source or "web").strip().lower() or "web"
-        normalized_custom_size = custom_size.strip()
         normalized_source_image = source_image.strip()
         normalized_mask_image = mask_image.strip()
         normalized_canvas_id = int(canvas_id) if canvas_id is not None else None

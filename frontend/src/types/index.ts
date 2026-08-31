@@ -1560,6 +1560,9 @@ export interface ExternalApiSceneBinding {
   hide_aspect_ratio: boolean;
   hide_resolution: boolean;
   hide_custom_size: boolean;
+  custom_size_min: number;
+  custom_size_max: number;
+  custom_size_step: number;
   status: ExternalApiConfigStatus;
   is_builtin: boolean;
   api_config_id?: number | null;
@@ -1588,6 +1591,9 @@ export interface ExternalApiSceneBindingCreatePayload {
   hide_aspect_ratio: boolean;
   hide_resolution: boolean;
   hide_custom_size: boolean;
+  custom_size_min: number;
+  custom_size_max: number;
+  custom_size_step: number;
   api_config_id: number | null;
   backup_api_config_id: number | null;
   display_name: string;
@@ -1609,6 +1615,9 @@ export interface ExternalApiSceneBindingMetaPayload {
   hide_aspect_ratio: boolean;
   hide_resolution: boolean;
   hide_custom_size: boolean;
+  custom_size_min: number;
+  custom_size_max: number;
+  custom_size_step: number;
   max_reference_images: number;
   aspect_ratio_options_json: string;
   image_size_options_json: string;
@@ -1634,6 +1643,9 @@ export interface GenerationModelOption {
   hide_aspect_ratio: boolean;
   hide_resolution: boolean;
   hide_custom_size: boolean;
+  custom_size_min: number;
+  custom_size_max: number;
+  custom_size_step: number;
   credit_cost: number;
   resolution_credit_costs: Record<string, number>;
   max_reference_images: number;
@@ -1653,6 +1665,9 @@ export interface TaskSceneConfig {
   hide_aspect_ratio: boolean;
   hide_resolution: boolean;
   hide_custom_size: boolean;
+  custom_size_min: number;
+  custom_size_max: number;
+  custom_size_step: number;
   credit_cost: number;
   resolution_credit_costs: Record<string, number>;
   max_reference_images: number;

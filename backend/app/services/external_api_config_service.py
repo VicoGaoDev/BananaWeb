@@ -580,6 +580,9 @@ def _serialize_scene_binding(
         hide_aspect_ratio=bool(binding.hide_aspect_ratio),
         hide_resolution=binding.hide_resolution,
         hide_custom_size=bool(binding.hide_custom_size),
+        custom_size_min=max(1, int(binding.custom_size_min or 256)),
+        custom_size_max=max(1, int(binding.custom_size_max or 4096)),
+        custom_size_step=max(1, int(binding.custom_size_step or 8)),
         status=(binding.status or "enabled").strip().lower(),
         is_builtin=is_builtin_scene(binding.scene_key),
         api_config_id=config.id if config else None,
@@ -634,6 +637,9 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             hide_aspect_ratio=bool(binding.hide_aspect_ratio),
             hide_resolution=binding.hide_resolution,
             hide_custom_size=bool(binding.hide_custom_size),
+            custom_size_min=max(1, int(binding.custom_size_min or 256)),
+            custom_size_max=max(1, int(binding.custom_size_max or 4096)),
+            custom_size_step=max(1, int(binding.custom_size_step or 8)),
             credit_cost=binding.credit_cost,
             resolution_credit_costs=_normalize_resolution_credit_costs(binding.resolution_credit_costs_json),
             max_reference_images=max(0, int(binding.max_reference_images or 0)),
@@ -766,6 +772,9 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             hide_aspect_ratio=item.hide_aspect_ratio,
             hide_resolution=item.hide_resolution,
             hide_custom_size=item.hide_custom_size,
+            custom_size_min=item.custom_size_min,
+            custom_size_max=item.custom_size_max,
+            custom_size_step=item.custom_size_step,
             credit_cost=item.credit_cost,
             resolution_credit_costs=_normalize_resolution_credit_costs(item.resolution_credit_costs_json),
             max_reference_images=item.max_reference_images,
@@ -805,6 +814,9 @@ def create_scene_binding(
         hide_aspect_ratio=body.hide_aspect_ratio,
         hide_resolution=body.hide_resolution,
         hide_custom_size=body.hide_custom_size,
+        custom_size_min=body.custom_size_min,
+        custom_size_max=body.custom_size_max,
+        custom_size_step=body.custom_size_step,
         status=body.status,
         api_config_id=body.api_config_id,
         backup_api_config_id=body.backup_api_config_id,
@@ -897,6 +909,9 @@ def update_scene_binding_meta(
     binding.hide_aspect_ratio = body.hide_aspect_ratio
     binding.hide_resolution = body.hide_resolution
     binding.hide_custom_size = body.hide_custom_size
+    binding.custom_size_min = body.custom_size_min
+    binding.custom_size_max = body.custom_size_max
+    binding.custom_size_step = body.custom_size_step
     binding.max_reference_images = body.max_reference_images
     binding.aspect_ratio_options_json = body.aspect_ratio_options_json
     binding.image_size_options_json = body.image_size_options_json
@@ -1283,6 +1298,7 @@ def _build_test_variables(db: Session) -> dict[str, Any]:
         "image_size": "2K",
         "custom_size": "1024x1024",
         "mapped_resolution": "2048x2048",
+        "resolved_resolution": "1024x1024",
         "contents_parts": [
             sample_inline_image,
             sample_inline_image,

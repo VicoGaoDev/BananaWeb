@@ -307,7 +307,8 @@
 - `display_name` / `subtitle`: 前端展示名称与副标题。
 - `credit_cost`: 该场景的默认单任务积分成本。
 - `max_reference_images`: 该场景允许上传的最大参考图数量；图编辑模型常依赖这个值控制前端上传上限。
-- `hide_aspect_ratio` / `hide_resolution` / `hide_custom_size`: 前端是否隐藏相关参数。
+- `hide_aspect_ratio` / `hide_resolution` / `hide_custom_size`: 前端是否隐藏相关参数；`hide_custom_size=0` 表示支持用户手动输入自定义分辨率。
+- `custom_size_min` / `custom_size_max` / `custom_size_step`: 自定义分辨率宽高的最小值、最大值与递增步长。
 - `aspect_ratio_options_json` / `image_size_options_json` / `custom_size_options_json`: 可选参数列表。
 - `resolution_mapping_json`: 分辨率映射对象，用于把宽高比和生图质量映射为第三方接口的单个分辨率参数。
 - `resolution_credit_costs_json`: 分辨率积分对象，用于按生图质量覆盖默认积分成本，例如 `{"1K":2,"2K":4,"4K":8}`。
@@ -685,6 +686,9 @@ CREATE TABLE external_api_scene_bindings (
   hide_aspect_ratio TINYINT(1) NOT NULL DEFAULT 0,
   hide_resolution TINYINT(1) NOT NULL DEFAULT 0,
   hide_custom_size TINYINT(1) NOT NULL DEFAULT 1,
+  custom_size_min INT NOT NULL DEFAULT 256,
+  custom_size_max INT NOT NULL DEFAULT 4096,
+  custom_size_step INT NOT NULL DEFAULT 8,
   status VARCHAR(20) NOT NULL DEFAULT 'enabled',
   api_config_id INT DEFAULT NULL,
   display_name VARCHAR(100) NOT NULL DEFAULT '',
