@@ -11,7 +11,7 @@ from app.schemas.admin import (
     UpdateWhitelistRequest, ResetPasswordRequest, StatsOut, AllocateCreditsRequest, ResetCreditsRequest, CreditLogOut,
     CreateRedeemKeysBatchRequest, RedeemKeyBatchOut, RedeemKeyOut, UpdateRedeemKeyStatusRequest, PaymentOrderAdminOut,
     CreateOfflineOrderRequest, OfflineOrderOut,
-    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, AnalyticsRevenueTimeseriesOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest,
+    AnalyticsSummaryOut, AnalyticsTimeseriesOut, AnalyticsBreakdownOut, AnalyticsRedeemRevenueOut, AnalyticsRevenueTimeseriesOut, ErrorAnalyticsOut, ErrorCategoryTimeseriesOut, ErrorTaskListOut, DailyReportTestOut, DailyReportRangeRequest, ApiAlertTestOut,
     AdminLedgerCreateRequest, AdminLedgerUpdateRequest, AdminLedgerOut,
     AdminUserListOut, AdminUserPromoDashboardOut,
     VideoStatsOut,
@@ -64,6 +64,7 @@ from app.services.chat_service import get_admin_session, list_admin_messages, li
 from app.services.image_delivery_service import get_optional_cos_config, serialize_task
 from app.services.task_service import get_task_details
 from app.services.daily_report_service import DailyReportSendResult, send_previous_day_report, send_range_report
+from app.services.api_alert_service import ApiAlertRunResult, execute_api_alerts
 from app.services.video_task_service import (
     expire_stale_video_tasks,
     get_video_task_detail,
@@ -1128,4 +1129,48 @@ def admin_send_daily_report_range(
         raise HTTPException(status_code=400, detail="结束日期必须晚于开始日期")
     return _format_daily_report_result(
         send_range_report(db, start_at=body.start_date, end_at=body.end_date)
+    )
+
+
+def _format_api_alert_result(result: ApiAlertRunResult) -> dict:
+    stats = result.stats
+    decision = result.decision
+    return {
+        "dry_run": result.dry_run,
+        "sent_per_api": result.sent_per_api,
+        "sent_overall": result.sent_overall,
+        "range_start": result.start_at,
+        "range_end": result.end_at,
+        "slot_start": result.slot_start,
+        "overall": {
+            "image_count": stats.overall_image_count,
+            "success_count": stats.overall_success_count,
+            "success_rate": stats.overall_success_rate,
+            "api_count": stats.api_count,
+            "would_alert": decision.overall_alert,
+        },
+        "apis": [
+            {
+                "api_config_id": api.api_config_id,
+                "api_config_name": api.api_config_name,
+                "image_count": api.image_count,
+                "success_count": api.success_count,
+                "success_rate": api.success_rate,
+                "avg_duration_seconds": api.avg_duration_seconds,
+                "would_alert": api.would_alert,
+                "alert_reasons": list(api.alert_reasons),
+            }
+            for api in decision.annotated_apis
+        ],
+    }
+
+
+@router.post("/notify/api-alert/test", response_model=ApiAlertTestOut)
+def admin_test_api_alert_notify(
+    send: bool = Query(False),
+    _user: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return _format_api_alert_result(
+        execute_api_alerts(db, send=send, claim_slot=False)
     )

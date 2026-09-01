@@ -119,6 +119,20 @@ def on_startup():
         _run_startup_schema_sync()
     if settings.should_run_seed:
         _seed_default_data()
+    from app.services.api_alert_scheduler import start_api_alert_scheduler
+    from app.services.daily_report_scheduler import start_daily_report_scheduler
+
+    start_api_alert_scheduler()
+    start_daily_report_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    from app.services.api_alert_scheduler import stop_api_alert_scheduler
+    from app.services.daily_report_scheduler import stop_daily_report_scheduler
+
+    stop_api_alert_scheduler()
+    stop_daily_report_scheduler()
 
 
 def _run_startup_schema_sync():
@@ -159,6 +173,8 @@ def _run_startup_schema_sync():
     _ensure_user_board_schema()
     _ensure_user_canvas_schema()
     _ensure_example_canvas_schema()
+    _ensure_api_alert_schema()
+    _ensure_daily_report_schema()
     if settings.should_run_schema_compat:
         _ensure_schema_compat()
     _backfill_task_credit_costs()
@@ -1417,6 +1433,15 @@ def _ensure_image_required_columns():
             conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
         if "image_size_bytes" not in image_columns:
             conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
+        if "request_started_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN request_started_at DATETIME NULL"))
+        if "request_finished_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN request_finished_at DATETIME NULL"))
+
+    image_indexes = {index["name"] for index in inspect(engine).get_indexes("images")}
+    with engine.begin() as conn:
+        if "idx_images_request_finished_at" not in image_indexes:
+            conn.execute(text("CREATE INDEX idx_images_request_finished_at ON images (request_finished_at)"))
 
 
 def _ensure_prompt_history_columns():
@@ -2888,6 +2913,26 @@ def _ensure_user_canvas_schema():
             conn.execute(text("CREATE INDEX idx_canvas_edges_source_node_id ON canvas_edges (source_node_id)"))
         if "idx_canvas_edges_target_node_id" not in edge_indexes:
             conn.execute(text("CREATE INDEX idx_canvas_edges_target_node_id ON canvas_edges (target_node_id)"))
+
+
+def _ensure_api_alert_schema():
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "tasks" not in table_names:
+        return
+
+    if "api_alert_runs" not in inspector.get_table_names():
+        from app.models.api_alert_run import ApiAlertRun
+
+        ApiAlertRun.__table__.create(bind=engine)
+
+
+def _ensure_daily_report_schema():
+    inspector = inspect(engine)
+    if "daily_report_runs" not in inspector.get_table_names():
+        from app.models.daily_report_run import DailyReportRun
+
+        DailyReportRun.__table__.create(bind=engine)
 
 
 def _ensure_example_canvas_schema():

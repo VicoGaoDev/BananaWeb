@@ -332,6 +332,17 @@ def _mark_task_request_finished(task: Task) -> None:
     task.request_finished_at = now_local()
 
 
+def _mark_image_request_started(image: Image) -> None:
+    if image.request_started_at is None or image.request_finished_at is not None:
+        image.request_started_at = now_local()
+    image.request_finished_at = None
+
+
+def _mark_image_request_finished(image: Image) -> None:
+    if image.request_started_at is not None:
+        image.request_finished_at = now_local()
+
+
 def _mark_task_external_attempt_started(task: Task) -> None:
     attempt_started_at = now_local()
     if task.request_started_at is None or task.request_finished_at is not None:
@@ -1417,6 +1428,7 @@ def _mark_generation_failure(image: Image, error_message: str) -> None:
     image.image_size_bytes = 0
     image.status = "failed"
     image.error_message = _to_user_facing_generation_error(error_message, fallback="生图失败")
+    _mark_image_request_finished(image)
 
 
 def _set_last_attempt_cos_upload_ms(attempts: list[ApiAttemptRecord], cos_upload_ms: int | None) -> None:
@@ -1997,6 +2009,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             db.refresh(task)
             if _expire_processing_task(db, task, images):
                 return
+            _mark_image_request_started(image)
             if _mark_task_request_started(task):
                 db.commit()
                 db.refresh(task)
@@ -2004,6 +2017,7 @@ def _process_task(task_id: int, *, use_distributed_lock: bool = True):
             call_result, async_submit_attempts = _execute_task_generation(db, task)
             if not call_result.deferred:
                 _mark_task_request_finished(task)
+                _mark_image_request_finished(image)
             attempts_to_record = async_submit_attempts or call_result.attempts
 
             if call_result.deferred:
@@ -2157,6 +2171,7 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         if _expire_processing_task(db, task, [image]):
             return
 
+        _mark_image_request_started(image)
         if _mark_task_request_started(task):
             db.commit()
             db.refresh(task)
@@ -2165,6 +2180,7 @@ def _process_single_image(image_id: int, *, use_distributed_lock: bool = True):
         call_result, async_submit_attempts = _execute_task_generation(db, task)
         if not call_result.deferred:
             _mark_task_request_finished(task)
+            _mark_image_request_finished(image)
         attempts_to_record = async_submit_attempts or call_result.attempts
 
         if call_result.deferred:
@@ -2306,6 +2322,7 @@ def _sync_chat_generate_for_task(db, task: Task) -> None:
 def _finalize_task_after_async_result(db, task: Task, image: Image) -> None:
     db.refresh(task)
     _mark_task_request_finished(task)
+    _mark_image_request_finished(image)
     task.status = _resolve_task_status(list(task.images))
     task.error_message = "" if task.status == "success" else _resolve_generation_error(
         image.error_message,

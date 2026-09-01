@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -11,8 +12,9 @@ from app.models.credit_log import CreditLog
 from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
 from app.models.task import Task
+from app.services.payment_service import parse_alipay_payment_time
 from app.services.admin_service import REDEEM_UNIT_PRICES
-from app.utils.datetime_utils import now_local
+from app.utils.datetime_utils import now_local, to_local_naive
 from app.services.wecom_notify_service import is_wecom_notify_enabled, send_wecom_markdown
 
 PAYMENT_SUCCESS_STATUSES = ("paid", "credited")
@@ -53,10 +55,46 @@ class DailyReportSendResult:
 
 
 def get_previous_day_window(reference_time: datetime | None = None) -> tuple[datetime, datetime]:
-    current = reference_time or now_local()
+    current = to_local_naive(reference_time) if reference_time is not None else now_local()
     today_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
     start_at = today_start - timedelta(days=1)
     return start_at, today_start
+
+
+def collect_online_payment_stats(
+    db: Session,
+    *,
+    start_at: datetime,
+    end_at: datetime,
+) -> tuple[int, int]:
+    rows = (
+        db.query(
+            PaymentOrder.amount_fen,
+            PaymentOrder.paid_at,
+            PaymentOrder.credited_at,
+            PaymentOrder.notify_payload,
+        )
+        .filter(
+            PaymentOrder.status.in_(PAYMENT_SUCCESS_STATUSES),
+        )
+        .all()
+    )
+    revenue_fen = 0
+    paid_order_count = 0
+    for row in rows:
+        payment_time = None
+        try:
+            payload = json.loads(row.notify_payload or "{}")
+            if isinstance(payload, dict):
+                payment_time = parse_alipay_payment_time(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payment_time = None
+        effective_paid_at = payment_time or row.paid_at or row.credited_at
+        if effective_paid_at is None or not (start_at <= effective_paid_at < end_at):
+            continue
+        revenue_fen += int(row.amount_fen or 0)
+        paid_order_count += 1
+    return revenue_fen, paid_order_count
 
 
 def collect_daily_report_stats(
@@ -65,18 +103,10 @@ def collect_daily_report_stats(
     start_at: datetime,
     end_at: datetime,
 ) -> DailyReportStats:
-    revenue_fen, paid_order_count = (
-        db.query(
-            func.coalesce(func.sum(PaymentOrder.amount_fen), 0),
-            func.count(PaymentOrder.id),
-        )
-        .filter(
-            PaymentOrder.status.in_(PAYMENT_SUCCESS_STATUSES),
-            PaymentOrder.credited_at.is_not(None),
-            PaymentOrder.credited_at >= start_at,
-            PaymentOrder.credited_at < end_at,
-        )
-        .one()
+    revenue_fen, paid_order_count = collect_online_payment_stats(
+        db,
+        start_at=start_at,
+        end_at=end_at,
     )
 
     offline_order_revenue_fen, offline_order_count = (
@@ -200,7 +230,9 @@ def send_range_report(
     start_at: datetime,
     end_at: datetime,
 ) -> DailyReportSendResult:
-    stats = collect_daily_report_stats(db, start_at=start_at, end_at=end_at)
+    normalized_start = to_local_naive(start_at)
+    normalized_end = to_local_naive(end_at)
+    stats = collect_daily_report_stats(db, start_at=normalized_start, end_at=normalized_end)
     sent = False
     if is_wecom_notify_enabled():
         sent = send_wecom_markdown(build_daily_report_markdown(stats))

@@ -378,6 +378,36 @@ class DailyReportRangeRequest(BaseModel):
     end_date: datetime
 
 
+class ApiAlertApiStatOut(BaseModel):
+    api_config_id: int | None = None
+    api_config_name: str
+    image_count: int
+    success_count: int
+    success_rate: float
+    avg_duration_seconds: float | None = None
+    would_alert: bool
+    alert_reasons: list[str] = Field(default_factory=list)
+
+
+class ApiAlertOverallOut(BaseModel):
+    image_count: int
+    success_count: int
+    success_rate: float
+    api_count: int
+    would_alert: bool
+
+
+class ApiAlertTestOut(BaseModel):
+    dry_run: bool
+    sent_per_api: bool
+    sent_overall: bool
+    range_start: datetime
+    range_end: datetime
+    slot_start: datetime
+    overall: ApiAlertOverallOut
+    apis: list[ApiAlertApiStatOut]
+
+
 class AdminLedgerExpenseIn(BaseModel):
     id: int | None = None
     expense_type: str = "other"

@@ -39,6 +39,7 @@ PAYMENT_STATUS_PAID = "paid"
 PAYMENT_STATUS_CREDITED = "credited"
 PAYMENT_STATUS_CLOSED = "closed"
 PAYMENT_STATUS_FAILED = "failed"
+ALIPAY_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 @dataclass(frozen=True)
@@ -575,6 +576,17 @@ def _mark_payment_order_credited(db: Session, order: PaymentOrder) -> None:
     db.flush()
 
 
+def parse_alipay_payment_time(payload: dict[str, str]) -> datetime | None:
+    raw_value = str(payload.get("gmt_payment") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        # 支付宝回调中的 gmt_payment 使用中国标准时间，数据库也统一保存北京时间 naive 值。
+        return datetime.strptime(raw_value, ALIPAY_DATETIME_FORMAT)
+    except ValueError:
+        return None
+
+
 def _apply_payment_order_credit(db: Session, order: PaymentOrder) -> bool:
     """Grant credits for a successful payment. Returns True only when credits are newly applied."""
     if order.status == PAYMENT_STATUS_CREDITED or order.credited_at:
@@ -885,6 +897,9 @@ def process_alipay_notification(
     order.trade_status = trade_status
 
     if trade_status in ALIPAY_TRADE_SUCCESS_STATUSES:
+        payment_time = parse_alipay_payment_time(payload)
+        if payment_time is not None:
+            order.paid_at = payment_time
         credits_applied = _apply_payment_order_credit(db, order)
         if credits_applied:
             _send_payment_success_notification(db, order)

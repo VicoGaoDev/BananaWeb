@@ -981,6 +981,15 @@ def _ensure_image_required_columns():
             conn.execute(text("ALTER TABLE images ADD COLUMN image_format VARCHAR(20) DEFAULT ''"))
         if "image_size_bytes" not in image_columns:
             conn.execute(text("ALTER TABLE images ADD COLUMN image_size_bytes INTEGER DEFAULT 0"))
+        if "request_started_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN request_started_at DATETIME NULL"))
+        if "request_finished_at" not in image_columns:
+            conn.execute(text("ALTER TABLE images ADD COLUMN request_finished_at DATETIME NULL"))
+
+    image_indexes = {index["name"] for index in inspect(engine).get_indexes("images")}
+    with engine.begin() as conn:
+        if "idx_images_request_finished_at" not in image_indexes:
+            conn.execute(text("CREATE INDEX idx_images_request_finished_at ON images (request_finished_at)"))
 
 
 def _ensure_prompt_history_columns():
