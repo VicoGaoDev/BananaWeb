@@ -9,6 +9,7 @@ import {
   EyeOutlined,
   PlusOutlined,
   SaveOutlined,
+  SwapOutlined,
 } from "@ant-design/icons-vue";
 import {
   createExternalApiConfig,
@@ -114,8 +115,8 @@ const configColumns = [
 const bindingColumns = [
   { title: "调用场景", key: "scene", width: 220 },
   { title: "显示文案", key: "copy", width: 320 },
-  { title: "当前绑定接口", key: "current", width: 260 },
   { title: "主接口", key: "bind", width: 320 },
+  { title: "互换", key: "swap", width: 72 },
   { title: "备用接口", key: "backup", width: 320 },
   { title: "消耗积分", key: "credit", width: 180 },
   { title: "操作", key: "action", width: 420 },
@@ -1110,6 +1111,23 @@ async function handleBindingChange(
   }
 }
 
+function canSwapBinding(record: ExternalApiSceneBinding) {
+  const primaryId = record.api_config_id ?? null;
+  const backupId = record.backup_api_config_id ?? null;
+  return primaryId !== backupId && (primaryId != null || backupId != null);
+}
+
+function handleSwapBinding(record: ExternalApiSceneBinding) {
+  if (!canSwapBinding(record)) {
+    message.warning("请先绑定主接口或备用接口后再互换");
+    return;
+  }
+  void handleBindingChange(record.scene_key, buildBindingPayload(record, {
+    api_config_id: record.backup_api_config_id ?? null,
+    backup_api_config_id: record.api_config_id ?? null,
+  }));
+}
+
 function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial<{
   api_config_id: number | null;
   backup_api_config_id: number | null;
@@ -1519,7 +1537,7 @@ function copySecret(value: string, label: string) {
           :data-source="filteredSceneBindings"
           :loading="loading"
           :pagination="false"
-          :scroll="{ x: 1540 }"
+          :scroll="{ x: 1352 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'scene'">
@@ -1555,36 +1573,6 @@ function copySecret(value: string, label: string) {
                 </a-button>
               </div>
             </template>
-            <template v-else-if="column.key === 'current'">
-              <div class="binding-current-stack">
-                <div>
-                  <div class="scene-desc" style="margin-bottom: 4px">主接口</div>
-                  <div v-if="record.api_config_name">
-                    <div>{{ record.api_config_name }}</div>
-                    <a-space size="small">
-                      <a-tag class="api-tag api-tag-group">{{ record.api_group_name || "未分组" }}</a-tag>
-                      <a-tag class="api-tag" :class="record.api_status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                        {{ record.api_status === "enabled" ? "启用" : "停用" }}
-                      </a-tag>
-                    </a-space>
-                  </div>
-                  <span v-else class="scene-desc">未绑定</span>
-                </div>
-                <div>
-                  <div class="scene-desc" style="margin-bottom: 4px">备用接口</div>
-                  <div v-if="record.backup_api_config_name">
-                    <div>{{ record.backup_api_config_name }}</div>
-                    <a-space size="small">
-                      <a-tag class="api-tag api-tag-group">{{ record.backup_api_group_name || "未分组" }}</a-tag>
-                      <a-tag class="api-tag" :class="record.backup_api_status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                        {{ record.backup_api_status === "enabled" ? "启用" : "停用" }}
-                      </a-tag>
-                    </a-space>
-                  </div>
-                  <span v-else class="scene-desc">未绑定</span>
-                </div>
-              </div>
-            </template>
             <template v-else-if="column.key === 'bind'">
               <a-select
                 :value="record.api_config_id ?? undefined"
@@ -1606,6 +1594,20 @@ function copySecret(value: string, label: string) {
                   {{ option.label }}
                 </a-select-option>
               </a-select>
+            </template>
+            <template v-else-if="column.key === 'swap'">
+              <div class="binding-swap-cell">
+                <a-tooltip title="互换主备接口">
+                  <a-button
+                    size="small"
+                    class="api-secondary-btn api-icon-btn"
+                    :icon="h(SwapOutlined)"
+                    :disabled="!canSwapBinding(record) || bindingSavingKey === record.scene_key"
+                    :loading="bindingSavingKey === record.scene_key"
+                    @click="handleSwapBinding(record)"
+                  />
+                </a-tooltip>
+              </div>
             </template>
             <template v-else-if="column.key === 'backup'">
               <a-select
@@ -2553,6 +2555,12 @@ function copySecret(value: string, label: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.binding-swap-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .doc-block {
