@@ -11,9 +11,18 @@ CONTENT_SAFETY_ERROR_KEYWORDS = (
     "appear to be unsafe",
     "safety",
     "nsfw",
+    "moderation",
+    "prompt blocked",
+    "prompt rejected",
+    "prompt violation",
+    "content policy",
+    "policy violation",
     "敏感",
     "违规",
     "审核拒绝",
+    "审核未通过",
+    "未通过审核",
+    "安全风险",
     "内容安全",
 )
 

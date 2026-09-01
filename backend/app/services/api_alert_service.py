@@ -13,6 +13,7 @@ from app.models.api_alert_run import ApiAlertRun
 from app.models.image import Image
 from app.models.task import Task
 from app.models.task_api_attempt import TaskApiAttempt
+from app.services.content_safety_service import build_exclude_content_safety_failed_task_clause
 from app.services.wecom_notify_service import send_wecom_alert_markdown
 from app.utils.datetime_utils import now_local
 
@@ -134,6 +135,7 @@ def collect_api_alert_stats(
             Image.request_finished_at >= start_at,
             Image.request_finished_at < end_at,
             Image.status.in_(("success", "failed")),
+            build_exclude_content_safety_failed_task_clause(Image.status, Image.error_message),
             _exclude_example_template_seed_task_clause(),
         )
         .subquery()

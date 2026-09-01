@@ -94,6 +94,16 @@ class ApiAlertEvaluateTests(unittest.TestCase):
         self.assertEqual(decision.per_api_alerts, [])
         self.assertFalse(decision.overall_alert)
 
+    def test_default_per_api_requires_ten_images(self):
+        stats = _stats(
+            [_api(name="foo", image_count=9, success_count=1, avg_duration_seconds=200)],
+            overall_image_count=9,
+            overall_success_count=1,
+        )
+        decision = evaluate_api_alerts(stats)
+        self.assertEqual(decision.per_api_alerts, [])
+        self.assertFalse(decision.overall_alert)
+
     def test_per_api_duration_threshold(self):
         stats = _stats([_api(name="slow", image_count=8, success_count=8, avg_duration_seconds=182)], overall_image_count=8, overall_success_count=8)
         decision = evaluate_api_alerts(stats, min_call_count=5, overall_min_call_count=10, success_rate_threshold=80, avg_duration_seconds=150)
@@ -177,6 +187,7 @@ class ApiAlertQueryTests(unittest.TestCase):
                     id INTEGER PRIMARY KEY,
                     task_id INTEGER NOT NULL,
                     status VARCHAR(20),
+                    error_message TEXT,
                     request_started_at DATETIME,
                     request_finished_at DATETIME
                 )
@@ -201,11 +212,15 @@ class ApiAlertQueryTests(unittest.TestCase):
             conn.execute(
                 text("""
                     INSERT INTO images
-                        (id, task_id, status, request_started_at, request_finished_at)
+                        (id, task_id, status, error_message, request_started_at, request_finished_at)
                     VALUES
-                        (10, 1, 'success', '2026-09-01 16:08:00', '2026-09-01 16:10:00'),
-                        (11, 1, 'failed', '2026-09-01 16:06:00', '2026-09-01 16:10:00'),
-                        (20, 2, 'failed', '2026-09-01 12:00:00', '2026-09-01 12:01:00')
+                        (10, 1, 'success', '', '2026-09-01 16:08:00', '2026-09-01 16:10:00'),
+                        (11, 1, 'failed', '接口超时', '2026-09-01 16:06:00', '2026-09-01 16:10:00'),
+                        (12, 1, 'failed', '生成的图片存在安全风险', '2026-09-01 16:05:00', '2026-09-01 16:10:00'),
+                        (13, 1, 'failed', '提示词或参考图审核未通过', '2026-09-01 16:04:00', '2026-09-01 16:10:00'),
+                        (14, 1, 'failed', 'prompt moderation failed by provider', '2026-09-01 16:03:00', '2026-09-01 16:10:00'),
+                        (15, 1, 'failed', 'input image violates content policy', '2026-09-01 16:02:00', '2026-09-01 16:10:00'),
+                        (20, 2, 'failed', '接口超时', '2026-09-01 12:00:00', '2026-09-01 12:01:00')
                 """)
             )
             conn.execute(
@@ -215,6 +230,10 @@ class ApiAlertQueryTests(unittest.TestCase):
                         (1, 10, 1, 'primary'),
                         (2, 10, 2, 'fallback'),
                         (3, 11, 1, 'primary'),
+                        (5, 12, 1, 'primary'),
+                        (6, 13, 2, 'fallback'),
+                        (7, 14, 1, 'primary'),
+                        (8, 15, 2, 'fallback'),
                         (4, 20, 9, 'historical')
                 """)
             )
