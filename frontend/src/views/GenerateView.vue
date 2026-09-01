@@ -255,7 +255,6 @@ function upsertChatGeneratedTasks(payload?: ChatGenerateTasksPayload | null) {
 
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
-const canvasNavIcon = withBaseUrl("nav-canvas.svg");
 const smartCutoutTipAsset = withBaseUrl("docs/tutorial/20-smart-cutout-compare-tip.jpg");
 const expiredResultAsset = useExpiredResultAsset();
 const prompt = ref("");
@@ -2018,11 +2017,6 @@ function ensureLoggedIn() {
     return false;
   }
   return true;
-}
-
-async function goCanvas() {
-  if (!(await ensureAuthenticated())) return;
-  router.push("/canvas");
 }
 
 function goTutorial() {
@@ -5535,12 +5529,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               </span>
             </div>
           </div>
-          <div class="result-head-center">
-            <button type="button" class="result-canvas-entry-btn" @click="goCanvas">
-              <img :src="canvasNavIcon" alt="" class="result-canvas-entry-icon" />
-              <span class="result-canvas-entry-text">画布模式</span>
-            </button>
-          </div>
           <div class="result-head-meta">
             <a-tooltip title="使用教程">
               <button
@@ -8739,7 +8727,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px 12px;
 }

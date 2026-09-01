@@ -16,13 +16,13 @@ from app.services.cos_service import CosRuntimeConfig, build_cos_public_url, get
 from app.services.task_service import is_task_generation_failure_credit_refunded
 
 IMAGE_SAFETY_ERROR_MESSAGE = "生成的图片存在安全风险（色情、暴力、版权、政治敏感等），请尝试修改提示词或参考图，或换个模型尝试（不同模型审查尺度不同）！"
-PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图未通过安全审核，请修改后重试"
+PROMPT_MODERATION_ERROR_MESSAGE = "提示词或参考图审核未通过"
 GENERATION_TASK_FAILURE_MESSAGE = "生图失败，请反馈给我们处理"
 INVALID_REFERENCE_IMAGE_MESSAGE = "参考图被模型拒绝，请更换正常格式的参考图后重试；或换个模型尝试（不同模型审查尺度不同）！"
 INVALID_ASPECT_RATIO_MESSAGE = "当前宽高比不受支持，请更换其他宽高比后重试"
 
 PROMPT_MODERATION_ERROR_PATTERN = re.compile(
-    r"prompt moderation precheck|request was rejected by prompt moderation|request was rejected by the safety system|提示词未通过安全审核|请求被审核拒绝|审核拒绝",
+    r"\b(?:safety|prompt|moderation)\b|提示词|审核",
     re.IGNORECASE,
 )
 IMAGE_SAFETY_ERROR_PATTERN = re.compile(r"unsafe|image_unsafe|content blocked", re.IGNORECASE)
