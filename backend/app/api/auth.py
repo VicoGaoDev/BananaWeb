@@ -11,6 +11,7 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     RegisterRequest,
+    RegistrationEmailCheckRequest,
     UserBrief,
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -31,6 +32,7 @@ from app.services.business_id_service import get_user_by_business_id, user_exter
 from app.services.auth_service import (
     authenticate_user,
     change_password,
+    ensure_registration_email_available,
     register_user,
     reset_password_with_email_code,
     update_username,
@@ -71,6 +73,12 @@ def _user_brief(db: Session, user: User) -> UserBrief:
         id=user_external_id(user), business_id=user.business_id, username=user.username, email=user.email, role=user.role,
         avatar_url=resolve_avatar_url(user.avatar_url, cos_config=get_optional_cos_config(db)), credits=get_user_credit_balance(db, user.id), is_whitelisted=bool(user.is_whitelisted),
     )
+
+
+@router.post("/register/email-check")
+def check_registration_email(body: RegistrationEmailCheckRequest, db: Session = Depends(get_db)):
+    ensure_registration_email_available(db, body.email)
+    return {"available": True}
 
 
 @router.post("/register", response_model=LoginResponse)

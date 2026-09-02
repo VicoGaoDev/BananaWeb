@@ -6,6 +6,7 @@ import { message, notification } from "ant-design-vue";
 import {
   login as apiLogin,
   register as apiRegister,
+  checkRegistrationEmail,
   forgotPassword as apiForgotPassword,
   getMe,
   getContactConfig,
@@ -1362,13 +1363,18 @@ async function handleSendRegisterCode() {
     return;
   }
   registerCodeLoading.value = true;
+  const email = registerForm.email.trim().toLowerCase();
   try {
+    await checkRegistrationEmail(email);
+    if (registerForm.email.trim().toLowerCase() !== email) return;
     const { sendRegisterEmailCode } = await import("@/lib/cloudbase");
-    registerForm.verificationId = await sendRegisterEmailCode(registerForm.email.trim());
+    const verificationId = await sendRegisterEmailCode(email);
+    if (registerForm.email.trim().toLowerCase() !== email) return;
+    registerForm.verificationId = verificationId;
     message.success("验证码已发送，请检查邮箱");
   } catch (err: any) {
     registerForm.verificationId = "";
-    message.error(err.message || "验证码发送失败");
+    message.error(err.response?.data?.detail || err.message || "验证码发送失败");
   } finally {
     registerCodeLoading.value = false;
   }

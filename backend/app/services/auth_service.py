@@ -147,6 +147,14 @@ def _validate_registration_email(email: str) -> str:
     return normalized
 
 
+def ensure_registration_email_available(db: Session, email: str) -> str:
+    normalized = _validate_registration_email(email)
+    existing = db.query(User.id).filter(User.email == normalized).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已注册，请直接登录")
+    return normalized
+
+
 async def register_user(
     db: Session,
     username: str,
@@ -157,13 +165,9 @@ async def register_user(
     verification_code: str = "",
 ) -> tuple[str, User]:
     normalized_username = ensure_username_available(db, username)
-    normalized_email = _validate_registration_email(email)
+    normalized_email = ensure_registration_email_available(db, email)
     if len(password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少6位")
-
-    existing = db.query(User).filter(User.email == normalized_email).first()
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="邮箱已注册")
 
     verification_token = await _verify_cloudbase_email_code(verification_id, verification_code)
     await _signup_cloudbase_account(normalized_email, password, verification_token)

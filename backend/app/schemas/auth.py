@@ -35,6 +35,10 @@ class RegisterRequest(BaseModel):
     promo_code: str | None = None
 
 
+class RegistrationEmailCheckRequest(BaseModel):
+    email: str
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str

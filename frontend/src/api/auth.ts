@@ -19,6 +19,10 @@ export function login(account: string, password: string): Promise<LoginResponse>
   });
 }
 
+export function checkRegistrationEmail(email: string): Promise<{ available: boolean }> {
+  return client.post("/auth/register/email-check", { email });
+}
+
 export function register(
   username: string,
   email: string,
