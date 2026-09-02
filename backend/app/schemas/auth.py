@@ -30,6 +30,8 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     password: str
+    verification_code: str
+    verification_id: str
     promo_code: str | None = None
 
 

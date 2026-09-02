@@ -70,6 +70,7 @@ from app.services.user_credit_service import (
     get_user_credit_balance,
     get_user_credits_map,
 )
+from app.services.username_service import ensure_username_available
 from app.services.video_task_service import (
     VIDEO_TASK_ENQUEUE_REFUND_PREFIX,
     VIDEO_TASK_FAILURE_REFUND_PREFIX,
@@ -263,11 +264,7 @@ def _get_first_admin_external_id(db: Session) -> str | None:
 
 
 def create_user(db: Session, username: str, password: str, role: str = "user", operator: User | None = None) -> dict:
-    if username == "administrator":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户名为系统保留，不可使用")
-    exists = db.query(User).filter(User.username == username).first()
-    if exists:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在")
+    normalized_username = ensure_username_available(db, username)
     if len(password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少6位")
     if role not in ("user", "admin"):
@@ -275,7 +272,7 @@ def create_user(db: Session, username: str, password: str, role: str = "user", o
     if role == "admin" and operator and operator.role != "superadmin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅超级管理员可创建管理员账号")
 
-    user = User(username=username, password_hash=hash_password(password), role=role)
+    user = User(username=normalized_username, password_hash=hash_password(password), role=role)
     db.add(user)
     db.flush()
     create_default_credit_account(db, user)

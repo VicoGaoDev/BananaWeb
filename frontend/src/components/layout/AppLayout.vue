@@ -936,6 +936,7 @@ const forgotPasswordCodeLoading = ref(false);
 const registerForm = reactive({
   email: "",
   verificationCode: "",
+  verificationId: "",
   username: "",
   password: "",
   confirmPassword: "",
@@ -1030,18 +1031,46 @@ const bannedEmailDomainSuffixes = [
   "addy.io",
   "anonaddy.com",
   "forwardemail.net",
+  "test.com",
+  "probe.com",
+] as const;
+
+const reservedEmailDomainSuffixes = [
+  "80ai.net",
+  "80ai.cn",
+  "80ai.com",
+  "80ai.org",
+  "80ai.top",
 ] as const;
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-function isBannedEmailDomain(email: string) {
+function isEmailDomainInList(email: string, suffixes: readonly string[]) {
   const normalized = email.trim().toLowerCase();
   const atIndex = normalized.lastIndexOf("@");
   if (atIndex < 0) return false;
   const domain = normalized.slice(atIndex + 1);
-  return bannedEmailDomainSuffixes.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`));
+  return suffixes.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`));
+}
+
+function isBannedEmailDomain(email: string) {
+  return isEmailDomainInList(email, bannedEmailDomainSuffixes);
+}
+
+function isReservedEmailDomain(email: string) {
+  return isEmailDomainInList(email, reservedEmailDomainSuffixes);
+}
+
+function getBlockedRegistrationEmailReason(email: string) {
+  if (isReservedEmailDomain(email)) {
+    return "该邮箱域名为官方保留域名，暂不支持注册";
+  }
+  if (isBannedEmailDomain(email)) {
+    return "该邮箱域名暂不支持注册，请使用常用邮箱地址";
+  }
+  return "";
 }
 
 function normalizeInviteCode(code?: string | null) {
@@ -1200,11 +1229,19 @@ watch(loginModalVisible, (open) => {
   }
 });
 
+watch(
+  () => registerForm.email,
+  () => {
+    registerForm.verificationId = "";
+  },
+);
+
 function resetAuthForms() {
   loginForm.account = "";
   loginForm.password = "";
   registerForm.email = "";
   registerForm.verificationCode = "";
+  registerForm.verificationId = "";
   registerForm.username = "";
   registerForm.password = "";
   registerForm.confirmPassword = "";
@@ -1319,16 +1356,18 @@ async function handleSendRegisterCode() {
     message.warning("邮箱格式不正确");
     return;
   }
-  if (isBannedEmailDomain(registerForm.email)) {
-    message.warning("该邮箱域名暂不支持注册，请使用常用邮箱地址");
+  const blockedReason = getBlockedRegistrationEmailReason(registerForm.email);
+  if (blockedReason) {
+    message.warning(blockedReason);
     return;
   }
   registerCodeLoading.value = true;
   try {
     const { sendRegisterEmailCode } = await import("@/lib/cloudbase");
-    await sendRegisterEmailCode(registerForm.email.trim());
+    registerForm.verificationId = await sendRegisterEmailCode(registerForm.email.trim());
     message.success("验证码已发送，请检查邮箱");
   } catch (err: any) {
+    registerForm.verificationId = "";
     message.error(err.message || "验证码发送失败");
   } finally {
     registerCodeLoading.value = false;
@@ -1344,8 +1383,9 @@ async function handleRegisterSubmit() {
     message.warning("邮箱格式不正确");
     return;
   }
-  if (isBannedEmailDomain(registerForm.email)) {
-    message.warning("该邮箱域名暂不支持注册，请使用常用邮箱地址");
+  const blockedReason = getBlockedRegistrationEmailReason(registerForm.email);
+  if (blockedReason) {
+    message.warning(blockedReason);
     return;
   }
   if (registerForm.password.length < 6) {
@@ -1354,6 +1394,10 @@ async function handleRegisterSubmit() {
   }
   if (!/^\d{6}$/.test(registerForm.verificationCode.trim())) {
     message.warning("请输入正确的 6 位验证码");
+    return;
+  }
+  if (!registerForm.verificationId) {
+    message.warning("请先获取邮箱验证码");
     return;
   }
   if (registerForm.password !== registerForm.confirmPassword) {
@@ -1380,17 +1424,15 @@ async function handleRegisterSubmit() {
   }
   registerLoading.value = true;
   try {
-    const { registerCloudbaseAccount } = await import("@/lib/cloudbase");
-    await registerCloudbaseAccount(
-      registerForm.email.trim(),
-      registerForm.verificationCode.trim(),
-      registerForm.password
-    );
     const res = await apiRegister(
       registerForm.username.trim(),
       registerForm.email.trim(),
       registerForm.password,
       normalizedInviteOrPromoCode || undefined,
+      {
+        verificationCode: registerForm.verificationCode.trim(),
+        verificationId: registerForm.verificationId,
+      },
     );
     auth.setAuth(res.token, res.user);
     message.success("注册成功");
@@ -3194,7 +3236,7 @@ watch(
                   :loading="registerCodeLoading"
                   @click="handleSendRegisterCode"
                 >
-                  {{ registerCodeLoading ? "发送中..." : "发送验证码" }}
+                  {{ registerCodeLoading ? "发送中..." : (registerForm.verificationId ? "重新发送" : "发送验证码") }}
                 </a-button>
               </div>
             </a-form-item>

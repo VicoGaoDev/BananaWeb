@@ -74,8 +74,16 @@ def _user_brief(db: Session, user: User) -> UserBrief:
 
 
 @router.post("/register", response_model=LoginResponse)
-def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
-    token, user = register_user(db, body.username, body.email, body.password, body.promo_code)
+async def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    token, user = await register_user(
+        db,
+        body.username,
+        body.email,
+        body.password,
+        body.promo_code,
+        body.verification_id,
+        body.verification_code,
+    )
     request.state.user_id = user_external_id(user)
     audit_logger.info(
         "user registered",

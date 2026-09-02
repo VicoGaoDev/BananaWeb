@@ -15,6 +15,7 @@ from app.services.referral_reward_service import (
 )
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance
+from app.services.username_service import ensure_username_available, normalize_username
 from app.utils.security import create_access_token, hash_password, verify_password
 
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -90,6 +91,16 @@ BANNED_EMAIL_DOMAIN_SUFFIXES = {
     "addy.io",
     "anonaddy.com",
     "forwardemail.net",
+    "test.com",
+    "probe.com",
+}
+
+RESERVED_EMAIL_DOMAIN_SUFFIXES = {
+    "80ai.net",
+    "80ai.cn",
+    "80ai.com",
+    "80ai.org",
+    "80ai.top",
 }
 
 
@@ -104,13 +115,30 @@ def _is_banned_email_domain(domain: str) -> bool:
     )
 
 
+def _is_reserved_email_domain(domain: str) -> bool:
+    return any(
+        domain == reserved_suffix or domain.endswith(f".{reserved_suffix}")
+        for reserved_suffix in RESERVED_EMAIL_DOMAIN_SUFFIXES
+    )
+
+
 def _validate_email(email: str) -> str:
     normalized = _normalize_email(email)
     if not normalized or not EMAIL_REGEX.match(normalized):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱格式不正确")
     if len(normalized) > 255:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱长度不能超过255个字符")
+    return normalized
+
+
+def _validate_registration_email(email: str) -> str:
+    normalized = _validate_email(email)
     domain = normalized.rsplit("@", 1)[-1]
+    if _is_reserved_email_domain(domain):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该邮箱域名为官方保留域名，暂不支持注册",
+        )
     if _is_banned_email_domain(domain):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -119,28 +147,26 @@ def _validate_email(email: str) -> str:
     return normalized
 
 
-def _validate_username(username: str) -> str:
-    normalized = (username or "").strip()
-    if len(normalized) < 2 or len(normalized) > 20:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名需 2-20 个字符")
-    return normalized
-
-
-def register_user(
+async def register_user(
     db: Session,
     username: str,
     email: str,
     password: str,
     promo_code: str | None = None,
+    verification_id: str = "",
+    verification_code: str = "",
 ) -> tuple[str, User]:
-    normalized_username = _validate_username(username)
-    normalized_email = _validate_email(email)
+    normalized_username = ensure_username_available(db, username)
+    normalized_email = _validate_registration_email(email)
     if len(password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少6位")
 
     existing = db.query(User).filter(User.email == normalized_email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="邮箱已注册")
+
+    verification_token = await _verify_cloudbase_email_code(verification_id, verification_code)
+    await _signup_cloudbase_account(normalized_email, password, verification_token)
 
     normalized_invite_code = normalize_invite_code(promo_code)
     promo = None
@@ -225,20 +251,26 @@ def change_password(db: Session, user: User, old_password: str, new_password: st
     db.commit()
 
 
-def _map_cloudbase_error(error_text: str) -> str:
+def _map_cloudbase_error(error_text: str, action: str = "reset") -> str:
     text = (error_text or "").lower()
     if "invalid_verification_code" in text or "verification" in text and "invalid" in text:
         return "验证码错误或已过期，请重新获取"
+    if "already exists" in text or "already registered" in text or "duplicate" in text or "is_user" in text:
+        return "该邮箱已注册"
     if "user_not_found" in text or "not_found" in text:
         return "该邮箱未注册"
     if "weak password" in text or "password" in text:
         return "新密码不符合要求，请使用至少 6 位密码"
     if "resource_exhausted" in text or "rate" in text or "too many" in text:
         return "操作过于频繁，请稍后再试"
+    if action == "verify":
+        return "验证码错误或已过期，请重新获取"
+    if action == "signup":
+        return "注册验证失败，请稍后重试"
     return "密码重置验证失败，请稍后重试"
 
 
-async def _cloudbase_request(path: str, payload: dict) -> dict:
+async def _cloudbase_request(path: str, payload: dict, action: str = "reset") -> dict:
     env_id = settings.CLOUDBASE_ENV_ID.strip()
     if not env_id:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="CloudBase 环境 ID 未配置")
@@ -260,8 +292,44 @@ async def _cloudbase_request(path: str, payload: dict) -> dict:
             str(data.get(key) or "")
             for key in ("error", "error_description", "message", "details")
         )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_map_cloudbase_error(error_text))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_map_cloudbase_error(error_text, action))
     return data
+
+
+async def _verify_cloudbase_email_code(verification_id: str, verification_code: str) -> str:
+    code = (verification_code or "").strip()
+    verify_id = (verification_id or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请输入正确的 6 位验证码")
+    if not verify_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先获取邮箱验证码")
+
+    verify_res = await _cloudbase_request(
+        "/v1/verification/verify",
+        {"verification_id": verify_id, "verification_code": code},
+        action="verify",
+    )
+    verification_token = verify_res.get("verification_token")
+    if not verification_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期，请重新获取")
+    return str(verification_token)
+
+
+async def _signup_cloudbase_account(email: str, password: str, verification_token: str) -> None:
+    try:
+        await _cloudbase_request(
+            "/v1/signup",
+            {
+                "email": email,
+                "password": password,
+                "verification_token": verification_token,
+            },
+            action="signup",
+        )
+    except HTTPException as exc:
+        if exc.status_code == 400 and exc.detail == "该邮箱已注册":
+            return
+        raise
 
 
 async def reset_password_with_email_code(
@@ -272,14 +340,8 @@ async def reset_password_with_email_code(
     new_password: str,
 ) -> User:
     normalized_email = _validate_email(email)
-    code = (verification_code or "").strip()
-    verify_id = (verification_id or "").strip()
     if len(new_password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新密码至少6位")
-    if not re.fullmatch(r"\d{6}", code):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请输入正确的 6 位验证码")
-    if not verify_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先获取邮箱验证码")
 
     user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
@@ -287,13 +349,7 @@ async def reset_password_with_email_code(
     if user.status == "disabled":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被禁用")
 
-    verify_res = await _cloudbase_request(
-        "/v1/verification/verify",
-        {"verification_id": verify_id, "verification_code": code},
-    )
-    verification_token = verify_res.get("verification_token")
-    if not verification_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码错误或已过期，请重新获取")
+    verification_token = await _verify_cloudbase_email_code(verification_id, verification_code)
 
     await _cloudbase_request(
         "/v1/reset",
@@ -313,9 +369,10 @@ async def reset_password_with_email_code(
 
 
 def update_username(db: Session, user: User, username: str) -> User:
-    normalized_username = _validate_username(username)
+    normalized_username = normalize_username(username)
     if user.username == normalized_username:
         return user
+    normalized_username = ensure_username_available(db, normalized_username, exclude_user_id=user.id)
     user.username = normalized_username
     db.commit()
     db.refresh(user)

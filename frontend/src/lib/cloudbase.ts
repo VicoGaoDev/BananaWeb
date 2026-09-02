@@ -143,7 +143,7 @@ async function sendEmailCode(email: string, usage: "SIGNUP" | "PASSWORD_RESET") 
 }
 
 export async function sendRegisterEmailCode(email: string) {
-  await sendEmailCode(email, "SIGNUP");
+  return sendEmailCode(email, "SIGNUP");
 }
 
 export async function sendPasswordResetEmailCode(email: string) {

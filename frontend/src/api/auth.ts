@@ -24,12 +24,15 @@ export function register(
   email: string,
   password: string,
   promoCode?: string,
+  verification?: { verificationCode: string; verificationId: string },
 ): Promise<LoginResponse> {
   return client.post("/auth/register", {
     username,
     email,
     password,
     promo_code: promoCode?.trim() || undefined,
+    verification_code: verification?.verificationCode,
+    verification_id: verification?.verificationId,
   });
 }
 
