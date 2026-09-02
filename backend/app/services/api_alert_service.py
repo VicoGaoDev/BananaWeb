@@ -84,6 +84,48 @@ class ApiAlertRunResult:
     claimed_overall: str | None = None
 
 
+@dataclass
+class _ApiAlertStatAccumulator:
+    api_config_id: int | None
+    api_config_name: str
+    image_count: int = 0
+    success_count: int = 0
+    duration_seconds_sum: float = 0.0
+    duration_count: int = 0
+
+    def add(
+        self,
+        *,
+        api_config_name: str,
+        image_count: int,
+        success_count: int,
+        duration_seconds_sum: float | None,
+        duration_count: int,
+    ) -> None:
+        normalized_name = (api_config_name or "").strip()
+        if normalized_name:
+            self.api_config_name = normalized_name
+        self.image_count += image_count
+        self.success_count += success_count
+        if duration_seconds_sum is not None:
+            self.duration_seconds_sum += duration_seconds_sum
+        self.duration_count += duration_count
+
+    def to_api_stat(self) -> ApiAlertApiStat:
+        avg_duration = (
+            self.duration_seconds_sum / self.duration_count
+            if self.duration_count > 0
+            else None
+        )
+        return ApiAlertApiStat(
+            api_config_id=self.api_config_id,
+            api_config_name=self.api_config_name or f"接口#{self.api_config_id}",
+            image_count=self.image_count,
+            success_count=self.success_count,
+            avg_duration_seconds=avg_duration,
+        )
+
+
 def align_slot_start(moment: datetime, interval_minutes: int) -> datetime:
     interval = max(int(interval_minutes or 0), 1)
     origin = datetime(1970, 1, 1)
@@ -115,6 +157,14 @@ def _exclude_example_template_seed_task_clause():
     return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
 
 
+def _sync_task_clause():
+    return or_(Task.provider_task_id.is_(None), Task.provider_task_id == "")
+
+
+def _async_task_clause():
+    return Task.provider_task_id.is_not(None), Task.provider_task_id != ""
+
+
 def _image_duration_seconds_expr():
     return func.unix_timestamp(Image.request_finished_at) - func.unix_timestamp(
         Image.request_started_at
@@ -140,55 +190,101 @@ def collect_api_alert_stats(
         )
         .subquery()
     )
-    latest_attempt = (
+    duration_seconds = _image_duration_seconds_expr()
+    sync_grouped = (
+        db.query(
+            TaskApiAttempt.api_config_id.label("api_config_id"),
+            func.max(TaskApiAttempt.api_config_name).label("api_config_name"),
+            func.count(TaskApiAttempt.id).label("image_count"),
+            func.coalesce(func.sum(case((TaskApiAttempt.status == "success", 1), else_=0)), 0).label("success_count"),
+            func.sum(TaskApiAttempt.duration_ms / 1000.0).label("duration_seconds_sum"),
+            func.count(TaskApiAttempt.duration_ms).label("duration_count"),
+        )
+        .select_from(TaskApiAttempt)
+        .join(window_images, window_images.c.image_id == TaskApiAttempt.image_id)
+        .join(Image, Image.id == TaskApiAttempt.image_id)
+        .join(Task, Task.id == Image.task_id)
+        .filter(
+            TaskApiAttempt.api_config_id.is_not(None),
+            TaskApiAttempt.status.in_(("success", "failed")),
+            build_exclude_content_safety_failed_task_clause(
+                TaskApiAttempt.status,
+                TaskApiAttempt.error_message,
+            ),
+            _sync_task_clause(),
+            _exclude_example_template_seed_task_clause(),
+        )
+        .group_by(TaskApiAttempt.api_config_id)
+        .all()
+    )
+
+    async_latest_attempt = (
         db.query(
             TaskApiAttempt.image_id.label("image_id"),
             func.max(TaskApiAttempt.id).label("attempt_id"),
         )
         .join(window_images, window_images.c.image_id == TaskApiAttempt.image_id)
+        .join(Image, Image.id == TaskApiAttempt.image_id)
+        .join(Task, Task.id == Image.task_id)
+        .filter(*_async_task_clause())
         .group_by(TaskApiAttempt.image_id)
         .subquery()
     )
-    duration_seconds = _image_duration_seconds_expr()
-    image_filters = (
-        Image.request_finished_at.is_not(None),
-        Image.request_finished_at >= start_at,
-        Image.request_finished_at < end_at,
-        Image.status.in_(("success", "failed")),
-        TaskApiAttempt.api_config_id.is_not(None),
-        _exclude_example_template_seed_task_clause(),
-    )
-    grouped = (
+    async_grouped = (
         db.query(
             TaskApiAttempt.api_config_id.label("api_config_id"),
             func.max(TaskApiAttempt.api_config_name).label("api_config_name"),
             func.count(Image.id).label("image_count"),
             func.coalesce(func.sum(case((Image.status == "success", 1), else_=0)), 0).label("success_count"),
-            func.avg(duration_seconds).label("avg_duration_seconds"),
+            func.sum(duration_seconds).label("duration_seconds_sum"),
+            func.count(duration_seconds).label("duration_count"),
         )
         .select_from(Image)
         .join(Task, Task.id == Image.task_id)
-        .join(latest_attempt, latest_attempt.c.image_id == Image.id)
-        .join(TaskApiAttempt, TaskApiAttempt.id == latest_attempt.c.attempt_id)
-        .filter(*image_filters)
+        .join(async_latest_attempt, async_latest_attempt.c.image_id == Image.id)
+        .join(TaskApiAttempt, TaskApiAttempt.id == async_latest_attempt.c.attempt_id)
+        .filter(
+            Image.request_finished_at.is_not(None),
+            Image.request_finished_at >= start_at,
+            Image.request_finished_at < end_at,
+            Image.status.in_(("success", "failed")),
+            TaskApiAttempt.api_config_id.is_not(None),
+            _exclude_example_template_seed_task_clause(),
+        )
         .group_by(TaskApiAttempt.api_config_id)
         .all()
     )
 
-    apis: list[ApiAlertApiStat] = []
-    for row in grouped:
+    accumulators: dict[int, _ApiAlertStatAccumulator] = {}
+    for row in [*sync_grouped, *async_grouped]:
         if row.api_config_id is None and not (row.api_config_name or "").strip():
             continue
-        avg_duration = None if row.avg_duration_seconds is None else float(row.avg_duration_seconds)
-        apis.append(
-            ApiAlertApiStat(
-                api_config_id=int(row.api_config_id) if row.api_config_id is not None else None,
-                api_config_name=(row.api_config_name or "").strip() or f"接口#{row.api_config_id}",
-                image_count=int(row.image_count or 0),
-                success_count=int(row.success_count or 0),
-                avg_duration_seconds=avg_duration,
-            )
+        api_config_id = int(row.api_config_id) if row.api_config_id is not None else None
+        if api_config_id is None:
+            continue
+        accumulator = accumulators.setdefault(
+            api_config_id,
+            _ApiAlertStatAccumulator(
+                api_config_id=api_config_id,
+                api_config_name=(row.api_config_name or "").strip() or f"接口#{api_config_id}",
+            ),
         )
+        accumulator.add(
+            api_config_name=row.api_config_name or "",
+            image_count=int(row.image_count or 0),
+            success_count=int(row.success_count or 0),
+            duration_seconds_sum=(
+                None
+                if row.duration_seconds_sum is None
+                else float(row.duration_seconds_sum)
+            ),
+            duration_count=int(row.duration_count or 0),
+        )
+
+    apis = [
+        accumulator.to_api_stat()
+        for accumulator in accumulators.values()
+    ]
     apis.sort(key=lambda item: (item.success_rate, -(item.avg_duration_seconds or 0), item.api_config_name))
 
     overall_image_count = sum(api.image_count for api in apis)

@@ -177,6 +177,7 @@ class ApiAlertQueryTests(unittest.TestCase):
                 CREATE TABLE tasks (
                     id INTEGER PRIMARY KEY,
                     is_example_template_seed BOOLEAN,
+                    provider_task_id VARCHAR(255),
                     request_started_at DATETIME,
                     request_finished_at DATETIME,
                     created_at DATETIME
@@ -197,16 +198,20 @@ class ApiAlertQueryTests(unittest.TestCase):
                     id INTEGER PRIMARY KEY,
                     image_id INTEGER,
                     api_config_id INTEGER,
-                    api_config_name VARCHAR(100)
+                    api_config_name VARCHAR(100),
+                    status VARCHAR(20),
+                    error_message TEXT,
+                    duration_ms INTEGER
                 )
             """))
             conn.execute(
                 text("""
                     INSERT INTO tasks
-                        (id, is_example_template_seed, request_started_at, request_finished_at, created_at)
+                        (id, is_example_template_seed, provider_task_id, request_started_at, request_finished_at, created_at)
                     VALUES
-                        (1, 0, '2026-09-01 15:00:00', '2026-09-01 16:10:00', '2026-09-01 15:00:00'),
-                        (2, 0, '2026-09-01 12:00:00', '2026-09-01 12:01:00', '2026-09-01 12:00:00')
+                        (1, 0, '', '2026-09-01 15:00:00', '2026-09-01 16:10:00', '2026-09-01 15:00:00'),
+                        (2, 0, '', '2026-09-01 12:00:00', '2026-09-01 12:01:00', '2026-09-01 12:00:00'),
+                        (3, 0, 'provider-async-1', '2026-09-01 16:00:00', '2026-09-01 16:10:00', '2026-09-01 16:00:00')
                 """)
             )
             conn.execute(
@@ -220,21 +225,28 @@ class ApiAlertQueryTests(unittest.TestCase):
                         (13, 1, 'failed', '提示词或参考图审核未通过', '2026-09-01 16:04:00', '2026-09-01 16:10:00'),
                         (14, 1, 'failed', 'prompt moderation failed by provider', '2026-09-01 16:03:00', '2026-09-01 16:10:00'),
                         (15, 1, 'failed', 'input image violates content policy', '2026-09-01 16:02:00', '2026-09-01 16:10:00'),
-                        (20, 2, 'failed', '接口超时', '2026-09-01 12:00:00', '2026-09-01 12:01:00')
+                        (16, 1, 'success', '', '2026-09-01 16:01:00', '2026-09-01 16:10:00'),
+                        (20, 2, 'failed', '接口超时', '2026-09-01 12:00:00', '2026-09-01 12:01:00'),
+                        (30, 3, 'success', '', '2026-09-01 16:00:00', '2026-09-01 16:10:00')
                 """)
             )
             conn.execute(
                 text("""
-                    INSERT INTO task_api_attempts (id, image_id, api_config_id, api_config_name)
+                    INSERT INTO task_api_attempts
+                        (id, image_id, api_config_id, api_config_name, status, error_message, duration_ms)
                     VALUES
-                        (1, 10, 1, 'primary'),
-                        (2, 10, 2, 'fallback'),
-                        (3, 11, 1, 'primary'),
-                        (5, 12, 1, 'primary'),
-                        (6, 13, 2, 'fallback'),
-                        (7, 14, 1, 'primary'),
-                        (8, 15, 2, 'fallback'),
-                        (4, 20, 9, 'historical')
+                        (1, 10, 1, 'primary', 'failed', 'HTTP 500', 30000),
+                        (2, 10, 2, 'fallback', 'success', '', 120000),
+                        (3, 11, 1, 'primary', 'failed', '接口超时', 240000),
+                        (4, 20, 9, 'historical', 'failed', '接口超时', 1000),
+                        (5, 12, 1, 'primary', 'failed', '生成的图片存在安全风险', 250000),
+                        (6, 13, 2, 'fallback', 'failed', '提示词或参考图审核未通过', 250000),
+                        (7, 14, 1, 'primary', 'failed', 'prompt moderation failed by provider', 250000),
+                        (8, 15, 2, 'fallback', 'failed', 'input image violates content policy', 250000),
+                        (9, 16, 1, 'primary', 'failed', 'prompt moderation failed by provider', 110000),
+                        (10, 16, 2, 'fallback', 'success', '', 90000),
+                        (11, 30, 3, 'async', 'success', '', 1000),
+                        (12, 30, 3, 'async', 'success', '', 2000)
                 """)
             )
 
@@ -245,13 +257,19 @@ class ApiAlertQueryTests(unittest.TestCase):
                 end_at=datetime(2026, 9, 1, 16, 30),
             )
 
-        self.assertEqual(stats.overall_image_count, 2)
-        self.assertEqual(stats.overall_success_count, 1)
+        self.assertEqual(stats.overall_image_count, 5)
+        self.assertEqual(stats.overall_success_count, 3)
         by_name = {item.api_config_name: item for item in stats.apis}
-        self.assertEqual(set(by_name), {"primary", "fallback"})
-        self.assertEqual(by_name["fallback"].success_count, 1)
-        self.assertAlmostEqual(by_name["fallback"].avg_duration_seconds, 120.0)
-        self.assertAlmostEqual(by_name["primary"].avg_duration_seconds, 240.0)
+        self.assertEqual(set(by_name), {"primary", "fallback", "async"})
+        self.assertEqual(by_name["primary"].image_count, 2)
+        self.assertEqual(by_name["primary"].success_count, 0)
+        self.assertAlmostEqual(by_name["primary"].avg_duration_seconds, 135.0)
+        self.assertEqual(by_name["fallback"].image_count, 2)
+        self.assertEqual(by_name["fallback"].success_count, 2)
+        self.assertAlmostEqual(by_name["fallback"].avg_duration_seconds, 105.0)
+        self.assertEqual(by_name["async"].image_count, 1)
+        self.assertEqual(by_name["async"].success_count, 1)
+        self.assertAlmostEqual(by_name["async"].avg_duration_seconds, 600.0)
 
 
 class ApiAlertMarkdownTests(unittest.TestCase):
