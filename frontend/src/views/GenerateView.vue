@@ -4497,12 +4497,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     >
                       <template #title>
                         <div class="custom-size-help-tip">
-                          <div>开启后可手动输入宽高：</div>
+                          <div>开启后可手动输入宽高像素值：</div>
                           <ul>
                             <li>宽高须为 16 的倍数</li>
                             <li>长短边比例不超过 3:1</li>
                             <li>最大边长不超过 3840px</li>
                           </ul>
+                          <div class="custom-size-help-note">仅 G-Image2 模型支持自定义</div>
                         </div>
                       </template>
                       <button type="button" class="aspect-ratio-auto-help" aria-label="自定义分辨率说明">
@@ -4986,12 +4987,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     >
                       <template #title>
                         <div class="custom-size-help-tip">
-                          <div>开启后可手动输入宽高：</div>
+                          <div>开启后可手动输入宽高像素值：</div>
                           <ul>
                             <li>宽高须为 16 的倍数</li>
                             <li>长短边比例不超过 3:1</li>
                             <li>最大边长不超过 3840px</li>
                           </ul>
+                          <div class="custom-size-help-note">仅 G-Image2 模型支持自定义</div>
                         </div>
                       </template>
                       <button type="button" class="aspect-ratio-auto-help" aria-label="自定义分辨率说明">
@@ -7126,6 +7128,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .custom-size-help-tooltip .custom-size-help-tip li {
   list-style: disc;
+}
+
+.custom-size-help-tooltip .custom-size-help-note {
+  margin-top: 8px;
 }
 
 .aspect-ratio-auto-text {

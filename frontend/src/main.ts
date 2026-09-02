@@ -131,6 +131,15 @@ async function registerExtendedAntdComponents() {
   return extendedAntdRegistration;
 }
 
+function scheduleExtendedAntdPreload() {
+  const preload = () => {
+    void registerExtendedAntdComponents().catch((error) => {
+      console.warn("Failed to preload extended Ant Design components", error);
+    });
+  };
+  window.setTimeout(preload, 0);
+}
+
 registerAntdComponents([
   Avatar,
   Badge,
@@ -203,6 +212,7 @@ async function revealApp() {
     mountApp();
   } finally {
     hideAppBootScreen();
+    scheduleExtendedAntdPreload();
   }
 }
 
