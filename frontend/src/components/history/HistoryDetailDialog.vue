@@ -293,6 +293,7 @@ function detailMetaList(item: UserHistoryCard) {
       : "",
     item.run_time != null ? `接口调用耗时：${formatDuration((item.run_time || 0) * 1000)}` : "",
     item.request_started_at ? `开始时间：${formatTime(item.request_started_at)}` : "",
+    item.created_at ? `创建时间：${formatTime(item.created_at)}` : "",
   ].filter(Boolean);
 }
 
