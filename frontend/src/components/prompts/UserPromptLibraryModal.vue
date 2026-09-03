@@ -563,7 +563,7 @@ function handleDeleteCategory() {
         </div>
         <div class="user-prompt-form-item">
           <label>提示词内容</label>
-          <a-textarea v-model:value="promptContent" :rows="8" :maxlength="5000" show-count placeholder="请输入提示词内容" />
+          <a-textarea v-model:value="promptContent" :rows="8" :maxlength="10000" show-count placeholder="请输入提示词内容" />
         </div>
       </div>
     </a-modal>

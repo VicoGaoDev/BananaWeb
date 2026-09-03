@@ -283,6 +283,24 @@ async function handleSubmit() {
   display: flex;
   flex-wrap: wrap;
   gap: 16px 24px;
+
+  :deep(.ant-radio-inner) {
+    border-color: var(--theme-border-strong);
+    background-color: var(--theme-control-bg);
+  }
+
+  :deep(.ant-radio-wrapper:hover .ant-radio-inner),
+  :deep(.ant-radio-checked .ant-radio-inner) {
+    border-color: var(--theme-control-active);
+  }
+
+  :deep(.ant-radio-checked .ant-radio-inner) {
+    background-color: var(--theme-control-active);
+  }
+
+  :deep(.ant-radio-inner::after) {
+    background-color: #ffffff;
+  }
 }
 
 .upload-label-row {
@@ -334,15 +352,18 @@ async function handleSubmit() {
 .upload-picker-card {
   flex-direction: column;
   gap: 8px;
-  color: var(--theme-accent-text);
+  color: var(--theme-accent);
+  border-color: var(--theme-panel-border-strong);
   font-weight: 600;
   transition:
     transform var(--motion-duration-fast) var(--motion-ease-soft),
-    border-color var(--motion-duration-fast) var(--motion-ease-soft);
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    color var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover:not(:disabled) {
     transform: translateY(-2px);
-    border-color: var(--theme-panel-border-strong);
+    color: var(--theme-accent-text);
+    border-color: var(--theme-control-active);
   }
 
   &:disabled {

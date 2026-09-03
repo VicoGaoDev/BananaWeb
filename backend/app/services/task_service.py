@@ -25,7 +25,7 @@ from app.utils.business_id import normalize_business_id
 from app.utils.datetime_utils import now_local
 
 ACTIVE_TASK_STATUSES = ("pending", "queued", "processing")
-MAX_TASK_PROMPT_LENGTH = 5000
+MAX_TASK_PROMPT_LENGTH = 10000
 ENQUEUE_FAILURE_DESCRIPTION = "任务入队失败，返还积分"
 TASK_FAILURE_REFUND_DESCRIPTION = "任务失败，返还积分"
 TASK_SUBMISSION_LOCK_PREFIX = "banana:tasks:submission:user"

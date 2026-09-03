@@ -18,6 +18,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   PictureOutlined,
   SearchOutlined,
   HighlightOutlined,
@@ -29,6 +30,7 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
   ExperimentOutlined,
+  EllipsisOutlined,
   DownOutlined,
   MessageOutlined,
   PlusOutlined,
@@ -54,6 +56,7 @@ import {
   getDisplayImageUrl,
   getDownloadUrl,
   getPreviewImageSrc,
+  getPreviewImageUrl,
   LARGE_IMAGE_PREVIEW_NOTICE,
   resolveImageUrl,
 } from "@/api/images";
@@ -261,7 +264,7 @@ const prompt = ref("");
 const repaintPrompt = ref("");
 const lastSavedPromptText = ref("");
 const lastSavedRepaintPromptText = ref("");
-const TASK_PROMPT_MAX_LENGTH = 5000;
+const TASK_PROMPT_MAX_LENGTH = 10000;
 const selectedModel = ref("");
 const numImages = ref(1);
 const resolution = ref("2K");
@@ -427,11 +430,15 @@ const repaintCanvasRef = ref<{
 
 const previewVisible = ref(false);
 const previewCurrent = ref("");
+const previewImageLoading = ref(false);
 const detailOpen = ref(false);
 const detailItem = ref<UserHistoryCard | null>(null);
 const detailTaskLocalId = ref<string | null>(null);
 const feedbackDialogOpen = ref(false);
 const loadedResultMediaKeys = ref<Set<string>>(new Set());
+const hdPreviewRequestedKeys = ref<Set<string>>(new Set());
+const hdPreviewLoadedKeys = ref<Set<string>>(new Set());
+const expandedResultMoreKeys = ref<Set<string>>(new Set());
 const generatedResultImageLoad = useTransientImageLoad();
 const detailPreloadedMediaKeys = ref<string[]>([]);
 const feedbackTarget = ref<{
@@ -1330,7 +1337,7 @@ watch(
       validKeys.add(key);
       const shouldTrackSource = item.image.status === "success"
         && !isGeneratedTaskExpired(item.task)
-        && !shouldShowGeneratedLargeImagePreviewNotice(item.task, item.image);
+        && !shouldShowGeneratedLargeImagePreviewNotice(item.task, item.image, item.index);
       generatedResultImageLoad.syncSource(key, shouldTrackSource ? getResultDisplayUrl(item.image) : "");
     }
     generatedResultImageLoad.clearExcept(validKeys);
@@ -3304,6 +3311,24 @@ async function handleRegenerate(task: GeneratedTaskItem) {
 function handlePreview(url: string) {
   previewCurrent.value = url;
   previewVisible.value = true;
+  if (!url) {
+    previewImageLoading.value = false;
+    return;
+  }
+  previewImageLoading.value = true;
+  const loader = new Image();
+  loader.onload = () => {
+    if (previewCurrent.value !== url) return;
+    previewImageLoading.value = false;
+  };
+  loader.onerror = () => {
+    if (previewCurrent.value !== url) return;
+    previewImageLoading.value = false;
+  };
+  loader.src = url;
+  if (loader.complete && loader.naturalWidth > 0) {
+    previewImageLoading.value = false;
+  }
 }
 
 function convertGeneratedTaskToHistoryCard(task: GeneratedTaskItem, focusedImage?: ImageResult): UserHistoryCard {
@@ -3469,17 +3494,87 @@ function getGeneratedResultMediaState(task: GeneratedTaskItem, img: ImageResult,
   return generatedResultImageLoad.getState(key);
 }
 
+function getGeneratedHdWebpUrl(img: ImageResult) {
+  return getPreviewImageUrl({
+    image_url: img.image_url || "",
+    preview_url: img.preview_url || "",
+    thumb_url: "",
+  });
+}
+
+function canViewGeneratedHdImage(task: GeneratedTaskItem, img: ImageResult) {
+  return img.status === "success" && !isGeneratedTaskExpired(task) && !!getGeneratedHdWebpUrl(img);
+}
+
+function handleViewGeneratedHdImage(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  if (!canViewGeneratedHdImage(task, img)) {
+    message.warning(isGeneratedTaskExpired(task) ? "原图已过期，无法查看高清图" : "当前结果图暂无高清图");
+    return;
+  }
+  const hdUrl = getGeneratedHdWebpUrl(img);
+  const key = getGeneratedResultMediaLoadKey(task, img, index);
+  if (!hdPreviewRequestedKeys.value.has(key)) {
+    const next = new Set(hdPreviewRequestedKeys.value);
+    next.add(key);
+    hdPreviewRequestedKeys.value = next;
+  }
+  handlePreview(hdUrl);
+  if (hdPreviewLoadedKeys.value.has(key)) return;
+  const loader = new Image();
+  loader.onload = () => {
+    if (hdPreviewLoadedKeys.value.has(key)) return;
+    const nextLoaded = new Set(hdPreviewLoadedKeys.value);
+    nextLoaded.add(key);
+    hdPreviewLoadedKeys.value = nextLoaded;
+    if (previewCurrent.value === hdUrl) {
+      previewImageLoading.value = false;
+    }
+  };
+  loader.src = hdUrl;
+}
+
+function isGeneratedResultMoreExpanded(item: { taskLocalId: string; index: number; image: { id: number; status: string } }) {
+  return expandedResultMoreKeys.value.has(getResultItemKey(item));
+}
+
+function toggleGeneratedResultMore(item: { taskLocalId: string; index: number; image: { id: number; status: string } }) {
+  const key = getResultItemKey(item);
+  const next = new Set(expandedResultMoreKeys.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  expandedResultMoreKeys.value = next;
+}
+
+function collapseGeneratedResultMore(item: { taskLocalId: string; index: number; image: { id: number; status: string } }) {
+  const key = getResultItemKey(item);
+  if (expandedResultMoreKeys.value.has(key)) {
+    const next = new Set(expandedResultMoreKeys.value);
+    next.delete(key);
+    expandedResultMoreKeys.value = next;
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active.closest(".result-card")) {
+    active.blur();
+  }
+}
+
+function hasGeneratedMoreActions(task: GeneratedTaskItem, img: ImageResult) {
+  return canGenerateVideoFromGeneratedImage(task, img)
+    || canEditGeneratedImage(task, img)
+    || canInpaintGeneratedImage(task, img);
+}
+
 function getGeneratedResultDisplayUrl(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success") return getResultDisplayUrl(img);
   if (isGeneratedTaskExpired(task)) return expiredResultAsset.value;
-  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return "";
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return "";
   const displayUrl = getResultDisplayUrl(img);
   if (!displayUrl) return "";
   const state = getGeneratedResultMediaState(task, img, index);
   return appendTransientImageNonce(displayUrl, state.nonce);
 }
 
-function shouldShowGeneratedLargeImagePreviewNotice(task: GeneratedTaskItem, img: ImageResult) {
+function shouldShowGeneratedLargeImagePreviewNotice(task: GeneratedTaskItem, img: ImageResult, index = 0) {
   return img.status === "success" && !isGeneratedTaskExpired(task) && exceedsRealtimeImagePreviewLimit(img.image_size_bytes);
 }
 
@@ -3498,7 +3593,7 @@ function markGeneratedResultMediaLoaded(task: GeneratedTaskItem, img: ImageResul
 
 function handleGeneratedResultMediaError(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success" || isGeneratedTaskExpired(task)) return;
-  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return;
   const source = getResultDisplayUrl(img);
   if (!source) return;
   const key = getGeneratedResultMediaLoadKey(task, img, index);
@@ -3508,7 +3603,7 @@ function handleGeneratedResultMediaError(task: GeneratedTaskItem, img: ImageResu
 function shouldShowGeneratedUploadingState(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success") return false;
   if (isGeneratedTaskExpired(task)) return false;
-  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return false;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return false;
   const source = getResultDisplayUrl(img);
   if (!source) return true;
   return getGeneratedResultMediaState(task, img, index).phase === "retrying";
@@ -3517,7 +3612,7 @@ function shouldShowGeneratedUploadingState(task: GeneratedTaskItem, img: ImageRe
 function shouldShowGeneratedLoadFailedState(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success") return false;
   if (isGeneratedTaskExpired(task)) return false;
-  if (shouldShowGeneratedLargeImagePreviewNotice(task, img)) return false;
+  if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return false;
   const source = getResultDisplayUrl(img);
   if (!source) return false;
   return getGeneratedResultMediaState(task, img, index).phase === "failed";
@@ -3540,11 +3635,16 @@ function getDetailPreloadedMediaKeys(task: GeneratedTaskItem, focusedImage?: Ima
   const normalizedIndex = targetIndex >= 0 ? targetIndex : 0;
   const targetImage = focusedImage || task.images[normalizedIndex];
   if (!targetImage) return [];
-  if (!loadedResultMediaKeys.value.has(getGeneratedResultMediaLoadKey(task, targetImage, normalizedIndex))) return [];
-  if (typeof targetImage.id === "number" && targetImage.id > 0) {
-    return [`detail-result-base:${String(targetImage.id)}`];
+  if (typeof targetImage.id !== "number" || targetImage.id <= 0) return [];
+  const cardKey = getGeneratedResultMediaLoadKey(task, targetImage, normalizedIndex);
+  const keys: string[] = [];
+  if (hdPreviewLoadedKeys.value.has(cardKey)) {
+    keys.push(`detail-result-enhanced:${String(targetImage.id)}`);
   }
-  return [];
+  if (loadedResultMediaKeys.value.has(cardKey) && !hdPreviewLoadedKeys.value.has(cardKey)) {
+    keys.push(`detail-result-base:${String(targetImage.id)}`);
+  }
+  return keys;
 }
 
 function canEditGeneratedImage(task: GeneratedTaskItem, img: ImageResult) {
@@ -5523,11 +5623,15 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             </a-select>
             <div class="result-retain-badge">
               <InfoCircleFilled class="result-retain-icon" />
-              <span>
-                每日前 <span class="result-tip-highlight">20</span> 次失败任务不扣积分
-                <span v-if="failureRefundRemainingCount !== null">（剩余{{ failureRefundRemainingCount }}次）</span>
+              <span class="result-retain-text">
+                <span class="result-retain-clause">
+                  每日前 <span class="result-tip-highlight">20</span> 次失败任务不扣积分
+                  <span v-if="failureRefundRemainingCount !== null">（剩余{{ failureRefundRemainingCount }}次）</span>
+                </span>
                 <span class="result-tip-divider">/</span>
-                服务器保留原图 <span class="result-tip-highlight">15</span> 天
+                <span class="result-retain-clause">
+                  服务器保留原图 <span class="result-tip-highlight">15</span> 天
+                </span>
               </span>
             </div>
           </div>
@@ -5796,6 +5900,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   '--result-pending-bg-image': `url('${generateEmptyStateAsset}')`,
                 }"
                 :class="{ pending: item.image.status === 'pending' }"
+                @mouseleave="collapseGeneratedResultMore(item)"
               >
                   <div
                     v-if="item.taskId || item.image.status !== 'pending'"
@@ -5853,32 +5958,48 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         @error="handleGeneratedResultMediaError(item.task, item.image, item.index)"
                       />
                       <div class="result-actions">
-                        <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
-                          <a-button shape="circle" class="icon-chip" @click.stop="handleGenerateVideoFromGeneratedImage(item.task, item.image)">
-                            <template #icon><VideoCameraOutlined /></template>
+                        <template v-if="isGeneratedResultMoreExpanded(item)">
+                          <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
+                            <a-button shape="circle" class="icon-chip" @click.stop="handleGenerateVideoFromGeneratedImage(item.task, item.image)">
+                              <template #icon><VideoCameraOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canEditGeneratedImage(item.task, item.image)" title="结果图编辑">
+                            <a-button shape="circle" class="icon-chip" @click.stop="handleEditImageTask(item.task, item.image)">
+                              <template #icon><EditOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="局部重绘">
+                            <a-button
+                              shape="circle"
+                              class="icon-chip result-inpaint-trigger"
+                              @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
+                            >
+                              <template #icon><HighlightOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                            <a-button
+                              shape="circle"
+                              class="icon-chip"
+                              @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                            >
+                              <template #icon><ScissorOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                        </template>
+                        <a-tooltip v-if="hasGeneratedMoreActions(item.task, item.image)" title="更多">
+                          <a-button shape="circle" class="icon-chip result-more-actions-trigger" @click.stop="toggleGeneratedResultMore(item)">
+                            <template #icon><EllipsisOutlined /></template>
                           </a-button>
                         </a-tooltip>
-                        <a-tooltip v-if="canEditGeneratedImage(item.task, item.image)" title="结果图编辑">
-                          <a-button shape="circle" class="icon-chip" @click.stop="handleEditImageTask(item.task, item.image)">
-                            <template #icon><EditOutlined /></template>
-                          </a-button>
-                        </a-tooltip>
-                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="局部重绘">
-                          <a-button
-                            shape="circle"
-                            class="icon-chip result-inpaint-trigger"
-                            @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
-                          >
-                            <template #icon><HighlightOutlined /></template>
-                          </a-button>
-                        </a-tooltip>
-                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                        <a-tooltip v-if="canViewGeneratedHdImage(item.task, item.image)" title="查看高清预览图">
                           <a-button
                             shape="circle"
                             class="icon-chip"
-                            @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                            @click.stop="handleViewGeneratedHdImage(item.task, item.image, item.index)"
                           >
-                            <template #icon><ScissorOutlined /></template>
+                            <template #icon><EyeOutlined /></template>
                           </a-button>
                         </a-tooltip>
                         <a-tooltip title="重新生成">
@@ -5904,37 +6025,53 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       </div>
                     </template>
 
-                    <template v-else-if="shouldShowGeneratedLargeImagePreviewNotice(item.task, item.image)">
+                    <template v-else-if="shouldShowGeneratedLargeImagePreviewNotice(item.task, item.image, item.index)">
                       <div class="result-preview-notice">
                         <span>{{ LARGE_IMAGE_PREVIEW_NOTICE }}</span>
                       </div>
                       <div class="result-actions">
-                        <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
-                          <a-button shape="circle" class="icon-chip" @click.stop="handleGenerateVideoFromGeneratedImage(item.task, item.image)">
-                            <template #icon><VideoCameraOutlined /></template>
+                        <template v-if="isGeneratedResultMoreExpanded(item)">
+                          <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
+                            <a-button shape="circle" class="icon-chip" @click.stop="handleGenerateVideoFromGeneratedImage(item.task, item.image)">
+                              <template #icon><VideoCameraOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canEditGeneratedImage(item.task, item.image)" title="结果图编辑">
+                            <a-button shape="circle" class="icon-chip" @click.stop="handleEditImageTask(item.task, item.image)">
+                              <template #icon><EditOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="局部重绘">
+                            <a-button
+                              shape="circle"
+                              class="icon-chip result-inpaint-trigger"
+                              @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
+                            >
+                              <template #icon><HighlightOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                          <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                            <a-button
+                              shape="circle"
+                              class="icon-chip"
+                              @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                            >
+                              <template #icon><ScissorOutlined /></template>
+                            </a-button>
+                          </a-tooltip>
+                        </template>
+                        <a-tooltip v-if="hasGeneratedMoreActions(item.task, item.image)" title="更多">
+                          <a-button shape="circle" class="icon-chip result-more-actions-trigger" @click.stop="toggleGeneratedResultMore(item)">
+                            <template #icon><EllipsisOutlined /></template>
                           </a-button>
                         </a-tooltip>
-                        <a-tooltip v-if="canEditGeneratedImage(item.task, item.image)" title="结果图编辑">
-                          <a-button shape="circle" class="icon-chip" @click.stop="handleEditImageTask(item.task, item.image)">
-                            <template #icon><EditOutlined /></template>
-                          </a-button>
-                        </a-tooltip>
-                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="局部重绘">
-                          <a-button
-                            shape="circle"
-                            class="icon-chip result-inpaint-trigger"
-                            @click.stop="handleInpaintGeneratedImage(item.task, item.image)"
-                          >
-                            <template #icon><HighlightOutlined /></template>
-                          </a-button>
-                        </a-tooltip>
-                        <a-tooltip v-if="canInpaintGeneratedImage(item.task, item.image)" title="智能抠图">
+                        <a-tooltip v-if="canViewGeneratedHdImage(item.task, item.image)" title="查看高清预览图">
                           <a-button
                             shape="circle"
                             class="icon-chip"
-                            @click.stop="handleSmartCutoutGeneratedImage(item.task, item.image)"
+                            @click.stop="handleViewGeneratedHdImage(item.task, item.image, item.index)"
                           >
-                            <template #icon><ScissorOutlined /></template>
+                            <template #icon><EyeOutlined /></template>
                           </a-button>
                         </a-tooltip>
                         <a-tooltip title="重新生成">
@@ -6078,10 +6215,18 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
         :src="previewCurrent"
         :preview="{
           visible: previewVisible,
-          onVisibleChange: (v: boolean) => (previewVisible = v),
+          onVisibleChange: (v: boolean) => {
+            previewVisible = v;
+            if (!v) previewImageLoading = false;
+          },
         }"
       />
     </div>
+    <Teleport to="body">
+      <div v-if="previewVisible && previewImageLoading" class="hd-preview-loading" aria-label="高清预览图加载中">
+        <a-spin :indicator="h(LoadingOutlined, { style: { fontSize: '36px', color: '#fff7ea' } })" />
+      </div>
+    </Teleport>
     <HistoryDetailDialog
       v-if="detailOpen"
       v-model:open="detailOpen"
@@ -8881,7 +9026,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   box-shadow: 0 10px 20px var(--theme-shadow-soft);
 }
 
-.result-retain-badge > span {
+.result-retain-badge > .result-retain-text {
   display: inline-flex;
   align-items: center;
 }
@@ -9136,6 +9281,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       opacity: 1;
     }
   }
+
 }
 
 .result-top-actions {
@@ -9780,6 +9926,47 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .result-config-expand-btn {
     display: none;
   }
+
+  .result-retain-badge {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 32px;
+    padding: 8px 12px;
+    align-items: center;
+    white-space: normal;
+    line-height: 1.45;
+    box-sizing: border-box;
+  }
+
+  .result-retain-icon {
+    flex: 0 0 auto;
+  }
+
+  .result-retain-badge > .result-retain-text {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .result-retain-clause {
+    display: block;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .result-tip-divider {
+    display: none;
+  }
+
+  .result-retain-badge .result-tip-highlight {
+    font-size: 15px;
+    margin: 0 2px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -9856,11 +10043,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .result-head-meta {
     align-self: flex-start;
     flex-wrap: wrap;
-  }
-
-  .result-retain-badge {
-    width: auto;
-    justify-content: flex-start;
   }
 
   .result-head {
@@ -10603,5 +10785,15 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .brush-prev
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-frame:not(.pending):not(.failed) {
   background: var(--theme-surface-strong) !important;
+}
+
+.hd-preview-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 </style>

@@ -42,13 +42,13 @@ class UserPromptListResponse(BaseModel):
 class UserPromptCreateRequest(BaseModel):
     category_id: int | None = None
     title: str = Field(..., min_length=1, max_length=255)
-    content: str = Field(..., min_length=1, max_length=5000)
+    content: str = Field(..., min_length=1, max_length=10000)
 
 
 class UserPromptUpdateRequest(BaseModel):
     category_id: int | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    content: str | None = Field(default=None, min_length=1, max_length=5000)
+    content: str | None = Field(default=None, min_length=1, max_length=10000)
 
 
 class UserPromptDeleteResponse(BaseModel):

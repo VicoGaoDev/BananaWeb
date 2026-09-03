@@ -1309,12 +1309,34 @@ html, body, #app {
 }
 
 .ant-radio-inner {
-  border-color: var(--theme-border-strong);
+  border-color: var(--theme-border-strong) !important;
+  background-color: var(--theme-control-bg) !important;
+}
+
+.ant-radio-wrapper:hover .ant-radio-inner,
+.ant-radio-wrapper-checked:hover .ant-radio-inner {
+  border-color: var(--theme-control-active) !important;
 }
 
 .ant-radio-checked .ant-radio-inner {
-  border-color: var(--theme-control-active);
-  background-color: var(--theme-control-active);
+  border-color: var(--theme-control-active) !important;
+  background-color: var(--theme-control-active) !important;
+}
+
+.ant-radio-inner::after {
+  background-color: #ffffff !important;
+}
+
+.ant-radio-wrapper .ant-radio-input:focus + .ant-radio-inner {
+  box-shadow: 0 0 0 3px var(--theme-focus-ring) !important;
+}
+
+.ant-switch:not(.ant-switch-checked) {
+  background: var(--theme-control-track) !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background: var(--theme-control-active) !important;
 }
 
 .ant-divider {

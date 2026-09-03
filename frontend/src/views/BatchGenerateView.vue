@@ -2531,7 +2531,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sceneConfigLoaded" class="panel-body panel-body-compact global-panel-body">
         <div class="batch-aspect-auto-row">
-          <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" />
+          <a-switch v-model:checked="aspectRatioAutoDetectEnabled" size="small" class="warm-switch" />
           <div class="batch-aspect-auto-text">
             <span>比例自动识别</span>
             <a-tooltip title="开启后，上传、拖拽或粘贴到某个配置的第一张参考图时，会自动选择最匹配的宽高比。">
@@ -2610,7 +2610,7 @@ onBeforeUnmount(() => {
               <a-textarea
                 v-model:value="globalSettings.prompt"
                 :rows="3"
-                :maxlength="5000"
+                :maxlength="10000"
                 placeholder="描述您想要生成的图片..."
                 class="global-prompt-textarea"
               />
@@ -2886,7 +2886,7 @@ onBeforeUnmount(() => {
               <a-textarea
                 v-model:value="card.prompt"
                 :rows="4"
-                :maxlength="5000"
+                :maxlength="10000"
                 :disabled="isCardLocked(card)"
                 placeholder="描述您想要生成的图片..."
               />

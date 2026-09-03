@@ -138,6 +138,8 @@ const DEFAULT_CANVAS_ZOOM = 0.5;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
 const VIEWPORT_SAVE_DELAY_MS = 10000;
+const IMAGE_TASK_PROMPT_MAX_LENGTH = 10000;
+const VIDEO_TASK_PROMPT_MAX_LENGTH = 5000;
 const CANVAS_BACKGROUND_STORAGE_KEY = "banana-canvas-background";
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
@@ -331,6 +333,9 @@ const canvasOnboardingSteps: CanvasOnboardingStep[] = [
 
 const isImageTaskKind = computed(() => canvasTaskKind.value === "image");
 const isVideoTaskKind = computed(() => canvasTaskKind.value === "video");
+const composerPromptMaxLength = computed(() => (
+  isImageTaskKind.value ? IMAGE_TASK_PROMPT_MAX_LENGTH : VIDEO_TASK_PROMPT_MAX_LENGTH
+));
 const isImageEditMode = computed(() => isImageTaskKind.value && canvasMode.value === "imageEdit");
 const isImageToVideoMode = computed(() => isVideoTaskKind.value && canvasVideoMode.value === "imageToVideo");
 const currentModeSupportsReferences = computed(() => isImageEditMode.value || isImageToVideoMode.value);
@@ -5086,7 +5091,7 @@ onBeforeUnmount(() => {
             <textarea
               v-model="prompt"
               class="composer-prompt-input"
-              :maxlength="5000"
+              :maxlength="composerPromptMaxLength"
               :placeholder="promptPlaceholder"
             ></textarea>
 

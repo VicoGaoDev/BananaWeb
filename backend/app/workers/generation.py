@@ -485,7 +485,17 @@ def _mark_async_provider_poll_timeout(
         task.poll_count = poll_count
     task.next_poll_at = None
     db.commit()
-    return ApiCallResult(result=None, error_message=task.provider_error_message, http_status_code=None, attempts=[])
+    return ApiCallResult(
+        result=None,
+        error_message=task.provider_error_message,
+        http_status_code=None,
+        attempts=[_build_async_terminal_attempt(db, task, ApiCallResult(
+            result=None,
+            error_message=task.provider_error_message,
+            http_status_code=None,
+            attempts=[],
+        ))],
+    )
 
 
 def _parse_poll_retry_status(status_value: str) -> int:
@@ -1192,12 +1202,12 @@ def _poll_async_generation_once(
                 api_config_id=config.id,
                 api_config_name=config.name or "",
                 attempt_index=1,
-                is_fallback=False,
+                is_fallback=_is_fallback_poll_config(db, task, config),
                 status="success" if result else "failed",
                 http_status=response.status_code,
                 error_message="" if result else _clip_error_message(error_message),
-                duration_ms=_measure_elapsed_ms(request_started_perf),
-                external_http_ms=external_http_ms,
+                duration_ms=_elapsed_ms_since(_get_async_provider_started_at(task)),
+                external_http_ms=None,
                 result_download_ms=result_download_ms,
                 response_preview=attempt_response_preview,
             )
@@ -1233,7 +1243,22 @@ def _poll_async_generation_once(
             task.provider_error_message = provider_error
             task.next_poll_at = None
             db.commit()
-            return ApiCallResult(result=None, error_message=provider_error, http_status_code=None, attempts=[])
+            return ApiCallResult(
+                result=None,
+                error_message=provider_error,
+                http_status_code=response.status_code,
+                attempts=[ApiAttemptRecord(
+                    api_config_id=config.id,
+                    api_config_name=config.name or "",
+                    attempt_index=1,
+                    is_fallback=_is_fallback_poll_config(db, task, config),
+                    status="failed",
+                    http_status=response.status_code,
+                    error_message=provider_error,
+                    duration_ms=_elapsed_ms_since(_get_async_provider_started_at(task)),
+                    response_preview=attempt_response_preview,
+                )],
+            )
 
         if _is_async_provider_poll_timed_out(task, poll_timeout_seconds):
             return _mark_async_provider_poll_timeout(
@@ -1287,7 +1312,17 @@ def _poll_async_generation_once(
         task.poll_count = current_poll_count + 1
         task.next_poll_at = None
         db.commit()
-        return ApiCallResult(result=None, error_message=error_message, http_status_code=None, attempts=[])
+        return ApiCallResult(
+            result=None,
+            error_message=error_message,
+            http_status_code=None,
+            attempts=[_build_async_terminal_attempt(db, task, ApiCallResult(
+                result=None,
+                error_message=error_message,
+                http_status_code=None,
+                attempts=[],
+            ))],
+        )
 
 
 def _execute_task_generation(db, task: Task) -> tuple[ApiCallResult, list[ApiAttemptRecord]]:
@@ -1440,6 +1475,75 @@ def _set_last_attempt_cos_upload_ms(attempts: list[ApiAttemptRecord], cos_upload
             return
 
 
+def _is_fallback_poll_config(db, task: Task, config: ExternalApiConfig | None) -> bool:
+    if not config:
+        return False
+    existing = (
+        db.query(TaskApiAttempt)
+        .filter(
+            TaskApiAttempt.task_id == task.id,
+            TaskApiAttempt.api_config_id == config.id,
+        )
+        .order_by(TaskApiAttempt.attempt_index.desc(), TaskApiAttempt.id.desc())
+        .first()
+    )
+    if existing is not None:
+        return bool(existing.is_fallback)
+    _task_mode, scene_key = _resolve_task_mode_and_scene_key(task)
+    _primary_config, backup_config = resolve_scene_generation_configs(db, scene_key)
+    return bool(backup_config and backup_config.id == config.id)
+
+
+def _find_mergeable_async_attempt(
+    db,
+    *,
+    image: Image,
+    attempt: ApiAttemptRecord,
+) -> TaskApiAttempt | None:
+    query = (
+        db.query(TaskApiAttempt)
+        .filter(
+            TaskApiAttempt.image_id == image.id,
+            TaskApiAttempt.is_fallback.is_(bool(attempt.is_fallback)),
+        )
+    )
+    if attempt.api_config_id:
+        query = query.filter(TaskApiAttempt.api_config_id == attempt.api_config_id)
+    elif attempt.api_config_name:
+        query = query.filter(TaskApiAttempt.api_config_name == attempt.api_config_name)
+    return query.order_by(TaskApiAttempt.attempt_index.desc(), TaskApiAttempt.id.desc()).first()
+
+
+def _merge_async_poll_into_attempt(existing: TaskApiAttempt, attempt: ApiAttemptRecord) -> None:
+    existing.status = attempt.status or existing.status or "failed"
+    if attempt.http_status is not None:
+        existing.http_status = attempt.http_status
+    existing.error_message = _clip_error_message(attempt.error_message)
+    if attempt.duration_ms is not None:
+        existing.duration_ms = attempt.duration_ms
+    if attempt.result_download_ms is not None:
+        existing.result_download_ms = attempt.result_download_ms
+    if attempt.cos_upload_ms is not None:
+        existing.cos_upload_ms = attempt.cos_upload_ms
+    if attempt.response_preview:
+        existing.response_preview = attempt.response_preview
+
+
+def _build_async_terminal_attempt(db, task: Task, call_result: ApiCallResult) -> ApiAttemptRecord:
+    config = _resolve_async_poll_config(db, task)
+    return ApiAttemptRecord(
+        api_config_id=task.provider_api_config_id or (config.id if config else None),
+        api_config_name=(config.name if config else "") or "",
+        attempt_index=1,
+        is_fallback=_is_fallback_poll_config(db, task, config),
+        status="failed",
+        http_status=call_result.http_status_code,
+        error_message=_clip_error_message(call_result.error_message),
+        duration_ms=_elapsed_ms_since(_get_async_provider_started_at(task)),
+        response_preview=task.provider_response_preview or "",
+    )
+
+
 def _record_api_attempts(
     db,
     *,
@@ -1447,10 +1551,15 @@ def _record_api_attempts(
     image: Image,
     image_index: int,
     attempts: list[ApiAttemptRecord],
+    merge_existing: bool = False,
 ) -> None:
     if not attempts:
         return
     for attempt in attempts:
+        existing = _find_mergeable_async_attempt(db, image=image, attempt=attempt) if merge_existing else None
+        if existing is not None:
+            _merge_async_poll_into_attempt(existing, attempt)
+            continue
         db.add(TaskApiAttempt(
             task_id=task.id,
             image_id=image.id,
@@ -1479,6 +1588,7 @@ def _record_api_attempts_safely(
     image: Image,
     image_index: int,
     attempts: list[ApiAttemptRecord],
+    merge_existing: bool = False,
 ) -> None:
     try:
         _record_api_attempts(
@@ -1487,6 +1597,7 @@ def _record_api_attempts_safely(
             image=image,
             image_index=image_index,
             attempts=attempts,
+            merge_existing=merge_existing,
         )
         db.commit()
     except Exception:
@@ -2361,10 +2472,12 @@ def _finish_task_after_async_poll(
     if not locked_task or not locked_image:
         return
     record_attempts = (
-        attempts_to_record
+        list(attempts_to_record)
         if attempts_to_record is not None
-        else _rebase_attempt_indices(call_result.attempts, _next_attempt_index_for_image(db, locked_image))
+        else list(call_result.attempts)
     )
+    if not record_attempts and (call_result.error_message or not call_result.result):
+        record_attempts = [_build_async_terminal_attempt(db, locked_task, call_result)]
 
     if call_result.result:
         img_bytes, mime = call_result.result
@@ -2421,6 +2534,7 @@ def _finish_task_after_async_poll(
         image=locked_image,
         image_index=_image_index_for_task_image(locked_task, locked_image),
         attempts=record_attempts,
+        merge_existing=True,
     )
     _finalize_task_after_async_result(db, locked_task, locked_image)
 
@@ -2449,17 +2563,32 @@ def _retry_async_poll_with_fallback(
     if backup_config is None or primary_config.id != config.id or backup_config.id == config.id:
         return None, []
 
-    next_attempt_index = _next_attempt_index_for_image(db, image)
+    existing_primary = _find_mergeable_async_attempt(
+        db,
+        image=image,
+        attempt=ApiAttemptRecord(
+            api_config_id=config.id,
+            api_config_name=config.name or "",
+            attempt_index=1,
+            is_fallback=False,
+            status="failed",
+            http_status=None,
+            error_message="",
+            duration_ms=None,
+        ),
+    )
+    primary_attempt_index = int(existing_primary.attempt_index or 1) if existing_primary else 1
     attempts = [
         ApiAttemptRecord(
             api_config_id=config.id,
             api_config_name=config.name or "",
-            attempt_index=next_attempt_index,
+            attempt_index=primary_attempt_index,
             is_fallback=False,
             status="failed",
             http_status=call_result.http_status_code,
             error_message=_clip_error_message(call_result.error_message),
-            duration_ms=_elapsed_ms_since(_get_async_provider_started_at(task)),
+            duration_ms=None,
+            response_preview=task.provider_response_preview or "",
         )
     ]
 
@@ -2481,7 +2610,7 @@ def _retry_async_poll_with_fallback(
         ref_urls=_parse_reference_images(task),
         configs_to_try=[(backup_config, True)],
     )
-    attempts.extend(_rebase_attempt_indices(fallback_attempts, next_attempt_index + 1))
+    attempts.extend(_rebase_attempt_indices(fallback_attempts, primary_attempt_index + 1))
 
     if not fallback_result.deferred and not fallback_result.result and fallback_result.error_message:
         task.provider_error_message = _clip_error_message(fallback_result.error_message)
@@ -2590,6 +2719,7 @@ def _process_async_poll_task(task_id: int, *, use_distributed_lock: bool = True)
                     image=image,
                     image_index=_image_index_for_task_image(task, image),
                     attempts=fallback_attempts,
+                    merge_existing=True,
                 )
                 logger.info(
                     "Async poll switched to fallback submit",
