@@ -120,7 +120,10 @@ function formatTime(value?: string | null) {
 }
 
 function formatMessageTime(value?: string | null) {
-  return value ? dayjs(value).format("HH:mm") : "";
+  if (!value) return "";
+  const time = dayjs(value);
+  if (!time.isValid()) return "";
+  return time.isSame(dayjs(), "day") ? time.format("HH:mm") : time.format("YYYY-MM-DD HH:mm");
 }
 
 function messageRoleLabel(item: FeedbackMessage) {
