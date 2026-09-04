@@ -502,9 +502,13 @@ def _start_chat_generate_tasks(
         )
     require_scene_config(db, model_key)
 
-    size = "" if binding.hide_aspect_ratio else (body.size or extra.size or "").strip()
-    resolution = "" if binding.hide_resolution else (body.resolution or extra.resolution or "").strip()
-    custom_size = "" if binding.hide_custom_size else (body.custom_size or extra.custom_size or "").strip()
+    custom_size = "" if binding.hide_custom_size else (body.custom_size or "").strip()
+    if custom_size:
+        size = ""
+        resolution = ""
+    else:
+        size = "" if binding.hide_aspect_ratio else (body.size or extra.size or "").strip()
+        resolution = "" if binding.hide_resolution else (body.resolution or extra.resolution or "").strip()
     num_images = max(1, min(8, int(body.num_images or extra.num_images or 1)))
 
     try:

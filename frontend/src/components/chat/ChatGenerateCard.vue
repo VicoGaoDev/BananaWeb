@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { QuestionCircleOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import { getPreviewImageSrc, resolveImageUrl } from "@/api/images";
 import { getAdminTasks } from "@/api/admin";
@@ -36,9 +37,15 @@ const confirming = ref(false);
 const promptExpanded = ref(false);
 const selectedModel = ref("");
 const numImages = ref(1);
+const CUSTOM_SIZE_PIXEL_MULTIPLE = 16;
+const CUSTOM_SIZE_MAX_ASPECT_RATIO = 3;
+const CUSTOM_SIZE_MAX_SIDE = 3840;
 const size = ref("");
 const resolution = ref("");
 const customSize = ref("");
+const customSizeEnabled = ref(false);
+const customWidth = ref(1024);
+const customHeight = ref(1024);
 const tasks = ref<TaskResult[]>([]);
 const tasksFetched = ref(false);
 const loadedImageKeys = ref<Set<string>>(new Set());
@@ -65,10 +72,24 @@ const selectedScene = computed(() => (
 ));
 const sizeOptions = computed(() => selectedScene.value?.aspect_ratio_options || []);
 const resolutionOptions = computed(() => selectedScene.value?.image_size_options || []);
-const customSizeOptions = computed(() => selectedScene.value?.custom_size_options || []);
-const showSize = computed(() => canEdit.value && !!selectedScene.value && !selectedScene.value.hide_aspect_ratio && sizeOptions.value.length > 0);
-const showResolution = computed(() => canEdit.value && !!selectedScene.value && !selectedScene.value.hide_resolution && resolutionOptions.value.length > 0);
-const showCustomSize = computed(() => canEdit.value && !!selectedScene.value && !selectedScene.value.hide_custom_size && customSizeOptions.value.length > 0);
+const supportsCustomSize = computed(() => canEdit.value && !!selectedScene.value && selectedScene.value.hide_custom_size === false);
+const showSize = computed(() => (
+  canEdit.value
+  && !!selectedScene.value
+  && !selectedScene.value.hide_aspect_ratio
+  && sizeOptions.value.length > 0
+  && !customSizeEnabled.value
+));
+const showResolution = computed(() => (
+  canEdit.value
+  && !!selectedScene.value
+  && !selectedScene.value.hide_resolution
+  && resolutionOptions.value.length > 0
+  && !customSizeEnabled.value
+));
+const customSizeMin = computed(() => Math.max(1, Number(selectedScene.value?.custom_size_min || 256)));
+const customSizeMax = computed(() => Math.max(customSizeMin.value, Number(selectedScene.value?.custom_size_max || 4096)));
+const customSizeLimit = computed(() => Math.min(customSizeMax.value, CUSTOM_SIZE_MAX_SIDE));
 const selectedNumImages = computed({
   get: () => String(numImages.value),
   set: (value: string) => {
@@ -83,7 +104,7 @@ const promptPreview = computed(() => {
 const estimatedCost = computed(() => {
   const scene = selectedScene.value;
   if (!scene) return 0;
-  const resolutionKey = (resolution.value || "").trim();
+  const resolutionKey = customSizeEnabled.value ? "" : (resolution.value || "").trim();
   const resolutionCosts = scene.resolution_credit_costs || {};
   const unit = resolutionKey && Object.prototype.hasOwnProperty.call(resolutionCosts, resolutionKey)
     ? Number(resolutionCosts[resolutionKey] || 0)
@@ -215,21 +236,87 @@ function firstOptionValue(items?: { value: string }[]) {
   return (items?.[0]?.value || "").trim();
 }
 
+function parseCustomSizeValue(value?: string | null) {
+  const match = String(value || "").trim().match(/^(\d+)\s*[xX×*]\s*(\d+)$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return { width, height };
+}
+
+function normalizeCustomDimension(value: number) {
+  const snapped = Math.round((Number(value) || customSizeMin.value) / CUSTOM_SIZE_PIXEL_MULTIPLE) * CUSTOM_SIZE_PIXEL_MULTIPLE;
+  return Math.min(customSizeLimit.value, Math.max(customSizeMin.value, snapped));
+}
+
+function getCustomDimensionError(value: number, otherValue: number) {
+  if (!Number.isInteger(value) || value % CUSTOM_SIZE_PIXEL_MULTIPLE !== 0) return "必须是16倍数";
+  if (value > CUSTOM_SIZE_MAX_SIDE) return `最大边长不超过 ${CUSTOM_SIZE_MAX_SIDE}px`;
+  if (value < customSizeMin.value || value > customSizeMax.value) {
+    return `须为 ${customSizeMin.value}-${customSizeMax.value} 的整数`;
+  }
+  if (Number.isInteger(otherValue) && otherValue > 0 && value > otherValue * CUSTOM_SIZE_MAX_ASPECT_RATIO) {
+    return `长短边比例不能超过 ${CUSTOM_SIZE_MAX_ASPECT_RATIO}:1`;
+  }
+  return "";
+}
+
+const customWidthError = computed(() => (
+  customSizeEnabled.value ? getCustomDimensionError(Number(customWidth.value), Number(customHeight.value)) : ""
+));
+const customHeightError = computed(() => (
+  customSizeEnabled.value ? getCustomDimensionError(Number(customHeight.value), Number(customWidth.value)) : ""
+));
+
+function syncCustomSizeValue() {
+  customWidth.value = normalizeCustomDimension(Number(customWidth.value) || 1024);
+  customHeight.value = normalizeCustomDimension(Number(customHeight.value) || 1024);
+  customSize.value = customSizeEnabled.value
+    ? `${Number(customWidth.value)}x${Number(customHeight.value)}`
+    : "";
+}
+
+function onCustomSizeToggle(checked: boolean) {
+  customSizeEnabled.value = checked;
+  if (!checked) {
+    customSize.value = "";
+    return;
+  }
+  syncCustomSizeValue();
+}
+
+function applyCustomSizeFromValue(value?: string | null) {
+  const parsed = parseCustomSizeValue(value);
+  if (!parsed || !supportsCustomSize.value) {
+    customSizeEnabled.value = false;
+    customSize.value = "";
+    customWidth.value = normalizeCustomDimension(1024);
+    customHeight.value = normalizeCustomDimension(1024);
+    return;
+  }
+  customSizeEnabled.value = true;
+  customWidth.value = parsed.width;
+  customHeight.value = parsed.height;
+  customSize.value = `${parsed.width}x${parsed.height}`;
+}
+
 function applySceneDefaults(scene: TaskSceneConfig | null) {
   if (!scene) return;
   const nextSizes = scene.aspect_ratio_options || [];
   const nextResolutions = scene.image_size_options || [];
-  const nextCustoms = scene.custom_size_options || [];
   if (scene.hide_aspect_ratio) size.value = "";
   else if (!nextSizes.some((item) => item.value === size.value)) size.value = firstOptionValue(nextSizes);
   if (scene.hide_resolution) resolution.value = "";
   else if (!nextResolutions.some((item) => item.value === resolution.value)) {
     resolution.value = firstOptionValue(nextResolutions);
   }
-  if (scene.hide_custom_size) customSize.value = "";
-  else if (!nextCustoms.some((item) => item.value === customSize.value)) {
-    customSize.value = firstOptionValue(nextCustoms);
+  if (scene.hide_custom_size) {
+    customSizeEnabled.value = false;
+    customSize.value = "";
+    return;
   }
+  if (customSizeEnabled.value) syncCustomSizeValue();
 }
 
 function imageSrc(url: string) {
@@ -280,8 +367,8 @@ async function loadScenes() {
   numImages.value = generateInfo.value.num_images || 1;
   size.value = generateInfo.value.size || "";
   resolution.value = generateInfo.value.resolution || "";
-  customSize.value = generateInfo.value.custom_size || "";
   applySceneDefaults(selectedScene.value);
+  applyCustomSizeFromValue(generateInfo.value.custom_size);
 }
 
 async function refreshTasks() {
@@ -376,6 +463,17 @@ async function handleConfirm() {
     message.warning("请选择生图模型");
     return;
   }
+  if (customSizeEnabled.value) {
+    if (customWidthError.value || customHeightError.value) {
+      const tips = [
+        customWidthError.value ? `宽度${customWidthError.value}` : "",
+        customHeightError.value ? `高度${customHeightError.value}` : "",
+      ].filter(Boolean);
+      message.warning(tips.join("；") || "请检查自定义分辨率");
+      return;
+    }
+    syncCustomSizeValue();
+  }
   confirming.value = true;
   submitting.value = true;
   try {
@@ -383,9 +481,9 @@ async function handleConfirm() {
       action: "confirm",
       model: selectedModel.value,
       num_images: numImages.value,
-      size: showSize.value ? size.value : "",
-      resolution: showResolution.value ? resolution.value : "",
-      custom_size: showCustomSize.value ? customSize.value : "",
+      size: customSizeEnabled.value || !showSize.value ? "" : size.value,
+      resolution: customSizeEnabled.value || !showResolution.value ? "" : resolution.value,
+      custom_size: customSizeEnabled.value ? customSize.value : "",
     });
     replaceMessage(next);
     notifyGeneratePage(next);
@@ -509,22 +607,74 @@ onBeforeUnmount(() => {
           placeholder="选择分辨率"
         />
       </label>
-      <label v-if="showCustomSize">
-        <span>尺寸</span>
-        <OptionGridPicker
-          v-model="customSize"
-          :options="customSizeOptions"
-          panel-title="选择分辨率"
-          placeholder="选择分辨率"
-          show-preview
-        />
+      <label v-if="customSizeEnabled && supportsCustomSize">
+        <span>宽度</span>
+        <div class="chat-custom-size-input-wrap">
+          <a-input-number
+            v-model:value="customWidth"
+            class="chat-custom-size-input"
+            :class="{ 'is-invalid': !!customWidthError }"
+            :min="customSizeMin"
+            :max="customSizeLimit"
+            :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+            :precision="0"
+            :status="customWidthError ? 'error' : undefined"
+            @change="syncCustomSizeValue"
+          />
+          <span class="chat-custom-size-unit">px</span>
+        </div>
+        <small v-if="customWidthError" class="chat-custom-size-error">{{ customWidthError }}</small>
       </label>
+      <label v-if="customSizeEnabled && supportsCustomSize">
+        <span>高度</span>
+        <div class="chat-custom-size-input-wrap">
+          <a-input-number
+            v-model:value="customHeight"
+            class="chat-custom-size-input"
+            :class="{ 'is-invalid': !!customHeightError }"
+            :min="customSizeMin"
+            :max="customSizeLimit"
+            :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+            :precision="0"
+            :status="customHeightError ? 'error' : undefined"
+            @change="syncCustomSizeValue"
+          />
+          <span class="chat-custom-size-unit">px</span>
+        </div>
+        <small v-if="customHeightError" class="chat-custom-size-error">{{ customHeightError }}</small>
+      </label>
+      <div v-if="supportsCustomSize" class="chat-custom-size-toggle">
+        <a-switch v-model:checked="customSizeEnabled" size="small" class="warm-switch" @change="onCustomSizeToggle" />
+        <span>自定义分辨率</span>
+        <a-tooltip
+          overlay-class-name="custom-size-help-tooltip"
+          placement="top"
+        >
+          <template #title>
+            <div class="chat-custom-size-help">
+              <div>开启后可手动输入宽高像素值：</div>
+              <ul>
+                <li>宽高须为 16 的倍数</li>
+                <li>长短边比例不超过 3:1</li>
+                <li>最大边长不超过 3840px</li>
+              </ul>
+              <div>开启后不再使用比例和分辨率</div>
+            </div>
+          </template>
+          <button type="button" class="chat-custom-size-help-btn" aria-label="自定义分辨率说明">
+            <QuestionCircleOutlined />
+          </button>
+        </a-tooltip>
+      </div>
     </div>
     <div v-else-if="generateInfo.model" class="chat-generate-meta">
       {{ selectedScene?.scene_label || generateInfo.model }}
       · {{ generateInfo.num_images || 1 }} 张
-      <template v-if="generateInfo.size"> · {{ generateInfo.size }}</template>
-      <template v-if="generateInfo.resolution"> · {{ generateInfo.resolution }}</template>
+      <template v-if="generateInfo.custom_size"> · {{ generateInfo.custom_size }}</template>
+      <template v-else>
+        <template v-if="generateInfo.size"> · {{ generateInfo.size }}</template>
+        <template v-if="generateInfo.resolution"> · {{ generateInfo.resolution }}</template>
+      </template>
     </div>
     <div v-if="resultSlots.length" class="chat-generate-results">
       <button
@@ -798,6 +948,71 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   border-radius: 12px;
   font-size: 13px;
+}
+
+.chat-custom-size-toggle {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--theme-text-secondary, #8b7457);
+  font-size: 12px;
+}
+
+.chat-custom-size-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-custom-size-help {
+  text-align: left;
+  line-height: 1.6;
+}
+
+.chat-custom-size-help ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.chat-custom-size-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.chat-custom-size-unit {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.chat-generate-fields :deep(.chat-custom-size-input.ant-input-number) {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 12px;
+}
+
+.chat-generate-fields :deep(.chat-custom-size-input.ant-input-number .ant-input-number-input) {
+  height: 34px;
+  padding-right: 40px;
+}
+
+.chat-custom-size-error {
+  color: #d4380d;
+  font-size: 11px;
 }
 
 .chat-generate-meta,
