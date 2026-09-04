@@ -5,9 +5,10 @@ import { useRouter } from "vue-router";
 import { withBaseUrl } from "@/lib/assets";
 import { CLOSE_AI_ASSISTANT_DOCK_EVENT } from "@/lib/chatGenerateDraft";
 import { requestCloseGenerateTutorialDock } from "@/lib/generateTutorialDock";
+import { importAfterExtendedAntd } from "@/lib/antd";
 import { useAuthStore } from "@/stores/auth";
 
-const ChatWorkspace = defineAsyncComponent(() => import("@/components/chat/ChatWorkspace.vue"));
+const ChatWorkspace = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/chat/ChatWorkspace.vue")));
 const xiaobaAvatarSrc = withBaseUrl("chat-xiaoba-avatar.png");
 const router = useRouter();
 const auth = useAuthStore();

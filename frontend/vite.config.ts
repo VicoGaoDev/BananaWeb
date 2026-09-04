@@ -28,15 +28,23 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          vue: ["vue", "vue-router", "pinia"],
-          antd: ["ant-design-vue"],
-          icons: ["@ant-design/icons-vue"],
-          charts: ["echarts", "vue-echarts"],
-          editor: ["@wangeditor/editor", "@wangeditor/editor-for-vue"],
-          cloudbase: ["@cloudbase/js-sdk"],
-          markdown: ["markdown-it"],
-          uploads: ["cos-js-sdk-v5"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          // Keep ant-design-vue and CloudBase out of named vendor buckets so
+          // Vite's preload helper and unused UI code stay off the first paint.
+          if (id.includes("@cloudbase") || id.includes("ant-design-vue")) return;
+          if (
+            id.includes("/vue/")
+            || id.includes("/@vue/")
+            || id.includes("/vue-router/")
+            || id.includes("/pinia/")
+          ) {
+            return "vue";
+          }
+          if (id.includes("echarts") || id.includes("vue-echarts")) return "charts";
+          if (id.includes("@wangeditor")) return "editor";
+          if (id.includes("markdown-it")) return "markdown";
+          if (id.includes("cos-js-sdk-v5")) return "uploads";
         },
       },
     },

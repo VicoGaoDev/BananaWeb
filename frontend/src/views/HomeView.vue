@@ -18,11 +18,12 @@ import { useRouter } from "vue-router";
 import { getGenerationModels } from "@/api/config";
 import { resolveImageUrl } from "@/api/images";
 import { getTemplateDetail, listTemplates } from "@/api/templates";
+import { importAfterExtendedAntd } from "@/lib/antd";
 import type { CreativeTemplate, GenerationModelOption } from "@/types";
 
 const router = useRouter();
 const openCreditsContact = inject<(() => void) | undefined>("openCreditsContact", undefined);
-const TemplateDetailDialog = defineAsyncComponent(() => import("@/components/templates/TemplateDetailDialog.vue"));
+const TemplateDetailDialog = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/templates/TemplateDetailDialog.vue")));
 const showcaseItems = ref<CreativeTemplate[]>([]);
 const loadingShowcase = ref(true);
 const generationModels = ref<GenerationModelOption[]>([]);

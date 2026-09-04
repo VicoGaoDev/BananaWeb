@@ -44,6 +44,8 @@ import {
   subscribeTutorialDockTabEnabled,
 } from "@/lib/generateTutorialDock";
 import { APP_THEME_ATTRIBUTE, appThemes, getAppThemeGroups, isAppThemeName, type AppThemeName } from "@/config/theme";
+import { importAfterExtendedAntd } from "@/lib/antd";
+import { loadCloudbaseAuth, preloadCloudbaseAuth } from "@/lib/cloudbaseLazy";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
@@ -92,8 +94,8 @@ import {
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
-const UserSuggestionDialog = defineAsyncComponent(() => import("@/components/feedback/UserSuggestionDialog.vue"));
-const NotificationCenterDialog = defineAsyncComponent(() => import("@/components/update-log/NotificationCenterDialog.vue"));
+const UserSuggestionDialog = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/feedback/UserSuggestionDialog.vue")));
+const NotificationCenterDialog = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/update-log/NotificationCenterDialog.vue")));
 const isAdmin = computed(() => auth.isAdmin);
 const isSuperAdmin = computed(() => auth.isSuperAdmin);
 const hideTopMenu = computed(() => route.meta.hideTopMenu === true);
@@ -118,8 +120,8 @@ const showAiAssistantDock = computed(() => {
     || path.startsWith("/templates")
   );
 });
-const AiAssistantDock = defineAsyncComponent(() => import("@/components/chat/AiAssistantDock.vue"));
-const GenerateTutorialDock = defineAsyncComponent(() => import("@/components/tutorial/GenerateTutorialDock.vue"));
+const AiAssistantDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/chat/AiAssistantDock.vue")));
+const GenerateTutorialDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/tutorial/GenerateTutorialDock.vue")));
 const tutorialDockTabEnabled = ref(isTutorialDockTabEnabled());
 let unsubscribeTutorialDockTabEnabled: (() => void) | null = null;
 const showGenerateTutorialDock = computed(() => {
@@ -686,21 +688,21 @@ function handleMenuClick({ key }: { key: string }) {
   }
   else if (key === "chat") {
     if (!auth.isLoggedIn) {
-      loginModalVisible.value = true;
+      openAuthModal("login");
       return;
     }
     router.push("/chat");
   }
   else if (key === "canvas") {
     if (!auth.isLoggedIn) {
-      loginModalVisible.value = true;
+      openAuthModal("login");
       return;
     }
     router.push("/canvas");
   }
   else if (key === "history") {
     if (!auth.isLoggedIn) {
-      loginModalVisible.value = true;
+      openAuthModal("login");
       return;
     }
     router.push("/history");
@@ -1186,6 +1188,7 @@ watch(
 watch(authTab, (tab) => {
   if (tab === "register") {
     applyStoredInviteOrPromoCodeToRegisterForm();
+    preloadCloudbaseAuth();
   }
 });
 
@@ -1290,7 +1293,7 @@ async function handleSendForgotPasswordCode() {
   }
   forgotPasswordCodeLoading.value = true;
   try {
-    const { sendPasswordResetEmailCode } = await import("@/lib/cloudbase");
+    const { sendPasswordResetEmailCode } = await loadCloudbaseAuth();
     forgotPasswordForm.verificationId = await sendPasswordResetEmailCode(forgotPasswordForm.email.trim());
     message.success("验证码已发送，请检查邮箱");
   } catch (err: any) {
@@ -1367,7 +1370,7 @@ async function handleSendRegisterCode() {
   try {
     await checkRegistrationEmail(email);
     if (registerForm.email.trim().toLowerCase() !== email) return;
-    const { sendRegisterEmailCode } = await import("@/lib/cloudbase");
+    const { sendRegisterEmailCode } = await loadCloudbaseAuth();
     const verificationId = await sendRegisterEmailCode(email);
     if (registerForm.email.trim().toLowerCase() !== email) return;
     registerForm.verificationId = verificationId;

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
+import AppLayout from "@/components/layout/AppLayout.vue";
+import GenerateEntry from "@/views/GenerateEntry.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const router = createRouter({
@@ -6,7 +8,7 @@ const router = createRouter({
   routes: [
     {
       path: "/",
-      component: () => import("@/components/layout/AppLayout.vue"),
+      component: AppLayout,
       children: [
         {
           path: "",
@@ -21,12 +23,14 @@ const router = createRouter({
         {
           path: "generate",
           name: "Generate",
-          component: () => import("@/views/GenerateView.vue"),
+          meta: { deferHeavyPage: true },
+          component: GenerateEntry,
         },
         {
           path: "video-generate",
           name: "VideoGenerate",
-          component: () => import("@/views/VideoGenerateView.vue"),
+          meta: { deferHeavyPage: true },
+          component: () => import("@/views/VideoGenerateEntry.vue"),
         },
         {
           path: "chat/:sessionId?",
