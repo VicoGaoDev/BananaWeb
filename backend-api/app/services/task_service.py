@@ -246,6 +246,8 @@ def _validate_task_create_payload(
         num_images = 1
     if mode == "smart_cutout":
         refs = [item.strip() for item in (reference_images or []) if item and str(item).strip()]
+        if not refs:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先上传目标图")
         if len(refs) > 2:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="智能抠图最多支持原图和涂抹蒙版各一张")
         num_images = 1
@@ -539,7 +541,11 @@ def create_tasks(
             scene_key = SCENE_SMART_CUTOUT
         else:
             scene_key = model.strip()
-        normalized_custom_size = _validate_custom_size(db, scene_key, custom_size)
+        normalized_custom_size = (
+            ""
+            if mode == "inpaint"
+            else _validate_custom_size(db, scene_key, custom_size)
+        )
         billing_resolution = "" if normalized_custom_size else resolution
         if normalized_custom_size:
             size = ""

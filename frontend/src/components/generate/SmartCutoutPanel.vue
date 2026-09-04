@@ -8,6 +8,7 @@ import {
   EditOutlined,
   FontSizeOutlined,
   LoadingOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons-vue";
@@ -34,6 +35,17 @@ const props = withDefaults(defineProps<{
   queueFull?: boolean;
   sizeOptions?: SceneOptionItem[];
   resolutionOptions?: SceneOptionItem[];
+  hideAspectRatio?: boolean;
+  hideResolution?: boolean;
+  supportsCustomSize?: boolean;
+  customSizeEnabled?: boolean;
+  customWidth?: number;
+  customHeight?: number;
+  customWidthError?: string;
+  customHeightError?: string;
+  customSizeStep?: number;
+  parseCustomSizeInput?: (value: string) => string;
+  formatCustomSizeInput?: (value: string | number) => string;
 }>(), {
   creditCost: 4,
   submitting: false,
@@ -41,6 +53,17 @@ const props = withDefaults(defineProps<{
   queueFull: false,
   sizeOptions: () => [],
   resolutionOptions: () => [],
+  hideAspectRatio: false,
+  hideResolution: false,
+  supportsCustomSize: false,
+  customSizeEnabled: false,
+  customWidth: 1024,
+  customHeight: 1024,
+  customWidthError: "",
+  customHeightError: "",
+  customSizeStep: 16,
+  parseCustomSizeInput: (value: string) => String(value ?? "").replace(/\D/g, ""),
+  formatCustomSizeInput: (value: string | number) => String(value ?? "").replace(/\D/g, ""),
 });
 
 const size = defineModel<string>("size", { default: "1:1" });
@@ -49,7 +72,25 @@ const resolution = defineModel<string>("resolution", { default: "2K" });
 const emit = defineEmits<{
   submit: [payload: { prompt: string; sourceImageUrl: string; maskImageUrl: string }];
   "request-login": [];
+  "update:customSizeEnabled": [checked: boolean];
+  "update:customWidth": [value: number | string | null];
+  "update:customHeight": [value: number | string | null];
 }>();
+
+function getBodyPopupContainer() {
+  return document.body;
+}
+
+function onCustomSizeSwitch(checked: boolean | string | number) {
+  emit("update:customSizeEnabled", Boolean(checked));
+}
+
+const showCustomSizeToggle = computed(() => props.supportsCustomSize || props.customSizeEnabled);
+const showSizeSettings = computed(() => (
+  !props.hideAspectRatio
+  || !props.hideResolution
+  || showCustomSizeToggle.value
+));
 
 const auth = useAuthStore();
 const loginModalVisible = inject<Ref<boolean> | undefined>("loginModalVisible", undefined);
@@ -89,12 +130,14 @@ const canSubmit = computed(() => (
   && !sourceUploading.value
   && !maskUploading.value
   && !props.queueFull
+  && Boolean(sourceImageUrl.value.trim())
   && !(sourcePreviewUrl.value && !sourceImageUrl.value)
 ));
 const submitButtonText = computed(() => {
   if (props.submitting || maskUploading.value) return "提交中...";
   if (sourceUploading.value) return "原图上传中...";
   if (sourcePreviewUrl.value && !sourceImageUrl.value) return "原图未上传完成";
+  if (!sourceImageUrl.value.trim()) return "请先上传目标图";
   if (props.queueFull) return "生成队列已满";
   return props.isSuperAdmin ? "开始抠图" : `开始抠图 · ${props.creditCost} 积分`;
 });
@@ -251,6 +294,10 @@ async function handleSubmit() {
     message.warning(sourceUploading.value ? "原图上传中，请稍候再试" : "原图未上传完成，请重新上传后再试");
     return;
   }
+  if (!sourceImageUrl.value.trim()) {
+    message.warning("请先上传目标图");
+    return;
+  }
 
   const sourceUrl = sourceImageUrl.value.trim();
   let maskUrl = "";
@@ -337,8 +384,8 @@ defineExpose({
 
       <div class="field-block">
         <div class="panel-head">
-          <h3>{{ isSmearMode ? "涂抹抠图区域" : "参考图" }}</h3>
-          <span class="panel-hint">{{ isSmearMode ? "(可选，涂抹后仅抠出选区)" : "(可选)" }}</span>
+          <h3>{{ isSmearMode ? "涂抹抠图区域" : "目标图" }}</h3>
+          <span class="panel-hint">{{ isSmearMode ? "(可选，涂抹后仅抠出选区)" : "(必填)" }}</span>
         </div>
 
         <input
@@ -360,9 +407,9 @@ defineExpose({
           />
           <template v-else>
             <CloudUploadOutlined class="source-upload-icon" />
-            <div class="source-upload-title">点击上传参考图</div>
+            <div class="source-upload-title">点击上传目标图</div>
             <div class="source-upload-desc">
-              {{ isSmearMode ? "上传后可涂抹需要抠出的区域，也可以不涂抹直接提交" : "可不上传，直接用提示词发起抠图" }}
+              {{ isSmearMode ? "请先上传目标图，上传后可涂抹需要抠出的区域" : "请上传需要抠图的目标图" }}
             </div>
           </template>
         </div>
@@ -511,13 +558,33 @@ defineExpose({
           </template>
         </template>
       </div>
+    </div>
 
+    <div v-if="showSizeSettings" class="settings-size">
       <div class="settings-row settings-row-inline">
-        <div class="setting-item setting-item-inline">
+        <div v-if="!hideAspectRatio && !customSizeEnabled" class="setting-item setting-item-inline">
           <label>宽高比</label>
           <AspectRatioPicker v-model="size" :options="sizeOptions" />
         </div>
-        <div class="setting-item setting-item-inline">
+        <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline">
+          <label>宽度</label>
+          <div class="custom-size-input-wrap">
+            <a-input-number
+              :value="customWidth"
+              class="warm-input-number custom-size-input"
+              :class="{ 'is-invalid': !!customWidthError }"
+              :step="customSizeStep"
+              :precision="0"
+              :parser="parseCustomSizeInput"
+              :formatter="formatCustomSizeInput"
+              :status="customWidthError ? 'error' : undefined"
+              @update:value="emit('update:customWidth', $event)"
+            />
+            <span class="custom-size-unit">px</span>
+          </div>
+          <div v-if="customWidthError" class="custom-size-error">{{ customWidthError }}</div>
+        </div>
+        <div v-if="!hideResolution && !customSizeEnabled" class="setting-item setting-item-inline">
           <label>分辨率</label>
           <OptionGridPicker
             v-model="resolution"
@@ -525,6 +592,61 @@ defineExpose({
             panel-title="选择分辨率"
             placeholder="选择分辨率"
           />
+        </div>
+        <div v-else-if="customSizeEnabled" class="setting-item setting-item-inline custom-size-height-col">
+          <span class="custom-size-x" aria-hidden="true">×</span>
+          <label>高度</label>
+          <div class="custom-size-input-wrap">
+            <a-input-number
+              :value="customHeight"
+              class="warm-input-number custom-size-input"
+              :class="{ 'is-invalid': !!customHeightError }"
+              :step="customSizeStep"
+              :precision="0"
+              :parser="parseCustomSizeInput"
+              :formatter="formatCustomSizeInput"
+              :status="customHeightError ? 'error' : undefined"
+              @update:value="emit('update:customHeight', $event)"
+            />
+            <span class="custom-size-unit">px</span>
+          </div>
+          <div v-if="customHeightError" class="custom-size-error">{{ customHeightError }}</div>
+        </div>
+        <div
+          v-if="showCustomSizeToggle"
+          class="setting-item setting-item-inline custom-size-toggle-col"
+        >
+          <label class="custom-size-toggle-spacer" aria-hidden="true">&nbsp;</label>
+          <div class="aspect-ratio-auto-row custom-size-toggle-row">
+            <a-switch
+              :checked="customSizeEnabled"
+              size="small"
+              class="aspect-ratio-auto-switch"
+              @change="onCustomSizeSwitch"
+            />
+            <div class="aspect-ratio-auto-text">
+              <span class="aspect-ratio-auto-label">自定义分辨率</span>
+              <a-tooltip
+                overlay-class-name="custom-size-help-tooltip"
+                placement="top"
+                :get-popup-container="getBodyPopupContainer"
+              >
+                <template #title>
+                  <div class="custom-size-help-tip">
+                    <div>开启后可手动输入宽高像素值：</div>
+                    <ul>
+                      <li>宽高须为 16 的倍数</li>
+                      <li>长短边比例不超过 3:1</li>
+                      <li>最大边长不超过 3840px</li>
+                    </ul>
+                  </div>
+                </template>
+                <button type="button" class="aspect-ratio-auto-help" aria-label="自定义分辨率说明">
+                  <QuestionCircleOutlined />
+                </button>
+              </a-tooltip>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -564,13 +686,21 @@ defineExpose({
   padding: 0 10px 0 4px;
 }
 
+.settings-size {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  padding: 12px 10px 0 4px;
+  background: transparent;
+}
+
 .settings-footer {
   position: relative;
   z-index: 3;
   flex-shrink: 0;
-  margin-top: auto;
+  margin-top: 0;
   padding-top: 8px;
-  background: var(--theme-page-base);
+  background: transparent;
 }
 
 .native-file-input {
@@ -681,6 +811,175 @@ defineExpose({
     width: 100%;
     justify-content: space-between;
   }
+}
+
+.custom-size-toggle-col {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+}
+
+.custom-size-toggle-spacer {
+  visibility: hidden;
+  user-select: none;
+}
+
+.custom-size-toggle-col .custom-size-toggle-row {
+  min-height: 40px;
+}
+
+.custom-size-height-col {
+  position: relative;
+}
+
+.custom-size-x {
+  position: absolute;
+  top: calc(1.4em + 10px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  transform: translateX(calc(-50% - 8px));
+  color: var(--theme-title);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.custom-size-error {
+  color: #d4380d;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.setting-item-inline :deep(.custom-size-input.is-invalid.ant-input-number),
+.setting-item-inline :deep(.custom-size-input.ant-input-number-status-error) {
+  border-color: #d4380d !important;
+}
+
+.custom-size-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.custom-size-unit {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid var(--theme-control-border) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft)) !important;
+  box-shadow:
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 10px 22px var(--theme-shadow-soft) !important;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number:hover),
+.setting-item-inline :deep(.custom-size-input.ant-input-number-focused) {
+  border-color: var(--theme-border-strong) !important;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
+  height: 40px;
+  padding: 0 44px 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 40px;
+  ime-mode: disabled;
+}
+
+.aspect-ratio-auto-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch) {
+  background: var(--theme-control-bg) !important;
+  border: none !important;
+  box-shadow: inset 0 0 0 1px var(--theme-control-border) !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-small .ant-switch-handle) {
+  top: 2px;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-small .ant-switch-handle::before) {
+  background: var(--theme-accent) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch:hover:not(.ant-switch-disabled)) {
+  background: var(--theme-control-hover-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--theme-border-strong) !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked) {
+  background: var(--theme-control-active) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked .ant-switch-handle::before) {
+  background: #ffffff !important;
+}
+
+.aspect-ratio-auto-row :deep(.aspect-ratio-auto-switch.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled)) {
+  background: var(--theme-control-active) !important;
+  box-shadow: none !important;
+}
+
+.aspect-ratio-auto-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.aspect-ratio-auto-label {
+  color: var(--theme-title);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.aspect-ratio-auto-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.aspect-ratio-auto-help:hover,
+.aspect-ratio-auto-help:focus-visible {
+  color: var(--theme-accent);
+  background: rgba(var(--theme-accent-rgb), 0.08);
 }
 
 .prompt-input {
@@ -1059,8 +1358,16 @@ defineExpose({
     padding: 0;
   }
 
+  .settings-size {
+    padding: 12px 0 0;
+  }
+
   .settings-row {
     flex-direction: column;
+  }
+
+  .settings-row-inline {
+    flex-direction: row;
   }
 }
 
@@ -1072,5 +1379,21 @@ defineExpose({
   .generate-btn {
     transition: none !important;
   }
+}
+</style>
+
+<style>
+.custom-size-help-tooltip .custom-size-help-tip {
+  text-align: left;
+  line-height: 1.6;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip ul {
+  margin: 6px 0 0;
+  padding-left: 1.15em;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip li {
+  list-style: disc;
 }
 </style>

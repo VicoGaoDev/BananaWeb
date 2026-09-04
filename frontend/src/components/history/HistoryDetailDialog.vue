@@ -273,28 +273,59 @@ function getDetailCreditCost(item: UserHistoryCard) {
   return Number(item.credit_cost || 0);
 }
 
-function detailMetaList(item: UserHistoryCard) {
-  return [
-    `状态：${statusLabel(item.status)}`,
-    item.task_is_deleted ? "任务状态：已软删除" : "",
-    item.is_soft_deleted ? `图片软删除：${item.images.filter((img) => img.is_deleted).length} 张` : "",
-    `来源：${sourceLabel(item.source)}`,
-    `类型：${modeLabel(item.task_type)}`,
-    `模型：${getModelLabel(item.model)}`,
-    item.item_type === "task" && !props.hideCreditCost ? `消耗积分：${getDetailCreditCost(item)}` : "",
-    item.style_name ? `风格：${item.style_name}` : "",
-    item.custom_size ? "" : `比例：${item.size || "-"}`,
-    item.custom_size ? "" : (item.resolution ? `分辨率：${item.resolution}` : ""),
-    item.custom_size ? `自定义分辨率：${item.custom_size}` : "",
-    item.image_format ? `格式：${item.image_format}` : "",
-    item.image_size_bytes ? `大小：${formatImageSize(item.image_size_bytes)}` : "",
-    item.item_type === "task" && item.api_attempts?.length
-      ? `备用接口：${item.used_fallback_api ? "已调用" : "未调用"}`
-      : "",
-    item.run_time != null ? `接口调用耗时：${formatDuration((item.run_time || 0) * 1000)}` : "",
-    item.request_started_at ? `开始时间：${formatTime(item.request_started_at)}` : "",
-    item.created_at ? `创建时间：${formatTime(item.created_at)}` : "",
+type DetailMetaChip = {
+  text: string;
+  kind: "status" | "info";
+  status?: UserHistoryCard["status"];
+};
+type DetailMetaItem = {
+  key: string;
+  label: string;
+  value?: string;
+  chips?: DetailMetaChip[];
+};
+
+function detailMetaList(item: UserHistoryCard): DetailMetaItem[] {
+  const sizeChips: DetailMetaChip[] = item.custom_size
+    ? [{ text: item.custom_size, kind: "info" }]
+    : [
+      item.size ? { text: item.size, kind: "info" as const } : null,
+      item.resolution ? { text: item.resolution, kind: "info" as const } : null,
+    ].filter((chip): chip is DetailMetaChip => Boolean(chip));
+  const fileParts = [
+    item.image_format || "",
+    item.image_size_bytes ? formatImageSize(item.image_size_bytes) : "",
   ].filter(Boolean);
+
+  return [
+    { key: "status", label: "状态", chips: [{ text: statusLabel(item.status), kind: "status", status: item.status }] },
+    { key: "model", label: "模型", chips: [{ text: getModelLabel(item.model), kind: "info" }] },
+    sizeChips.length
+      ? { key: "size", label: item.custom_size ? "自定义分辨率" : "宽高比 / 分辨率", chips: sizeChips }
+      : null,
+    item.task_is_deleted ? { key: "task-deleted", label: "任务状态", value: "已软删除" } : null,
+    item.is_soft_deleted
+      ? { key: "image-deleted", label: "图片软删除", value: `${item.images.filter((img) => img.is_deleted).length} 张` }
+      : null,
+    { key: "source-type", label: "来源 / 类型", value: [sourceLabel(item.source), modeLabel(item.task_type)].filter(Boolean).join(" / ") },
+    item.style_name ? { key: "style", label: "风格", value: item.style_name } : null,
+    fileParts.length ? { key: "file", label: "格式 / 大小", value: fileParts.join(" / ") } : null,
+    item.item_type === "task" && item.api_attempts?.length
+      ? { key: "fallback", label: "备用接口", value: item.used_fallback_api ? "已调用" : "未调用" }
+      : null,
+    item.run_time != null
+      ? { key: "runtime", label: "接口调用耗时", value: formatDuration((item.run_time || 0) * 1000) }
+      : null,
+    item.request_started_at
+      ? { key: "started", label: "开始时间", value: formatTime(item.request_started_at) }
+      : null,
+    item.created_at
+      ? { key: "created", label: "创建时间", value: formatTime(item.created_at) }
+      : null,
+    item.item_type === "task" && !props.hideCreditCost
+      ? { key: "credit", label: "消耗积分", value: String(getDetailCreditCost(item)) }
+      : null,
+  ].filter((meta): meta is DetailMetaItem => Boolean(meta));
 }
 
 function attemptStatusLabel(status: string) {
@@ -788,18 +819,38 @@ function handleGenerateVideo(item: UserHistoryCard) {
 
                 <div class="detail-section">
                   <div class="detail-meta">
-                    <span v-if="showErrorMessage && item.task_id" class="detail-meta-business-id">
-                      ID：{{ item.task_id }}
-                      <button
-                        type="button"
-                        class="detail-meta-copy"
-                        aria-label="复制 ID"
-                        @click="copyBusinessId(item.task_id)"
-                      >
-                        <CopyOutlined />
-                      </button>
+                    <span v-if="showErrorMessage && item.task_id" class="detail-meta-item detail-meta-business-id">
+                      <span class="detail-meta-label">ID</span>
+                      <span class="detail-meta-value">
+                        {{ item.task_id }}
+                        <button
+                          type="button"
+                          class="detail-meta-copy"
+                          aria-label="复制 ID"
+                          @click="copyBusinessId(item.task_id)"
+                        >
+                          <CopyOutlined />
+                        </button>
+                      </span>
                     </span>
-                    <span v-for="meta in detailMetaList(item)" :key="meta">{{ meta }}</span>
+                    <span
+                      v-for="meta in detailMetaList(item)"
+                      :key="meta.key"
+                      class="detail-meta-item"
+                    >
+                      <span class="detail-meta-label">{{ meta.label }}</span>
+                      <span class="detail-meta-value">
+                        <template v-if="meta.chips?.length">
+                          <span
+                            v-for="chip in meta.chips"
+                            :key="chip.text"
+                            class="detail-meta-tag"
+                            :class="chip.kind === 'status' ? `is-status-${chip.status || 'pending'}` : 'is-info'"
+                          >{{ chip.text }}</span>
+                        </template>
+                        <template v-else>{{ meta.value }}</template>
+                      </span>
+                    </span>
                   </div>
                   <div v-if="getCanvasAccessUrl(item)" class="detail-canvas-link-row">
                     <span class="detail-canvas-link-label">Canvas 访问地址：</span>
@@ -869,7 +920,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                     <div class="detail-label">提示词</div>
                     <a-button type="text" class="detail-copy-btn" @click="copyPrompt(item.prompt)">
                       <template #icon><CopyOutlined /></template>
-                      复制提示词
+                      复制
                     </a-button>
                   </div>
                   <div class="detail-prompt">{{ item.prompt || "-" }}</div>
@@ -1819,27 +1870,86 @@ function handleGenerateVideo(item: UserHistoryCard) {
 
 .detail-meta {
   display: flex;
-  flex-wrap: wrap;
-  padding: 12px 14px;
+  flex-direction: column;
+  padding: 2px 16px;
   border-radius: 12px;
   background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
   color: var(--text-secondary);
   font-size: 13px;
-  line-height: 1.8;
-
-  span:not(:last-child)::after {
-    content: "｜";
-    margin: 0 8px;
-    color: #d3b487;
-  }
+  line-height: 1.5;
 }
 
-.detail-meta-business-id {
+.detail-meta-item {
+  display: grid;
+  grid-template-columns: 8.5em minmax(0, 1fr);
+  align-items: center;
+  column-gap: 20px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 0;
+}
+
+.detail-meta-label {
+  color: var(--theme-title);
+  font-weight: 700;
+}
+
+.detail-meta-value {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: var(--theme-title);
+  text-align: left;
+}
+
+.detail-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: fit-content;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.detail-meta-tag.is-status-success {
+  color: #067647;
+  background: rgba(18, 183, 106, 0.14);
+}
+
+.detail-meta-tag.is-status-failed {
+  color: #b42318;
+  background: rgba(217, 45, 32, 0.12);
+}
+
+.detail-meta-tag.is-status-processing {
+  color: #b54708;
+  background: rgba(247, 144, 9, 0.16);
+}
+
+.detail-meta-tag.is-status-queued,
+.detail-meta-tag.is-status-pending {
+  color: #175cd3;
+  background: rgba(46, 144, 250, 0.14);
+}
+
+.detail-meta-tag.is-info {
+  color: var(--theme-title);
+  background: rgba(46, 144, 250, 0.14);
+}
+
+.detail-meta-business-id .detail-meta-value {
+  white-space: normal;
   word-break: break-all;
+  text-overflow: unset;
 }
 
 .detail-meta-copy {

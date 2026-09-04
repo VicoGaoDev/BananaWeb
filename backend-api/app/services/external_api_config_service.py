@@ -110,7 +110,7 @@ DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
-    {"scene_key": SCENE_SMART_CUTOUT, "scene_type": SCENE_TYPE_SMART_CUTOUT, "scene_label": "智能抠图", "scene_description": "涂抹区域后自动抠图", "sort_order": 65, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
+    {"scene_key": SCENE_SMART_CUTOUT, "scene_type": SCENE_TYPE_SMART_CUTOUT, "scene_label": "智能抠图", "scene_description": "涂抹区域后自动抠图", "sort_order": 65, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": False},
 ]
 SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA: 4,

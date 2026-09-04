@@ -566,6 +566,8 @@ let filePickerRecoveryTimer: number | null = null;
 const sourceDisplayUrl = computed(() => getPreviewImageSrc(sourcePreviewUrl.value || sourceImageUrl.value));
 const isTextGenerateMode = computed(() => generateMode.value === "textGenerate");
 const isImageEditMode = computed(() => generateMode.value === "imageEdit");
+const isSmartCutoutMode = computed(() => generateMode.value === "smartCutout");
+const smartCutoutScene = computed(() => taskScenes.value.find((item) => item.scene_key === "smart_cutout"));
 const SHOW_MODEL_NEW_BADGES = false;
 const textGenerateModels = computed(() => (
   taskScenes.value
@@ -743,21 +745,20 @@ const hideAspectRatio = computed(() => (
 const hideResolution = computed(() => (
   (isTextGenerateMode.value || isImageEditMode.value) && !!selectedModelOption.value?.hide_resolution
 ));
-const hideCustomSize = computed(() => (
-  (isTextGenerateMode.value || isImageEditMode.value)
-  && selectedModelOption.value?.hide_custom_size !== false
+const customSizeScene = computed(() => (
+  isSmartCutoutMode.value ? smartCutoutScene.value : selectedModelOption.value
 ));
 const supportsCustomSize = computed(() => (
-  (isTextGenerateMode.value || isImageEditMode.value)
-  && selectedModelOption.value?.hide_custom_size === false
+  (isTextGenerateMode.value || isImageEditMode.value || isSmartCutoutMode.value)
+  && customSizeScene.value?.hide_custom_size === false
 ));
 const CUSTOM_SIZE_PIXEL_MULTIPLE = 16;
 const CUSTOM_SIZE_MAX_ASPECT_RATIO = 3;
 const CUSTOM_SIZE_MAX_SIDE = 3840;
-const customSizeMin = computed(() => Math.max(1, Number(selectedModelOption.value?.custom_size_min || 256)));
-const customSizeMax = computed(() => Math.max(customSizeMin.value, Number(selectedModelOption.value?.custom_size_max || 4096)));
+const customSizeMin = computed(() => Math.max(1, Number(customSizeScene.value?.custom_size_min || 256)));
+const customSizeMax = computed(() => Math.max(customSizeMin.value, Number(customSizeScene.value?.custom_size_max || 4096)));
 const customSizeLimit = computed(() => Math.min(customSizeMax.value, CUSTOM_SIZE_MAX_SIDE));
-const customSizeStep = computed(() => Math.max(1, Number(selectedModelOption.value?.custom_size_step || 8)));
+const customSizeStep = computed(() => Math.max(1, Number(customSizeScene.value?.custom_size_step || 8)));
 
 function snapToCustomSizeMultiple(value: number) {
   return Math.round(value / CUSTOM_SIZE_PIXEL_MULTIPLE) * CUSTOM_SIZE_PIXEL_MULTIPLE;
@@ -1016,7 +1017,6 @@ function validateCustomSizeInput() {
   customSize.value = `${Number(customWidth.value)}x${Number(customHeight.value)}`;
   return true;
 }
-const smartCutoutScene = computed(() => taskScenes.value.find((item) => item.scene_key === "smart_cutout"));
 const smartCutoutSizeOptions = computed(() => (
   smartCutoutScene.value?.aspect_ratio_options?.length
     ? smartCutoutScene.value.aspect_ratio_options
@@ -1045,7 +1045,10 @@ const selectedModelCreditCost = computed(() => resolveSceneCreditCost(selectedMo
 const promptReverseCreditCost = computed(() => sceneCostMap.value.prompt_reverse ?? DEFAULT_SCENE_COSTS.prompt_reverse);
 const promptOptimizeCreditCost = computed(() => sceneCostMap.value.prompt_optimize ?? DEFAULT_SCENE_COSTS.prompt_optimize);
 const inpaintCreditCost = computed(() => sceneCostMap.value.inpaint ?? DEFAULT_SCENE_COSTS.inpaint);
-const smartCutoutCreditCost = computed(() => resolveSceneCreditCost("smart_cutout", resolution.value));
+const smartCutoutCreditCost = computed(() => resolveSceneCreditCost(
+  "smart_cutout",
+  customSizeEnabled.value ? "" : resolution.value,
+));
 const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint" || generateMode.value === "smartCutout");
 const activeExtendedToolLabel = computed(() => (
   generateMode.value === "promptReverse"
@@ -1918,7 +1921,9 @@ function buildSubmitPrompt(userPrompt: string) {
 
 function getTaskDraftCreditCost(task: GeneratedTaskItem, nextNumImages = task.numImages) {
   if (task.mode === "inpaint") return inpaintCreditCost.value;
-  if (task.mode === "smartCutout") return smartCutoutCreditCost.value;
+  if (task.mode === "smartCutout") {
+    return resolveSceneCreditCost("smart_cutout", task.customSize ? "" : task.resolution);
+  }
   const perImageCost = task.model ? resolveSceneCreditCost(task.model, task.resolution) : selectedModelCreditCost.value;
   return nextNumImages * perImageCost;
 }
@@ -3117,15 +3122,16 @@ async function handleSmartCutoutSubmit(payload: { prompt: string; sourceImageUrl
       return;
     }
 
+    if (supportsCustomSize.value && !validateCustomSizeInput()) return;
     const submitPrompt = payload.prompt.trim() || "智能抠图";
     const referenceImages = [payload.sourceImageUrl, payload.maskImageUrl].filter(Boolean);
     const taskPayload: GenerateTaskPayload = {
       mode: "smart_cutout",
       prompt: submitPrompt,
       num_images: 1,
-      size: size.value,
-      resolution: resolution.value,
-      custom_size: customSize.value,
+      size: customSizeEnabled.value || !!smartCutoutScene.value?.hide_aspect_ratio ? "" : size.value,
+      resolution: customSizeEnabled.value || !!smartCutoutScene.value?.hide_resolution ? "" : resolution.value,
+      custom_size: customSizeEnabled.value ? customSize.value : "",
       reference_images: referenceImages.length ? referenceImages : undefined,
     };
     await submitGeneratedTask(taskPayload, {
@@ -3243,7 +3249,7 @@ async function handleRegenerate(task: GeneratedTaskItem) {
         num_images: 1,
         size: task.size,
         resolution: task.resolution,
-        custom_size: task.customSize,
+        custom_size: "",
         source_image: task.sourceImage,
         mask_image: task.maskImage,
       }
@@ -3254,7 +3260,7 @@ async function handleRegenerate(task: GeneratedTaskItem) {
         num_images: 1,
         size: task.size,
         resolution: task.resolution,
-        custom_size: task.customSize,
+        custom_size: task.customSize || "",
         reference_images: smartCutoutRefs,
       }
     : {
@@ -3735,15 +3741,15 @@ function openSmartCutoutFromImageEdit() {
 
   if (firstReference.status === "success" && firstReferenceUrl) {
     applySmartCutoutSource(firstReferenceUrl);
-    message.success("已带第一张参考图进入智能抠图");
+    message.success("已带第一张目标图进入智能抠图");
     return;
   }
 
   applySmartCutoutSource("");
   message.warning(
     firstReference.status === "uploading"
-      ? "已切换到智能抠图，第一张参考图仍在上传中，未自动带入"
-      : "已切换到智能抠图，第一张参考图上传失败，未自动带入",
+      ? "已切换到智能抠图，第一张目标图仍在上传中，未自动带入"
+      : "已切换到智能抠图，第一张目标图上传失败，未自动带入",
   );
 }
 
@@ -5546,10 +5552,24 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
               v-model:resolution="resolution"
               :size-options="smartCutoutSizeOptions"
               :resolution-options="smartCutoutResolutionOptions"
+              :hide-aspect-ratio="!!smartCutoutScene?.hide_aspect_ratio"
+              :hide-resolution="!!smartCutoutScene?.hide_resolution"
+              :supports-custom-size="supportsCustomSize"
+              :custom-size-enabled="customSizeEnabled"
+              :custom-width="customWidth"
+              :custom-height="customHeight"
+              :custom-width-error="customWidthError"
+              :custom-height-error="customHeightError"
+              :custom-size-step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+              :parse-custom-size-input="parseCustomSizeInput"
+              :format-custom-size-input="formatCustomSizeInput"
               :credit-cost="smartCutoutCreditCost"
               :submitting="submittingGenerate"
               :is-super-admin="isSuperAdmin"
               :queue-full="remainingGenerationImageSlots <= 0"
+              @update:custom-size-enabled="onCustomSizeToggle"
+              @update:custom-width="handleCustomWidthChange"
+              @update:custom-height="handleCustomHeightChange"
               @submit="handleSmartCutoutSubmit"
               @request-login="loginModalVisible = true"
             />
@@ -7208,7 +7228,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   width: 100%;
   height: 40px;
   min-height: 40px;
+  border: 1px solid var(--theme-control-border) !important;
   border-radius: 16px !important;
+  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft)) !important;
+  box-shadow:
+    inset 0 1px 0 var(--theme-panel-inset),
+    0 10px 22px var(--theme-shadow-soft) !important;
+}
+
+.setting-item-inline :deep(.custom-size-input.ant-input-number:hover),
+.setting-item-inline :deep(.custom-size-input.ant-input-number-focused) {
+  border-color: var(--theme-border-strong) !important;
 }
 
 .setting-item-inline :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
@@ -10350,6 +10380,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-f
     rgba(var(--theme-surface-strong-rgb), 0.92) 28%,
     var(--theme-surface-strong)
   );
+}
+
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .smart-cutout-panel .settings-size,
+html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .smart-cutout-panel .settings-footer {
+  background: transparent;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .history-btn,
