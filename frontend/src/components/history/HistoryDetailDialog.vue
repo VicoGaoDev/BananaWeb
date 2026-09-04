@@ -286,18 +286,19 @@ type DetailMetaItem = {
 };
 
 function detailMetaList(item: UserHistoryCard): DetailMetaItem[] {
-  const sizeChips: DetailMetaChip[] = item.custom_size
-    ? [{ text: item.custom_size, kind: "info" }]
-    : [
-      item.size ? { text: item.size, kind: "info" as const } : null,
-      item.resolution ? { text: item.resolution, kind: "info" as const } : null,
-    ].filter((chip): chip is DetailMetaChip => Boolean(chip));
+  const sizeChips: DetailMetaChip[] = [];
+  if (item.custom_size) {
+    sizeChips.push({ text: item.custom_size, kind: "info" });
+  } else {
+    if (item.size) sizeChips.push({ text: item.size, kind: "info" });
+    if (item.resolution) sizeChips.push({ text: item.resolution, kind: "info" });
+  }
   const fileParts = [
     item.image_format || "",
     item.image_size_bytes ? formatImageSize(item.image_size_bytes) : "",
   ].filter(Boolean);
 
-  return [
+  const metas: Array<DetailMetaItem | null> = [
     { key: "status", label: "状态", chips: [{ text: statusLabel(item.status), kind: "status", status: item.status }] },
     { key: "model", label: "模型", chips: [{ text: getModelLabel(item.model), kind: "info" }] },
     sizeChips.length
@@ -325,7 +326,8 @@ function detailMetaList(item: UserHistoryCard): DetailMetaItem[] {
     item.item_type === "task" && !props.hideCreditCost
       ? { key: "credit", label: "消耗积分", value: String(getDetailCreditCost(item)) }
       : null,
-  ].filter((meta): meta is DetailMetaItem => Boolean(meta));
+  ];
+  return metas.filter((meta): meta is DetailMetaItem => meta != null);
 }
 
 function attemptStatusLabel(status: string) {
