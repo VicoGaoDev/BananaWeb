@@ -638,6 +638,7 @@ defineExpose({
                       <li>宽高须为 16 的倍数</li>
                       <li>长短边比例不超过 3:1</li>
                       <li>最大边长不超过 3840px</li>
+                      <li>总像素数不得低于 655360px</li>
                     </ul>
                   </div>
                 </template>

@@ -40,6 +40,7 @@ const numImages = ref(1);
 const CUSTOM_SIZE_PIXEL_MULTIPLE = 16;
 const CUSTOM_SIZE_MAX_ASPECT_RATIO = 3;
 const CUSTOM_SIZE_MAX_SIDE = 3840;
+const CUSTOM_SIZE_MIN_PIXELS = 655360;
 const size = ref("");
 const resolution = ref("");
 const customSize = ref("");
@@ -258,6 +259,9 @@ function getCustomDimensionError(value: number, otherValue: number) {
   }
   if (Number.isInteger(otherValue) && otherValue > 0 && value > otherValue * CUSTOM_SIZE_MAX_ASPECT_RATIO) {
     return `长短边比例不能超过 ${CUSTOM_SIZE_MAX_ASPECT_RATIO}:1`;
+  }
+  if (Number.isInteger(otherValue) && otherValue > 0 && value * otherValue < CUSTOM_SIZE_MIN_PIXELS) {
+    return `总像素数不得低于 ${CUSTOM_SIZE_MIN_PIXELS}px`;
   }
   return "";
 }
@@ -657,6 +661,7 @@ onBeforeUnmount(() => {
                 <li>宽高须为 16 的倍数</li>
                 <li>长短边比例不超过 3:1</li>
                 <li>最大边长不超过 3840px</li>
+                <li>总像素数不得低于 655360px</li>
               </ul>
               <div>开启后不再使用比例和分辨率</div>
             </div>

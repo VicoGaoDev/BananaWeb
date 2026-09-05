@@ -162,6 +162,9 @@ def refund_task_credit_for_generation_failure_if_needed(
 
 SMART_CUTOUT_PROMPT = "智能抠图"
 CUSTOM_SIZE_PATTERN = re.compile(r"^(\d+)[xX](\d+)$")
+CUSTOM_SIZE_MAX_ASPECT_RATIO = 3
+CUSTOM_SIZE_MAX_SIDE = 3840
+CUSTOM_SIZE_MIN_PIXELS = 655360
 
 
 def _validate_custom_size(db: Session, scene_key: str, custom_size: str) -> str:
@@ -200,17 +203,22 @@ def _validate_custom_size(db: Session, scene_key: str, custom_size: str) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="自定义分辨率宽高须为 16px 的倍数",
         )
-    if max(width, height) > 3840:
+    if max(width, height) > CUSTOM_SIZE_MAX_SIDE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="自定义分辨率最大边长不超过 3840px",
+            detail=f"自定义分辨率最大边长不超过 {CUSTOM_SIZE_MAX_SIDE}px",
         )
     short_side = min(width, height)
     long_side = max(width, height)
-    if short_side <= 0 or long_side / short_side > 3:
+    if short_side <= 0 or long_side / short_side > CUSTOM_SIZE_MAX_ASPECT_RATIO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="自定义分辨率长短边比例不能超过 3:1",
+            detail=f"自定义分辨率长短边比例不能超过 {CUSTOM_SIZE_MAX_ASPECT_RATIO}:1",
+        )
+    if width * height < CUSTOM_SIZE_MIN_PIXELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"自定义分辨率总像素数不得低于 {CUSTOM_SIZE_MIN_PIXELS}px",
         )
     return f"{width}x{height}"
 

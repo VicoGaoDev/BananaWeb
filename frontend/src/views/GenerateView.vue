@@ -756,6 +756,7 @@ const supportsCustomSize = computed(() => (
 const CUSTOM_SIZE_PIXEL_MULTIPLE = 16;
 const CUSTOM_SIZE_MAX_ASPECT_RATIO = 3;
 const CUSTOM_SIZE_MAX_SIDE = 3840;
+const CUSTOM_SIZE_MIN_PIXELS = 655360;
 const customSizeMin = computed(() => Math.max(1, Number(customSizeScene.value?.custom_size_min || 256)));
 const customSizeMax = computed(() => Math.max(customSizeMin.value, Number(customSizeScene.value?.custom_size_max || 4096)));
 const customSizeLimit = computed(() => Math.min(customSizeMax.value, CUSTOM_SIZE_MAX_SIDE));
@@ -994,6 +995,9 @@ function getCustomDimensionError(value: number, otherValue: number) {
     && value > otherValue * CUSTOM_SIZE_MAX_ASPECT_RATIO
   ) {
     return `长短边比例不能超过 ${CUSTOM_SIZE_MAX_ASPECT_RATIO}:1`;
+  }
+  if (Number.isInteger(otherValue) && otherValue > 0 && value * otherValue < CUSTOM_SIZE_MIN_PIXELS) {
+    return `总像素数不得低于 ${CUSTOM_SIZE_MIN_PIXELS}px`;
   }
   return "";
 }
@@ -4677,6 +4681,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                             <li>宽高须为 16 的倍数</li>
                             <li>长短边比例不超过 3:1</li>
                             <li>最大边长不超过 3840px</li>
+                            <li>总像素数不得低于 655360px</li>
                           </ul>
                           <div class="custom-size-help-note">仅 G-Image2 模型支持自定义</div>
                         </div>
@@ -5182,6 +5187,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                             <li>宽高须为 16 的倍数</li>
                             <li>长短边比例不超过 3:1</li>
                             <li>最大边长不超过 3840px</li>
+                            <li>总像素数不得低于 655360px</li>
                           </ul>
                           <div class="custom-size-help-note">仅 G-Image2 模型支持自定义</div>
                         </div>
