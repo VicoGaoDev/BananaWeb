@@ -370,6 +370,7 @@ interface UploadPreviewItem {
 const DEFAULT_MAX_REFERENCE_IMAGES = 6;
 const referenceItems = ref<UploadPreviewItem[]>([]);
 const assetPickerOpen = ref(false);
+const pickingGeneratedReference = ref(false);
 const quickSavingReferenceIds = ref<string[]>([]);
 const quickSavingPromptKeys = ref<string[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -1981,6 +1982,7 @@ async function submitGeneratedTask(
       throw new Error("服务端返回的任务数量异常");
     }
 
+    pickingGeneratedReference.value = false;
     getMe().then((u) => auth.updateUser(u)).catch(() => {});
   } catch (err: any) {
     generatedTasks.value = generatedTasks.value.filter((task) => !localTaskIds.has(task.localId));
@@ -2308,6 +2310,72 @@ function addLibraryAssetsToReference(assets: UserAsset[]) {
   }
   return true;
 }
+
+function getGeneratedImageReferenceUrl(img: ImageResult) {
+  return (img.image_url || img.preview_url || img.thumb_url || "").trim();
+}
+
+function isGeneratedImageAlreadyReferenced(img: ImageResult) {
+  const url = getGeneratedImageReferenceUrl(img);
+  return !!url && referenceItems.value.some((item) => item.remoteUrl === url);
+}
+
+function canShowGeneratedReferenceAdd(task: GeneratedTaskItem, img: ImageResult) {
+  return pickingGeneratedReference.value
+    && isImageEditMode.value
+    && canEditGeneratedImage(task, img);
+}
+
+function togglePickingGeneratedReference() {
+  if (pickingGeneratedReference.value) {
+    pickingGeneratedReference.value = false;
+    return;
+  }
+  if (!ensureLoggedIn()) return;
+  if (!isImageEditMode.value) return;
+  if (referenceItems.value.length >= maxReferenceImages.value) {
+    message.warning(`当前模型最多支持 ${maxReferenceImages.value} 张参考图`);
+    return;
+  }
+  const hasPickable = resultItems.value.some((item) => canEditGeneratedImage(item.task, item.image));
+  if (!hasPickable) {
+    message.warning("暂无已生成图片可添加");
+    return;
+  }
+  pickingGeneratedReference.value = true;
+}
+
+function toggleGeneratedImageAsReference(task: GeneratedTaskItem, img: ImageResult) {
+  const imageUrl = getGeneratedImageReferenceUrl(img);
+  if (!imageUrl) {
+    message.warning("当前结果图暂不可添加为参考图");
+    return;
+  }
+  const existingIndex = referenceItems.value.findIndex((item) => item.remoteUrl === imageUrl);
+  if (existingIndex !== -1) {
+    removeReference(existingIndex);
+    return;
+  }
+  const limit = maxReferenceImages.value;
+  if (referenceItems.value.length >= limit) {
+    message.warning(`当前模型最多支持 ${limit} 张参考图`);
+    return;
+  }
+  const shouldAutoDetect = referenceItems.value.length === 0;
+  referenceItems.value.push({
+    id: `generated-${task.localId}-${img.id || Date.now()}`,
+    localUrl: img.thumb_url || img.preview_url || imageUrl,
+    remoteUrl: imageUrl,
+    status: "success",
+  });
+  if (shouldAutoDetect) {
+    void maybeAutoDetectAspectRatioFromFirstReference(imageUrl);
+  }
+}
+
+watch(isImageEditMode, (isImageEdit) => {
+  if (!isImageEdit) pickingGeneratedReference.value = false;
+});
 
 async function handlePickUserAsset(asset: UserAsset) {
   if (addLibraryAssetToReference(asset)) {
@@ -2859,8 +2927,14 @@ function handlePromptOptimizeStyleConfirm(style: PublicPromptOptimizeStyle) {
     closePromptOptimizeStyleDialog();
     return;
   }
+  const normalizedPrompt = activePrompt.value.trim();
+  if (!normalizedPrompt) {
+    message.warning("请先输入需要优化的提示词");
+    return;
+  }
   const payload: PromptOptimizePayload = {
     ...pendingPromptOptimizePayload.value,
+    prompt: normalizedPrompt,
     style_name: style.name,
     style_prompt: style.style_prompt,
   };
@@ -2872,11 +2946,6 @@ function handlePromptOptimizeStyleConfirm(style: PublicPromptOptimizeStyle) {
 async function handlePromptOptimize() {
   if (promptOptimizeLoading.value) return;
   if (!(await ensureAuthenticated())) return;
-  const normalizedPrompt = activePrompt.value.trim();
-  if (!normalizedPrompt) {
-    message.warning("请先输入需要优化的提示词");
-    return;
-  }
   if (generateMode.value === "imageEdit" && hasPendingReferenceUploads.value) {
     message.warning("参考图仍在上传中，请稍候再优化");
     return;
@@ -2895,7 +2964,7 @@ async function handlePromptOptimize() {
   }
 
   const payload = {
-    prompt: normalizedPrompt,
+    prompt: activePrompt.value.trim(),
     reference_images: getPromptOptimizeReferenceImages(),
   };
   const target = getPromptOptimizeTarget();
@@ -4870,17 +4939,32 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
                   <div
                     v-if="referenceItems.length < maxReferenceImages"
-                    class="upload-add"
-                    @click="triggerUpload"
+                    class="upload-add-group"
+                    :class="{ 'is-picking': pickingGeneratedReference }"
                   >
-                    <a-spin
-                      v-if="referencePickerOpening"
-                      :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
-                    />
-                    <template v-else>
-                      <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
-                      <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
-                    </template>
+                    <div
+                      class="upload-add"
+                      @click="triggerUpload"
+                    >
+                      <a-spin
+                        v-if="referencePickerOpening"
+                        :indicator="h(LoadingOutlined, { style: accentIndicatorStyle })"
+                      />
+                      <template v-else>
+                        <CloudUploadOutlined class="upload-add-icon" style="font-size: 22px" />
+                        <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
+                      </template>
+                    </div>
+                    <button
+                      type="button"
+                      class="upload-add upload-add-from-generated"
+                      :class="{ active: pickingGeneratedReference }"
+                      :title="pickingGeneratedReference ? '点击可取消' : '从已生成图片中选择'"
+                      @click.stop="togglePickingGeneratedReference"
+                    >
+                      <PlusOutlined class="upload-add-icon" style="font-size: 20px" />
+                      <span>{{ pickingGeneratedReference ? "点击可取消" : "从已生成图片中选择" }}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -5897,6 +5981,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
           </div>
         </div>
 
+        <div v-if="pickingGeneratedReference" class="result-pick-reference-bar">
+          <span>点击图片中间的 + 添加到参考图，再次点击可取消</span>
+          <button type="button" class="result-pick-reference-done" @click="pickingGeneratedReference = false">完成</button>
+        </div>
         <div ref="resultBodyRef" class="result-body" @scroll="handleGeneratedTaskResultScroll">
           <div v-if="generatedTasksLoading && !resultItems.length" class="result-empty result-loading-state">
             <a-spin :indicator="h(LoadingOutlined, { style: neutralIndicatorStyle })" />
@@ -5919,7 +6007,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   '--generate-result-delay': `${Math.min(index, 9) * 45}ms`,
                   '--result-pending-bg-image': `url('${generateEmptyStateAsset}')`,
                 }"
-                :class="{ pending: item.image.status === 'pending' }"
+                :class="{
+                  pending: item.image.status === 'pending',
+                  'is-picking-reference': canShowGeneratedReferenceAdd(item.task, item.image),
+                }"
                 @mouseleave="collapseGeneratedResultMore(item)"
               >
                   <div
@@ -6178,6 +6269,18 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         </a-tooltip>
                       </div>
                     </template>
+                    <button
+                      v-if="canShowGeneratedReferenceAdd(item.task, item.image)"
+                      type="button"
+                      class="result-add-reference-btn"
+                      :class="{ 'is-added': isGeneratedImageAlreadyReferenced(item.image) }"
+                      :aria-label="isGeneratedImageAlreadyReferenced(item.image) ? '从参考图中移除' : '添加到参考图'"
+                      @click.stop="toggleGeneratedImageAsReference(item.task, item.image)"
+                    >
+                      <span class="result-add-reference-icon">
+                        <PlusOutlined />
+                      </span>
+                    </button>
                   </div>
                 </div>
             </TransitionGroup>
@@ -7668,6 +7771,37 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .generate-config-panel .upload-add-icon {
   color: currentColor;
+}
+
+.generate-config-panel .upload-add-group {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.generate-config-panel .upload-add-from-generated {
+  display: none;
+  padding: 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.generate-config-panel .upload-add-group:hover .upload-add-from-generated,
+.generate-config-panel .upload-add-group:focus-within .upload-add-from-generated,
+.generate-config-panel .upload-add-group.is-picking .upload-add-from-generated {
+  display: flex;
+}
+
+.generate-config-panel .upload-add-from-generated.active {
+  border-color: var(--theme-accent);
+  color: var(--theme-accent-text);
+}
+
+@media (hover: none) {
+  .generate-config-panel .upload-add-from-generated {
+    display: flex;
+  }
 }
 
 .generate-config-panel .ref-upload-block.is-reference-drag-over .upload-add {
@@ -9247,6 +9381,87 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .result-card:hover .result-frame.clickable img {
   transform: scale(1.03);
+}
+
+.result-card.is-picking-reference .result-actions,
+.result-card.is-picking-reference .result-top-actions {
+  display: none;
+}
+
+.result-card.is-picking-reference:hover .result-actions,
+.result-card.is-picking-reference:focus-within .result-actions,
+.result-card.is-picking-reference:hover .result-more-trigger.icon-chip,
+.result-card.is-picking-reference:focus-within .result-more-trigger.icon-chip,
+.result-card.is-picking-reference:hover .result-delete-trigger.icon-chip,
+.result-card.is-picking-reference:focus-within .result-delete-trigger.icon-chip {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.result-add-reference-btn {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.result-add-reference-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  color: #111;
+  font-size: 28px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    background var(--motion-duration-fast) var(--motion-ease-soft);
+}
+
+.result-add-reference-btn:hover .result-add-reference-icon {
+  transform: scale(1.06);
+  background: #fff;
+}
+
+.result-add-reference-btn.is-added .result-add-reference-icon {
+  background: var(--theme-accent);
+  color: #fff;
+}
+
+.result-pick-reference-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-accent) 10%, var(--theme-panel-bg));
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 28%, var(--theme-panel-border));
+  color: var(--theme-title);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.result-pick-reference-done {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--theme-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .failed-image {

@@ -317,9 +317,6 @@ function detailMetaList(item: UserHistoryCard): DetailMetaItem[] {
     item.run_time != null
       ? { key: "runtime", label: "接口调用耗时", value: formatDuration((item.run_time || 0) * 1000) }
       : null,
-    item.request_started_at
-      ? { key: "started", label: "开始时间", value: formatTime(item.request_started_at) }
-      : null,
     item.created_at
       ? { key: "created", label: "创建时间", value: formatTime(item.created_at) }
       : null,
@@ -759,7 +756,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                       @click="getDetailPreviewSrc(item, img) && openPreview(getDetailPreviewSrc(item, img))"
                     >
                       <div
-                        v-if="!shouldShowDetailLargeImagePreviewNotice(item, img) && !shouldShowDetailBaseUploadingState(item, img) && !shouldShowDetailBaseLoadFailedState(item, img) && !getDetailBaseImageSrc(item, img) && !isMediaLoaded(getDetailEnhancedImageLoadKey(img))"
+                        v-if="!shouldShowDetailLargeImagePreviewNotice(item, img) && !shouldShowDetailBaseUploadingState(item, img) && !shouldShowDetailBaseLoadFailedState(item, img) && !getDetailBaseImageSrc(item, img) && getDetailEnhancedImageSrc(item, img) && !isMediaLoaded(getDetailEnhancedImageLoadKey(img))"
                         class="detail-media-loading"
                       />
                       <img
@@ -824,7 +821,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                     <span v-if="showErrorMessage && item.task_id" class="detail-meta-item detail-meta-business-id">
                       <span class="detail-meta-label">ID</span>
                       <span class="detail-meta-value">
-                        {{ item.task_id }}
+                        <span class="detail-meta-id-text" :title="item.task_id">{{ item.task_id }}</span>
                         <button
                           type="button"
                           class="detail-meta-copy"
@@ -1949,9 +1946,14 @@ function handleGenerateVideo(item: UserHistoryCard) {
 }
 
 .detail-meta-business-id .detail-meta-value {
-  white-space: normal;
-  word-break: break-all;
-  text-overflow: unset;
+  flex-wrap: nowrap;
+}
+
+.detail-meta-id-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-meta-copy {
