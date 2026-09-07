@@ -34,6 +34,19 @@ import {
   getPreferredGenerationErrorMessage,
 } from "@/lib/generationErrors";
 import { withBaseUrl } from "@/lib/assets";
+import {
+  CUSTOM_SIZE_DEFAULT_SIDE,
+  CUSTOM_SIZE_PIXEL_MULTIPLE,
+  applyCustomDimensionChange,
+  createDigitsOnlyDirective,
+  formatCustomSizeInput,
+  formatCustomSizeValue,
+  getCustomDimensionError,
+  getCustomSizeBounds,
+  parseCustomSizeInput,
+  parseCustomSizeValue,
+  type CustomSizeBounds,
+} from "@/lib/customSize";
 import { useAuthStore } from "@/stores/auth";
 import type { GenerationModelOption, ImageResult, SceneOptionItem, TaskResult, TaskSceneConfig, UserHistoryCard } from "@/types";
 
@@ -58,6 +71,9 @@ interface BatchGenerateCard {
   size: string;
   resolution: string;
   customSize: string;
+  customSizeEnabled: boolean;
+  customWidth: number;
+  customHeight: number;
   numImages: number;
   referenceItems: UploadPreviewItem[];
   status: BatchCardStatus;
@@ -81,6 +97,9 @@ interface GlobalBatchSettings {
   size: string;
   resolution: string;
   customSize: string;
+  customSizeEnabled: boolean;
+  customWidth: number;
+  customHeight: number;
   numImages: number;
 }
 
@@ -91,6 +110,9 @@ interface BatchGenerateDraftCard {
   size: string;
   resolution: string;
   customSize: string;
+  customSizeEnabled?: boolean;
+  customWidth?: number;
+  customHeight?: number;
   numImages: number;
   referenceImages: string[];
   status: BatchCardStatus;
@@ -131,12 +153,6 @@ const DEFAULT_IMAGE_SIZE_OPTIONS: SceneOptionItem[] = [
   { label: "2K", value: "2K" },
   { label: "4K", value: "4K" },
 ];
-const DEFAULT_CUSTOM_SIZE_OPTIONS: SceneOptionItem[] = [
-  { label: "1024 x 1024", value: "1024x1024" },
-  { label: "1152 x 896", value: "1152x896" },
-  { label: "896 x 1152", value: "896x1152" },
-  { label: "1280 x 720", value: "1280x720" },
-];
 const DEFAULT_ASPECT_RATIO_OPTIONS: SceneOptionItem[] = [
   { label: "■  1:1", value: "1:1" },
   { label: "▮  2:3", value: "2:3" },
@@ -162,9 +178,13 @@ const globalSettings = ref<GlobalBatchSettings>({
   size: "",
   resolution: "",
   customSize: "",
+  customSizeEnabled: false,
+  customWidth: CUSTOM_SIZE_DEFAULT_SIDE,
+  customHeight: CUSTOM_SIZE_DEFAULT_SIDE,
   numImages: 1,
 });
 const aspectRatioAutoDetectEnabled = ref(readStoredAspectRatioAutoDetectEnabled());
+const vDigitsOnly = createDigitsOnlyDirective();
 const globalReferenceItems = ref<UploadPreviewItem[]>([]);
 const taskPollingInFlight = ref(false);
 const previewVisible = ref(false);
@@ -428,6 +448,9 @@ function serializeCard(card: BatchGenerateCard): BatchGenerateDraftCard {
     size: card.size,
     resolution: card.resolution,
     customSize: card.customSize,
+    customSizeEnabled: card.customSizeEnabled,
+    customWidth: card.customWidth,
+    customHeight: card.customHeight,
     numImages: getCardRequestedImageCount(card),
     referenceImages: card.referenceItems
       .filter((item) => item.status === "success" && item.remoteUrl)
@@ -457,6 +480,9 @@ function hydrateCardFromDraft(draft: BatchGenerateDraftCard): BatchGenerateCard 
     size: draft.size || "",
     resolution: draft.resolution || "",
     customSize: draft.customSize || "",
+    customSizeEnabled: Boolean(draft.customSizeEnabled),
+    customWidth: Number(draft.customWidth || CUSTOM_SIZE_DEFAULT_SIDE),
+    customHeight: Number(draft.customHeight || CUSTOM_SIZE_DEFAULT_SIDE),
     numImages,
     referenceItems: Array.isArray(draft.referenceImages)
       ? draft.referenceImages.map((url) => createReferenceItemFromRemote(url))
@@ -553,6 +579,9 @@ function restoreBatchGenerateDraft() {
         size: draft.globalSettings.size || "",
         resolution: draft.globalSettings.resolution || "",
         customSize: draft.globalSettings.customSize || "",
+        customSizeEnabled: Boolean(draft.globalSettings.customSizeEnabled),
+        customWidth: Number(draft.globalSettings.customWidth || CUSTOM_SIZE_DEFAULT_SIDE),
+        customHeight: Number(draft.globalSettings.customHeight || CUSTOM_SIZE_DEFAULT_SIDE),
         numImages: normalizeNumImages(draft.globalSettings.numImages, 1),
       };
     }
@@ -647,7 +676,7 @@ const pasteEligibleCards = computed(() => cards.value.filter((card) => card.scen
 const downloadableImages = computed(() => cards.value.flatMap((card) => getSuccessImages(card)));
 const estimatedCreditTotal = computed(() => cards.value.reduce((total, card) => {
   if (!card.model) return total;
-  return total + resolveSceneCreditCost(card.model, card.resolution) * getCardRequestedImageCount(card);
+  return total + resolveSceneCreditCost(card.model, card.customSizeEnabled ? "" : card.resolution) * getCardRequestedImageCount(card);
 }, 0));
 const detailModelOptions = computed(() => (
   taskScenes.value.map((scene) => ({
@@ -686,12 +715,6 @@ function getResolutionOptions(modelKey: string) {
     : DEFAULT_IMAGE_SIZE_OPTIONS;
 }
 
-function getCustomSizeOptions(modelKey: string) {
-  return getModelOption(modelKey)?.custom_size_options?.length
-    ? getModelOption(modelKey)!.custom_size_options
-    : DEFAULT_CUSTOM_SIZE_OPTIONS;
-}
-
 function hideAspectRatio(modelKey: string) {
   return Boolean(getModelOption(modelKey)?.hide_aspect_ratio);
 }
@@ -700,8 +723,96 @@ function hideResolution(modelKey: string) {
   return Boolean(getModelOption(modelKey)?.hide_resolution);
 }
 
-function hideCustomSize(modelKey: string) {
-  return Boolean(getModelOption(modelKey)?.hide_custom_size);
+function supportsCustomSize(modelKey: string) {
+  return getModelOption(modelKey)?.hide_custom_size === false;
+}
+
+function getModelCustomSizeBounds(modelKey: string): CustomSizeBounds {
+  const model = getModelOption(modelKey);
+  return getCustomSizeBounds(model?.custom_size_min, model?.custom_size_max);
+}
+
+function syncCustomSizeValue(target: { customSize: string; customWidth: number; customHeight: number }) {
+  target.customSize = formatCustomSizeValue(Number(target.customWidth), Number(target.customHeight));
+}
+
+function applyCustomSizeState(
+  target: { customSize: string; customSizeEnabled: boolean; customWidth: number; customHeight: number },
+  value?: string | null,
+  enabled = Boolean(value),
+) {
+  const parsed = parseCustomSizeValue(value);
+  if (!enabled || !parsed) {
+    target.customSizeEnabled = false;
+    target.customWidth = CUSTOM_SIZE_DEFAULT_SIDE;
+    target.customHeight = CUSTOM_SIZE_DEFAULT_SIDE;
+    target.customSize = "";
+    return;
+  }
+  target.customSizeEnabled = true;
+  target.customWidth = parsed.width;
+  target.customHeight = parsed.height;
+  target.customSize = formatCustomSizeValue(parsed.width, parsed.height);
+}
+
+function toggleCustomSize(
+  target: { customSize: string; customSizeEnabled: boolean; customWidth: number; customHeight: number },
+  enabled: boolean,
+  modelKey: string,
+) {
+  if (!supportsCustomSize(modelKey)) {
+    applyCustomSizeState(target, "", false);
+    return;
+  }
+  target.customSizeEnabled = enabled;
+  if (!enabled) {
+    target.customSize = "";
+    return;
+  }
+  const bounds = getModelCustomSizeBounds(modelKey);
+  target.customWidth = applyCustomDimensionChange(target.customWidth, target.customWidth || CUSTOM_SIZE_DEFAULT_SIDE, bounds);
+  target.customHeight = applyCustomDimensionChange(target.customHeight, target.customHeight || CUSTOM_SIZE_DEFAULT_SIDE, bounds);
+  syncCustomSizeValue(target);
+}
+
+function getTargetCustomDimensionError(
+  target: { customWidth: number; customHeight: number },
+  modelKey: string,
+  axis: "width" | "height",
+) {
+  const bounds = getModelCustomSizeBounds(modelKey);
+  return axis === "width"
+    ? getCustomDimensionError(Number(target.customWidth), Number(target.customHeight), bounds)
+    : getCustomDimensionError(Number(target.customHeight), Number(target.customWidth), bounds);
+}
+
+function handleCustomWidthChange(
+  target: { customSize: string; customWidth: number; customHeight: number },
+  modelKey: string,
+  value: number | string | null,
+) {
+  const bounds = getModelCustomSizeBounds(modelKey);
+  target.customWidth = applyCustomDimensionChange(Number(target.customWidth), value, bounds);
+  syncCustomSizeValue(target);
+}
+
+function handleCustomHeightChange(
+  target: { customSize: string; customWidth: number; customHeight: number },
+  modelKey: string,
+  value: number | string | null,
+) {
+  const bounds = getModelCustomSizeBounds(modelKey);
+  target.customHeight = applyCustomDimensionChange(Number(target.customHeight), value, bounds);
+  syncCustomSizeValue(target);
+}
+
+function onGlobalCustomSizeToggle(checked: boolean | string | number) {
+  toggleCustomSize(globalSettings.value, Boolean(checked), globalSettings.value.model);
+}
+
+function onCardCustomSizeToggle(card: BatchGenerateCard, checked: boolean) {
+  if (isCardLocked(card)) return;
+  toggleCustomSize(card, checked, card.model);
 }
 
 function getMaxReferenceImages(modelKey: string) {
@@ -729,6 +840,7 @@ function getClosestAspectRatioValue(width: number, height: number, options: Scen
 
 async function maybeAutoDetectAspectRatioForGlobal(source: File | string) {
   if (!aspectRatioAutoDetectEnabled.value) return;
+  if (globalSettings.value.customSizeEnabled) return;
   if (globalSettings.value.sceneType !== "image_edit") return;
   if (hideAspectRatio(globalSettings.value.model)) return;
   if (globalReferenceItems.value.length > 0) return;
@@ -749,6 +861,7 @@ async function maybeAutoDetectAspectRatioForGlobal(source: File | string) {
 
 async function maybeAutoDetectAspectRatioForCard(card: BatchGenerateCard, source: File | string) {
   if (!aspectRatioAutoDetectEnabled.value) return;
+  if (card.customSizeEnabled) return;
   if (card.sceneType !== "image_edit") return;
   if (hideAspectRatio(card.model)) return;
   if (card.referenceItems.length > 0) return;
@@ -778,7 +891,7 @@ function resolveSceneCreditCost(sceneKey: string, targetResolution = "") {
 }
 
 function getBatchCardBaseCreditCost(card: BatchGenerateCard) {
-  return resolveSceneCreditCost(card.model, card.resolution) * getCardRequestedImageCount(card);
+  return resolveSceneCreditCost(card.model, card.customSizeEnabled ? "" : card.resolution) * getCardRequestedImageCount(card);
 }
 
 function getBatchCardNetCreditCost(card: BatchGenerateCard) {
@@ -797,6 +910,9 @@ function createEmptyCard(): BatchGenerateCard {
     size: globalSettings.value.size,
     resolution: globalSettings.value.resolution,
     customSize: globalSettings.value.customSize,
+    customSizeEnabled: globalSettings.value.customSizeEnabled,
+    customWidth: globalSettings.value.customWidth,
+    customHeight: globalSettings.value.customHeight,
     numImages: normalizeNumImages(globalSettings.value.numImages, 1),
     referenceItems: cloneSuccessReferenceItems(globalReferenceItems.value),
     status: "idle",
@@ -841,6 +957,9 @@ function createCardFromHistoryItem(item: UserHistoryCard): BatchGenerateCard {
     size: item.size || "",
     resolution: item.resolution || "",
     customSize: item.custom_size || "",
+    customSizeEnabled: Boolean(parseCustomSizeValue(item.custom_size)),
+    customWidth: parseCustomSizeValue(item.custom_size)?.width || CUSTOM_SIZE_DEFAULT_SIDE,
+    customHeight: parseCustomSizeValue(item.custom_size)?.height || CUSTOM_SIZE_DEFAULT_SIDE,
     numImages: 1,
     referenceItems: hasReferenceImages
       ? item.reference_images.map((url) => createReferenceItemFromRemote(url))
@@ -884,11 +1003,19 @@ function normalizeCardSelections(card: BatchGenerateCard) {
 
   const sizeOptions = getAspectRatioOptions(card.model);
   const resolutionOptions = getResolutionOptions(card.model);
-  const customSizeOptions = getCustomSizeOptions(card.model);
 
-  card.size = hideAspectRatio(card.model) ? "" : normalizeSelectedValue(card.size, sizeOptions);
-  card.resolution = hideResolution(card.model) ? "" : normalizeSelectedValue(card.resolution, resolutionOptions);
-  card.customSize = hideCustomSize(card.model) ? "" : normalizeSelectedValue(card.customSize, customSizeOptions);
+  if (!supportsCustomSize(card.model)) {
+    applyCustomSizeState(card, "", false);
+  } else if (card.customSizeEnabled) {
+    applyCustomSizeState(card, card.customSize || formatCustomSizeValue(card.customWidth, card.customHeight), true);
+  } else {
+    card.customSizeEnabled = false;
+    card.customSize = "";
+  }
+  if (!card.customSizeEnabled) {
+    card.size = hideAspectRatio(card.model) ? "" : normalizeSelectedValue(card.size, sizeOptions);
+    card.resolution = hideResolution(card.model) ? "" : normalizeSelectedValue(card.resolution, resolutionOptions);
+  }
   card.numImages = normalizeNumImages(card.numImages, 1);
   card.taskIds = getCardTaskIds(card);
   card.taskId = card.taskIds[0] || null;
@@ -907,17 +1034,27 @@ function normalizeGlobalSelections() {
 
   const sizeOptions = getAspectRatioOptions(globalSettings.value.model);
   const resolutionOptions = getResolutionOptions(globalSettings.value.model);
-  const customSizeOptions = getCustomSizeOptions(globalSettings.value.model);
 
-  globalSettings.value.size = hideAspectRatio(globalSettings.value.model)
-    ? ""
-    : normalizeSelectedValue(globalSettings.value.size, sizeOptions);
-  globalSettings.value.resolution = hideResolution(globalSettings.value.model)
-    ? ""
-    : normalizeSelectedValue(globalSettings.value.resolution, resolutionOptions);
-  globalSettings.value.customSize = hideCustomSize(globalSettings.value.model)
-    ? ""
-    : normalizeSelectedValue(globalSettings.value.customSize, customSizeOptions);
+  if (!supportsCustomSize(globalSettings.value.model)) {
+    applyCustomSizeState(globalSettings.value, "", false);
+  } else if (globalSettings.value.customSizeEnabled) {
+    applyCustomSizeState(
+      globalSettings.value,
+      globalSettings.value.customSize || formatCustomSizeValue(globalSettings.value.customWidth, globalSettings.value.customHeight),
+      true,
+    );
+  } else {
+    globalSettings.value.customSizeEnabled = false;
+    globalSettings.value.customSize = "";
+  }
+  if (!globalSettings.value.customSizeEnabled) {
+    globalSettings.value.size = hideAspectRatio(globalSettings.value.model)
+      ? ""
+      : normalizeSelectedValue(globalSettings.value.size, sizeOptions);
+    globalSettings.value.resolution = hideResolution(globalSettings.value.model)
+      ? ""
+      : normalizeSelectedValue(globalSettings.value.resolution, resolutionOptions);
+  }
   globalSettings.value.numImages = normalizeNumImages(globalSettings.value.numImages, 1);
   globalReferenceItems.value = normalizeReferenceLimit(globalReferenceItems.value, globalSettings.value.model);
 }
@@ -1747,17 +1884,26 @@ function applyGlobalSettingsToAll() {
       card.prompt = globalSettings.value.prompt;
       appliedFieldCount += 1;
     }
-    if (globalSettings.value.size) {
-      card.size = globalSettings.value.size;
+    if (globalSettings.value.customSizeEnabled && supportsCustomSize(card.model)) {
+      applyCustomSizeState(
+        card,
+        globalSettings.value.customSize || formatCustomSizeValue(globalSettings.value.customWidth, globalSettings.value.customHeight),
+        true,
+      );
       appliedFieldCount += 1;
-    }
-    if (globalSettings.value.resolution) {
-      card.resolution = globalSettings.value.resolution;
-      appliedFieldCount += 1;
-    }
-    if (globalSettings.value.customSize) {
-      card.customSize = globalSettings.value.customSize;
-      appliedFieldCount += 1;
+    } else {
+      if (card.customSizeEnabled) {
+        applyCustomSizeState(card, "", false);
+        appliedFieldCount += 1;
+      }
+      if (globalSettings.value.size) {
+        card.size = globalSettings.value.size;
+        appliedFieldCount += 1;
+      }
+      if (globalSettings.value.resolution) {
+        card.resolution = globalSettings.value.resolution;
+        appliedFieldCount += 1;
+      }
     }
     if (globalSettings.value.numImages) {
       card.numImages = normalizeNumImages(globalSettings.value.numImages, 1);
@@ -1780,6 +1926,17 @@ function applyGlobalSettingsToAll() {
 
 function getCardBlockingReason(card: BatchGenerateCard) {
   if (!card.model) return "请选择模型";
+  if (card.customSizeEnabled) {
+    const widthError = getTargetCustomDimensionError(card, card.model, "width");
+    const heightError = getTargetCustomDimensionError(card, card.model, "height");
+    if (widthError || heightError) {
+      return [
+        widthError ? `宽度${widthError}` : "",
+        heightError ? `高度${heightError}` : "",
+      ].filter(Boolean).join("；") || "请检查自定义分辨率";
+    }
+    syncCustomSizeValue(card);
+  }
   if (!card.prompt.trim()) return "提示词不能为空";
   if (card.sceneType === "image_edit" && !buildReferenceUrls(card.referenceItems).length) {
     return "参考图不能为空";
@@ -2013,6 +2170,9 @@ function duplicateCard(card: BatchGenerateCard) {
     size: card.size,
     resolution: card.resolution,
     customSize: card.customSize,
+    customSizeEnabled: card.customSizeEnabled,
+    customWidth: card.customWidth,
+    customHeight: card.customHeight,
     numImages: getCardRequestedImageCount(card),
     referenceItems: cloneSuccessReferenceItems(card.referenceItems),
     status: "idle",
@@ -2156,9 +2316,9 @@ function buildCreateTaskPayload(card: BatchGenerateCard, numImages: number) {
     model: card.model,
     prompt: card.prompt.trim(),
     num_images: numImages,
-    size: hideAspectRatio(card.model) ? "" : card.size,
-    resolution: hideResolution(card.model) ? "" : card.resolution,
-    custom_size: hideCustomSize(card.model) ? "" : card.customSize,
+    size: card.customSizeEnabled || hideAspectRatio(card.model) ? "" : card.size,
+    resolution: card.customSizeEnabled || hideResolution(card.model) ? "" : card.resolution,
+    custom_size: card.customSizeEnabled && supportsCustomSize(card.model) ? card.customSize : "",
     mode: "generate" as const,
     reference_images: isImageEditModel(card.model) && buildReferenceUrls(card.referenceItems).length
       ? buildReferenceUrls(card.referenceItems)
@@ -2540,6 +2700,34 @@ onBeforeUnmount(() => {
               </button>
             </a-tooltip>
           </div>
+          <template v-if="supportsCustomSize(globalSettings.model)">
+            <a-switch
+              :checked="globalSettings.customSizeEnabled"
+              size="small"
+              class="warm-switch"
+              @change="onGlobalCustomSizeToggle"
+            />
+            <div class="batch-aspect-auto-text">
+              <span>自定义分辨率</span>
+              <a-tooltip overlay-class-name="custom-size-help-tooltip" placement="top">
+                <template #title>
+                  <div class="custom-size-help-tip">
+                    <div>开启后可手动输入宽高像素值：</div>
+                    <ul>
+                      <li>宽高须为 16 的倍数</li>
+                      <li>长短边比例不超过 3:1</li>
+                      <li>最大边长不超过 3840px</li>
+                      <li>总像素数不得低于 655360px</li>
+                    </ul>
+                    <div class="custom-size-help-note">仅 G-Image2 模型支持自定义</div>
+                  </div>
+                </template>
+                <button type="button" class="batch-aspect-auto-help" aria-label="自定义分辨率说明">
+                  <QuestionCircleOutlined />
+                </button>
+              </a-tooltip>
+            </div>
+          </template>
         </div>
         <div class="global-settings-layout" :class="{ 'has-reference-column': globalSettings.sceneType === 'image_edit' }">
             <div class="global-params-column">
@@ -2561,21 +2749,43 @@ onBeforeUnmount(() => {
                   >
                     <div class="batch-model-option">
                       <div class="batch-model-option-label">{{ getModelDisplayName(model) }}</div>
-                      <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, globalSettings.resolution) }}</div>
+                      <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, globalSettings.customSizeEnabled ? "" : globalSettings.resolution) }}</div>
                     </div>
                   </a-select-option>
                 </a-select>
               </div>
 
-              <div v-if="!hideAspectRatio(globalSettings.model)" class="field-block field-block-no-title">
+              <div v-if="!hideAspectRatio(globalSettings.model) && !globalSettings.customSizeEnabled" class="field-block field-block-no-title">
                 <AspectRatioPicker
                   :model-value="globalSettings.size"
                   :options="getAspectRatioOptions(globalSettings.model)"
                   @update:model-value="globalSettings.size = $event"
                 />
               </div>
+              <div v-else-if="globalSettings.customSizeEnabled" class="field-block field-block-no-title batch-custom-size-field">
+                <span class="batch-custom-size-label">宽度</span>
+                <div class="custom-size-input-wrap">
+                  <a-input-number
+                    v-digits-only
+                    :value="globalSettings.customWidth"
+                    class="warm-input-number custom-size-input"
+                    :class="{ 'is-invalid': !!getTargetCustomDimensionError(globalSettings, globalSettings.model, 'width') }"
+                    :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                    :precision="0"
+                    :parser="parseCustomSizeInput"
+                    :formatter="formatCustomSizeInput"
+                    :status="getTargetCustomDimensionError(globalSettings, globalSettings.model, 'width') ? 'error' : undefined"
+                    placeholder="宽度"
+                    @update:value="handleCustomWidthChange(globalSettings, globalSettings.model, $event)"
+                  />
+                  <span class="custom-size-unit">px</span>
+                </div>
+                <div v-if="getTargetCustomDimensionError(globalSettings, globalSettings.model, 'width')" class="custom-size-error">
+                  {{ getTargetCustomDimensionError(globalSettings, globalSettings.model, 'width') }}
+                </div>
+              </div>
 
-              <div v-if="!hideResolution(globalSettings.model)" class="field-block field-block-no-title">
+              <div v-if="!hideResolution(globalSettings.model) && !globalSettings.customSizeEnabled" class="field-block field-block-no-title">
                 <OptionGridPicker
                   :model-value="globalSettings.resolution"
                   :options="getResolutionOptions(globalSettings.model)"
@@ -2584,15 +2794,27 @@ onBeforeUnmount(() => {
                   @update:model-value="globalSettings.resolution = $event"
                 />
               </div>
-
-              <div v-if="!hideCustomSize(globalSettings.model)" class="field-block field-block-no-title">
-                <OptionGridPicker
-                  :model-value="globalSettings.customSize"
-                  :options="getCustomSizeOptions(globalSettings.model)"
-                  panel-title="选择自定义尺寸"
-                  placeholder="选择自定义尺寸"
-                  @update:model-value="globalSettings.customSize = $event"
-                />
+              <div v-else-if="globalSettings.customSizeEnabled" class="field-block field-block-no-title batch-custom-size-field">
+                <span class="batch-custom-size-label">高度</span>
+                <div class="custom-size-input-wrap">
+                  <a-input-number
+                    v-digits-only
+                    :value="globalSettings.customHeight"
+                    class="warm-input-number custom-size-input"
+                    :class="{ 'is-invalid': !!getTargetCustomDimensionError(globalSettings, globalSettings.model, 'height') }"
+                    :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                    :precision="0"
+                    :parser="parseCustomSizeInput"
+                    :formatter="formatCustomSizeInput"
+                    :status="getTargetCustomDimensionError(globalSettings, globalSettings.model, 'height') ? 'error' : undefined"
+                    placeholder="高度"
+                    @update:value="handleCustomHeightChange(globalSettings, globalSettings.model, $event)"
+                  />
+                  <span class="custom-size-unit">px</span>
+                </div>
+                <div v-if="getTargetCustomDimensionError(globalSettings, globalSettings.model, 'height')" class="custom-size-error">
+                  {{ getTargetCustomDimensionError(globalSettings, globalSettings.model, 'height') }}
+                </div>
               </div>
 
               <div class="field-block field-block-no-title">
@@ -2759,29 +2981,73 @@ onBeforeUnmount(() => {
                 >
                   <div class="batch-model-option">
                     <div class="batch-model-option-label">{{ getModelDisplayName(model) }}</div>
-                    <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, card.resolution) }}</div>
+                    <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, card.customSizeEnabled ? "" : card.resolution) }}</div>
                   </div>
                 </a-select-option>
               </a-select>
             </div>
 
+            <div v-if="supportsCustomSize(card.model)" class="batch-aspect-auto-row batch-card-custom-size-row">
+              <a-switch
+                :checked="card.customSizeEnabled"
+                size="small"
+                class="warm-switch"
+                :disabled="isCardLocked(card)"
+                @change="(checked) => onCardCustomSizeToggle(card, Boolean(checked))"
+              />
+              <div class="batch-aspect-auto-text">
+                <span>自定义分辨率</span>
+                <a-tooltip overlay-class-name="custom-size-help-tooltip" placement="top">
+                  <template #title>
+                    <div class="custom-size-help-tip">
+                      <div>开启后可手动输入宽高像素值，并与宽高比/分辨率互斥。</div>
+                    </div>
+                  </template>
+                  <button type="button" class="batch-aspect-auto-help" aria-label="自定义分辨率说明">
+                    <QuestionCircleOutlined />
+                  </button>
+                </a-tooltip>
+              </div>
+            </div>
+
             <div class="setting-inline-row setting-inline-row-primary">
-              <div class="field-block field-block-inline-fit field-block-no-title setting-model-cell">
-                <div
-                  v-if="!hideAspectRatio(card.model)"
-                  class="field-block field-block-inline-fit field-block-no-title"
-                  :class="{ 'card-setting-disabled': isCardLocked(card) }"
-                >
-                  <AspectRatioPicker
-                    :model-value="card.size"
-                    :options="getAspectRatioOptions(card.model)"
-                    @update:model-value="card.size = $event"
+              <div
+                v-if="!hideAspectRatio(card.model) && !card.customSizeEnabled"
+                class="field-block field-block-inline-fit field-block-no-title setting-model-cell"
+                :class="{ 'card-setting-disabled': isCardLocked(card) }"
+              >
+                <AspectRatioPicker
+                  :model-value="card.size"
+                  :options="getAspectRatioOptions(card.model)"
+                  @update:model-value="card.size = $event"
+                />
+              </div>
+              <div
+                v-else-if="card.customSizeEnabled"
+                class="field-block field-block-inline-fit field-block-no-title setting-quarter-cell batch-custom-size-field batch-custom-size-field-bare"
+                :class="{ 'card-setting-disabled': isCardLocked(card) }"
+              >
+                <div class="custom-size-input-wrap">
+                  <a-input-number
+                    v-digits-only
+                    :value="card.customWidth"
+                    class="warm-input-number custom-size-input"
+                    :class="{ 'is-invalid': !!getTargetCustomDimensionError(card, card.model, 'width') }"
+                    :disabled="isCardLocked(card)"
+                    :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                    :precision="0"
+                    :parser="parseCustomSizeInput"
+                    :formatter="formatCustomSizeInput"
+                    :status="getTargetCustomDimensionError(card, card.model, 'width') ? 'error' : undefined"
+                    placeholder="宽度"
+                    @update:value="handleCustomWidthChange(card, card.model, $event)"
                   />
+                  <span class="custom-size-unit">px</span>
                 </div>
               </div>
 
               <div
-                v-if="!hideResolution(card.model)"
+                v-if="!hideResolution(card.model) && !card.customSizeEnabled"
                 class="field-block field-block-inline-fit field-block-no-title setting-quarter-cell"
                 :class="{ 'card-setting-disabled': isCardLocked(card) }"
               >
@@ -2793,19 +3059,28 @@ onBeforeUnmount(() => {
                   @update:model-value="card.resolution = $event"
                 />
               </div>
-
               <div
-                v-if="!hideCustomSize(card.model)"
-                class="field-block field-block-inline-fit field-block-no-title setting-quarter-cell"
+                v-else-if="card.customSizeEnabled"
+                class="field-block field-block-inline-fit field-block-no-title setting-quarter-cell batch-custom-size-field batch-custom-size-field-bare"
                 :class="{ 'card-setting-disabled': isCardLocked(card) }"
               >
-                <OptionGridPicker
-                  :model-value="card.customSize"
-                  :options="getCustomSizeOptions(card.model)"
-                  panel-title="选择自定义尺寸"
-                  placeholder="选择自定义尺寸"
-                  @update:model-value="card.customSize = $event"
-                />
+                <div class="custom-size-input-wrap">
+                  <a-input-number
+                    v-digits-only
+                    :value="card.customHeight"
+                    class="warm-input-number custom-size-input"
+                    :class="{ 'is-invalid': !!getTargetCustomDimensionError(card, card.model, 'height') }"
+                    :disabled="isCardLocked(card)"
+                    :step="CUSTOM_SIZE_PIXEL_MULTIPLE"
+                    :precision="0"
+                    :parser="parseCustomSizeInput"
+                    :formatter="formatCustomSizeInput"
+                    :status="getTargetCustomDimensionError(card, card.model, 'height') ? 'error' : undefined"
+                    placeholder="高度"
+                    @update:value="handleCustomHeightChange(card, card.model, $event)"
+                  />
+                  <span class="custom-size-unit">px</span>
+                </div>
               </div>
 
               <div
@@ -3337,6 +3612,85 @@ onBeforeUnmount(() => {
 
 .batch-aspect-auto-help:hover {
   color: var(--theme-accent);
+}
+
+.batch-card-custom-size-row {
+  margin-bottom: 0;
+}
+
+.field-block.batch-custom-size-field {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.batch-custom-size-label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.custom-size-input-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 96px;
+  max-width: 132px;
+  margin-left: auto;
+}
+
+.batch-custom-size-field-bare .custom-size-input-wrap {
+  max-width: none;
+  margin-left: 0;
+}
+
+.custom-size-error {
+  flex: 1 1 100%;
+  margin-top: 0;
+  color: #d4380d;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.custom-size-unit {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.batch-custom-size-field :deep(.custom-size-input.ant-input-number) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 10px !important;
+}
+
+.batch-custom-size-field :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
+  height: 34px;
+  line-height: 34px;
+  padding-right: 36px;
+  font-size: 13px;
+}
+
+.batch-custom-size-field :deep(.custom-size-input.is-invalid.ant-input-number),
+.batch-custom-size-field :deep(.custom-size-input.ant-input-number-status-error) {
+  border-color: #d4380d !important;
 }
 
 .global-scene-switch {
@@ -4758,5 +5112,26 @@ onBeforeUnmount(() => {
   .batch-generate-page {
     padding: 16px;
   }
+}
+</style>
+
+<style>
+.custom-size-help-tooltip .custom-size-help-tip {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.custom-size-help-tooltip .custom-size-help-tip li {
+  margin: 2px 0;
+}
+
+.custom-size-help-tooltip .custom-size-help-note {
+  margin-top: 8px;
+  opacity: 0.82;
 }
 </style>
