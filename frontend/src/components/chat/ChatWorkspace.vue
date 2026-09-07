@@ -29,6 +29,11 @@ import { getChatModels } from "@/api/chatConfig";
 import { getAvatarImageSrc, getPreviewImageSrc, toOriginalImageUrl } from "@/api/images";
 import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
 import { withBaseUrl } from "@/lib/assets";
+import {
+  isAiAssistantDockTabEnabled,
+  setAiAssistantDockTabEnabled,
+  subscribeAiAssistantDockTabEnabled,
+} from "@/lib/aiAssistantDock";
 import { applyChatGenerateDraftInPlace, requestCloseAiAssistantDock, saveChatGenerateDraft } from "@/lib/chatGenerateDraft";
 import { stripGenerateImageFence } from "@/lib/simpleMarkdown";
 import type { AdminUser, ChatGenerationModelOption, ChatImage, ChatMessage, ChatSendMessageResponse, ChatSession } from "@/types";
@@ -53,6 +58,9 @@ const emit = defineEmits<{
 }>();
 
 const isReadOnly = computed(() => props.readonly || props.adminViewer);
+const showDockSwitch = computed(() => !props.embedded && !isReadOnly.value);
+const dockTabEnabled = ref(isAiAssistantDockTabEnabled());
+let unsubscribeAiAssistantDockTabEnabled: (() => void) | null = null;
 const xiaobaAvatarSrc = withBaseUrl("chat-xiaoba-avatar.png");
 const userInfoDialogOpen = ref(false);
 const userInfoDialogUser = ref<AdminUser | null>(null);
@@ -1572,6 +1580,11 @@ async function handleRetryAssistant(item: ChatMessage) {
   });
 }
 
+function handleDockTabEnabledChange(enabled: boolean) {
+  dockTabEnabled.value = enabled;
+  setAiAssistantDockTabEnabled(enabled);
+}
+
 function handleComposerKeydown(event: KeyboardEvent) {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
@@ -1631,11 +1644,16 @@ watch(sessionSearchKeyword, (value) => {
 
 onMounted(async () => {
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  unsubscribeAiAssistantDockTabEnabled = subscribeAiAssistantDockTabEnabled((enabled) => {
+    dockTabEnabled.value = enabled;
+  });
   await loadModels();
   await loadSessions(true, props.syncRoute ? parseRouteSessionId() : null);
 });
 
 onBeforeUnmount(() => {
+  unsubscribeAiAssistantDockTabEnabled?.();
+  unsubscribeAiAssistantDockTabEnabled = null;
   window.clearTimeout(adminSearchTimer);
   sendAbortControllers.forEach((controller) => controller.abort());
   sendAbortControllers.clear();
@@ -1755,6 +1773,20 @@ defineExpose({
     </aside>
 
     <section class="chat-main">
+      <label
+        v-if="showDockSwitch"
+        class="chat-dock-switch"
+        title="在创作页显示侧边助手入口"
+      >
+        <span class="chat-dock-switch-label">在创作页显示侧边助手入口</span>
+        <span class="chat-dock-switch-label-short">侧边助手</span>
+        <a-switch
+          class="warm-switch"
+          size="small"
+          :checked="dockTabEnabled"
+          @change="handleDockTabEnabledChange"
+        />
+      </label>
       <button
         type="button"
         class="sidebar-toggle-btn"
@@ -2444,6 +2476,33 @@ defineExpose({
 
 .chat-page.has-draft-images .chat-main {
   --chat-composer-reserve: 228px;
+}
+
+.chat-dock-switch {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 26;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--theme-panel-border, rgba(80, 52, 20, 0.08));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
+  box-shadow: 0 6px 16px var(--theme-shadow-soft);
+  color: var(--theme-text-secondary, #8b7457);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.chat-dock-switch-label {
+  white-space: nowrap;
+}
+
+.chat-dock-switch-label-short {
+  display: none;
 }
 
 .sidebar-toggle-btn {
@@ -3640,6 +3699,21 @@ defineExpose({
   .sidebar-toggle-btn {
     top: 10px;
     left: 10px;
+  }
+
+  .chat-dock-switch {
+    top: 10px;
+    right: 10px;
+    padding: 5px 8px;
+  }
+
+  .chat-dock-switch-label {
+    display: none;
+  }
+
+  .chat-dock-switch-label-short {
+    display: inline;
+    white-space: nowrap;
   }
 
   .composer-setting-wrap {

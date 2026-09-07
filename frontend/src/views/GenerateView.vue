@@ -4964,11 +4964,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       type="button"
                       class="upload-add upload-add-from-generated"
                       :class="{ active: pickingGeneratedReference }"
-                      :title="pickingGeneratedReference ? '点击可取消' : '从已生成图片中选择'"
+                      :title="pickingGeneratedReference ? '点击可取消' : '已生成图片中选择'"
                       @click.stop="togglePickingGeneratedReference"
                     >
                       <PlusOutlined class="upload-add-icon" style="font-size: 20px" />
-                      <span>{{ pickingGeneratedReference ? "点击可取消" : "从已生成图片中选择" }}</span>
+                      <span v-if="pickingGeneratedReference">点击可取消</span>
+                      <span v-else>已生成图<br>片中选择</span>
                     </button>
                   </div>
                 </div>

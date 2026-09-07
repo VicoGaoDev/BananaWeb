@@ -455,14 +455,19 @@ function handleDownload(item: VideoTaskResult) {
                 </div>
 
                 <div class="detail-section">
-                  <div class="detail-label-row">
-                    <div class="detail-label">提示词</div>
-                    <a-button type="text" class="detail-copy-btn" @click="copyPrompt(item.prompt)">
-                      <template #icon><CopyOutlined /></template>
-                      复制提示词
-                    </a-button>
+                  <div class="detail-label">提示词</div>
+                  <div class="detail-prompt-box">
+                    <button
+                      v-if="item.prompt?.trim()"
+                      type="button"
+                      class="detail-prompt-copy"
+                      aria-label="复制提示词"
+                      @click="copyPrompt(item.prompt)"
+                    >
+                      <CopyOutlined />
+                    </button>
+                    <div class="detail-prompt">{{ item.prompt || "-" }}</div>
                   </div>
-                  <div class="detail-prompt">{{ item.prompt || "-" }}</div>
                   <div v-if="item.error_message" class="detail-error-block">
                     <div class="detail-error-label">错误信息</div>
                     <div class="detail-error-message">{{ item.error_message }}</div>
@@ -778,27 +783,40 @@ function handleDownload(item: VideoTaskResult) {
   margin-bottom: 10px;
 }
 
-.detail-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+.detail-prompt-box {
+  position: relative;
 }
 
-.detail-copy-btn {
-  height: 30px;
-  padding-inline: 10px;
-  border-radius: 10px;
-  color: var(--theme-link) !important;
+.detail-prompt-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-link);
+  cursor: pointer;
+}
+
+.detail-prompt-copy:hover {
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text-hover);
 }
 
 .detail-prompt {
-  padding: 12px 14px;
+  padding: 12px 40px 12px 14px;
   border-radius: 12px;
   background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
   color: var(--theme-title);
+  font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;

@@ -7,7 +7,6 @@ import {
   CopyOutlined,
   DownloadOutlined,
   LeftOutlined,
-  PictureOutlined,
   ReloadOutlined,
   RightOutlined,
   VideoCameraOutlined,
@@ -886,10 +885,7 @@ function handleGenerateVideo(item: UserHistoryCard) {
                 </div>
 
                 <div v-if="item.reference_images.length" class="detail-section">
-                  <div class="detail-label">
-                    <PictureOutlined />
-                    <span>参考图</span>
-                  </div>
+                  <div class="detail-label">参考图</div>
                   <div class="detail-thumb-row">
                     <div
                       v-for="(ref, index) in item.reference_images"
@@ -915,14 +911,19 @@ function handleGenerateVideo(item: UserHistoryCard) {
                 </div>
 
                 <div class="detail-section">
-                  <div class="detail-label-row">
-                    <div class="detail-label">提示词</div>
-                    <a-button type="text" class="detail-copy-btn" @click="copyPrompt(item.prompt)">
-                      <template #icon><CopyOutlined /></template>
-                      复制
-                    </a-button>
+                  <div class="detail-label">提示词</div>
+                  <div class="detail-prompt-box">
+                    <button
+                      v-if="item.prompt?.trim()"
+                      type="button"
+                      class="detail-prompt-copy"
+                      aria-label="复制提示词"
+                      @click="copyPrompt(item.prompt)"
+                    >
+                      <CopyOutlined />
+                    </button>
+                    <div class="detail-prompt">{{ item.prompt || "-" }}</div>
                   </div>
-                  <div class="detail-prompt">{{ item.prompt || "-" }}</div>
                   <div v-if="showErrorCollapseSection" class="detail-request-preview-section">
                     <div class="detail-label-row detail-request-preview-title-row">
                       <div class="detail-label">错误信息</div>
@@ -1577,19 +1578,40 @@ function handleGenerateVideo(item: UserHistoryCard) {
   margin-bottom: 10px;
 }
 
-.detail-copy-btn {
-  height: 30px;
-  padding-inline: 10px;
-  border-radius: 10px;
-  color: var(--theme-link) !important;
+.detail-prompt-box {
+  position: relative;
+}
+
+.detail-prompt-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theme-link);
+  cursor: pointer;
+}
+
+.detail-prompt-copy:hover {
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text-hover);
 }
 
 .detail-prompt {
-  padding: 12px 14px;
+  padding: 12px 40px 12px 14px;
   border-radius: 12px;
   background: var(--theme-panel-bg-soft);
   border: 1px solid var(--theme-panel-border);
   color: var(--theme-title);
+  font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;

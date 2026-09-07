@@ -40,6 +40,10 @@ import { NEW_USER_TRIAL_CREDITS, PROMO_CODE_REWARD_CREDITS } from "@/lib/auth";
 import { contentLooksLikeHtml } from "@/lib/htmlContent";
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import {
+  isAiAssistantDockTabEnabled,
+  subscribeAiAssistantDockTabEnabled,
+} from "@/lib/aiAssistantDock";
+import {
   isTutorialDockTabEnabled,
   subscribeTutorialDockTabEnabled,
 } from "@/lib/generateTutorialDock";
@@ -109,7 +113,14 @@ const showSuggestionFab = computed(() =>
   && !isWorkbenchLayout.value
   && !isAdminRoute.value,
 );
+const AiAssistantDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/chat/AiAssistantDock.vue")));
+const GenerateTutorialDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/tutorial/GenerateTutorialDock.vue")));
+const aiAssistantDockTabEnabled = ref(isAiAssistantDockTabEnabled());
+const tutorialDockTabEnabled = ref(isTutorialDockTabEnabled());
+let unsubscribeAiAssistantDockTabEnabled: (() => void) | null = null;
+let unsubscribeTutorialDockTabEnabled: (() => void) | null = null;
 const showAiAssistantDock = computed(() => {
+  if (!aiAssistantDockTabEnabled.value) return false;
   if (isAdminRoute.value) return false;
   const path = route.path;
   return (
@@ -120,10 +131,6 @@ const showAiAssistantDock = computed(() => {
     || path.startsWith("/templates")
   );
 });
-const AiAssistantDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/chat/AiAssistantDock.vue")));
-const GenerateTutorialDock = defineAsyncComponent(() => importAfterExtendedAntd(() => import("@/components/tutorial/GenerateTutorialDock.vue")));
-const tutorialDockTabEnabled = ref(isTutorialDockTabEnabled());
-let unsubscribeTutorialDockTabEnabled: (() => void) | null = null;
 const showGenerateTutorialDock = computed(() => {
   if (!tutorialDockTabEnabled.value) return false;
   if (isAdminRoute.value) return false;
@@ -1759,6 +1766,9 @@ onMounted(async () => {
     userUnreadSystemMessageCount.value = count;
   });
   unsubscribeAuthSessionExpired = subscribeAuthSessionExpired(handleAuthSessionExpired);
+  unsubscribeAiAssistantDockTabEnabled = subscribeAiAssistantDockTabEnabled((enabled) => {
+    aiAssistantDockTabEnabled.value = enabled;
+  });
   unsubscribeTutorialDockTabEnabled = subscribeTutorialDockTabEnabled((enabled) => {
     tutorialDockTabEnabled.value = enabled;
   });
@@ -1811,6 +1821,8 @@ onBeforeUnmount(() => {
   unsubscribeSystemMessageCount = null;
   unsubscribeAuthSessionExpired?.();
   unsubscribeAuthSessionExpired = null;
+  unsubscribeAiAssistantDockTabEnabled?.();
+  unsubscribeAiAssistantDockTabEnabled = null;
   unsubscribeTutorialDockTabEnabled?.();
   unsubscribeTutorialDockTabEnabled = null;
   stopSystemMessagePolling();

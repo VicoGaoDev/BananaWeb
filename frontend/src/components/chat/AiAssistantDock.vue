@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 import { CloseOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import { Modal } from "ant-design-vue";
 import { useRouter } from "vue-router";
 import { withBaseUrl } from "@/lib/assets";
+import { setAiAssistantDockTabEnabled } from "@/lib/aiAssistantDock";
 import { CLOSE_AI_ASSISTANT_DOCK_EVENT } from "@/lib/chatGenerateDraft";
 import { requestCloseGenerateTutorialDock } from "@/lib/generateTutorialDock";
 import { importAfterExtendedAntd } from "@/lib/antd";
@@ -52,6 +54,19 @@ function closeDock() {
   revealTab();
 }
 
+function confirmHideDockTab() {
+  Modal.confirm({
+    title: "关闭侧边 AI 助手？",
+    content: "关闭后，创作页右侧将不再显示 AI 助手入口。你可以在 AI 对话页面中重新开启侧边模式。",
+    okText: "关闭入口",
+    cancelText: "取消",
+    onOk: () => {
+      closeDock();
+      setAiAssistantDockTabEnabled(false);
+    },
+  });
+}
+
 function openFullChat() {
   closeDock();
   void router.push(chatPageHref.value);
@@ -88,16 +103,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button
-    v-show="tabVisible"
-    type="button"
-    class="ai-assistant-tab"
-    aria-label="AI助手"
-    @click="openDock"
-  >
-    <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-tab-avatar" />
-    <span class="ai-assistant-tab-label">AI助手</span>
-  </button>
+  <div v-show="tabVisible" class="ai-assistant-tab-wrap">
+    <button
+      type="button"
+      class="ai-assistant-tab"
+      aria-label="AI助手"
+      @click="openDock"
+    >
+      <img :src="xiaobaAvatarSrc" alt="" class="ai-assistant-tab-avatar" />
+      <span class="ai-assistant-tab-label">AI助手</span>
+    </button>
+    <button
+      type="button"
+      class="ai-assistant-tab-close"
+      aria-label="关闭侧边AI助手"
+      title="关闭侧边入口"
+      @click.stop="confirmHideDockTab"
+    >
+      <CloseOutlined />
+    </button>
+  </div>
 
   <aside
     class="ai-assistant-panel"
@@ -139,11 +164,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.ai-assistant-tab {
+.ai-assistant-tab-wrap {
   position: fixed;
   top: 50%;
   right: 0;
   z-index: 1060;
+  transform: translateY(-50%);
+}
+
+.ai-assistant-tab {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -157,17 +186,48 @@ onBeforeUnmount(() => {
   box-shadow: -6px 8px 20px var(--theme-fab-shadow);
   color: var(--theme-accent-contrast);
   cursor: pointer;
-  transform: translateY(-50%);
   transition:
     background 0.2s ease,
     box-shadow 0.2s ease,
     width 0.2s ease;
 }
 
-.ai-assistant-tab:hover {
+.ai-assistant-tab-wrap:hover .ai-assistant-tab {
   width: 50px;
   background: var(--primary-dark);
   box-shadow: -8px 10px 24px var(--theme-fab-shadow);
+}
+
+.ai-assistant-tab-close {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, #000 28%, transparent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease, background 0.16s ease;
+}
+
+.ai-assistant-tab-wrap:hover .ai-assistant-tab-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ai-assistant-tab-close:hover {
+  background: color-mix(in srgb, #000 46%, transparent);
 }
 
 .ai-assistant-tab-avatar {
@@ -305,7 +365,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  .ai-assistant-tab {
+  .ai-assistant-tab-wrap {
     display: none;
   }
 }
