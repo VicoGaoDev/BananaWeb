@@ -2993,7 +2993,7 @@ onBeforeUnmount(() => {
                 size="small"
                 class="warm-switch"
                 :disabled="isCardLocked(card)"
-                @change="(checked) => onCardCustomSizeToggle(card, Boolean(checked))"
+                @change="(checked: boolean | string | number) => onCardCustomSizeToggle(card, Boolean(checked))"
               />
               <div class="batch-aspect-auto-text">
                 <span>自定义分辨率</span>
