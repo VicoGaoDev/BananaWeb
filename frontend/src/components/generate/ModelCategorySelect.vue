@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { DownOutlined, RightOutlined } from "@ant-design/icons-vue";
 
 export interface ModelCategorySelectOption {
@@ -32,14 +32,19 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
 
+const MOBILE_QUERY = "(max-width: 768px)";
+
 const open = ref(false);
+const isMobile = ref(false);
 const hoveredCategoryId = ref<number | null>(null);
+const expandedCategoryIds = ref<number[]>([]);
 const rootRef = ref<HTMLElement | null>(null);
 const dropdownRef = ref<HTMLElement | null>(null);
 const submenuRef = ref<HTMLElement | null>(null);
 const dropdownStyle = ref<Record<string, string>>({});
 const submenuStyle = ref<Record<string, string>>({});
 let hoverClearTimer: number | null = null;
+let mobileQuery: MediaQueryList | null = null;
 
 const selectedOption = computed(() => (
   props.options.find((item) => item.value === props.modelValue) || null
@@ -82,8 +87,38 @@ const uncategorizedOptions = computed(() => (
 ));
 
 const hoveredCategory = computed(() => (
-  groupedCategories.value.find((item) => item.id === hoveredCategoryId.value) || null
+  isMobile.value ? null : groupedCategories.value.find((item) => item.id === hoveredCategoryId.value) || null
 ));
+
+function expandAllCategories() {
+  expandedCategoryIds.value = groupedCategories.value.map((item) => item.id);
+}
+
+function isCategoryExpanded(categoryId: number) {
+  return expandedCategoryIds.value.includes(categoryId);
+}
+
+function toggleCategory(categoryId: number) {
+  if (!isMobile.value) {
+    hoverCategory(categoryId);
+    return;
+  }
+  expandedCategoryIds.value = isCategoryExpanded(categoryId)
+    ? expandedCategoryIds.value.filter((id) => id !== categoryId)
+    : [...expandedCategoryIds.value, categoryId];
+  void nextTick().then(() => updateDropdownPosition());
+}
+
+function syncMobileQuery() {
+  isMobile.value = Boolean(mobileQuery?.matches);
+  if (isMobile.value) {
+    cancelHoverClear();
+    hoveredCategoryId.value = null;
+    if (open.value) expandAllCategories();
+    return;
+  }
+  expandedCategoryIds.value = [];
+}
 
 function cancelHoverClear() {
   if (hoverClearTimer != null) {
@@ -131,7 +166,11 @@ function updateDropdownPosition() {
   const rect = trigger.getBoundingClientRect();
   const spaceBelow = window.innerHeight - rect.bottom - PANEL_GAP - VIEWPORT_PAD;
   const spaceAbove = rect.top - PANEL_GAP - VIEWPORT_PAD;
-  const itemCount = groupedCategories.value.length + uncategorizedOptions.value.length;
+  const itemCount = isMobile.value
+    ? groupedCategories.value.reduce((count, category) => (
+      count + 1 + (isCategoryExpanded(category.id) ? category.options.length : 0)
+    ), uncategorizedOptions.value.length)
+    : groupedCategories.value.length + uncategorizedOptions.value.length;
   const needed = Math.min(
     PANEL_MAX_HEIGHT,
     dropdownRef.value?.scrollHeight || estimatePanelHeight(itemCount),
@@ -199,11 +238,13 @@ function handleEscape(event: KeyboardEvent) {
 }
 
 function hoverCategory(categoryId: number) {
+  if (isMobile.value) return;
   cancelHoverClear();
   hoveredCategoryId.value = categoryId;
 }
 
 function scheduleClearHoveredCategory() {
+  if (isMobile.value) return;
   cancelHoverClear();
   hoverClearTimer = window.setTimeout(() => {
     hoveredCategoryId.value = null;
@@ -219,6 +260,7 @@ watch(open, async (visible) => {
     return;
   }
   hoveredCategoryId.value = null;
+  if (isMobile.value) expandAllCategories();
   updateDropdownPosition();
   window.addEventListener("resize", updateDropdownPosition);
   window.addEventListener("scroll", updateDropdownPosition, true);
@@ -239,8 +281,16 @@ if (typeof document !== "undefined") {
   document.addEventListener("keydown", handleEscape);
 }
 
+onMounted(() => {
+  if (typeof window === "undefined") return;
+  mobileQuery = window.matchMedia(MOBILE_QUERY);
+  syncMobileQuery();
+  mobileQuery.addEventListener("change", syncMobileQuery);
+});
+
 onBeforeUnmount(() => {
   cancelHoverClear();
+  mobileQuery?.removeEventListener("change", syncMobileQuery);
   document.removeEventListener("pointerdown", handleDocumentPointerDown);
   document.removeEventListener("keydown", handleEscape);
   window.removeEventListener("resize", updateDropdownPosition);
@@ -252,7 +302,7 @@ onBeforeUnmount(() => {
   <div
     ref="rootRef"
     class="model-category-select"
-    :class="[`is-${variant}`, { 'is-open': open, 'is-disabled': disabled }]"
+    :class="[`is-${variant}`, { 'is-open': open, 'is-disabled': disabled, 'is-mobile': isMobile }]"
   >
     <button
       type="button"
@@ -272,28 +322,54 @@ onBeforeUnmount(() => {
         v-if="open"
         ref="dropdownRef"
         class="model-category-select-panel"
-        :class="popupClassName"
+        :class="[popupClassName, { 'is-mobile-accordion': isMobile }]"
         :style="dropdownStyle"
         @mouseleave="scheduleClearHoveredCategory"
       >
-        <button
+        <div
           v-for="category in groupedCategories"
           :key="`category-${category.id}`"
-          type="button"
-          class="model-category-select-item is-category"
-          :class="{
-            'is-active': hoveredCategoryId === category.id,
-            'is-selected': category.options.some((item) => item.value === modelValue),
-          }"
-          @mouseenter="hoverCategory(category.id)"
-          @focus="hoverCategory(category.id)"
-          @click.stop="hoverCategory(category.id)"
+          class="model-category-select-group"
         >
-          <span class="model-category-select-item-main">
-            <span class="model-category-select-item-label">{{ category.name }}</span>
-          </span>
-          <RightOutlined class="model-category-select-item-arrow" />
-        </button>
+          <button
+            type="button"
+            class="model-category-select-item is-category"
+            :class="{
+              'is-active': !isMobile && hoveredCategoryId === category.id,
+              'is-expanded': isMobile && isCategoryExpanded(category.id),
+              'is-selected': !isMobile && category.options.some((item) => item.value === modelValue),
+            }"
+            @mouseenter="hoverCategory(category.id)"
+            @focus="hoverCategory(category.id)"
+            @click.stop="toggleCategory(category.id)"
+          >
+            <span class="model-category-select-item-main">
+              <span class="model-category-select-item-label">{{ category.name }}</span>
+            </span>
+            <DownOutlined
+              v-if="isMobile"
+              class="model-category-select-item-arrow is-toggle"
+              :class="{ 'is-expanded': isCategoryExpanded(category.id) }"
+            />
+            <RightOutlined v-else class="model-category-select-item-arrow" />
+          </button>
+
+          <div v-if="isMobile && isCategoryExpanded(category.id)" class="model-category-select-children">
+            <button
+              v-for="option in category.options"
+              :key="option.value"
+              type="button"
+              class="model-category-select-item is-child"
+              :class="{ 'is-selected': option.value === modelValue }"
+              @click="selectOption(option.value)"
+            >
+              <span class="model-category-select-item-main">
+                <span class="model-category-select-item-label">{{ option.label }}</span>
+                <span v-if="option.description" class="model-category-select-item-desc">{{ option.description }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
 
         <button
           v-for="option in uncategorizedOptions"
@@ -312,7 +388,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="open && hoveredCategory"
+        v-if="open && !isMobile && hoveredCategory"
         ref="submenuRef"
         class="model-category-select-panel is-submenu"
         :class="popupClassName"
@@ -497,6 +573,34 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   color: var(--text-muted);
   font-size: 10px;
+}
+
+.model-category-select-item-arrow.is-toggle {
+  font-size: 12px;
+  transition: transform 0.16s ease;
+}
+
+.model-category-select-item-arrow.is-toggle.is-expanded {
+  transform: rotate(180deg);
+}
+
+.model-category-select-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-category-select-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-category-select-item.is-child {
+  min-height: 44px;
+  padding-left: calc(12px + 2em);
+}
+
+.model-category-select-panel.is-mobile-accordion {
+  max-height: min(360px, calc(100vh - 24px));
 }
 
 .is-flat .model-category-select-trigger {
