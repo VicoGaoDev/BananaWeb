@@ -8,6 +8,7 @@ import { confirmChatMessageGenerate } from "@/api/chat";
 import { getTaskScenes } from "@/api/config";
 import { getTasks } from "@/api/tasks";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { notifyGeneratePageOfChatTasks } from "@/lib/chatGenerateDraft";
 import { formatGenerationTaskFailureMessage, GENERATION_TASK_FAILURE_MESSAGE } from "@/lib/generationErrors";
@@ -62,10 +63,15 @@ const modeLabel = computed(() => (modeHint.value === "image_edit" ? "图编辑" 
 const modelOptions = computed(() => (
   scenes.value.filter((item) => item.scene_type === modeHint.value)
 ));
-const modelPickerOptions = computed<SceneOptionItem[]>(() => (
+const modelPickerOptions = computed(() => (
   modelOptions.value.map((item) => ({
-    label: item.scene_label || item.display_name || item.scene_key,
     value: item.scene_key,
+    label: item.scene_label || item.display_name || item.scene_key,
+    description: item.scene_description,
+    sortOrder: item.sort_order,
+    categoryId: item.category_id,
+    categoryName: item.category_name,
+    categorySortOrder: item.category_sort_order,
   }))
 ));
 const selectedScene = computed(() => (
@@ -581,12 +587,10 @@ onBeforeUnmount(() => {
     <div v-if="canEdit" class="chat-generate-fields">
       <label>
         <span>模型</span>
-        <OptionGridPicker
+        <ModelCategorySelect
           v-model="selectedModel"
           :options="modelPickerOptions"
-          panel-title="选择模型"
           placeholder="选择模型"
-          :columns="1"
         />
       </label>
       <label>

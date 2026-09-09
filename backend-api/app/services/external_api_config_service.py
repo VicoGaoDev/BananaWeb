@@ -26,6 +26,7 @@ from app.schemas.external_api_config import (
     TaskSceneConfigOut,
 )
 from app.services.cos_service import load_image_bytes
+from app.services.generation_scene_category_service import build_scene_category_map
 
 SCENE_BANANA = "banana"
 SCENE_BANANA2 = "banana2"
@@ -589,9 +590,11 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
         .order_by(ExternalApiSceneBinding.sort_order.asc(), ExternalApiSceneBinding.id.asc())
         .all()
     )
+    category_map = build_scene_category_map(db)
     items: list[GenerationModelOptionOut] = []
     for binding in scene_bindings:
         model_label, model_description = _resolve_scene_copy(binding)
+        category = category_map.get(binding.scene_key)
         items.append(GenerationModelOptionOut(
             model_key=binding.scene_key,
             model_label=model_label,
@@ -611,6 +614,9 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             aspect_ratio_options=json.loads(binding.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(binding.image_size_options_json or "[]"),
             custom_size_options=json.loads(binding.custom_size_options_json or "[]"),
+            category_id=category["id"] if category else None,
+            category_name=category["name"] if category else None,
+            category_sort_order=category["sort_order"] if category else None,
         ))
     return items
 
@@ -725,8 +731,13 @@ def _validate_scene_binding_configs(
 
 
 def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
-    return [
-        TaskSceneConfigOut(
+    category_map = build_scene_category_map(db)
+    items: list[TaskSceneConfigOut] = []
+    for item in list_scene_bindings(db):
+        if item.status != "enabled":
+            continue
+        category = category_map.get(item.scene_key)
+        items.append(TaskSceneConfigOut(
             scene_key=item.scene_key,
             scene_type=item.scene_type,
             scene_label=item.scene_label,
@@ -746,10 +757,11 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
             image_size_options=json.loads(item.image_size_options_json or "[]"),
             custom_size_options=json.loads(item.custom_size_options_json or "[]"),
-        )
-        for item in list_scene_bindings(db)
-        if item.status == "enabled"
-    ]
+            category_id=category["id"] if category else None,
+            category_name=category["name"] if category else None,
+            category_sort_order=category["sort_order"] if category else None,
+        ))
+    return items
 
 
 def create_scene_binding(

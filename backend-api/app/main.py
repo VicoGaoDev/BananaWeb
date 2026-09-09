@@ -106,6 +106,7 @@ def _run_startup_schema_sync():
     _ensure_task_api_attempt_schema()
     _ensure_external_api_config_required_columns()
     _ensure_scene_binding_required_columns()
+    _ensure_generation_scene_category_schema()
     _ensure_template_required_columns()
     _ensure_feedback_schema()
     _ensure_system_message_schema()
@@ -1241,6 +1242,30 @@ def _ensure_external_api_config_required_columns():
                 """
             )
         )
+
+
+def _ensure_generation_scene_category_schema():
+    inspector = inspect(engine)
+    if "generation_scene_categories" not in inspector.get_table_names():
+        return
+
+    category_columns = {col["name"] for col in inspector.get_columns("generation_scene_categories")}
+    category_indexes = {index["name"] for index in inspector.get_indexes("generation_scene_categories")}
+    with engine.begin() as conn:
+        if "scene_type" not in category_columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE generation_scene_categories "
+                    "ADD COLUMN scene_type VARCHAR(20) NOT NULL DEFAULT 'generate'"
+                )
+            )
+        if "idx_generation_scene_categories_scene_type" not in category_indexes:
+            conn.execute(
+                text(
+                    "CREATE INDEX idx_generation_scene_categories_scene_type "
+                    "ON generation_scene_categories (scene_type, is_deleted)"
+                )
+            )
 
 
 def _ensure_scene_binding_required_columns():

@@ -39,6 +39,7 @@ import {
   uploadReferenceImage,
 } from "@/api/upload";
 import UserAssetPicker from "@/components/assets/UserAssetPicker.vue";
+import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import AdminUserInfoDialog from "@/components/admin/AdminUserInfoDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
@@ -368,6 +369,17 @@ const generationModels = computed<Array<TaskSceneConfig | VideoTaskSceneConfig>>
 const selectedModelOption = computed<TaskSceneConfig | VideoTaskSceneConfig | null>(
   () => generationModels.value.find((item) => item.scene_key === selectedModel.value) || null
 );
+const generationModelSelectOptions = computed(() => (
+  generationModels.value.map((model) => ({
+    value: model.scene_key,
+    label: model.display_name || model.scene_label || model.scene_key,
+    description: model.scene_description,
+    sortOrder: model.sort_order,
+    categoryId: "category_id" in model ? model.category_id : null,
+    categoryName: "category_name" in model ? model.category_name : null,
+    categorySortOrder: "category_sort_order" in model ? model.category_sort_order : null,
+  }))
+));
 const maxReferenceImages = computed(() => {
   if (!currentModeSupportsReferences.value) return 0;
   const fallback = isVideoTaskKind.value ? 1 : 6;
@@ -5125,11 +5137,12 @@ onBeforeUnmount(() => {
                   >
                     <div class="composer-option-field composer-option-field-model">
                       <label>模型</label>
-                      <a-select v-model:value="selectedModel" :loading="sceneConfigLoading" placeholder="请选择模型">
-                        <a-select-option v-for="model in generationModels" :key="model.scene_key" :value="model.scene_key">
-                          {{ model.display_name || model.scene_label || model.scene_key }}
-                        </a-select-option>
-                      </a-select>
+                      <ModelCategorySelect
+                        v-model="selectedModel"
+                        :options="generationModelSelectOptions"
+                        :loading="sceneConfigLoading"
+                        placeholder="请选择模型"
+                      />
                     </div>
                     <div v-if="!hideResolution && resolutionOptions.length" class="composer-option-field composer-option-field-resolution">
                       <label>{{ isVideoTaskKind ? "分辨率" : "质量" }}</label>

@@ -26,6 +26,7 @@ import {
   uploadReferenceImage,
 } from "@/api/upload";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
 import HistoryDetailDialog from "@/components/history/HistoryDetailDialog.vue";
@@ -623,6 +624,9 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     aspect_ratio_options: scene.aspect_ratio_options,
     image_size_options: scene.image_size_options,
     custom_size_options: scene.custom_size_options,
+    category_id: scene.category_id ?? null,
+    category_name: scene.category_name ?? null,
+    category_sort_order: scene.category_sort_order ?? null,
   };
 }
 
@@ -657,6 +661,18 @@ function getModelDisplayName(model: GenerationModelOption) {
 
 function getModelCreditSubtitle(modelKey: string, targetResolution = "") {
   return `消耗 ${resolveSceneCreditCost(modelKey, targetResolution)} 积分`;
+}
+
+function getModelSelectOptions(sceneType: BatchSceneMode, targetResolution = "") {
+  return getModelsBySceneType(sceneType).map((model) => ({
+    value: model.model_key,
+    label: getModelDisplayName(model),
+    description: getModelCreditSubtitle(model.model_key, targetResolution),
+    sortOrder: model.sort_order,
+    categoryId: model.category_id,
+    categoryName: model.category_name,
+    categorySortOrder: model.category_sort_order,
+  }));
 }
 
 function getDefaultModelKey(sceneType: BatchSceneMode) {
@@ -2732,27 +2748,13 @@ onBeforeUnmount(() => {
         <div class="global-settings-layout" :class="{ 'has-reference-column': globalSettings.sceneType === 'image_edit' }">
             <div class="global-params-column">
               <div class="field-block field-block-no-title">
-                <a-select
+                <ModelCategorySelect
                   class="card-setting-select"
-                  :value="globalSettings.model"
-                  show-search
-                  option-filter-prop="title"
-                  option-label-prop="title"
+                  :model-value="globalSettings.model"
+                  :options="getModelSelectOptions(globalSettings.sceneType, globalSettings.customSizeEnabled ? '' : globalSettings.resolution)"
                   placeholder="选择全局模型"
-                  @update:value="handleGlobalModelChange"
-                >
-                  <a-select-option
-                    v-for="model in getModelsBySceneType(globalSettings.sceneType)"
-                    :key="model.model_key"
-                    :value="model.model_key"
-                    :title="getModelDisplayName(model)"
-                  >
-                    <div class="batch-model-option">
-                      <div class="batch-model-option-label">{{ getModelDisplayName(model) }}</div>
-                      <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, globalSettings.customSizeEnabled ? "" : globalSettings.resolution) }}</div>
-                    </div>
-                  </a-select-option>
-                </a-select>
+                  @update:model-value="handleGlobalModelChange"
+                />
               </div>
 
               <div v-if="!hideAspectRatio(globalSettings.model) && !globalSettings.customSizeEnabled" class="field-block field-block-no-title">
@@ -2963,28 +2965,14 @@ onBeforeUnmount(() => {
         <div class="panel-body panel-body-card">
           <div class="card-form-grid">
             <div class="field-block field-block-inline-fit field-block-no-title setting-model-row">
-              <a-select
+              <ModelCategorySelect
                 class="card-setting-select"
-                :value="card.model"
+                :model-value="card.model"
                 :disabled="isCardLocked(card)"
-                show-search
-                option-filter-prop="title"
-                option-label-prop="title"
+                :options="getModelSelectOptions(card.sceneType, card.customSizeEnabled ? '' : card.resolution)"
                 placeholder="选择模型"
-                @update:value="handleCardModelChange(card, $event)"
-              >
-                <a-select-option
-                  v-for="model in getModelsBySceneType(card.sceneType)"
-                  :key="model.model_key"
-                  :value="model.model_key"
-                  :title="getModelDisplayName(model)"
-                >
-                  <div class="batch-model-option">
-                    <div class="batch-model-option-label">{{ getModelDisplayName(model) }}</div>
-                    <div class="batch-model-option-desc">{{ getModelCreditSubtitle(model.model_key, card.customSizeEnabled ? "" : card.resolution) }}</div>
-                  </div>
-                </a-select-option>
-              </a-select>
+                @update:model-value="handleCardModelChange(card, $event)"
+              />
             </div>
 
             <div v-if="supportsCustomSize(card.model)" class="batch-aspect-auto-row batch-card-custom-size-row">

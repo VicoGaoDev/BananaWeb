@@ -66,6 +66,7 @@ import { createUserPrompt } from "@/api/userPrompts";
 import { getMe } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
@@ -543,6 +544,9 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     aspect_ratio_options: scene.aspect_ratio_options,
     image_size_options: scene.image_size_options,
     custom_size_options: scene.custom_size_options,
+    category_id: scene.category_id ?? null,
+    category_name: scene.category_name ?? null,
+    category_sort_order: scene.category_sort_order ?? null,
   };
 }
 
@@ -590,6 +594,17 @@ const templateModelOptions = computed(() => {
 });
 const NEW_MODEL_KEYS = new Set(["banana2_lite", "banana2_lite_edit"]);
 const generationModels = computed(() => (isImageEditMode.value ? imageEditModels.value : textGenerateModels.value));
+const generationModelSelectOptions = computed(() => (
+  generationModels.value.map((model) => ({
+    value: model.model_key,
+    label: model.model_label,
+    description: model.model_description,
+    sortOrder: model.sort_order,
+    categoryId: model.category_id,
+    categoryName: model.category_name,
+    categorySortOrder: model.category_sort_order,
+  }))
+));
 const detailModelOptions = computed(() => (
   taskScenes.value.map((scene) => ({
     label: scene.scene_label,
@@ -4467,22 +4482,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </div>
                   </div>
                   <div class="model-select-wrap">
-                    <a-select
-                      v-model:value="selectedModel"
-                      :bordered="false"
-                      :class="['flat-select', { 'flat-select-has-badge': SHOW_MODEL_NEW_BADGES }]"
+                    <ModelCategorySelect
+                      v-model="selectedModel"
+                      :options="generationModelSelectOptions"
+                      variant="flat"
                       popup-class-name="generate-dropdown"
-                    >
-                      <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
-                        <div class="model-option">
-                          <div class="model-option-label-row">
-                            <div class="model-option-label">{{ model.model_label }}</div>
-                            <span v-if="SHOW_MODEL_NEW_BADGES && isNewModel(model)" class="model-new-badge">NEW</span>
-                          </div>
-                          <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
-                        </div>
-                      </a-select-option>
-                    </a-select>
+                    />
                     <span v-if="SHOW_MODEL_NEW_BADGES" class="model-new-badge model-new-badge-selected">新模型</span>
                   </div>
                 </div>
@@ -4861,22 +4866,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </div>
                   </div>
                   <div class="model-select-wrap">
-                    <a-select
-                      v-model:value="selectedModel"
-                      :bordered="false"
-                      :class="['flat-select', { 'flat-select-has-badge': SHOW_MODEL_NEW_BADGES }]"
+                    <ModelCategorySelect
+                      v-model="selectedModel"
+                      :options="generationModelSelectOptions"
+                      variant="flat"
                       popup-class-name="generate-dropdown"
-                    >
-                      <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
-                        <div class="model-option">
-                          <div class="model-option-label-row">
-                            <div class="model-option-label">{{ model.model_label }}</div>
-                            <span v-if="SHOW_MODEL_NEW_BADGES && isNewModel(model)" class="model-new-badge">NEW</span>
-                          </div>
-                          <div v-if="model.model_description" class="model-option-desc">{{ model.model_description }}</div>
-                        </div>
-                      </a-select-option>
-                    </a-select>
+                    />
                     <span v-if="SHOW_MODEL_NEW_BADGES" class="model-new-badge model-new-badge-selected">新模型</span>
                   </div>
                 </div>

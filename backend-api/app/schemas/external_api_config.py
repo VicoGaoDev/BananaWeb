@@ -393,6 +393,9 @@ class GenerationModelOptionOut(BaseModel):
     aspect_ratio_options: list["SceneOptionItem"] = []
     image_size_options: list["SceneOptionItem"] = []
     custom_size_options: list["SceneOptionItem"] = []
+    category_id: int | None = None
+    category_name: str | None = None
+    category_sort_order: int | None = None
 
 
 class SceneOptionItem(BaseModel):
@@ -682,6 +685,9 @@ class TaskSceneConfigOut(BaseModel):
     aspect_ratio_options: list[SceneOptionItem]
     image_size_options: list[SceneOptionItem]
     custom_size_options: list[SceneOptionItem]
+    category_id: int | None = None
+    category_name: str | None = None
+    category_sort_order: int | None = None
 
 
 class ExternalApiConfigTestResult(BaseModel):

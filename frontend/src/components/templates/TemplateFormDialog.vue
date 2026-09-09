@@ -9,6 +9,7 @@ import {
 } from "@/api/upload";
 import { getPreviewImageSrc } from "@/api/images";
 import type { TemplatePayload } from "@/api/templates";
+import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import type { GenerationModelOption, TemplateTag } from "@/types";
 
 const props = withDefaults(defineProps<{
@@ -66,6 +67,17 @@ const resolutionOptions = [
 ];
 
 const selectedModelOption = computed(() => props.generationModels.find((item) => item.model_key === form.model) || null);
+const generationModelSelectOptions = computed(() => (
+  props.generationModels.map((model) => ({
+    value: model.model_key,
+    label: model.model_label,
+    description: model.model_description,
+    sortOrder: model.sort_order,
+    categoryId: model.category_id,
+    categoryName: model.category_name,
+    categorySortOrder: model.category_sort_order,
+  }))
+));
 const customSizeOptions = computed(() => selectedModelOption.value?.custom_size_options || []);
 const hideResolution = computed(() => !!selectedModelOption.value?.hide_resolution);
 const hideCustomSize = computed(() => !!selectedModelOption.value?.hide_custom_size);
@@ -236,11 +248,12 @@ function removeRef(index: number) {
 
       <div class="template-form-grid">
         <a-form-item label="模型">
-          <a-select v-model:value="form.model" class="warm-select" placeholder="请选择模型">
-            <a-select-option v-for="model in generationModels" :key="model.model_key" :value="model.model_key">
-              {{ model.model_label }}
-            </a-select-option>
-          </a-select>
+          <ModelCategorySelect
+            v-model="form.model"
+            class="warm-select"
+            :options="generationModelSelectOptions"
+            placeholder="请选择模型"
+          />
         </a-form-item>
         <a-form-item label="宽高比">
           <a-select v-model:value="form.size" class="warm-select" :options="sizeOptions" />

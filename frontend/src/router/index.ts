@@ -323,6 +323,12 @@ const router = createRouter({
           component: () => import("@/views/admin/ExternalApiConfigView.vue"),
         },
         {
+          path: "admin/generation-scene-categories",
+          name: "GenerationSceneCategoryManage",
+          meta: { requiresSuperAdmin: true },
+          component: () => import("@/views/admin/GenerationSceneCategoryView.vue"),
+        },
+        {
           path: "admin/video-api-configs",
           name: "VideoApiConfigManage",
           meta: { requiresSuperAdmin: true },

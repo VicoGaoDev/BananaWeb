@@ -47,7 +47,10 @@ curl --request GET \
     "image_size_options": [
       { "label": "1K", "value": "1K" }
     ],
-    "custom_size_options": []
+    "custom_size_options": [],
+    "category_id": 1,
+    "category_name": "Banana 系列",
+    "category_sort_order": 10
   }
 ]
 ```
@@ -65,6 +68,9 @@ curl --request GET \
 | `aspect_ratio_options` | array | 可选比例，对应创建任务时的 `size`。 |
 | `image_size_options` | array | 可选清晰度，对应创建任务时的 `resolution`。 |
 | `custom_size_options` | array | 可选自定义尺寸。 |
+| `category_id` | number \| null | 所属生图场景分类 ID；未分类时为 `null`。 |
+| `category_name` | string \| null | 所属分类名称；未分类时为 `null`。 |
+| `category_sort_order` | number \| null | 所属分类排序；未分类时为 `null`。 |
 
 ## 注意事项
 

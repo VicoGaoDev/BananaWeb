@@ -17,6 +17,7 @@ from app.models.regenerate_log import RegenerateLog
 from app.models.api_key import ApiKey
 from app.models.external_api_config import ExternalApiConfig
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
+from app.models.generation_scene_category import GenerationSceneCategory
 from app.models.video_external_api_config import VideoExternalApiConfig
 from app.models.video_external_api_scene_binding import VideoExternalApiSceneBinding
 from app.models.chat_external_api_config import ChatExternalApiConfig
@@ -68,6 +69,7 @@ __all__ = [
     "ApiKey",
     "ExternalApiConfig",
     "ExternalApiSceneBinding",
+    "GenerationSceneCategory",
     "VideoExternalApiConfig",
     "VideoExternalApiSceneBinding",
     "ChatExternalApiConfig",

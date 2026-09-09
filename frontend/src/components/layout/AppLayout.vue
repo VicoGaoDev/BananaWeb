@@ -85,6 +85,7 @@ import {
   CheckOutlined,
   ClockCircleOutlined,
   AppstoreOutlined,
+  TagsOutlined,
   FontSizeOutlined,
   SearchOutlined,
   HighlightOutlined,
@@ -298,6 +299,7 @@ const routeOrder = new Map<string, number>([
   ["/admin/update-logs", 36],
   ["/admin/cos-config", 37],
   ["/admin/external-api-configs", 38],
+  ["/admin/generation-scene-categories", 38.5],
   ["/admin/video-api-configs", 39],
   ["/admin/chat-api-configs", 40],
 ]);
@@ -428,6 +430,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/update-logs", label: "更新日志", icon: BellOutlined, superAdminOnly: false },
     { key: "/admin/cos-config", label: "COS 配置", icon: CloudUploadOutlined, superAdminOnly: true },
     { key: "/admin/external-api-configs", label: "生图接口", icon: KeyOutlined, superAdminOnly: true },
+    { key: "/admin/generation-scene-categories", label: "生图分类", icon: TagsOutlined, superAdminOnly: true },
     { key: "/admin/video-api-configs", label: "视频接口", icon: VideoCameraOutlined, superAdminOnly: true },
     { key: "/admin/chat-api-configs", label: "对话接口", icon: MessageOutlined, superAdminOnly: true },
   ].filter((item) => !item.superAdminOnly || isSuperAdmin.value)
@@ -490,6 +493,7 @@ const isAdminFundsRoute = computed(() =>
 const isAdminThirdPartyRoute = computed(() =>
   route.path.startsWith("/admin/cos-config")
   || route.path.startsWith("/admin/external-api-configs")
+  || route.path.startsWith("/admin/generation-scene-categories")
   || route.path.startsWith("/admin/video-api-configs")
   || route.path.startsWith("/admin/chat-api-configs")
 );
@@ -547,6 +551,7 @@ const adminMenuConfigItems = computed(() =>
   adminMenuItems.value.filter((item) => [
     "/admin/cos-config",
     "/admin/external-api-configs",
+    "/admin/generation-scene-categories",
     "/admin/video-api-configs",
     "/admin/chat-api-configs",
   ].includes(item.key))

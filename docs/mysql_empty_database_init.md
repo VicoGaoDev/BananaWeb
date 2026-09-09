@@ -315,6 +315,16 @@
 - `status`: 场景状态，常见为 `enabled`。
 - `updated_at`: 最后更新时间。
 
+### `generation_scene_categories`
+
+- `name` / `description`: 分类名称与说明。
+- `scene_type`: 分类所属能力，`generate`（文生图）或 `image_edit`（图编辑）。分类只能选择同类型场景。
+- `scene_keys_json`: 该分类包含的场景标识数组，例如 `["banana_pro","banana2"]`。一个场景最多属于一个未删除分类。
+- `sort_order`: 分类在生图模型下拉中的排序。
+- `status`: 分类状态，`enabled` / `disabled`。停用后场景按未分类展示。
+- `is_deleted`: 是否逻辑删除。
+- `created_at` / `updated_at`: 创建时间、更新时间。
+
 ### `history_pins`
 
 - `user_id`: 置顶归属用户。
@@ -704,6 +714,23 @@ CREATE TABLE external_api_scene_bindings (
   PRIMARY KEY (id),
   UNIQUE KEY uq_external_api_scene_bindings_scene_key (scene_key),
   CONSTRAINT fk_scene_api_config FOREIGN KEY (api_config_id) REFERENCES external_api_configs (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE generation_scene_categories (
+  id INT NOT NULL AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NOT NULL DEFAULT '',
+  scene_type VARCHAR(20) NOT NULL DEFAULT 'generate',
+  scene_keys_json TEXT NOT NULL,
+  sort_order INT NOT NULL DEFAULT 100,
+  status VARCHAR(20) NOT NULL DEFAULT 'enabled',
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_generation_scene_categories_sort (sort_order, id),
+  KEY idx_generation_scene_categories_status (status, is_deleted),
+  KEY idx_generation_scene_categories_scene_type (scene_type, is_deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE prompt_history (

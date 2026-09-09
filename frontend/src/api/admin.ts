@@ -75,6 +75,9 @@ import type {
   PromptOptimizeStyle,
   PromptOptimizeStylePayload,
   PromptOptimizeStyleStatus,
+  GenerationSceneCategory,
+  GenerationSceneCategoryPayload,
+  GenerationSceneCategoryStatus,
 } from "@/types";
 
 function buildAnalyticsParams(query: AdminAnalyticsQuery): Record<string, unknown> {
@@ -711,6 +714,26 @@ export function setPromptOptimizeStyleDefault(styleId: number): Promise<PromptOp
 
 export function deletePromptOptimizeStyle(styleId: number): Promise<void> {
   return client.delete(`/admin/prompt-optimize-styles/${styleId}`);
+}
+
+export function listGenerationSceneCategories(): Promise<GenerationSceneCategory[]> {
+  return client.get("/admin/generation-scene-categories");
+}
+
+export function createGenerationSceneCategory(payload: GenerationSceneCategoryPayload): Promise<GenerationSceneCategory> {
+  return client.post("/admin/generation-scene-categories", payload);
+}
+
+export function updateGenerationSceneCategory(categoryId: number, payload: GenerationSceneCategoryPayload): Promise<GenerationSceneCategory> {
+  return client.put(`/admin/generation-scene-categories/${categoryId}`, payload);
+}
+
+export function updateGenerationSceneCategoryStatus(categoryId: number, status: GenerationSceneCategoryStatus): Promise<GenerationSceneCategory> {
+  return client.patch(`/admin/generation-scene-categories/${categoryId}/status`, { status });
+}
+
+export function deleteGenerationSceneCategory(categoryId: number): Promise<void> {
+  return client.delete(`/admin/generation-scene-categories/${categoryId}`);
 }
 
 export function updateExternalApiSceneBinding(
