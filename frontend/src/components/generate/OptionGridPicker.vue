@@ -148,9 +148,9 @@ function selectOption(value: string) {
   max-width: 100%;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--theme-control-border);
+  border: 1px solid var(--theme-control-border-strong);
   border-radius: 16px;
-  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft));
+  background: var(--theme-field-bg, var(--theme-control-bg));
   color: var(--theme-title);
   font-size: 14px;
   font-weight: 600;
@@ -160,6 +160,7 @@ function selectOption(value: string) {
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-soft);
   transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
     border-color var(--motion-duration-fast) var(--motion-ease-soft),
     box-shadow var(--motion-duration-fast) var(--motion-ease-soft),
     transform var(--motion-duration-fast) var(--motion-ease-soft);
@@ -167,6 +168,7 @@ function selectOption(value: string) {
   &:hover,
   &.open {
     border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
     transform: translateY(-1px);
     box-shadow:
       inset 0 1px 0 var(--theme-panel-inset),

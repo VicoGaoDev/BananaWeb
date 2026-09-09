@@ -50,6 +50,8 @@ const selectedOption = computed(() => (
   props.options.find((item) => item.value === props.modelValue) || null
 ));
 
+const modelCount = computed(() => props.options.length);
+
 const groupedCategories = computed(() => {
   const groups = new Map<number, {
     id: number;
@@ -314,6 +316,7 @@ onBeforeUnmount(() => {
         <span class="model-category-select-label">{{ selectedOption.label }}</span>
       </span>
       <span v-else class="model-category-select-placeholder">{{ loading ? "加载中..." : placeholder }}</span>
+      <span v-if="modelCount > 0" class="model-category-select-count">共 {{ modelCount }} 个模型</span>
       <DownOutlined class="model-category-select-arrow" />
     </button>
 
@@ -471,6 +474,16 @@ onBeforeUnmount(() => {
   font-weight: 400;
 }
 
+.model-category-select-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-secondary, #8c7458);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .model-category-select-arrow {
   flex-shrink: 0;
   color: var(--text-muted, #8c8c8c);
@@ -608,16 +621,18 @@ onBeforeUnmount(() => {
   padding: 0 15px;
   border: 1px solid var(--theme-control-border-strong);
   border-radius: 16px;
-  background: linear-gradient(180deg, var(--theme-surface-strong), var(--theme-control-bg));
+  background: var(--theme-field-bg, var(--theme-control-bg));
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 8px 18px var(--theme-card-shadow);
   transition: border-color var(--motion-duration-fast, 0.16s) var(--motion-ease-soft, ease),
     box-shadow var(--motion-duration-fast, 0.16s) var(--motion-ease-soft, ease),
-    transform var(--motion-duration-fast, 0.16s) var(--motion-ease-soft, ease);
+    transform var(--motion-duration-fast, 0.16s) var(--motion-ease-soft, ease),
+    background var(--motion-duration-fast, 0.16s) var(--motion-ease-soft, ease);
 
   &:hover {
     border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
     transform: translateY(-1px);
     box-shadow:
       inset 0 1px 0 var(--theme-panel-inset),
@@ -637,5 +652,11 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 700;
   color: var(--theme-title);
+}
+
+.is-flat .model-category-select-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 </style>

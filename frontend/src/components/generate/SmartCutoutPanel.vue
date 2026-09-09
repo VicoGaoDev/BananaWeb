@@ -884,9 +884,9 @@ defineExpose({
   width: 100%;
   height: 40px;
   min-height: 40px;
-  border: 1px solid var(--theme-control-border) !important;
+  border: 1px solid var(--theme-control-border-strong) !important;
   border-radius: 16px !important;
-  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft)) !important;
+  background: var(--theme-field-bg, var(--theme-control-bg)) !important;
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-soft) !important;
@@ -895,6 +895,7 @@ defineExpose({
 .setting-item-inline :deep(.custom-size-input.ant-input-number:hover),
 .setting-item-inline :deep(.custom-size-input.ant-input-number-focused) {
   border-color: var(--theme-border-strong) !important;
+  background: var(--theme-field-hover-bg, var(--theme-control-hover-bg)) !important;
 }
 
 .setting-item-inline :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
@@ -904,6 +905,7 @@ defineExpose({
   font-weight: 600;
   line-height: 40px;
   ime-mode: disabled;
+  background: transparent !important;
 }
 
 .aspect-ratio-auto-row {

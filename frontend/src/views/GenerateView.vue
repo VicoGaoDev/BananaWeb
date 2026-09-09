@@ -7151,16 +7151,22 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     line-height: 1.7;
     color: var(--theme-title);
     border-radius: 14px !important;
-    border-color: var(--theme-control-border) !important;
-    background: var(--theme-control-bg) !important;
+    border: 1px solid var(--theme-control-border-strong) !important;
+    background: var(--theme-field-bg, var(--theme-control-bg)) !important;
     padding: 12px 15px 42px !important;
+    outline: none !important;
     box-shadow: inset 0 1px 0 var(--theme-panel-inset);
+    transition: background var(--motion-duration-fast) var(--motion-ease-soft);
   }
 
   :deep(textarea:hover),
-  :deep(textarea:focus) {
-    border-color: var(--theme-border-accent) !important;
-    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+  :deep(textarea:focus),
+  :deep(textarea:focus-visible) {
+    border: 1px solid var(--theme-control-border-strong) !important;
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg)) !important;
+    outline: none !important;
+    box-shadow: inset 0 1px 0 var(--theme-panel-inset) !important;
+    transform: none;
   }
 
   &.ant-input-textarea-show-count,
@@ -7333,9 +7339,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   width: 100%;
   height: 40px;
   min-height: 40px;
-  border: 1px solid var(--theme-control-border) !important;
+  border: 1px solid var(--theme-control-border-strong) !important;
   border-radius: 16px !important;
-  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft)) !important;
+  background: var(--theme-field-bg, var(--theme-control-bg)) !important;
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-soft) !important;
@@ -7344,6 +7350,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .setting-item-inline :deep(.custom-size-input.ant-input-number:hover),
 .setting-item-inline :deep(.custom-size-input.ant-input-number-focused) {
   border-color: var(--theme-border-strong) !important;
+  background: var(--theme-field-hover-bg, var(--theme-control-hover-bg)) !important;
 }
 
 .setting-item-inline :deep(.custom-size-input.ant-input-number .ant-input-number-input) {
@@ -7353,6 +7360,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   font-weight: 600;
   line-height: 40px;
   ime-mode: disabled;
+  background: transparent !important;
 }
 
 .aspect-ratio-auto-row {
@@ -7744,15 +7752,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  background: linear-gradient(
-    180deg,
-    rgba(var(--theme-surface-strong-rgb), 0.96),
-    rgba(var(--theme-page-base-rgb), 0.92)
-  );
+  background: var(--theme-field-bg, var(--theme-control-bg));
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-soft);
   transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
     border-color var(--motion-duration-fast) var(--motion-ease-soft),
     transform var(--motion-duration-fast) var(--motion-ease-soft),
     box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
@@ -7760,6 +7765,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
   &:hover {
     border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
     transform: translateY(-2px);
     box-shadow:
       inset 0 1px 0 var(--theme-panel-inset),
@@ -7915,16 +7921,17 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
 .generate-config-panel .flat-select {
   width: 100%;
-  background: linear-gradient(180deg, var(--theme-surface-strong), var(--theme-control-bg));
+  background: var(--theme-field-bg, var(--theme-control-bg));
   border-radius: 16px;
   border: 1px solid var(--theme-control-border-strong);
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 8px 18px var(--theme-card-shadow);
-  transition: border-color var(--motion-duration-fast) var(--motion-ease-soft), box-shadow var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-fast) var(--motion-ease-soft);
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-soft), box-shadow var(--motion-duration-fast) var(--motion-ease-soft), transform var(--motion-duration-fast) var(--motion-ease-soft), background var(--motion-duration-fast) var(--motion-ease-soft);
 
   &:hover {
     border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
     transform: translateY(-1px);
     box-shadow:
       inset 0 1px 0 var(--theme-panel-inset),
@@ -10676,15 +10683,20 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-c
   :deep(textarea) {
     color: var(--theme-title) !important;
     caret-color: var(--theme-title);
-    border-color: var(--theme-control-border) !important;
-    background: var(--theme-control-bg) !important;
+    border: 1px solid var(--theme-control-border-strong) !important;
+    background: var(--theme-field-bg, var(--theme-control-bg)) !important;
+    outline: none !important;
     box-shadow: none;
   }
 
   :deep(textarea:hover),
-  :deep(textarea:focus) {
-    border-color: var(--theme-border-accent) !important;
-    box-shadow: 0 0 0 3px var(--theme-focus-ring);
+  :deep(textarea:focus),
+  :deep(textarea:focus-visible) {
+    border: 1px solid var(--theme-control-border-strong) !important;
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg)) !important;
+    outline: none !important;
+    box-shadow: none !important;
+    transform: none;
   }
 
   :deep(textarea::placeholder) {
@@ -10803,12 +10815,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-c
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .generate-config-panel .upload-add,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .source-upload-empty {
   border-color: var(--theme-panel-border-strong);
-  background: var(--theme-panel-bg-soft);
+  background: var(--theme-field-bg, var(--theme-panel-bg-soft));
   color: var(--text-secondary);
   box-shadow: 0 10px 22px var(--theme-shadow-soft);
 
   &:hover {
     border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
     box-shadow: 0 14px 24px var(--theme-shadow-medium);
   }
 }
