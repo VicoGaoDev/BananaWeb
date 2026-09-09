@@ -1328,6 +1328,7 @@ onBeforeUnmount(() => {
                             </div>
                           </a-select-option>
                         </a-select>
+                        <span v-if="filteredTaskScenes.length" class="model-count-hint">共 {{ filteredTaskScenes.length }} 个模型</span>
                       </div>
                     </div>
                   </div>
@@ -2310,14 +2311,24 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  background: linear-gradient(
-    180deg,
-    rgba(var(--theme-surface-strong-rgb), 0.96),
-    rgba(var(--theme-page-base-rgb), 0.92)
-  );
+  background: var(--theme-field-bg, var(--theme-control-bg));
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 10px 22px var(--theme-shadow-soft);
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    transform var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover {
+    border-color: var(--theme-border-strong);
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 var(--theme-panel-inset),
+      0 14px 24px var(--theme-shadow-medium);
+  }
 }
 
 .upload-add-icon {
@@ -2400,21 +2411,43 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+.model-count-hint {
+  position: absolute;
+  top: 50%;
+  right: 36px;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .flat-select {
   width: 100%;
-  background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft));
-  border: 1px solid var(--theme-control-border);
+  background: var(--theme-field-bg, var(--theme-control-bg));
+  border: 1px solid var(--theme-control-border-strong);
   border-radius: 16px;
   box-shadow:
     inset 0 1px 0 var(--theme-panel-inset),
     0 8px 18px var(--theme-card-shadow);
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-soft),
+    border-color var(--motion-duration-fast) var(--motion-ease-soft),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-soft);
+
+  &:hover,
+  &:focus-within {
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
+  }
 
   :deep(.ant-select-selector) {
     height: 52px !important;
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
-    padding: 0 14px !important;
+    padding: 0 128px 0 14px !important;
   }
 
   :deep(.ant-select-selection-item) {
@@ -2526,15 +2559,25 @@ onBeforeUnmount(() => {
   }
 
   :deep(.ant-input) {
-    border: 1px solid var(--theme-control-border);
+    border: 1px solid var(--theme-control-border-strong) !important;
     border-radius: 18px;
-    background: linear-gradient(180deg, var(--theme-control-bg), var(--theme-panel-bg-soft));
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.65),
-      0 12px 24px rgba(188, 154, 94, 0.08);
+    background: var(--theme-field-bg, var(--theme-control-bg)) !important;
+    outline: none !important;
+    box-shadow: inset 0 1px 0 var(--theme-panel-inset);
     color: var(--theme-title);
     line-height: 1.7;
     padding: 14px 16px 44px;
+    transition: background var(--motion-duration-fast) var(--motion-ease-soft);
+  }
+
+  :deep(.ant-input:hover),
+  :deep(.ant-input:focus),
+  :deep(.ant-input:focus-visible) {
+    border: 1px solid var(--theme-control-border-strong) !important;
+    background: var(--theme-field-hover-bg, var(--theme-control-hover-bg)) !important;
+    outline: none !important;
+    box-shadow: inset 0 1px 0 var(--theme-panel-inset) !important;
+    transform: none;
   }
 }
 
