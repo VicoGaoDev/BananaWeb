@@ -262,6 +262,9 @@ a.brand:hover { background: #f3f4f6; }
     &quot;hide_aspect_ratio&quot;: false,
     &quot;hide_resolution&quot;: false,
     &quot;hide_custom_size&quot;: true,
+    &quot;custom_size_min&quot;: 256,
+    &quot;custom_size_max&quot;: 4096,
+    &quot;custom_size_step&quot;: 8,
     &quot;credit_cost&quot;: 10,
     &quot;max_reference_images&quot;: 3,
     &quot;aspect_ratio_options&quot;: [
@@ -272,11 +275,14 @@ a.brand:hover { background: #f3f4f6; }
       { &quot;label&quot;: &quot;1K&quot;, &quot;value&quot;: &quot;1K&quot; },
       { &quot;label&quot;: &quot;2K&quot;, &quot;value&quot;: &quot;2K&quot; }
     ],
-    &quot;custom_size_options&quot;: []
+    &quot;custom_size_options&quot;: [],
+    &quot;category_id&quot;: 1,
+    &quot;category_name&quot;: &quot;Banana 系列&quot;,
+    &quot;category_sort_order&quot;: 10
   }
 ]</code></pre>
 <h2 id="响应字段">响应字段</h2>
-<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td><code>model_key</code></td><td>string</td><td>创建任务时传入的 <code>model</code>。</td></tr><tr><td><code>model_label</code></td><td>string</td><td>模型名称。</td></tr><tr><td><code>model_description</code></td><td>string</td><td>模型说明。</td></tr><tr><td><code>display_name</code></td><td>string</td><td>前端展示名称。</td></tr><tr><td><code>subtitle</code></td><td>string</td><td>前端副标题。</td></tr><tr><td><code>sort_order</code></td><td>number</td><td>排序值。</td></tr><tr><td><code>hide_aspect_ratio</code></td><td>boolean</td><td>是否隐藏比例参数。</td></tr><tr><td><code>hide_resolution</code></td><td>boolean</td><td>是否隐藏清晰度参数。</td></tr><tr><td><code>hide_custom_size</code></td><td>boolean</td><td>是否隐藏自定义尺寸参数。</td></tr><tr><td><code>credit_cost</code></td><td>number</td><td>单张图片消耗积分。</td></tr><tr><td><code>max_reference_images</code></td><td>number</td><td>最多参考图数量。</td></tr><tr><td><code>aspect_ratio_options</code></td><td>array</td><td>可选比例列表，对应任务参数 <code>size</code>。</td></tr><tr><td><code>image_size_options</code></td><td>array</td><td>可选清晰度列表，对应任务参数 <code>resolution</code>。</td></tr><tr><td><code>custom_size_options</code></td><td>array</td><td>可选自定义尺寸列表，对应任务参数 <code>custom_size</code>。</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td><code>model_key</code></td><td>string</td><td>创建任务时传入的 <code>model</code>。</td></tr><tr><td><code>model_label</code></td><td>string</td><td>模型名称。</td></tr><tr><td><code>model_description</code></td><td>string</td><td>模型说明。</td></tr><tr><td><code>display_name</code></td><td>string</td><td>前端展示名称。</td></tr><tr><td><code>subtitle</code></td><td>string</td><td>前端副标题。</td></tr><tr><td><code>sort_order</code></td><td>number</td><td>排序值。</td></tr><tr><td><code>hide_aspect_ratio</code></td><td>boolean</td><td>是否隐藏比例参数。</td></tr><tr><td><code>hide_resolution</code></td><td>boolean</td><td>是否隐藏清晰度参数。</td></tr><tr><td><code>hide_custom_size</code></td><td>boolean</td><td>是否隐藏自定义尺寸参数；为 <code>false</code> 时主生图页可启用手动宽高。</td></tr><tr><td><code>custom_size_min</code></td><td>number</td><td>自定义宽高的最小值。</td></tr><tr><td><code>custom_size_max</code></td><td>number</td><td>自定义宽高的最大值。</td></tr><tr><td><code>custom_size_step</code></td><td>number</td><td>自定义宽高的递增步长。</td></tr><tr><td><code>credit_cost</code></td><td>number</td><td>单张图片消耗积分。</td></tr><tr><td><code>max_reference_images</code></td><td>number</td><td>最多参考图数量。</td></tr><tr><td><code>aspect_ratio_options</code></td><td>array</td><td>可选比例列表，对应任务参数 <code>size</code>。</td></tr><tr><td><code>image_size_options</code></td><td>array</td><td>可选清晰度列表，对应任务参数 <code>resolution</code>。</td></tr><tr><td><code>custom_size_options</code></td><td>array</td><td>可选自定义尺寸列表，对应任务参数 <code>custom_size</code>。</td></tr><tr><td><code>category_id</code></td><td>number \</td><td>null</td><td>所属生图场景分类 ID；未分类时为 <code>null</code>。</td></tr><tr><td><code>category_name</code></td><td>string \</td><td>null</td><td>所属分类名称；未分类时为 <code>null</code>。</td></tr><tr><td><code>category_sort_order</code></td><td>number \</td><td>null</td><td>所属分类排序；未分类时为 <code>null</code>。</td></tr></tbody></table></div>
 <h2 id="注意事项">注意事项</h2>
 <ul>
 <li>返回内容由后台“接口管理”配置决定。</li>

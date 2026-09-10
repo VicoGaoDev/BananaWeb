@@ -31,6 +31,8 @@ BASE64_IMAGE_PATTERN = re.compile(
 )
 API_GENERATE_MODELS = frozenset(
     {
+        "gptimage25_flare_high",
+        "gptimage25_sunburst_high",
         "gptimage2_high",
         "gptimage2_medium",
         "gptimage2_low",
@@ -41,6 +43,8 @@ API_GENERATE_MODELS = frozenset(
 )
 API_EDIT_MODELS = frozenset(
     {
+        "gptimage25_flare_high_edit",
+        "gptimage25_sunburst_high_edit",
         "gptimage2_high_edit",
         "gptimage2_medium_edit",
         "gptimage2_low_edit",

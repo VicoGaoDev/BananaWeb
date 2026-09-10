@@ -24,7 +24,7 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `mode` | string | 否 | `generate` | 任务模式。当前仅支持 `generate`。 |
-| `model` | string | 是 | - | 场景标识，<strong>必填</strong>。须根据是否传入 `reference_images` 选择对应取值：<br><br><strong>文生图</strong>（未传 `reference_images` 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage2_high`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana`</td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 `reference_images`）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage2_high_edit`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium_edit`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low_edit`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro_edit`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_edit`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_edit_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana_edit`</td><td>🍌 Nano Banana</td></tr></tbody></table> |
+| `model` | string | 是 | - | 场景标识，<strong>必填</strong>。须根据是否传入 `reference_images` 选择对应取值：<br><br><strong>文生图</strong>（未传 `reference_images` 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high`</td><td>⚡️ Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high`</td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana`</td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 `reference_images`）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high_edit`</td><td>⚡️ Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high_edit`</td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high_edit`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium_edit`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low_edit`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro_edit`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_edit`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_edit_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana_edit`</td><td>🍌 Nano Banana</td></tr></tbody></table> |
 | `prompt` | string | 是 | - | 提示词，不能为空，最长 5000 字符。 |
 | `size` | string | 否 | `3:4` | 图片宽高比，例如 `1:1`、`3:4`、`9:16`。可选值见 `GET /api/config/task-scenes` 的 `aspect_ratio_options`。 |
 | `resolution` | string | 否 | `4K` | 清晰度档位，例如 `1K`、`2K`、`4K`。可选值见 `GET /api/config/task-scenes` 的 `image_size_options`。 |
@@ -130,7 +130,7 @@ curl --request POST \
 
 ```json
 {
-  "detail": "文生图 model 无效，可选值：banana、banana2、banana2_lite、banana_pro、gptimage2_high、gptimage2_low、gptimage2_medium"
+  "detail": "文生图 model 无效，可选值：banana、banana2、banana_pro、gptimage25_flare_high、gptimage25_sunburst_high、gptimage2_high、gptimage2_low、gptimage2_medium"
 }
 ```
 
