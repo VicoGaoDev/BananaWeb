@@ -141,6 +141,8 @@ function toggleOpen() {
     closeMenu();
     return;
   }
+  if (isMobile.value) expandAllCategories();
+  updateDropdownPosition();
   open.value = true;
 }
 
@@ -161,6 +163,10 @@ function estimatePanelHeight(count: number) {
 function clampPanelHeight(available: number) {
   return Math.max(120, Math.min(PANEL_MAX_HEIGHT, available));
 }
+
+const isOpenUp = computed(() => (
+  Boolean(dropdownStyle.value.bottom) && dropdownStyle.value.bottom !== "auto"
+));
 
 function updateDropdownPosition() {
   const trigger = rootRef.value?.querySelector(".model-category-select-trigger") as HTMLElement | null;
@@ -321,11 +327,12 @@ onBeforeUnmount(() => {
     </button>
 
     <Teleport to="body">
+      <Transition name="model-category-select-slide">
       <div
         v-if="open"
         ref="dropdownRef"
         class="model-category-select-panel"
-        :class="[popupClassName, { 'is-mobile-accordion': isMobile }]"
+        :class="[popupClassName, { 'is-mobile-accordion': isMobile, 'is-open-up': isOpenUp }]"
         :style="dropdownStyle"
         @mouseleave="scheduleClearHoveredCategory"
       >
@@ -357,6 +364,7 @@ onBeforeUnmount(() => {
             <RightOutlined v-else class="model-category-select-item-arrow" />
           </button>
 
+          <Transition name="model-category-select-accordion">
           <div v-if="isMobile && isCategoryExpanded(category.id)" class="model-category-select-children">
             <button
               v-for="option in category.options"
@@ -372,6 +380,7 @@ onBeforeUnmount(() => {
               </span>
             </button>
           </div>
+          </Transition>
         </div>
 
         <button
@@ -389,7 +398,9 @@ onBeforeUnmount(() => {
           </span>
         </button>
       </div>
+      </Transition>
 
+      <Transition name="model-category-select-slide">
       <div
         v-if="open && !isMobile && hoveredCategory"
         ref="submenuRef"
@@ -413,6 +424,7 @@ onBeforeUnmount(() => {
           </span>
         </button>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -658,5 +670,43 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.model-category-select-slide-enter-active,
+.model-category-select-slide-leave-active {
+  transform-origin: 50% 0;
+  transition:
+    opacity var(--motion-duration-reveal-fast, 0.36s) var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1)),
+    transform var(--motion-duration-reveal-fast, 0.36s) var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1));
+}
+
+.model-category-select-slide-enter-active.is-open-up,
+.model-category-select-slide-leave-active.is-open-up {
+  transform-origin: 50% 100%;
+}
+
+.model-category-select-slide-enter-from,
+.model-category-select-slide-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -8px, 0) scaleY(0.92);
+}
+
+.model-category-select-slide-enter-from.is-open-up,
+.model-category-select-slide-leave-to.is-open-up {
+  transform: translate3d(0, 8px, 0) scaleY(0.92);
+}
+
+.model-category-select-accordion-enter-active,
+.model-category-select-accordion-leave-active {
+  overflow: hidden;
+  transition:
+    opacity var(--motion-duration-fast, 0.2s) var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1)),
+    transform var(--motion-duration-fast, 0.2s) var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1));
+}
+
+.model-category-select-accordion-enter-from,
+.model-category-select-accordion-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
 }
 </style>
