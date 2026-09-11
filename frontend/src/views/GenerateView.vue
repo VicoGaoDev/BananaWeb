@@ -43,7 +43,6 @@ import {
   CalendarOutlined,
   ExpandOutlined,
   ReadOutlined,
-  StarOutlined,
 } from "@ant-design/icons-vue";
 import { createBoard, listBoards, updateBoard } from "@/api/boards";
 import { getTaskScenes } from "@/api/config";
@@ -71,6 +70,7 @@ import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
+import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
@@ -328,6 +328,7 @@ const generatedTaskHistoryTotal = ref(0);
 const generatedTasksLoading = ref(false);
 const generatedTasksLoadingMore = ref(false);
 const resultBodyRef = ref<HTMLElement | null>(null);
+const resultPanelRef = ref<HTMLElement | null>(null);
 const generatedTaskLoadMoreAnchor = ref<HTMLElement | null>(null);
 const resultViewOptionsOpen = ref(false);
 const generatedTaskFilterOpen = ref(false);
@@ -2345,6 +2346,31 @@ function canShowGeneratedReferenceAdd(task: GeneratedTaskItem, img: ImageResult)
     && canEditGeneratedImage(task, img);
 }
 
+function getScrollableAncestor(el: HTMLElement) {
+  let parent = el.parentElement;
+  while (parent) {
+    const { overflowY } = getComputedStyle(parent);
+    const canScroll = (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
+      && parent.scrollHeight > parent.clientHeight + 1;
+    if (canScroll) return parent;
+    parent = parent.parentElement;
+  }
+  return (document.scrollingElement as HTMLElement | null) || document.documentElement;
+}
+
+function scrollGeneratedResultsIntoViewOnMobile() {
+  if (viewportWidth.value > 960) return;
+  const target = resultPanelRef.value;
+  if (!target) return;
+  const scroller = getScrollableAncestor(target);
+  const isDocumentScroller = scroller === document.documentElement || scroller === document.body;
+  const offset = isDocumentScroller ? 80 : 8;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextTop = scroller.scrollTop + (targetRect.top - scrollerRect.top) - offset;
+  scroller.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+}
+
 function togglePickingGeneratedReference() {
   if (pickingGeneratedReference.value) {
     pickingGeneratedReference.value = false;
@@ -2362,6 +2388,11 @@ function togglePickingGeneratedReference() {
     return;
   }
   pickingGeneratedReference.value = true;
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      scrollGeneratedResultsIntoViewOnMobile();
+    });
+  });
 }
 
 function toggleGeneratedImageAsReference(task: GeneratedTaskItem, img: ImageResult) {
@@ -4287,7 +4318,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   @click="generateMode = 'imageEdit'"
                 >
                   <span class="generate-tab-label">
-                    <PictureOutlined />
+                    <NavGenerateImageIcon />
                     <span>图编辑</span>
                   </span>
                 </button>
@@ -4547,7 +4578,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                     <a-tooltip title="我的提示词">
                       <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
-                        <StarOutlined />
+                        <FontSizeOutlined />
                       </button>
                     </a-tooltip>
                   </div>
@@ -4728,7 +4759,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     (500+模版)
                   </div>
                   <div class="generate-link-tip-right">
-                    支持 <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 张图片同时生成（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
+                    <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 个并发（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
                   </div>
                 </div>
                 <div class="generate-action-row">
@@ -4909,10 +4940,14 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                 <div class="panel-head">
                   <div class="panel-head-main">
                     <h3>参考图</h3>
-                    <span class="panel-hint">(最多 {{ maxReferenceImages }} 张，支持拖拽、粘贴上传)</span>
+                    <span class="panel-hint">(最多 {{ maxReferenceImages }} 张<span class="panel-hint-extra">，支持拖拽、粘贴上传</span>)</span>
                   </div>
                   <div class="panel-head-actions">
-                    <a-button type="text" size="small" class="asset-library-btn" @click.stop="openAssetPicker">我的素材</a-button>
+                    <a-tooltip title="我的素材">
+                      <button type="button" class="prompt-icon-btn" aria-label="我的素材" @click.stop="openAssetPicker">
+                        <NavGenerateImageIcon />
+                      </button>
+                    </a-tooltip>
                   </div>
                 </div>
 
@@ -5056,7 +5091,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                     <a-tooltip title="我的提示词">
                       <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
-                        <StarOutlined />
+                        <FontSizeOutlined />
                       </button>
                     </a-tooltip>
                   </div>
@@ -5237,7 +5272,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     (500+模版)
                   </div>
                   <div class="generate-link-tip-right">
-                    支持 <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 张图片同时生成（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
+                    <strong>{{ MAX_ACTIVE_GENERATION_IMAGES }}</strong> 个并发（{{ activeGenerationImageCount }} / {{ MAX_ACTIVE_GENERATION_IMAGES }}）
                   </div>
                 </div>
                 <div class="generate-action-row">
@@ -5583,7 +5618,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                     <a-tooltip title="我的提示词">
                       <button type="button" class="prompt-icon-btn" aria-label="我的提示词" @click="openPromptLibrary">
-                        <StarOutlined />
+                        <FontSizeOutlined />
                       </button>
                     </a-tooltip>
                   </div>
@@ -5689,6 +5724,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       </transition>
 
       <section
+        ref="resultPanelRef"
         class="work-panel result-panel"
         :class="{ 'config-panel-is-collapsed': isConfigPanelCollapsed }"
       >
@@ -6774,8 +6810,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   padding: 0 14px;
   white-space: nowrap;
 
-  .anticon {
+  .anticon,
+  .nav-generate-image-icon {
     font-size: 16px;
+    width: 1em;
+    height: 1em;
     opacity: 0.88;
   }
 }
@@ -6786,7 +6825,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   border-radius: 14px;
   font-weight: 700;
 
-  .anticon {
+  .anticon,
+  .nav-generate-image-icon {
     font-size: 17px;
   }
 }
@@ -7152,9 +7192,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
     opacity: 0.7;
   }
 
-  :deep(.anticon) {
+  :deep(.anticon),
+  :deep(.nav-generate-image-icon) {
     margin: 0;
     font-size: 15px;
+    width: 1em;
+    height: 1em;
   }
 }
 
@@ -10157,6 +10200,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .result-panel {
     min-height: auto;
     height: auto;
+    scroll-margin-top: 80px;
   }
 
   .result-body {
@@ -10201,48 +10245,56 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   }
 
   .config-collapse-btn,
-  .result-config-expand-btn {
+  .result-config-expand-btn,
+  .panel-hint-extra {
     display: none;
   }
 
   .result-retain-badge {
-    flex: 1 1 100%;
+    flex: none;
     width: 100%;
     max-width: 100%;
     height: auto;
-    min-height: 32px;
-    padding: 8px 12px;
-    align-items: center;
-    white-space: normal;
-    line-height: 1.45;
-    box-sizing: border-box;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    white-space: nowrap;
+    line-height: 1.4;
+    font-size: 11px;
+    overflow-x: auto;
   }
 
   .result-retain-icon {
+    display: inline-flex;
     flex: 0 0 auto;
+    font-size: 14px;
   }
 
   .result-retain-badge > .result-retain-text {
-    display: flex;
-    flex: 1 1 auto;
+    display: inline-flex;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
     min-width: 0;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    white-space: nowrap;
   }
 
   .result-retain-clause {
-    display: block;
-    max-width: 100%;
-    white-space: normal;
+    display: inline;
+    max-width: none;
+    white-space: nowrap;
   }
 
   .result-tip-divider {
-    display: none;
+    display: inline;
+    margin: 0 6px;
   }
 
   .result-retain-badge .result-tip-highlight {
-    font-size: 15px;
+    font-size: 13px;
     margin: 0 2px;
   }
 }
@@ -10264,17 +10316,16 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   }
 
   .generate-link-tip {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
+    gap: 8px;
   }
 
   .generate-action-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
 
-  .generate-link-tip-right {
-    text-align: left;
+  .generate-action-row .generate-btn-secondary {
+    font-size: 13px;
+    padding-inline: 8px;
   }
 
   .settings-row {
@@ -10318,14 +10369,33 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     height: 65px;
   }
 
-  .result-head-meta {
-    align-self: flex-start;
-    flex-wrap: wrap;
+  .result-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
   }
 
-  .result-head {
-    grid-template-columns: 1fr;
-    align-items: stretch;
+  .result-head-main {
+    display: contents;
+  }
+
+  .result-head-main :deep(.history-filter-board) {
+    grid-column: 1;
+    grid-row: 1;
+    width: min(148px, calc(100% - 8px));
+  }
+
+  .result-head-meta {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .result-retain-badge {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .result-head-center {
@@ -10897,6 +10967,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-ret
   background: var(--theme-panel-bg) !important;
   border: 1px solid var(--theme-panel-border) !important;
   box-shadow: none !important;
+}
+
+@media (max-width: 960px) {
+  html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-badge {
+    background: none !important;
+    border: 0 !important;
+  }
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-retain-icon {

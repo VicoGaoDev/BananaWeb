@@ -43,6 +43,7 @@ import {
 import { APP_THEME_ATTRIBUTE, appThemes, getAppThemeGroups, isAppThemeName, type AppThemeName } from "@/config/theme";
 import { importAfterExtendedAntd } from "@/lib/antd";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
+import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
 import AuthModal from "@/components/auth/AuthModal.vue";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
@@ -62,7 +63,6 @@ import {
   UserOutlined,
   UserAddOutlined,
   ThunderboltOutlined,
-  ThunderboltFilled,
   PayCircleFilled,
   MenuOutlined,
   MailOutlined,
@@ -360,7 +360,7 @@ const primaryMenuItems = computed<PrimaryMenuItem[]>(() => [
     icon: MessageOutlined,
     badgeText: SHOW_PRIMARY_MENU_BADGES ? "新" : undefined,
   },
-  { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: ThunderboltFilled },
+  { key: "generate", label: "AI 生图", iconSrc: withBaseUrl("nav-generate.svg"), icon: NavGenerateImageIcon },
   {
     key: "video-generate",
     label: "AI 视频",
@@ -3004,7 +3004,7 @@ watch(
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  color: #111;
+  color: currentColor;
   filter: var(--theme-nav-icon-filter);
   font-size: 19px;
   line-height: 1;
@@ -3108,14 +3108,12 @@ watch(
   height: 20px;
 }
 
+.canvas-side-nav-item :deep(.anticon),
 .canvas-side-nav-item .nav-menu-system-icon {
   width: 20px;
   height: 20px;
-  font-size: 19px;
-}
-
-.canvas-side-nav-item :deep(.anticon) {
   color: currentColor;
+  filter: none;
   font-size: 20px;
 }
 
@@ -3135,8 +3133,10 @@ watch(
   filter: var(--theme-nav-icon-active-filter);
 }
 
+.canvas-side-nav-item.active :deep(.anticon),
 .canvas-side-nav-item.active .nav-menu-system-icon {
-  filter: var(--theme-nav-icon-active-filter);
+  color: currentColor;
+  filter: none;
 }
 
 .nav-menu-new-badge {
