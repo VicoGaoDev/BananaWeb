@@ -14,12 +14,10 @@ import {
 } from "@ant-design/icons-vue";
 import { getMe } from "@/api/auth";
 import { getPreviewImageSrc, resolveImageUrl } from "@/api/images";
-import { MAX_IMAGE_UPLOAD_SIZE_BYTES, MAX_IMAGE_UPLOAD_SIZE_TEXT } from "@/api/upload";
-import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
+import { getImageFileAccept, isSupportedImageUploadFile, MAX_IMAGE_UPLOAD_SIZE_BYTES, MAX_IMAGE_UPLOAD_SIZE_TEXT } from "@/api/upload";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
-import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useAuthStore } from "@/stores/auth";
 import type { SceneOptionItem } from "@/types";
 
@@ -108,14 +106,7 @@ const sourceUploading = ref(false);
 const maskUploading = ref(false);
 const sourcePickerOpening = ref(false);
 const sourceInput = ref<HTMLInputElement | null>(null);
-const {
-  accept: imageFileAccept,
-  sheetOpen: imageSourceSheetOpen,
-  requestPick: requestImageSourcePick,
-  pickFromGallery,
-  pickFromFiles,
-  cancelSheet: cancelImageSourceSheet,
-} = useImageSourcePicker();
+const imageFileAccept = getImageFileAccept();
 const brushSize = ref(28);
 const repaintTool = ref<"paint" | "erase" | "rect" | "circle" | "text">("paint");
 const repaintLineColor = ref("#c38d36");
@@ -195,8 +186,7 @@ function resetMaskState() {
 }
 
 function isReferenceImageFile(file: File) {
-  if (file.type.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+  return isSupportedImageUploadFile(file);
 }
 
 function triggerSourceUpload() {
@@ -204,18 +194,12 @@ function triggerSourceUpload() {
     requestLogin();
     return;
   }
+  sourcePickerOpening.value = true;
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     sourcePickerOpening.value = false;
     requestLogin();
   });
-  requestImageSourcePick(sourceInput.value, {
-    onOpen: () => {
-      sourcePickerOpening.value = true;
-    },
-    onCancel: () => {
-      sourcePickerOpening.value = false;
-    },
-  });
+  sourceInput.value?.click();
 }
 
 async function handleSourceFileChange(e: Event) {
@@ -693,12 +677,6 @@ defineExpose({
         {{ submitButtonText }}
       </a-button>
     </div>
-    <ImageSourceActionSheet
-      v-if="imageSourceSheetOpen"
-      @gallery="pickFromGallery"
-      @files="pickFromFiles"
-      @cancel="cancelImageSourceSheet"
-    />
   </section>
 </template>
 

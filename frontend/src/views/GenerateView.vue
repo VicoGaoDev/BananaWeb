@@ -63,6 +63,7 @@ import { optimizePrompt } from "@/api/promptOptimize";
 import { reversePrompt } from "@/api/promptReverse";
 import { createUserPrompt } from "@/api/userPrompts";
 import { getMe } from "@/api/auth";
+import { getImageFileAccept, isSupportedImageUploadFile } from "@/api/upload";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
@@ -72,11 +73,9 @@ import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from 
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
-import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
-import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { withBaseUrl } from "@/lib/assets";
 import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
@@ -378,14 +377,7 @@ const pickingGeneratedReference = ref(false);
 const quickSavingReferenceIds = ref<string[]>([]);
 const quickSavingPromptKeys = ref<string[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
-const {
-  accept: imageFileAccept,
-  sheetOpen: imageSourceSheetOpen,
-  requestPick: requestImageSourcePick,
-  pickFromGallery,
-  pickFromFiles,
-  cancelSheet: cancelImageSourceSheet,
-} = useImageSourcePicker();
+const imageFileAccept = getImageFileAccept();
 const referenceUploadBlockRef = ref<HTMLElement | null>(null);
 const referenceDragActive = ref(false);
 const referenceDragCounter = ref(0);
@@ -2077,17 +2069,13 @@ function triggerUpload() {
     loginModalVisible.value = true;
     return;
   }
+  referencePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearReferencePickerOpening();
     loginModalVisible.value = true;
   });
-  requestImageSourcePick(fileInput.value, {
-    onOpen: () => {
-      referencePickerOpening.value = true;
-      scheduleFilePickerRecovery();
-    },
-    onCancel: clearReferencePickerOpening,
-  });
+  fileInput.value?.click();
 }
 
 function clearReferencePickerOpening() {
@@ -2549,8 +2537,7 @@ function isReferenceFileDragEvent(event: DragEvent) {
 }
 
 function isReferenceImageFile(file: File) {
-  if (file.type.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+  return isSupportedImageUploadFile(file);
 }
 
 async function processReferenceDropFiles(files: File[]) {
@@ -2660,17 +2647,13 @@ function triggerSourceUpload() {
     loginModalVisible.value = true;
     return;
   }
+  sourcePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearSourcePickerOpening();
     loginModalVisible.value = true;
   });
-  requestImageSourcePick(sourceInput.value, {
-    onOpen: () => {
-      sourcePickerOpening.value = true;
-      scheduleFilePickerRecovery();
-    },
-    onCancel: clearSourcePickerOpening,
-  });
+  sourceInput.value?.click();
 }
 
 async function handleSourceFileChange(e: Event) {
@@ -2727,17 +2710,13 @@ function triggerReverseUpload() {
     loginModalVisible.value = true;
     return;
   }
+  reversePickerOpening.value = true;
+  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearReversePickerOpening();
     loginModalVisible.value = true;
   });
-  requestImageSourcePick(reverseInput.value, {
-    onOpen: () => {
-      reversePickerOpening.value = true;
-      scheduleFilePickerRecovery();
-    },
-    onCancel: clearReversePickerOpening,
-  });
+  reverseInput.value?.click();
 }
 
 async function handleReverseFileChange(e: Event) {
@@ -6526,12 +6505,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       :maxlength="TASK_PROMPT_MAX_LENGTH"
       :placeholder="promptExpandPlaceholder"
       @confirm="applyExpandedPrompt"
-    />
-    <ImageSourceActionSheet
-      v-if="imageSourceSheetOpen"
-      @gallery="pickFromGallery"
-      @files="pickFromFiles"
-      @cancel="cancelImageSourceSheet"
     />
   </div>
 </template>

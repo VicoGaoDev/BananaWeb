@@ -20,15 +20,14 @@ import {
   VideoCameraOutlined,
   ExpandOutlined,
 } from "@ant-design/icons-vue";
-import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { getMe } from "@/api/auth";
+import { getImageFileAccept, isSupportedImageUploadFile } from "@/api/upload";
 import { createUserPrompt } from "@/api/userPrompts";
 import { getVideoTaskScenes } from "@/api/videoConfig";
-import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
 import {
@@ -103,14 +102,7 @@ const detailTask = ref<VideoTaskResult | null>(null);
 const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<VideoTaskResult | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const {
-  accept: imageFileAccept,
-  sheetOpen: imageSourceSheetOpen,
-  requestPick: requestImageSourcePick,
-  pickFromGallery,
-  pickFromFiles,
-  cancelSheet: cancelImageSourceSheet,
-} = useImageSourcePicker();
+const imageFileAccept = getImageFileAccept();
 const referencePickerOpening = ref(false);
 const referenceDragActive = ref(false);
 const frameDragActive = ref<0 | 1 | null>(null);
@@ -125,8 +117,7 @@ function isImageUploadTooLarge(file: File) {
 }
 
 function isReferenceImageFile(file: File) {
-  if (file.type.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+  return isSupportedImageUploadFile(file);
 }
 
 function isSceneAvailableForGenerateMode(scene: VideoTaskSceneConfig, mode: VideoGenerateMode) {
@@ -313,13 +304,9 @@ function triggerUpload(frameSlot: 0 | 1 | null = null) {
     return;
   }
   assetPickerFrameSlot.value = frameSlot;
-  requestImageSourcePick(fileInput.value, {
-    onOpen: () => {
-      referencePickerOpening.value = true;
-      scheduleFilePickerRecovery();
-    },
-    onCancel: clearReferencePickerOpening,
-  });
+  referencePickerOpening.value = true;
+  scheduleFilePickerRecovery();
+  fileInput.value?.click();
 }
 
 function clearReferencePickerOpening() {
@@ -1834,12 +1821,6 @@ onBeforeUnmount(() => {
       @download="handleDownloadVideo"
       @navigate-prev="navigateVideoTaskDetail(-1)"
       @navigate-next="navigateVideoTaskDetail(1)"
-    />
-    <ImageSourceActionSheet
-      v-if="imageSourceSheetOpen"
-      @gallery="pickFromGallery"
-      @files="pickFromFiles"
-      @cancel="cancelImageSourceSheet"
     />
   </div>
 </template>

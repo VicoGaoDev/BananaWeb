@@ -4,15 +4,40 @@ import type { UploadCredential, UploadPurpose } from "@/types";
 export const MAX_IMAGE_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_UPLOAD_SIZE_TEXT = "20MB";
 const JPEG_TO_WEBP_QUALITY = 0.9;
+const ALLOWED_IMAGE_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const IMAGE_EXTENSION_TYPES: Array<[RegExp, string]> = [
+  [/\.(jpe?g)$/i, "image/jpeg"],
+  [/\.png$/i, "image/png"],
+  [/\.webp$/i, "image/webp"],
+  [/\.gif$/i, "image/gif"],
+];
 
-function inferImageContentType(file: File) {
-  if (file.type) return file.type;
+export function inferImageContentType(file: File) {
+  if (file.type && ALLOWED_IMAGE_UPLOAD_TYPES.has(file.type)) return file.type;
   const name = file.name.toLowerCase();
-  if (/\.(jpe?g)$/.test(name)) return "image/jpeg";
-  if (/\.png$/.test(name)) return "image/png";
-  if (/\.webp$/.test(name)) return "image/webp";
-  if (/\.gif$/.test(name)) return "image/gif";
-  return "application/octet-stream";
+  for (const [pattern, contentType] of IMAGE_EXTENSION_TYPES) {
+    if (pattern.test(name)) return contentType;
+  }
+  return file.type || "application/octet-stream";
+}
+
+export function isSupportedImageUploadFile(file: File) {
+  return ALLOWED_IMAGE_UPLOAD_TYPES.has(inferImageContentType(file));
+}
+
+export const IMAGE_FILE_ACCEPT_DESKTOP = "image/*";
+export const IMAGE_FILE_ACCEPT_MOBILE = "*/*";
+
+export function isMobileUploadDevice() {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = navigator.userAgent || "";
+  if (/Android|iPhone|iPod|Mobile/i.test(userAgent)) return true;
+  if (/iPad/i.test(userAgent)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
+export function getImageFileAccept() {
+  return isMobileUploadDevice() ? IMAGE_FILE_ACCEPT_MOBILE : IMAGE_FILE_ACCEPT_DESKTOP;
 }
 
 export function isImageUploadTooLarge(file: File) {
