@@ -18,6 +18,8 @@ class UserBrief(BaseModel):
     business_id: str
     username: str
     email: str | None = None
+    phone: str | None = None
+    password_set: bool = True
     role: str
     avatar_url: str = ""
     credits: int = 0
@@ -27,11 +29,12 @@ class UserBrief(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
-    password: str
     verification_code: str
     verification_id: str
+    username: str | None = None
+    password: str | None = None
+    email: str | None = None
+    phone: str | None = None
     promo_code: str | None = None
 
 
@@ -39,16 +42,33 @@ class RegistrationEmailCheckRequest(BaseModel):
     email: str
 
 
+class RegistrationPhoneCheckRequest(BaseModel):
+    phone: str
+
+
+class BindEmailRequest(BaseModel):
+    email: str
+    verification_code: str
+    verification_id: str
+
+
+class BindPhoneRequest(BaseModel):
+    phone: str
+    verification_code: str
+    verification_id: str
+
+
 class ChangePasswordRequest(BaseModel):
-    old_password: str
+    old_password: str | None = None
     new_password: str
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
     verification_code: str
     verification_id: str
     new_password: str
+    email: str | None = None
+    phone: str | None = None
 
 
 class UpdateProfileRequest(BaseModel):

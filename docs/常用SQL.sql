@@ -1,20 +1,21 @@
 # web实时任务情况 
-select t.business_id,u.username,t.model,t.size,t.resolution,t.status,TIMESTAMPDIFF(SECOND, t.created_at, t.updated_at) as run_time,
+select t.business_id,u.username,u.id,t.provider_task_id,t.model,t.reference_images,t.size,t.resolution,t.status,TIMESTAMPDIFF(SECOND, t.created_at, t.updated_at) as run_time,
         TIMESTAMPDIFF(SECOND, t.request_started_at, t.request_finished_at) as request_time,
         t.created_at,t.error_message
     from tasks t
     join users u on t.user_id = u.id
-    where t.source = 'web'
+    where t.source = 'web' and t.status = 'failed'
     order by t.created_at desc limit 30;
+
+select * from user_api_key where user_id = 1577;
     
 # API实时任务情况 
-select u.username,t.model,t.size,t.resolution,t.status,TIMESTAMPDIFF(SECOND, t.created_at, t.updated_at) as run_time,
-        TIMESTAMPDIFF(SECOND, t.request_started_at, t.request_finished_at) as request_time,
-        t.created_at,t.error_message 
+select t.business_id,t.prompt,u.username,t.model,t.size,t.source,t.status,TIMESTAMPDIFF(SECOND, t.created_at, t.updated_at) as run_time,
+        TIMESTAMPDIFF(SECOND, t.request_started_at, t.request_finished_at) as request_time,t.request_started_at, t.request_finished_at,
+        t.created_at,t.error_message,t.provider_task_id 
     from tasks t
     join users u on t.user_id = u.id
-    where t.source = 'api'
-    order by t.created_at desc limit 30;
+    order by t.created_at desc limit 50;
     
 # API实时任务情况 
 select u.username,t.model,t.size,t.resolution,t.status,TIMESTAMPDIFF(SECOND, t.created_at, t.updated_at) as run_time,
@@ -52,7 +53,7 @@ LEFT JOIN (
 ) refund ON refund.task_id = t.id
 WHERE u.is_whitelisted = 0
   AND u.role NOT IN ('admin', 'superadmin')
-  AND t.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+  AND t.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)
 GROUP BY DATE(t.created_at)
 ORDER BY stat_date DESC;
 
@@ -204,7 +205,7 @@ limit 30;
     
 select * from user_api_key order by created_at desc;
 
-select * from user_prompts;
+select * from user_prompts order by created_at desc limit 50;
 
 
 select * FROM user_assets where user_id = 895;
@@ -248,4 +249,49 @@ WHERE u.is_whitelisted = 0
 ORDER BY total_credits DESC;
 
 
+# 视频任务
+select user_id,status,prompt,error_message,is_deleted from video_tasks order by created_at desc limit 10;
+
+
+select * from referral_reward_grants order by created_at desc limit 100;
+
+select * from user_prompts;
+select count(*) from user_assets;
+
+# 提示词优化任务
+select p.created_at,u.username,p.original_prompt,p.optimized_prompt 
+    from prompt_optimize_tasks p
+    join users u on p.user_id = u.id
+    order by p.created_at desc limit 50;
+
+# 对话消息
+select * from chat_messages order by created_at desc limit 50;
+
+# 对话session
+select c.created_at,u.username
+    from chat_sessions c
+    join users u on c.user_id = u.id
+    order by c.created_at desc limit 50;
+
+
+
+# 场景使用量统计
+SELECT
+  DATE(t.created_at) AS stat_date,
+  t.model,
+  COUNT(*) AS usage_count,
+  COALESCE(SUM(t.credit_cost), 0) AS credits_consumed
+FROM tasks t
+JOIN users u ON u.id = t.user_id
+WHERE t.model = 'banana2_edit'
+  AND t.status = 'success'
+  AND t.credit_cost > 0
+  AND u.is_whitelisted = 0
+  AND u.role NOT IN ('admin', 'superadmin')
+  AND t.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+  AND t.created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+GROUP BY DATE(t.created_at), t.model
+ORDER BY stat_date DESC;
+
+select * from user_credits ORDER BY created_at DESC limit 10;
 

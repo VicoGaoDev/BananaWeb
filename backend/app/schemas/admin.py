@@ -14,6 +14,7 @@ class UserOut(BaseModel):
     id: str
     username: str
     email: str | None = None
+    phone: str | None = None
     avatar_url: str = ""
     role: str
     status: str

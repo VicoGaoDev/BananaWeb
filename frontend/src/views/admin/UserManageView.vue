@@ -462,7 +462,7 @@ function promoActivityRowKey(record: {
               </button>
               <div class="user-cell-meta">
                 <span class="user-cell-name">{{ record.username }}</span>
-                <span v-if="record.email" class="user-cell-sub">{{ record.email }}</span>
+                <span v-if="record.email || record.phone" class="user-cell-sub">{{ record.email || record.phone }}</span>
               </div>
             </div>
           </template>
@@ -669,7 +669,7 @@ function promoActivityRowKey(record: {
                   <a-tag v-if="user.is_whitelisted" class="warm-tag warm-tag-whitelist">白名单</a-tag>
                 </div>
                 <div class="whitelist-user-sub">
-                  {{ user.email || "未设置邮箱" }} · {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
+                  {{ user.email || user.phone || "未绑定邮箱或手机号" }} · {{ user.role === "admin" ? "管理员" : "普通用户" }} · 积分 {{ user.credits }}
                 </div>
               </div>
             </div>

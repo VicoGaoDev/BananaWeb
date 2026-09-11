@@ -8,10 +8,13 @@ from app.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import (
+    BindEmailRequest,
+    BindPhoneRequest,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
     RegistrationEmailCheckRequest,
+    RegistrationPhoneCheckRequest,
     UserBrief,
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -31,10 +34,15 @@ from app.schemas.auth import (
 from app.services.business_id_service import get_user_by_business_id, user_external_id
 from app.services.auth_service import (
     authenticate_user,
+    bind_email,
+    bind_phone,
     change_password,
+    ensure_login_email_registered,
+    ensure_login_phone_registered,
     ensure_registration_email_available,
+    ensure_registration_phone_available,
     register_user,
-    reset_password_with_email_code,
+    reset_password_with_contact_code,
     update_username,
 )
 from app.services.promo_service import (
@@ -70,8 +78,16 @@ AVATAR_MAX_SIZE = 1 * 1024 * 1024  # 1 MB
 
 def _user_brief(db: Session, user: User) -> UserBrief:
     return UserBrief(
-        id=user_external_id(user), business_id=user.business_id, username=user.username, email=user.email, role=user.role,
-        avatar_url=resolve_avatar_url(user.avatar_url, cos_config=get_optional_cos_config(db)), credits=get_user_credit_balance(db, user.id), is_whitelisted=bool(user.is_whitelisted),
+        id=user_external_id(user),
+        business_id=user.business_id,
+        username=user.username,
+        email=user.email,
+        phone=user.phone,
+        password_set=bool(user.password_set),
+        role=user.role,
+        avatar_url=resolve_avatar_url(user.avatar_url, cos_config=get_optional_cos_config(db)),
+        credits=get_user_credit_balance(db, user.id),
+        is_whitelisted=bool(user.is_whitelisted),
     )
 
 
@@ -81,23 +97,43 @@ def check_registration_email(body: RegistrationEmailCheckRequest, db: Session = 
     return {"available": True}
 
 
+@router.post("/register/phone-check")
+def check_registration_phone(body: RegistrationPhoneCheckRequest, db: Session = Depends(get_db)):
+    ensure_registration_phone_available(db, body.phone)
+    return {"available": True}
+
+
+@router.post("/login/phone-check")
+def check_login_phone(body: RegistrationPhoneCheckRequest, db: Session = Depends(get_db)):
+    ensure_login_phone_registered(db, body.phone)
+    return {"registered": True}
+
+
+@router.post("/login/email-check")
+def check_login_email(body: RegistrationEmailCheckRequest, db: Session = Depends(get_db)):
+    ensure_login_email_registered(db, body.email)
+    return {"registered": True}
+
+
 @router.post("/register", response_model=LoginResponse)
 async def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     token, user = await register_user(
         db,
-        body.username,
-        body.email,
-        body.password,
-        body.promo_code,
-        body.verification_id,
-        body.verification_code,
+        username=body.username,
+        password=body.password,
+        promo_code=body.promo_code,
+        verification_id=body.verification_id,
+        verification_code=body.verification_code,
+        email=body.email,
+        phone=body.phone,
     )
     request.state.user_id = user_external_id(user)
+    account = (body.email or body.phone or "").strip().lower()
     audit_logger.info(
         "user registered",
         extra={
             "event": "auth.register.success",
-            "account": body.email.strip().lower(),
+            "account": account,
             "client_ip": request.client.host if request.client else "",
             "user_agent": request.headers.get("user-agent", ""),
             "user_id": user_external_id(user),
@@ -136,6 +172,60 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     return LoginResponse(token=token, user=_user_brief(db, user))
 
 
+@router.post("/bind/email", response_model=UserBrief)
+async def bind_user_email(
+    body: BindEmailRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = await bind_email(
+        db,
+        user,
+        body.email,
+        body.verification_id,
+        body.verification_code,
+    )
+    audit_logger.info(
+        "email bound",
+        extra={
+            "event": "auth.bind.email.success",
+            "account": (body.email or "").strip().lower(),
+            "client_ip": request.client.host if request.client else "",
+            "user_agent": request.headers.get("user-agent", ""),
+            "user_id": user_external_id(user),
+        },
+    )
+    return _user_brief(db, user)
+
+
+@router.post("/bind/phone", response_model=UserBrief)
+async def bind_user_phone(
+    body: BindPhoneRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = await bind_phone(
+        db,
+        user,
+        body.phone,
+        body.verification_id,
+        body.verification_code,
+    )
+    audit_logger.info(
+        "phone bound",
+        extra={
+            "event": "auth.bind.phone.success",
+            "account": (body.phone or "").strip(),
+            "client_ip": request.client.host if request.client else "",
+            "user_agent": request.headers.get("user-agent", ""),
+            "user_id": user_external_id(user),
+        },
+    )
+    return _user_brief(db, user)
+
+
 @router.post("/change-password")
 def change_pwd(
     body: ChangePasswordRequest,
@@ -162,19 +252,21 @@ async def forgot_password(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    user = await reset_password_with_email_code(
+    user = await reset_password_with_contact_code(
         db,
-        body.email,
-        body.verification_id,
-        body.verification_code,
-        body.new_password,
+        email=body.email,
+        phone=body.phone,
+        verification_id=body.verification_id,
+        verification_code=body.verification_code,
+        new_password=body.new_password,
     )
     request.state.user_id = user_external_id(user)
+    account = (body.email or body.phone or "").strip().lower()
     audit_logger.info(
-        "password reset by email code",
+        "password reset by contact code",
         extra={
             "event": "auth.password.reset",
-            "account": body.email.strip().lower(),
+            "account": account,
             "client_ip": request.client.host if request.client else "",
             "user_agent": request.headers.get("user-agent", ""),
             "user_id": user_external_id(user),

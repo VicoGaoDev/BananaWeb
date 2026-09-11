@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -48,3 +50,16 @@ def ensure_username_available(
     if query.first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
     return normalized
+
+
+def generate_phone_username(db: Session, phone: str) -> str:
+    tail = (phone or "")[-4:] or secrets.token_hex(2)
+    candidate = tail
+    for _ in range(30):
+        existing = db.query(User.id).filter(
+            func.lower(func.trim(User.username)) == candidate.lower(),
+        ).first()
+        if not existing and candidate.casefold() not in RESERVED_USERNAMES:
+            return candidate
+        candidate = f"{tail}{secrets.randbelow(900) + 100}"
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="用户名生成失败，请稍后重试")

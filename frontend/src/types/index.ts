@@ -3,6 +3,8 @@ export interface UserInfo {
   business_id: string;
   username: string;
   email?: string | null;
+  phone?: string | null;
+  password_set?: boolean;
   role: "user" | "admin" | "superadmin";
   avatar_url?: string;
   credits: number;
@@ -748,6 +750,7 @@ export interface AdminUser {
   id: string;
   username: string;
   email?: string | null;
+  phone?: string | null;
   avatar_url?: string;
   role: string;
   status: string;

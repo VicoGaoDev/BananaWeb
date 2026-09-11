@@ -249,6 +249,7 @@ def _serialize_user(user: User, *, cos_config=None) -> dict:
         "id": user_external_id(user),
         "username": user.username,
         "email": user.email,
+        "phone": user.phone,
         "avatar_url": resolve_avatar_url(user.avatar_url, cos_config=resolved_cos),
         "role": user.role,
         "status": user.status,
@@ -303,6 +304,7 @@ def list_users(
         query = query.filter(or_(
             User.username.ilike(keyword_like),
             User.email.ilike(keyword_like),
+            User.phone.ilike(keyword_like),
             User.business_id.ilike(keyword_like),
         ))
     if normalized_status in {"active", "disabled"}:
@@ -447,6 +449,7 @@ def list_user_options(db: Session, keyword: str | None = None, limit: int = 2000
         query = query.filter(or_(
             User.username.ilike(keyword_like),
             User.email.ilike(keyword_like),
+            User.phone.ilike(keyword_like),
             User.business_id.ilike(keyword_like),
         ))
     users = (
@@ -498,6 +501,7 @@ def _serialize_user_with_balance(user: User, balance: int, consumed_credits: int
         "id": user_external_id(user),
         "username": user.username,
         "email": user.email,
+        "phone": user.phone,
         "avatar_url": resolve_avatar_url(user.avatar_url, cos_config=resolved_cos),
         "role": user.role,
         "status": user.status,

@@ -23,24 +23,59 @@ export function checkRegistrationEmail(email: string): Promise<{ available: bool
   return client.post("/auth/register/email-check", { email });
 }
 
+export function checkRegistrationPhone(phone: string): Promise<{ available: boolean }> {
+  return client.post("/auth/register/phone-check", { phone });
+}
+
+export function checkLoginPhone(phone: string): Promise<{ registered: boolean }> {
+  return client.post("/auth/login/phone-check", { phone });
+}
+
+export function checkLoginEmail(email: string): Promise<{ registered: boolean }> {
+  return client.post("/auth/login/email-check", { email });
+}
+
 export function register(
-  username: string,
-  email: string,
-  password: string,
   promoCode?: string,
   verification?: { verificationCode: string; verificationId: string },
+  account?: { email?: string; phone?: string; username?: string; password?: string },
 ): Promise<LoginResponse> {
   return client.post("/auth/register", {
-    username,
-    email,
-    password,
+    username: account?.username,
+    email: account?.email,
+    phone: account?.phone,
+    password: account?.password,
     promo_code: promoCode?.trim() || undefined,
     verification_code: verification?.verificationCode,
     verification_id: verification?.verificationId,
   });
 }
 
-export function changePassword(oldPassword: string, newPassword: string): Promise<any> {
+export function bindEmail(payload: {
+  email: string;
+  verificationCode: string;
+  verificationId: string;
+}): Promise<UserInfo> {
+  return client.post("/auth/bind/email", {
+    email: payload.email,
+    verification_code: payload.verificationCode,
+    verification_id: payload.verificationId,
+  });
+}
+
+export function bindPhone(payload: {
+  phone: string;
+  verificationCode: string;
+  verificationId: string;
+}): Promise<UserInfo> {
+  return client.post("/auth/bind/phone", {
+    phone: payload.phone,
+    verification_code: payload.verificationCode,
+    verification_id: payload.verificationId,
+  });
+}
+
+export function changePassword(oldPassword: string | undefined, newPassword: string): Promise<any> {
   return client.post("/auth/change-password", {
     old_password: oldPassword,
     new_password: newPassword,
@@ -48,13 +83,15 @@ export function changePassword(oldPassword: string, newPassword: string): Promis
 }
 
 export function forgotPassword(payload: {
-  email: string;
+  email?: string;
+  phone?: string;
   verificationCode: string;
   verificationId: string;
   newPassword: string;
 }): Promise<{ message: string }> {
   return client.post("/auth/forgot-password", {
     email: payload.email,
+    phone: payload.phone,
     verification_code: payload.verificationCode,
     verification_id: payload.verificationId,
     new_password: payload.newPassword,

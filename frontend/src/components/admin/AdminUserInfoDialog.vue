@@ -94,7 +94,9 @@ watch(() => [props.open, props.user?.id], () => {
             </a-avatar>
             <div class="user-info-identity">
               <div class="user-info-name">{{ displayUser.username }}</div>
-              <div class="user-info-email">{{ displayUser.email || "未设置邮箱" }}</div>
+              <div v-if="displayUser.email" class="user-info-contact">{{ displayUser.email }}</div>
+              <div v-if="displayUser.phone" class="user-info-contact">{{ displayUser.phone }}</div>
+              <div v-if="!displayUser.email && !displayUser.phone" class="user-info-contact">未绑定邮箱或手机号</div>
               <div class="user-info-id">{{ displayUser.id }}</div>
             </div>
           </div>
@@ -212,7 +214,7 @@ watch(() => [props.open, props.user?.id], () => {
   word-break: break-all;
 }
 
-.user-info-email {
+.user-info-contact {
   margin-top: 4px;
   color: var(--theme-title);
   font-size: 13px;

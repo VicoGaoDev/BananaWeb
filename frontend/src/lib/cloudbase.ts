@@ -57,7 +57,11 @@ function getErrorText(err: unknown) {
     .toLowerCase();
 }
 
-function mapCloudbaseAuthError(err: unknown, action: "sendCode" | "register" | "resetPassword") {
+function mapCloudbaseAuthError(
+  err: unknown,
+  action: "sendCode" | "register" | "resetPassword",
+  contact: "邮箱" | "手机号" = "邮箱",
+) {
   const text = getErrorText(err);
 
   if (text.includes("environment id") || text.includes("env id")) {
@@ -67,14 +71,23 @@ function mapCloudbaseAuthError(err: unknown, action: "sendCode" | "register" | "
     return "邮箱格式不正确";
   }
   if (
+    text.includes("invalid phone")
+    || text.includes("incorrect phone")
+    || text.includes("incorrect number")
+    || text.includes("phone number") && text.includes("format")
+  ) {
+    return "手机号格式不正确";
+  }
+  if (
     text.includes("already exists")
     || text.includes("already registered")
     || text.includes("email already")
+    || text.includes("phone already")
     || text.includes("duplicate")
     || text.includes("is_user")
     || text.includes("已存在")
   ) {
-    return "该邮箱已注册";
+    return `该${contact}已注册`;
   }
   if (
     text.includes("too many requests")
@@ -138,12 +151,56 @@ async function sendEmailCode(email: string, usage: "SIGNUP" | "PASSWORD_RESET") 
     if (err instanceof Error && err.message === "验证码发送失败，请稍后重试") {
       throw err;
     }
-    throw new Error(mapCloudbaseAuthError(err, "sendCode"));
+    throw new Error(mapCloudbaseAuthError(err, "sendCode", "邮箱"));
+  }
+}
+
+export function toCloudbasePhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  const normalized = digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
+  if (!/^1\d{10}$/.test(normalized)) {
+    throw new Error("手机号格式不正确");
+  }
+  return `+86 ${normalized}`;
+}
+
+async function sendPhoneCode(phone: string, usage?: "SIGNUP") {
+  const auth = getAuth();
+  try {
+    const payload = usage
+      ? { phone_number: toCloudbasePhone(phone), usage }
+      : { phone_number: toCloudbasePhone(phone) };
+    const verification = await auth.getVerification(payload) as VerificationInfo;
+    if (!verification?.verification_id) {
+      throw new Error("验证码发送失败，请稍后重试");
+    }
+    return verification.verification_id;
+  } catch (err) {
+    if (err instanceof Error && (err.message === "验证码发送失败，请稍后重试" || err.message === "手机号格式不正确")) {
+      throw err;
+    }
+    throw new Error(mapCloudbaseAuthError(err, "sendCode", "手机号"));
   }
 }
 
 export async function sendRegisterEmailCode(email: string) {
   return sendEmailCode(email, "SIGNUP");
+}
+
+export async function sendBindEmailCode(email: string) {
+  return sendEmailCode(email, "SIGNUP");
+}
+
+export async function sendRegisterPhoneCode(phone: string) {
+  return sendPhoneCode(phone, "SIGNUP");
+}
+
+export async function sendBindPhoneCode(phone: string) {
+  return sendPhoneCode(phone, "SIGNUP");
+}
+
+export async function sendPasswordResetPhoneCode(phone: string) {
+  return sendPhoneCode(phone);
 }
 
 export async function sendPasswordResetEmailCode(email: string) {

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False
     WEB_CONCURRENCY: int = 2

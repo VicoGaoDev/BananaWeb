@@ -9,7 +9,9 @@ import {
 } from "@ant-design/icons-vue";
 import { changePassword, getMe, updateProfile, uploadAvatar } from "@/api/auth";
 import { getAvatarImageSrc } from "@/api/images";
+import { formatAccountContact, maskPhone } from "@/lib/authAccount";
 import { useAuthStore } from "@/stores/auth";
+import ProfileAccountBind from "@/components/auth/ProfileAccountBind.vue";
 
 const auth = useAuthStore();
 
@@ -123,7 +125,7 @@ async function handleUpdateUsername() {
 }
 
 async function handleChangePwd() {
-  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) {
+  if ((auth.user?.password_set !== false && !pwdForm.value.oldPassword) || !pwdForm.value.newPassword) {
     message.warning("请填写完整");
     return;
   }
@@ -133,7 +135,13 @@ async function handleChangePwd() {
   }
   pwdLoading.value = true;
   try {
-    await changePassword(pwdForm.value.oldPassword, pwdForm.value.newPassword);
+    await changePassword(
+      auth.user?.password_set === false ? undefined : pwdForm.value.oldPassword,
+      pwdForm.value.newPassword,
+    );
+    if (auth.user) {
+      auth.updateUser({ ...auth.user, password_set: true });
+    }
     pwdForm.value = {
       oldPassword: "",
       newPassword: "",
@@ -191,7 +199,7 @@ watch(avatarUrl, async (value, previous) => {
         </div>
         <div class="profile-topbar-copy">
           <h1 class="profile-topbar-title">个人主页</h1>
-          <p class="warm-page-desc">查看账号基础信息，并在这里统一管理头像与密码。</p>
+          <p class="warm-page-desc">查看账号基础信息，并在这里统一管理头像、绑定方式和密码。</p>
         </div>
       </div>
     </div>
@@ -216,7 +224,10 @@ watch(avatarUrl, async (value, previous) => {
                 <h2>{{ auth.user?.username || "未登录用户" }}</h2>
                 <span class="profile-role-badge">{{ roleLabel }}</span>
               </div>
-              <div class="profile-email">{{ auth.user?.email || "未绑定邮箱" }}</div>
+              <div class="profile-email">{{ formatAccountContact(auth.user) }}</div>
+              <div v-if="auth.user?.email && auth.user?.phone" class="profile-email">
+                {{ maskPhone(auth.user.phone) }}
+              </div>
               <div class="profile-business-id">
                 <span>{{ auth.user?.business_id || "-" }}</span>
                 <a-button
@@ -303,19 +314,25 @@ watch(avatarUrl, async (value, previous) => {
                 </div>
               </div>
 
+              <ProfileAccountBind />
+
               <div class="profile-setting-block">
                 <div class="profile-setting-row">
                   <div class="profile-setting-info">
-                    <h4>修改密码</h4>
-                    <span>建议定期更新密码，提升账号安全性。</span>
+                    <h4>{{ auth.user?.password_set === false ? "设置密码" : "修改密码" }}</h4>
+                    <span>
+                      {{ auth.user?.password_set === false
+                        ? "设置密码后可用用户名、邮箱或手机号登录。"
+                        : "建议定期更新密码，提升账号安全性。" }}
+                    </span>
                   </div>
                   <a-button class="profile-toggle-btn" @click="showPasswordForm = !showPasswordForm">
                     <template #icon><LockOutlined /></template>
-                    {{ showPasswordForm ? "收起" : "修改密码" }}
+                    {{ showPasswordForm ? "收起" : (auth.user?.password_set === false ? "设置密码" : "修改密码") }}
                   </a-button>
                 </div>
                 <a-form v-if="showPasswordForm" layout="vertical" class="profile-password-form">
-                  <a-form-item label="原密码">
+                  <a-form-item v-if="auth.user?.password_set !== false" label="原密码">
                     <a-input-password v-model:value="pwdForm.oldPassword" placeholder="请输入原密码" />
                   </a-form-item>
                   <a-form-item label="新密码">

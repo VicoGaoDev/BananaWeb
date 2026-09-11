@@ -4,17 +4,11 @@ import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { message, notification } from "ant-design-vue";
 import {
-  login as apiLogin,
-  register as apiRegister,
-  checkRegistrationEmail,
-  forgotPassword as apiForgotPassword,
   getMe,
   getContactConfig,
   getAnnouncementConfig,
   redeemCreditKey,
-  validatePromoCode,
 } from "@/api/auth";
-import { validateInviteCode } from "@/api/inviteRewards";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnreadFeedbackCount } from "@/api/admin";
@@ -36,7 +30,6 @@ import {
   setStoredUnreadSystemMessageCount,
   subscribeUnreadSystemMessageCount,
 } from "@/lib/systemMessageNotice";
-import { NEW_USER_TRIAL_CREDITS, PROMO_CODE_REWARD_CREDITS } from "@/lib/auth";
 import { contentLooksLikeHtml } from "@/lib/htmlContent";
 import { subscribeAuthSessionExpired } from "@/lib/authSessionNotice";
 import {
@@ -49,9 +42,9 @@ import {
 } from "@/lib/generateTutorialDock";
 import { APP_THEME_ATTRIBUTE, appThemes, getAppThemeGroups, isAppThemeName, type AppThemeName } from "@/config/theme";
 import { importAfterExtendedAntd } from "@/lib/antd";
-import { loadCloudbaseAuth, preloadCloudbaseAuth } from "@/lib/cloudbaseLazy";
 import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
+import AuthModal from "@/components/auth/AuthModal.vue";
 import type { AnnouncementConfig, PaymentPlan } from "@/types";
 import {
   PictureOutlined,
@@ -65,7 +58,6 @@ import {
   CloudUploadOutlined,
   VideoCameraOutlined,
   LogoutOutlined,
-  LockOutlined,
   DownOutlined,
   UserOutlined,
   UserAddOutlined,
@@ -936,30 +928,7 @@ const notificationCenterDialogOpen = ref(false);
 const notificationCenterDefaultTab = ref<"feedback" | "system-messages" | "update-logs">("update-logs");
 provide("loginModalVisible", loginModalVisible);
 const authTab = ref<"login" | "register">("login");
-const loginForm = reactive({ account: "", password: "" });
-const loginLoading = ref(false);
-const forgotPasswordDialogOpen = ref(false);
-const forgotPasswordForm = reactive({
-  email: "",
-  verificationCode: "",
-  verificationId: "",
-  newPassword: "",
-  confirmPassword: "",
-});
-const forgotPasswordLoading = ref(false);
-const forgotPasswordCodeLoading = ref(false);
-const registerForm = reactive({
-  email: "",
-  verificationCode: "",
-  verificationId: "",
-  username: "",
-  password: "",
-  confirmPassword: "",
-  promoCode: "",
-  agreedTerms: false,
-});
-const registerLoading = ref(false);
-const registerCodeLoading = ref(false);
+const seedRegisterPromoCode = ref("");
 const redeemDialogOpen = ref(false);
 const redeemLoading = ref(false);
 const redeemForm = reactive({ key: "" });
@@ -976,117 +945,6 @@ const purchaseFeedbackForm = reactive({ content: "" });
 const suggestionDialogOpen = ref(false);
 const authExpiredPromptVisible = ref(false);
 const expiredSessionRedirectPath = ref("");
-const bannedEmailDomainSuffixes = [
-  "minafter.com",
-  "mediaholy.com",
-  "mailto.plus",
-  "yopmail.com",
-  "yopmail.net",
-  "yopmail.fr",
-  "yopmail.org",
-  "cool.fr.nf",
-  "jetable.org",
-  "tempmail.com",
-  "tempmail.org",
-  "tempmail.cn",
-  "temp-mail.org",
-  "temp-mail.io",
-  "10minutemail.com",
-  "10minutemail.net",
-  "10minemail.com",
-  "eopyy.com",
-  "mailinator.com",
-  "mailinator.net",
-  "mailinator.org",
-  "mailin8r.com",
-  "mailinator.us",
-  "outlook.com",
-  "guerrillamail.com",
-  "guerrillamail.info",
-  "guerrillamail.biz",
-  "guerrillamail.de",
-  "guerrillamail.net",
-  "sharklasers.com",
-  "grr.la",
-  "spam4.me",
-  "guerrillamailblock.com",
-  "dispostable.com",
-  "mail.tm",
-  "mailsac.com",
-  "mailnesia.com",
-  "throwawaymail.com",
-  "fakeinbox.com",
-  "emailondeck.com",
-  "maildrop.cc",
-  "trashmail.com",
-  "getnada.com",
-  "spamgourmet.com",
-  "zoemail.org",
-  "besttempmail.com",
-  "mailsbay.com",
-  "justdefinition.com",
-  "mowan666.com",
-  "swagpapa.com",
-  "pdf-cutter.com",
-  "pdfmerge.xyz",
-  "rulersonline.com",
-  "ziptools.site",
-  "imagecompressor.io",
-  "tempmailbox.top",
-  "linshiyouxiang.net",
-  "randmail.dzz10.cn",
-  "aoksend.com",
-  "linshi-email.com",
-  "moakt.com",
-  "zzzmail.top",
-  "linsmail.com",
-  "suijimail.cn",
-  "duanxinmail.com",
-  "simplelogin.io",
-  "addy.io",
-  "anonaddy.com",
-  "forwardemail.net",
-  "test.com",
-  "probe.com",
-] as const;
-
-const reservedEmailDomainSuffixes = [
-  "80ai.net",
-  "80ai.cn",
-  "80ai.com",
-  "80ai.org",
-  "80ai.top",
-] as const;
-
-function isValidEmail(email: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-}
-
-function isEmailDomainInList(email: string, suffixes: readonly string[]) {
-  const normalized = email.trim().toLowerCase();
-  const atIndex = normalized.lastIndexOf("@");
-  if (atIndex < 0) return false;
-  const domain = normalized.slice(atIndex + 1);
-  return suffixes.some((suffix) => domain === suffix || domain.endsWith(`.${suffix}`));
-}
-
-function isBannedEmailDomain(email: string) {
-  return isEmailDomainInList(email, bannedEmailDomainSuffixes);
-}
-
-function isReservedEmailDomain(email: string) {
-  return isEmailDomainInList(email, reservedEmailDomainSuffixes);
-}
-
-function getBlockedRegistrationEmailReason(email: string) {
-  if (isReservedEmailDomain(email)) {
-    return "该邮箱域名为官方保留域名，暂不支持注册";
-  }
-  if (isBannedEmailDomain(email)) {
-    return "该邮箱域名暂不支持注册，请使用常用邮箱地址";
-  }
-  return "";
-}
 
 function normalizeInviteCode(code?: string | null) {
   return (code || "").trim().toUpperCase().replace(/\s+/g, "");
@@ -1141,14 +999,11 @@ function applyStoredInviteOrPromoCodeToRegisterForm() {
   syncLockedPromoFromSession();
   const storedPromoCode = lockedPromoFromSession.value;
   if (storedPromoCode) {
-    registerForm.promoCode = storedPromoCode;
+    seedRegisterPromoCode.value = storedPromoCode;
     return;
   }
-  if (registerForm.promoCode.trim()) return;
   const storedInviteCode = getStoredInviteCode();
-  if (storedInviteCode) {
-    registerForm.promoCode = storedInviteCode;
-  }
+  seedRegisterPromoCode.value = storedInviteCode || seedRegisterPromoCode.value;
 }
 
 function captureInviteCodeFromRoute() {
@@ -1162,9 +1017,7 @@ function captureInviteCodeFromRoute() {
   } catch {
     // Ignore storage errors in restricted browser modes.
   }
-  if (authTab.value === "register" || loginModalVisible.value) {
-    registerForm.promoCode = inviteCode;
-  }
+  seedRegisterPromoCode.value = inviteCode;
 }
 
 function capturePromoCodeFromRoute() {
@@ -1179,9 +1032,7 @@ function capturePromoCodeFromRoute() {
     // Ignore storage errors in restricted browser modes.
   }
   lockedPromoFromSession.value = promoCode;
-  if (authTab.value === "register" || loginModalVisible.value) {
-    registerForm.promoCode = promoCode;
-  }
+  seedRegisterPromoCode.value = promoCode;
 }
 
 watch(
@@ -1197,13 +1048,6 @@ watch(
   { immediate: true },
 );
 
-watch(authTab, (tab) => {
-  if (tab === "register") {
-    applyStoredInviteOrPromoCodeToRegisterForm();
-    preloadCloudbaseAuth();
-  }
-});
-
 function openAuthModal(tab: "login" | "register") {
   mobileDrawerOpen.value = false;
   authTab.value = tab;
@@ -1211,20 +1055,6 @@ function openAuthModal(tab: "login" | "register") {
     applyStoredInviteOrPromoCodeToRegisterForm();
   }
   loginModalVisible.value = true;
-}
-
-function openForgotPasswordDialog() {
-  forgotPasswordForm.email = loginForm.account.includes("@") ? loginForm.account.trim() : "";
-  forgotPasswordDialogOpen.value = true;
-  loginModalVisible.value = false;
-}
-
-function resetForgotPasswordForm() {
-  forgotPasswordForm.email = "";
-  forgotPasswordForm.verificationCode = "";
-  forgotPasswordForm.verificationId = "";
-  forgotPasswordForm.newPassword = "";
-  forgotPasswordForm.confirmPassword = "";
 }
 
 function handleAuthSessionExpired(detail: { redirectPath: string }) {
@@ -1245,245 +1075,29 @@ watch(loginModalVisible, (open) => {
   }
 });
 
-watch(
-  () => registerForm.email,
-  () => {
-    registerForm.verificationId = "";
-  },
-);
-
-function resetAuthForms() {
-  loginForm.account = "";
-  loginForm.password = "";
-  registerForm.email = "";
-  registerForm.verificationCode = "";
-  registerForm.verificationId = "";
-  registerForm.username = "";
-  registerForm.password = "";
-  registerForm.confirmPassword = "";
-  registerForm.promoCode = "";
-  registerForm.agreedTerms = false;
+function clearInviteAndPromoSeeds() {
+  clearStoredInviteCode();
+  clearStoredPromoCode();
+  lockedPromoFromSession.value = "";
+  seedRegisterPromoCode.value = "";
 }
 
-async function handleLoginSubmit() {
-  if (!loginForm.account || !loginForm.password) {
-    message.warning("请输入邮箱/用户名和密码");
-    return;
-  }
-  loginLoading.value = true;
-  try {
-    const res = await apiLogin(loginForm.account, loginForm.password);
-    auth.setAuth(res.token, res.user);
-    const redirectPath = expiredSessionRedirectPath.value;
-    expiredSessionRedirectPath.value = "";
-    message.success("登录成功");
-    loginModalVisible.value = false;
-    resetAuthForms();
-    await nextTick();
-    await checkAnnouncement();
-    await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
-    await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
-    startSystemMessagePolling();
-    if (redirectPath && redirectPath !== route.fullPath) {
-      await router.replace(redirectPath);
-    }
-  } catch (err: any) {
-    message.error(err.response?.data?.detail || "登录失败");
-  } finally {
-    loginLoading.value = false;
+function handleRegistered(kind: "invite" | "promo" | "plain") {
+  if (kind === "invite" || kind === "promo") {
+    clearInviteAndPromoSeeds();
   }
 }
 
-async function handleSendForgotPasswordCode() {
-  if (!forgotPasswordForm.email) {
-    message.warning("请输入邮箱");
-    return;
-  }
-  if (!isValidEmail(forgotPasswordForm.email)) {
-    message.warning("邮箱格式不正确");
-    return;
-  }
-  forgotPasswordCodeLoading.value = true;
-  try {
-    const { sendPasswordResetEmailCode } = await loadCloudbaseAuth();
-    forgotPasswordForm.verificationId = await sendPasswordResetEmailCode(forgotPasswordForm.email.trim());
-    message.success("验证码已发送，请检查邮箱");
-  } catch (err: any) {
-    forgotPasswordForm.verificationId = "";
-    message.error(err.message || "验证码发送失败");
-  } finally {
-    forgotPasswordCodeLoading.value = false;
-  }
-}
-
-async function handleForgotPasswordSubmit() {
-  if (!forgotPasswordForm.email || !forgotPasswordForm.verificationCode || !forgotPasswordForm.newPassword) {
-    message.warning("请完整填写找回密码信息");
-    return;
-  }
-  if (!isValidEmail(forgotPasswordForm.email)) {
-    message.warning("邮箱格式不正确");
-    return;
-  }
-  if (!/^\d{6}$/.test(forgotPasswordForm.verificationCode.trim())) {
-    message.warning("请输入正确的 6 位验证码");
-    return;
-  }
-  if (!forgotPasswordForm.verificationId) {
-    message.warning("请先获取邮箱验证码");
-    return;
-  }
-  if (forgotPasswordForm.newPassword.length < 6) {
-    message.warning("新密码至少6位");
-    return;
-  }
-  if (forgotPasswordForm.newPassword !== forgotPasswordForm.confirmPassword) {
-    message.warning("两次密码不一致");
-    return;
-  }
-  forgotPasswordLoading.value = true;
-  try {
-    await apiForgotPassword({
-      email: forgotPasswordForm.email.trim(),
-      verificationCode: forgotPasswordForm.verificationCode.trim(),
-      verificationId: forgotPasswordForm.verificationId,
-      newPassword: forgotPasswordForm.newPassword,
-    });
-    message.success("密码重置成功，请使用新密码登录");
-    loginForm.account = forgotPasswordForm.email.trim();
-    loginForm.password = "";
-    resetForgotPasswordForm();
-    authTab.value = "login";
-    forgotPasswordDialogOpen.value = false;
-    loginModalVisible.value = true;
-  } catch (err: any) {
-    message.error(err.response?.data?.detail || err.message || "密码重置失败");
-  } finally {
-    forgotPasswordLoading.value = false;
-  }
-}
-
-async function handleSendRegisterCode() {
-  if (!registerForm.email) {
-    message.warning("请输入邮箱");
-    return;
-  }
-  if (!isValidEmail(registerForm.email)) {
-    message.warning("邮箱格式不正确");
-    return;
-  }
-  const blockedReason = getBlockedRegistrationEmailReason(registerForm.email);
-  if (blockedReason) {
-    message.warning(blockedReason);
-    return;
-  }
-  registerCodeLoading.value = true;
-  const email = registerForm.email.trim().toLowerCase();
-  try {
-    await checkRegistrationEmail(email);
-    if (registerForm.email.trim().toLowerCase() !== email) return;
-    const { sendRegisterEmailCode } = await loadCloudbaseAuth();
-    const verificationId = await sendRegisterEmailCode(email);
-    if (registerForm.email.trim().toLowerCase() !== email) return;
-    registerForm.verificationId = verificationId;
-    message.success("验证码已发送，请检查邮箱");
-  } catch (err: any) {
-    registerForm.verificationId = "";
-    message.error(err.response?.data?.detail || err.message || "验证码发送失败");
-  } finally {
-    registerCodeLoading.value = false;
-  }
-}
-
-async function handleRegisterSubmit() {
-  if (!registerForm.email || !registerForm.verificationCode || !registerForm.username || !registerForm.password) {
-    message.warning("请完整填写注册信息");
-    return;
-  }
-  if (!isValidEmail(registerForm.email)) {
-    message.warning("邮箱格式不正确");
-    return;
-  }
-  const blockedReason = getBlockedRegistrationEmailReason(registerForm.email);
-  if (blockedReason) {
-    message.warning(blockedReason);
-    return;
-  }
-  if (registerForm.password.length < 6) {
-    message.warning("密码至少6位");
-    return;
-  }
-  if (!/^\d{6}$/.test(registerForm.verificationCode.trim())) {
-    message.warning("请输入正确的 6 位验证码");
-    return;
-  }
-  if (!registerForm.verificationId) {
-    message.warning("请先获取邮箱验证码");
-    return;
-  }
-  if (registerForm.password !== registerForm.confirmPassword) {
-    message.warning("两次密码不一致");
-    return;
-  }
-  const normalizedInviteOrPromoCode = normalizeInviteCode(registerForm.promoCode);
-  const isPersonalInviteRegistration = isPersonalInviteCodeValue(normalizedInviteOrPromoCode);
-  if (normalizedInviteOrPromoCode) {
-    try {
-      if (isPersonalInviteRegistration) {
-        await validateInviteCode(normalizedInviteOrPromoCode);
-      } else {
-        await validatePromoCode(normalizedInviteOrPromoCode);
-      }
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || err.message || "邀请码无效");
-      return;
-    }
-  }
-  if (!registerForm.agreedTerms) {
-    message.warning("请先阅读并同意用户协议和隐私政策");
-    return;
-  }
-  registerLoading.value = true;
-  try {
-    const res = await apiRegister(
-      registerForm.username.trim(),
-      registerForm.email.trim(),
-      registerForm.password,
-      normalizedInviteOrPromoCode || undefined,
-      {
-        verificationCode: registerForm.verificationCode.trim(),
-        verificationId: registerForm.verificationId,
-      },
-    );
-    auth.setAuth(res.token, res.user);
-    message.success("注册成功");
-    if (isPersonalInviteRegistration) {
-      clearStoredInviteCode();
-    } else if (normalizedInviteOrPromoCode) {
-      clearStoredPromoCode();
-      lockedPromoFromSession.value = "";
-    }
-    notification.success({
-      message: "赠送积分已到账",
-      description: normalizedInviteOrPromoCode && !isPersonalInviteRegistration
-        ? `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分和推广码额外奖励的 ${PROMO_CODE_REWARD_CREDITS} 个积分已到账。`
-        : isPersonalInviteRegistration
-          ? `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账，邀请关系已绑定。`
-          : `新用户注册赠送的 ${NEW_USER_TRIAL_CREDITS} 个试用积分已到账。`,
-      placement: "topRight",
-      duration: 6,
-    });
-    loginModalVisible.value = false;
-    resetAuthForms();
-    await nextTick();
-    await checkAnnouncement();
-    await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
-    await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
-    startSystemMessagePolling();
-  } catch (err: any) {
-    message.error(err.response?.data?.detail || err.message || "注册失败");
-  } finally {
-    registerLoading.value = false;
+async function handleAuthLoggedIn() {
+  const redirectPath = expiredSessionRedirectPath.value;
+  expiredSessionRedirectPath.value = "";
+  await nextTick();
+  await checkAnnouncement();
+  await syncUserCompletedUnreadFeedbackCount({ showToast: true, forceToast: true });
+  await syncUserUnreadSystemMessageCount({ showToast: true, forceToast: true });
+  startSystemMessagePolling();
+  if (redirectPath && redirectPath !== route.fullPath) {
+    await router.replace(redirectPath);
   }
 }
 
@@ -1523,7 +1137,6 @@ const announcementConfig = ref<AnnouncementConfig>({
   announcement_updated_at: null,
 });
 const ANNOUNCEMENT_DISMISS_KEY = "systemAnnouncementDismissState";
-const authInputPrefixStyle = { color: "var(--theme-input-prefix-color)" };
 
 const avatarUrl = computed(() => getAvatarImageSrc(auth.user?.avatar_url || ""));
 const avatarFallback = computed(() => auth.user?.username?.charAt(0)?.toUpperCase() || "U");
@@ -3183,225 +2796,15 @@ watch(
       </a-form>
     </a-modal>
 
-    <a-modal
+    <AuthModal
       v-model:open="loginModalVisible"
-      :title="null"
-      :footer="null"
-      :width="420"
-      centered
-      @after-close="resetAuthForms"
-    >
-      <a-tabs v-model:activeKey="authTab" centered class="auth-tabs">
-        <a-tab-pane key="login" tab="登录">
-          <a-form class="auth-form" layout="vertical" :model="loginForm" @finish="handleLoginSubmit">
-            <a-form-item label="邮箱（推荐）/ 用户名">
-              <a-input
-                v-model:value="loginForm.account"
-                size="large"
-                placeholder="优先使用邮箱登录"
-                :prefix="h(UserOutlined, { style: authInputPrefixStyle })"
-              />
-            </a-form-item>
-            <a-form-item label="密码">
-              <a-input-password
-                v-model:value="loginForm.password"
-                size="large"
-                placeholder="请输入密码"
-                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
-                @press-enter="handleLoginSubmit"
-              />
-            </a-form-item>
-            <div class="auth-row-action">
-              <a @click="openForgotPasswordDialog">忘记密码？</a>
-            </div>
-            <a-form-item style="margin-bottom: 8px">
-              <a-button
-                type="primary"
-                html-type="submit"
-                size="large"
-                :loading="loginLoading"
-                block
-                class="warm-primary-btn"
-              >
-                <template #icon><ThunderboltOutlined /></template>
-                {{ loginLoading ? "登录中..." : "登录" }}
-              </a-button>
-            </a-form-item>
-            <div class="auth-switch-hint">
-              用户名重复时，请改用邮箱登录
-            </div>
-            <div class="auth-switch-hint" style="margin-top: 6px">
-              还没有账号？<a @click="authTab = 'register'">立即注册</a>
-            </div>
-          </a-form>
-        </a-tab-pane>
-
-        <a-tab-pane key="register" tab="注册">
-          <a-form class="auth-form" layout="vertical" :model="registerForm" @finish="handleRegisterSubmit">
-            <a-form-item label="邮箱">
-              <a-input
-                v-model:value="registerForm.email"
-                size="large"
-                placeholder="请输入常用邮箱"
-                :prefix="h(MailOutlined, { style: authInputPrefixStyle })"
-                :maxlength="255"
-              />
-            </a-form-item>
-            <a-form-item label="验证码">
-              <div class="auth-code-row">
-                <a-input
-                  v-model:value="registerForm.verificationCode"
-                  size="large"
-                  placeholder="请输入 6 位验证码"
-                  :maxlength="6"
-                  @press-enter="handleRegisterSubmit"
-                />
-                <a-button
-                  size="large"
-                  class="auth-code-btn"
-                  :loading="registerCodeLoading"
-                  @click="handleSendRegisterCode"
-                >
-                  {{ registerCodeLoading ? "发送中..." : (registerForm.verificationId ? "重新发送" : "发送验证码") }}
-                </a-button>
-              </div>
-            </a-form-item>
-            <a-form-item label="用户名">
-              <a-input
-                v-model:value="registerForm.username"
-                size="large"
-                placeholder="2-20 个字符"
-                :prefix="h(UserOutlined, { style: authInputPrefixStyle })"
-                :maxlength="20"
-              />
-            </a-form-item>
-            <a-form-item label="密码">
-              <a-input-password
-                v-model:value="registerForm.password"
-                size="large"
-                placeholder="至少 6 位"
-                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
-              />
-            </a-form-item>
-            <a-form-item label="确认密码">
-              <a-input-password
-                v-model:value="registerForm.confirmPassword"
-                size="large"
-                placeholder="请再次输入密码"
-                :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
-                @press-enter="handleRegisterSubmit"
-              />
-            </a-form-item>
-            <a-form-item :label="lockedPromoFromSession ? '推广码' : '邀请码（选填）'">
-              <a-input
-                v-model:value="registerForm.promoCode"
-                size="large"
-                :placeholder="lockedPromoFromSession ? '已通过推广链接自动填入' : '填写邀请码或推广码（选填）'"
-                :maxlength="32"
-                :disabled="Boolean(lockedPromoFromSession)"
-              />
-            </a-form-item>
-            <a-form-item class="auth-agreement-item">
-              <a-checkbox v-model:checked="registerForm.agreedTerms">
-                我同意
-                <RouterLink to="/user-agreement" target="_blank">用户协议</RouterLink>
-                和
-                <RouterLink to="/privacy-policy" target="_blank">隐私政策</RouterLink>
-              </a-checkbox>
-            </a-form-item>
-            <a-form-item style="margin-bottom: 8px">
-              <a-button
-                type="primary"
-                html-type="submit"
-                size="large"
-                :loading="registerLoading"
-                :disabled="!registerForm.agreedTerms"
-                block
-                class="warm-primary-btn"
-              >
-                <template #icon><UserAddOutlined /></template>
-                {{ registerLoading ? "注册中..." : "注册" }}
-              </a-button>
-            </a-form-item>
-            <div class="auth-switch-hint">
-              已有账号？<a @click="authTab = 'login'">去登录</a>
-            </div>
-          </a-form>
-        </a-tab-pane>
-      </a-tabs>
-    </a-modal>
-
-    <a-modal
-      v-model:open="forgotPasswordDialogOpen"
-      title="找回密码"
-      :footer="null"
-      :width="420"
-      centered
-      @after-close="resetForgotPasswordForm"
-    >
-      <a-form class="auth-form forgot-password-form" layout="vertical" :model="forgotPasswordForm" @finish="handleForgotPasswordSubmit">
-        <a-form-item label="注册邮箱">
-          <a-input
-            v-model:value="forgotPasswordForm.email"
-            size="large"
-            placeholder="请输入注册邮箱"
-            :prefix="h(MailOutlined, { style: authInputPrefixStyle })"
-            :maxlength="255"
-          />
-        </a-form-item>
-        <a-form-item label="验证码">
-          <div class="auth-code-row">
-            <a-input
-              v-model:value="forgotPasswordForm.verificationCode"
-              size="large"
-              placeholder="请输入 6 位验证码"
-              :maxlength="6"
-            />
-            <a-button
-              size="large"
-              class="auth-code-btn"
-              :loading="forgotPasswordCodeLoading"
-              @click="handleSendForgotPasswordCode"
-            >
-              {{ forgotPasswordCodeLoading ? "发送中..." : (forgotPasswordForm.verificationId ? "重新发送" : "发送验证码") }}
-            </a-button>
-          </div>
-        </a-form-item>
-        <a-form-item label="新密码">
-          <a-input-password
-            v-model:value="forgotPasswordForm.newPassword"
-            size="large"
-            placeholder="至少 6 位"
-            :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
-          />
-        </a-form-item>
-        <a-form-item label="确认新密码">
-          <a-input-password
-            v-model:value="forgotPasswordForm.confirmPassword"
-            size="large"
-            placeholder="请再次输入新密码"
-            :prefix="h(LockOutlined, { style: authInputPrefixStyle })"
-            @press-enter="handleForgotPasswordSubmit"
-          />
-        </a-form-item>
-        <a-form-item style="margin-bottom: 8px">
-          <a-button
-            type="primary"
-            html-type="submit"
-            size="large"
-            :loading="forgotPasswordLoading"
-            block
-            class="warm-primary-btn"
-          >
-            <template #icon><LockOutlined /></template>
-            {{ forgotPasswordLoading ? "重置中..." : "重置密码" }}
-          </a-button>
-        </a-form-item>
-        <div class="auth-switch-hint">
-          想起密码了？<a @click="forgotPasswordDialogOpen = false; authTab = 'login'; loginModalVisible = true">返回登录</a>
-        </div>
-      </a-form>
-    </a-modal>
+      v-model:tab="authTab"
+      :locked-promo-code="lockedPromoFromSession"
+      :seed-promo-code="seedRegisterPromoCode"
+      @logged-in="handleAuthLoggedIn"
+      @registered="handleRegistered"
+      @invite-cleared="clearInviteAndPromoSeeds"
+    />
   </a-layout>
 </template>
 
@@ -5129,94 +4532,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
     border-color: var(--theme-border-strong) !important;
     background: linear-gradient(180deg, var(--theme-panel-bg-soft), var(--theme-panel-bg-strong)) !important;
   }
-}
-
-.auth-tabs {
-  :deep(.ant-tabs-nav) {
-    margin-bottom: 0;
-  }
-
-  :deep(.ant-tabs-tab) {
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--theme-text-muted);
-  }
-
-  :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
-    color: var(--theme-accent-text) !important;
-  }
-
-  :deep(.ant-tabs-ink-bar) {
-    background: var(--theme-accent);
-    height: 3px;
-    border-radius: 2px;
-  }
-}
-
-.auth-form {
-  margin-top: 4px;
-
-  :deep(.ant-form-item) {
-    margin-bottom: 14px;
-  }
-
-  :deep(.ant-form-item-label) {
-    padding-bottom: 4px;
-  }
-
-  :deep(.ant-form-item-label > label) {
-    height: 20px;
-    font-size: 13px;
-  }
-
-  .auth-agreement-item {
-    margin-bottom: 10px;
-  }
-}
-
-.auth-switch-hint {
-  text-align: center;
-  font-size: 13px;
-  color: var(--theme-text-muted);
-
-  a {
-    color: var(--theme-link);
-    font-weight: 600;
-    cursor: pointer;
-
-    &:hover {
-      color: var(--theme-link-hover);
-    }
-  }
-}
-
-.auth-row-action {
-  margin: -4px 0 12px;
-  text-align: right;
-  font-size: 13px;
-
-  a {
-    color: var(--theme-link);
-    font-weight: 600;
-    cursor: pointer;
-
-    &:hover {
-      color: var(--theme-link-hover);
-    }
-  }
-}
-
-.auth-code-row {
-  display: flex;
-  gap: 10px;
-
-  > :first-child {
-    flex: 1;
-  }
-}
-
-.auth-code-btn {
-  flex: 0 0 auto;
 }
 
 @media (min-width: 961px) {
