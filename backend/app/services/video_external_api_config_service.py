@@ -4,10 +4,12 @@ import json
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.video_external_api_config import VideoExternalApiConfig
 from app.models.video_external_api_scene_binding import VideoExternalApiSceneBinding
+from app.models.video_task_api_attempt import VideoTaskApiAttempt
 from app.schemas.video_external_api_config import (
     VideoExternalApiConfigCreate,
     VideoExternalApiConfigOut,
@@ -336,6 +338,16 @@ def set_video_config_status(db: Session, config_id: int, status_value: str) -> V
 
 def delete_video_config(db: Session, config_id: int) -> None:
     config = _require_config(db, config_id)
+    referenced = (
+        db.query(VideoTaskApiAttempt.id)
+        .filter(VideoTaskApiAttempt.api_config_id == config.id)
+        .first()
+    )
+    if referenced:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该接口已被历史任务引用，无法删除。如需停用，请改为停用该接口。",
+        )
     (
         db.query(VideoExternalApiSceneBinding)
         .filter(VideoExternalApiSceneBinding.api_config_id == config.id)
@@ -346,8 +358,15 @@ def delete_video_config(db: Session, config_id: int) -> None:
         .filter(VideoExternalApiSceneBinding.backup_api_config_id == config.id)
         .update({"backup_api_config_id": None}, synchronize_session=False)
     )
-    db.delete(config)
-    db.commit()
+    try:
+        db.delete(config)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该接口已被历史任务引用，无法删除。如需停用，请改为停用该接口。",
+        )
 
 
 def list_video_scene_bindings(db: Session) -> list[VideoExternalApiSceneBindingOut]:

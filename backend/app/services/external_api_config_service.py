@@ -5,11 +5,13 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.api_key import ApiKey
 from app.models.external_api_config import ExternalApiConfig
 from app.models.external_api_scene_binding import ExternalApiSceneBinding
+from app.models.task_api_attempt import TaskApiAttempt
 from app.schemas.external_api_config import (
     ExternalApiConfigCreate,
     ExternalApiConfigOut,
@@ -705,6 +707,16 @@ def set_config_status(db: Session, config_id: int, status_value: str) -> Externa
 
 def delete_config(db: Session, config_id: int) -> None:
     config = get_config_or_404(db, config_id)
+    referenced = (
+        db.query(TaskApiAttempt.id)
+        .filter(TaskApiAttempt.api_config_id == config.id)
+        .first()
+    )
+    if referenced:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该接口已被历史任务引用，无法删除。如需停用，请改为停用该接口。",
+        )
     (
         db.query(ExternalApiSceneBinding)
         .filter(ExternalApiSceneBinding.api_config_id == config.id)
@@ -715,8 +727,15 @@ def delete_config(db: Session, config_id: int) -> None:
         .filter(ExternalApiSceneBinding.backup_api_config_id == config.id)
         .update({"backup_api_config_id": None}, synchronize_session=False)
     )
-    db.delete(config)
-    db.commit()
+    try:
+        db.delete(config)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该接口已被历史任务引用，无法删除。如需停用，请改为停用该接口。",
+        )
 
 
 def list_scene_bindings(db: Session) -> list[ExternalApiSceneBindingOut]:

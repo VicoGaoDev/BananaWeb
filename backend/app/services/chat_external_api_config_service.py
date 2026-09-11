@@ -4,6 +4,7 @@ import json
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.chat_external_api_config import ChatExternalApiConfig
@@ -233,8 +234,15 @@ def delete_chat_config(db: Session, config_id: int) -> None:
         .filter(ChatExternalApiSceneBinding.backup_api_config_id == config.id)
         .update({"backup_api_config_id": None}, synchronize_session=False)
     )
-    db.delete(config)
-    db.commit()
+    try:
+        db.delete(config)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该接口已被历史任务引用，无法删除。如需停用，请改为停用该接口。",
+        )
 
 
 def list_chat_scene_bindings(db: Session) -> list[ChatExternalApiSceneBindingOut]:

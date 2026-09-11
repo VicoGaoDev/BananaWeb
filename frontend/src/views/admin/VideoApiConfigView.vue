@@ -2,6 +2,7 @@
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import {
+  DownOutlined,
   MoreOutlined,
   PlusOutlined,
   SwapOutlined,
@@ -94,6 +95,7 @@ const isSceneCopyMode = ref(false);
 const configGroupFilter = ref("all");
 const configRequestFormatFilter = ref<"all" | ExternalApiRequestFormat>("all");
 const configNameFilter = ref("");
+const expandedConfigGroups = ref<string[]>([]);
 const bindingGroupFilter = ref("all");
 const bindingAvailabilityFilter = ref<"all" | VideoGenerationMode>("all");
 const bindingNameFilter = ref("");
@@ -249,6 +251,27 @@ const groupedConfigs = computed(() => {
       }),
     }));
 });
+const allConfigGroupsExpanded = computed(() => (
+  groupedConfigs.value.length > 0
+  && groupedConfigs.value.every((block) => expandedConfigGroups.value.includes(block.group))
+));
+
+function isConfigGroupExpanded(group: string) {
+  return expandedConfigGroups.value.includes(group);
+}
+
+function toggleConfigGroup(group: string) {
+  expandedConfigGroups.value = isConfigGroupExpanded(group)
+    ? expandedConfigGroups.value.filter((item) => item !== group)
+    : [...expandedConfigGroups.value, group];
+}
+
+function toggleAllConfigGroups() {
+  expandedConfigGroups.value = allConfigGroupsExpanded.value
+    ? []
+    : groupedConfigs.value.map((block) => block.group);
+}
+
 const configUsageMap = computed(() => {
   const map = new Map<number, ConfigUsageScene[]>();
   const appendUsage = (configId: number | null | undefined, binding: VideoExternalApiSceneBinding, role: ConfigUsageRole) => {
@@ -1219,7 +1242,11 @@ function handleDeleteConfig(item: VideoExternalApiConfig) {
         message.success("视频接口配置已删除");
         await load();
       } catch (err: any) {
-        message.error(formatRequestError(err));
+        Modal.warning({
+          title: "无法删除该接口",
+          content: formatRequestError(err),
+          centered: true,
+        });
       }
     },
   });
@@ -1426,6 +1453,9 @@ onMounted(load);
       <a-card title="接口配置" class="warm-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 40ms">
         <template #extra>
           <a-space wrap>
+            <a-button class="api-secondary-btn" @click="toggleAllConfigGroups">
+              {{ allConfigGroupsExpanded ? "全部折叠" : "全部展开" }}
+            </a-button>
             <a-input v-model:value="configNameFilter" class="warm-input" allow-clear placeholder="按名称筛选" style="width: 180px" />
             <a-select
               v-model:value="configGroupFilter"
@@ -1462,10 +1492,18 @@ onMounted(load);
           <a-empty v-if="!groupedConfigs.length" description="没有匹配的接口" />
           <div v-else class="api-config-groups">
             <section v-for="block in groupedConfigs" :key="block.group" class="api-config-group">
-              <div class="api-config-group-title">
+              <button
+                type="button"
+                class="api-config-group-title"
+                :class="{ 'is-expanded': isConfigGroupExpanded(block.group) }"
+                @click="toggleConfigGroup(block.group)"
+              >
+                <DownOutlined class="api-config-group-arrow" />
                 <span>{{ block.group }}</span>
                 <span class="api-config-group-count">{{ block.items.length }} 个接口</span>
-              </div>
+              </button>
+              <div class="api-config-group-body" :class="{ 'is-expanded': isConfigGroupExpanded(block.group) }">
+              <div class="api-config-group-body-inner">
               <div class="api-config-grid">
                 <article
                   v-for="item in block.items"
@@ -1538,6 +1576,8 @@ onMounted(load);
                     {{ configUsageLabel(item.id) }}
                   </div>
                 </article>
+              </div>
+              </div>
               </div>
             </section>
           </div>
@@ -2332,6 +2372,48 @@ onMounted(load);
   font-weight: 700;
 }
 
+button.api-config-group-title {
+  align-items: center;
+  width: 100%;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.api-config-group-title.is-expanded {
+  margin-bottom: 12px;
+}
+
+.api-config-group-arrow {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+button.api-config-group-title.is-expanded .api-config-group-arrow {
+  transform: rotate(180deg);
+}
+
+.api-config-group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s var(--motion-ease-enter, cubic-bezier(0.24, 0.72, 0.32, 1));
+}
+
+.api-config-group-body.is-expanded {
+  grid-template-rows: 1fr;
+}
+
+.api-config-group-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .api-config-group-count {
   color: var(--text-secondary);
   font-size: 12px;
@@ -2381,8 +2463,30 @@ onMounted(load);
   box-shadow: 0 8px 20px rgba(176, 126, 36, 0.1);
 }
 
-.api-config-tile.is-disabled {
-  opacity: 0.88;
+.api-config-tile.is-disabled,
+.api-config-tile.is-used.is-disabled,
+.api-config-tile.is-unused.is-disabled {
+  opacity: 1;
+  border-color: #b8b8b8;
+  background: #d8d8d8;
+  box-shadow: none;
+}
+
+.api-config-tile.is-disabled:hover,
+.api-config-tile.is-used.is-disabled:hover,
+.api-config-tile.is-unused.is-disabled:hover {
+  border-color: #9e9e9e;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.api-config-tile.is-disabled .api-config-tile-name,
+.api-config-tile.is-disabled .api-config-more-btn {
+  color: #6b6b6b;
+}
+
+.api-config-tile.is-disabled .api-config-tile-meta,
+.api-config-tile.is-disabled .api-config-tile-meta.is-unused {
+  color: #7a7a7a;
 }
 
 .api-config-tile-top {
