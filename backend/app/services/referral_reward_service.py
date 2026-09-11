@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.user_promo_code import UserPromoCode
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 INVITE_CODE_PREFIX = "U"
@@ -427,9 +427,7 @@ def _build_reward_description(invitee: User, source_type: str, source_id: str, r
 
 
 def _build_user_label(user: User) -> str:
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    return f"{username} ({email})" if email else username
+    return format_wecom_user_label(user)
 
 
 def _source_type_label(source_type: str) -> str:

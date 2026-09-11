@@ -9,7 +9,7 @@ from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.user import User
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account, get_user_credit_balance
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 REDEEM_KEY_ALPHABET = string.ascii_uppercase + string.digits
@@ -48,9 +48,7 @@ def _serialize_redeem_key(row: CreditRedeemKey) -> dict:
 
 
 def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user: User) -> None:
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    user_label = f"{username} ({email})" if email else username
+    user_label = format_wecom_user_label(user)
     credit_account = get_user_credit_account(db, user.id, create_if_missing=False)
     remain_credit = int(credit_account.remain_credit or 0) if credit_account else 0
     used_credit = int(credit_account.used_credit or 0) if credit_account else 0

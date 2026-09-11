@@ -77,7 +77,7 @@ from app.services.video_task_service import (
     is_video_task_credit_refunded,
 )
 from app.services.history_service import _calculate_task_run_time
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import LOCAL_TZ, now_local, to_local_naive
 from app.utils.security import hash_password
 
@@ -513,11 +513,7 @@ def _serialize_user_with_balance(user: User, balance: int, consumed_credits: int
 
 
 def _format_user_label(user: User | None) -> str:
-    if not user:
-        return "-"
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    return f"{username} ({email})" if email else username
+    return format_wecom_user_label(user)
 
 
 def _status_label(value: str) -> str:

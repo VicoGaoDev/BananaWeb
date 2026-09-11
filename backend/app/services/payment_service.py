@@ -26,7 +26,7 @@ from app.models.user import User
 from app.services.promo_reward_service import PROMO_REBATE_SOURCE_PAYMENT, apply_promo_reward_safely
 from app.services.referral_reward_service import REFERRAL_SOURCE_PAYMENT, apply_referral_reward_safely
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 ONLINE_PURCHASE_DESCRIPTION_PREFIX = "在线支付订单 "
@@ -639,9 +639,7 @@ def get_payment_order_by_order_no(
 
 def _send_payment_success_notification(db: Session, order: PaymentOrder) -> None:
     user = order.user
-    username = user.username if user else f"ID {order.user_id}"
-    email = (user.email or "").strip() if user else ""
-    user_label = f"{username} ({email})" if email else username
+    user_label = format_wecom_user_label(user, fallback_id=order.user_id)
     amount_yuan = f"{Decimal(int(order.amount_fen or 0)) / Decimal('100'):.2f}"
     credit_account = get_user_credit_account(db, order.user_id, create_if_missing=False)
     remain_credit = int(credit_account.remain_credit or 0) if credit_account else 0

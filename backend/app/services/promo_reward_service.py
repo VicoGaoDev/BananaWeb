@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.promo_reward_grant import PromoRewardGrant
 from app.models.user import User
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import now_local, to_local_naive
 
 PROMO_REBATE_MAX_GRANTS = 5
@@ -369,9 +369,7 @@ def apply_promo_reward_safely(
 
 
 def _build_user_label(user: User) -> str:
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    return f"{username} ({email})" if email else username
+    return format_wecom_user_label(user)
 
 
 def _send_promo_reward_notification(

@@ -5,8 +5,19 @@ import logging
 import httpx
 
 from app.config import settings
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+def format_wecom_user_label(user: User | None, *, fallback_id: int | None = None) -> str:
+    if user is None:
+        return f"ID {fallback_id}" if fallback_id is not None else "-"
+    username = (user.username or "").strip() or f"ID {user.id}"
+    extras = [item for item in ((user.email or "").strip(), (user.phone or "").strip()) if item]
+    if extras:
+        return f"{username} ({' / '.join(extras)})"
+    return username
 
 
 def is_wecom_notify_enabled() -> bool:

@@ -20,7 +20,7 @@ from app.services.business_id_service import (
 from app.services.task_service import is_task_generation_failure_credit_refunded
 from app.services.task_type_service import get_task_scene_type_map, resolve_task_type_for_task
 from app.services.user_credit_service import get_user_credit_account
-from app.services.wecom_notify_service import send_wecom_markdown
+from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
 from app.utils.datetime_utils import now_local
 
 VALID_FEEDBACK_STATUSES = {"pending", "processing", "completed"}
@@ -280,9 +280,7 @@ def _send_feedback_message_notification(db: Session, item: Feedback, message: Fe
     content = (message.content or "").strip()
     content_preview = content if len(content) <= 200 else content[:200] + "..."
     attachment_count = len(_parse_feedback_attachments(message.attachments_json))
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    user_label = f"{username} ({email})" if email else username
+    user_label = format_wecom_user_label(user)
     send_wecom_markdown(
         "## 用户追加反馈消息\n"
         f"> 反馈单号: `{feedback_external_id(item)}`\n"
@@ -297,9 +295,7 @@ def _send_feedback_created_notification(db: Session, item: Feedback, *, user: Us
     content_preview = content if len(content) <= 200 else content[:200] + "..."
     feedback_type = _coerce_feedback_type(item.feedback_type)
     attachment_count = len(_parse_feedback_attachments(item.attachments_json))
-    username = (user.username or "").strip() or f"ID {user.id}"
-    email = (user.email or "").strip()
-    user_label = f"{username} ({email})" if email else username
+    user_label = format_wecom_user_label(user)
     credit_account = get_user_credit_account(db, user.id, create_if_missing=False)
     remain_credit = int(credit_account.remain_credit or 0) if credit_account else 0
     used_credit = int(credit_account.used_credit or 0) if credit_account else 0
