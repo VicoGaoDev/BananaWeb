@@ -4430,19 +4430,31 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                                 <div>推荐使用场景</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（顶级）</div>
+                                <div>G-Image 2.5 Flare</div>
+                                <div>优于 G-Image 2，出图更利落，细节更好</div>
+                                <div>较少</div>
+                                <div>日常首选（社媒、商品图、快速试稿、批量生产）</div>
+                              </div>
+                              <div class="model-help-grid">
+                                <div>G-Image 2.5 Sunburst</div>
+                                <div>更精细，改图控制更好</div>
+                                <div>最少</div>
+                                <div>成片、复杂编辑、局部精修，需要只改指定位置时使用</div>
+                              </div>
+                              <div class="model-help-grid">
+                                <div>G-Image 2 · 顶级</div>
                                 <div>最高保真度，锐利边缘、精细纹理、文字表现最佳</div>
                                 <div>最少</div>
                                 <div>最终成品、完美文字、高清精度需求（印刷、专业输出、复杂构图）</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（高质量）</div>
+                                <div>G-Image 2 · 高质量</div>
                                 <div>平衡，细节较好</div>
                                 <div>较少</div>
                                 <div>大多数日常生产用途（社交媒体、网页素材等）</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（性价比）</div>
+                                <div>G-Image 2 · 性价比</div>
                                 <div>较粗糙，细节一般</div>
                                 <div>较多</div>
                                 <div>快速迭代、草稿、缩略图、高频批量生成、成本敏感场景</div>
@@ -4814,19 +4826,31 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                                 <div>推荐使用场景</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（顶级）</div>
+                                <div>G-Image 2.5 Flare</div>
+                                <div>优于 G-Image 2，出图更利落，细节更好</div>
+                                <div>较少</div>
+                                <div>日常首选（社媒、商品图、快速试稿、批量生产）</div>
+                              </div>
+                              <div class="model-help-grid">
+                                <div>G-Image 2.5 Sunburst</div>
+                                <div>更精细，改图控制更好</div>
+                                <div>最少</div>
+                                <div>成片、复杂编辑、局部精修，需要只改指定位置时使用</div>
+                              </div>
+                              <div class="model-help-grid">
+                                <div>G-Image 2 · 顶级</div>
                                 <div>最高保真度，锐利边缘、精细纹理、文字表现最佳</div>
                                 <div>最少</div>
                                 <div>最终成品、完美文字、高清精度需求（印刷、专业输出、复杂构图）</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（高质量）</div>
+                                <div>G-Image 2 · 高质量</div>
                                 <div>平衡，细节较好</div>
                                 <div>较少</div>
                                 <div>大多数日常生产用途（社交媒体、网页素材等）</div>
                               </div>
                               <div class="model-help-grid">
-                                <div>Image 2（性价比）</div>
+                                <div>G-Image 2 · 性价比</div>
                                 <div>较粗糙，细节一般</div>
                                 <div>较多</div>
                                 <div>快速迭代、草稿、缩略图、高频批量生成、成本敏感场景</div>
