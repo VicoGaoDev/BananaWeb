@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons-vue";
+import { DeleteOutlined, MoreOutlined, PlusOutlined, SwapOutlined } from "@ant-design/icons-vue";
 import { getPreviewImageSrc } from "@/api/images";
 import { isImageUploadTooLarge, MAX_IMAGE_UPLOAD_SIZE_TEXT, uploadReferenceImage } from "@/api/upload";
 import {
@@ -31,6 +31,14 @@ import type {
   ChatStarterPrompt,
   ExternalApiConfigStatus,
 } from "@/types";
+
+type ConfigUsageRole = "primary" | "backup";
+type ConfigUsageScene = {
+  scene_key: string;
+  scene_label: string;
+  display_name: string;
+  roles: ConfigUsageRole[];
+};
 
 const MAX_STARTER_PROMPTS = 6;
 const DEFAULT_STARTER_PROMPTS: ChatStarterPrompt[] = [
@@ -107,6 +115,12 @@ const bindingSavingKey = ref("");
 const modalOpen = ref(false);
 const sceneModalOpen = ref(false);
 const sceneMetaModalOpen = ref(false);
+const copyModalOpen = ref(false);
+const copyEditingKey = ref("");
+const copyForm = reactive({
+  display_name: "",
+  subtitle: "",
+});
 const editingId = ref<number | null>(null);
 const sceneEditingKey = ref("");
 const isCopyMode = ref(false);
@@ -163,24 +177,14 @@ const sceneMetaForm = reactive<ChatExternalApiSceneBindingMetaPayload>({
   starter_prompts: [],
 });
 
-const configColumns = [
-  { title: "名称", dataIndex: "name", width: 240 },
-  { title: "分组", dataIndex: "group_name", width: 100 },
-  { title: "请求地址", dataIndex: "request_url", ellipsis: true },
-  { title: "文本路径", dataIndex: "result_text_field", width: 220 },
-  { title: "状态", dataIndex: "status", width: 100 },
-  { title: "更新时间", dataIndex: "updated_at", width: 180 },
-  { title: "操作", key: "action", width: 460 },
-];
-
 const bindingColumns = [
-  { title: "调用场景", key: "scene", width: 240 },
-  { title: "显示文案", key: "copy", width: 300 },
-  { title: "当前绑定接口", key: "current", width: 260 },
-  { title: "主接口", key: "bind", width: 280 },
-  { title: "备用接口", key: "backup", width: 280 },
-  { title: "积分 / 上下文", key: "credit", width: 220 },
-  { title: "操作", key: "action", width: 420 },
+  { title: "场景", key: "scene", width: 196, ellipsis: true },
+  { title: "主接口", key: "bind", width: 400, ellipsis: true },
+  { title: "互换", key: "swap", width: 64 },
+  { title: "备用接口", key: "backup", width: 400, ellipsis: true },
+  { title: "积分", key: "credit", width: 128 },
+  { title: "排序", key: "sort", width: 72 },
+  { title: "", key: "action", width: 56 },
 ];
 
 const modalTitle = computed(() => {
@@ -210,6 +214,109 @@ const filteredSceneBindings = computed(() => sceneBindings.value.filter((item) =
   )) return false;
   return true;
 }));
+const groupedConfigs = computed(() => {
+  const map = new Map<string, ChatExternalApiConfig[]>();
+  for (const item of filteredConfigs.value) {
+    const key = item.group_name || "未分组";
+    const list = map.get(key) ?? [];
+    list.push(item);
+    map.set(key, list);
+  }
+  return Array.from(map.entries())
+    .sort(([a, aItems], [b, bItems]) => {
+      const countDiff = bItems.length - aItems.length;
+      if (countDiff !== 0) return countDiff;
+      return a.localeCompare(b, "zh-CN");
+    })
+    .map(([group, items]) => ({
+      group,
+      items: [...items].sort((a, b) => {
+        if (a.status !== b.status) return a.status === "enabled" ? -1 : 1;
+        return a.name.localeCompare(b.name, "zh-CN");
+      }),
+    }));
+});
+const configUsageMap = computed(() => {
+  const map = new Map<number, ConfigUsageScene[]>();
+  const appendUsage = (configId: number | null | undefined, binding: ChatExternalApiSceneBinding, role: ConfigUsageRole) => {
+    if (!configId) return;
+    const list = map.get(configId) ?? [];
+    const existing = list.find((item) => item.scene_key === binding.scene_key);
+    if (existing) {
+      if (!existing.roles.includes(role)) existing.roles.push(role);
+    } else {
+      list.push({
+        scene_key: binding.scene_key,
+        scene_label: binding.scene_label,
+        display_name: binding.display_name,
+        roles: [role],
+      });
+    }
+    map.set(configId, list);
+  };
+  for (const binding of sceneBindings.value) {
+    appendUsage(binding.api_config_id, binding, "primary");
+    appendUsage(binding.backup_api_config_id, binding, "backup");
+  }
+  return map;
+});
+const groupedSceneBindings = computed(() => {
+  const items = [...filteredSceneBindings.value].sort((a, b) => {
+    const sortDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0);
+    if (sortDiff !== 0) return sortDiff;
+    return a.scene_label.localeCompare(b.scene_label, "zh-CN");
+  });
+  return items.length ? [{ sceneType: "chat", items }] : [];
+});
+const bindingOptionGroups = computed(() => {
+  const map = new Map<string, Array<{ label: string; value: number }>>();
+  for (const item of configs.value.filter((config) => config.status === "enabled")) {
+    const group = item.group_name || "未分组";
+    const list = map.get(group) ?? [];
+    list.push({ label: item.name, value: item.id });
+    map.set(group, list);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b, "zh-CN"))
+    .map(([group, options]) => ({
+      group,
+      options: options.sort((a, b) => a.label.localeCompare(b.label, "zh-CN")),
+    }));
+});
+
+function configCardName(item: ChatExternalApiConfig) {
+  const name = (item.name || "").trim() || "未命名接口";
+  const group = (item.group_name || "").trim();
+  if (!group || group === "未分组") return name;
+  const prefixes = [`${group}-`, `${group} `];
+  for (const prefix of prefixes) {
+    if (name.startsWith(prefix) && name.length > prefix.length) {
+      return name.slice(prefix.length).replace(/^[-_\s]+/, "") || name;
+    }
+  }
+  return name;
+}
+
+function configUsageScenes(configId: number) {
+  return configUsageMap.value.get(configId) || [];
+}
+
+function configUsageCount(configId: number) {
+  return configUsageScenes(configId).length;
+}
+
+function configUsageLabel(configId: number) {
+  const count = configUsageCount(configId);
+  return count > 0 ? `${count} 个场景使用` : "未被场景使用";
+}
+
+function configUsageRoleLabel(roles: ConfigUsageRole[]) {
+  return roles.map((role) => (role === "primary" ? "主接口" : "备用接口")).join(" / ");
+}
+
+function configUsageSceneName(scene: ConfigUsageScene) {
+  return scene.display_name.trim() || scene.scene_label.trim() || scene.scene_key;
+}
 
 function matchesNameFilter(keyword: string, ...fields: Array<string | null | undefined>) {
   const normalized = keyword.trim().toLowerCase();
@@ -236,28 +343,6 @@ function normalizeJsonFieldValue(value: unknown, fallback: string) {
   if (typeof value === "string" && value.trim()) return value;
   if (value && typeof value === "object") return JSON.stringify(value, null, 2);
   return fallback;
-}
-
-function formatUpdatedAt(value?: string | null) {
-  if (!value) return "-";
-  const raw = String(value).trim().replace(" ", "T");
-  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
-  const date = new Date(hasTimezone ? raw : `${raw}+08:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour12: false,
-  });
-}
-
-function getBindingOptions() {
-  return configs.value
-    .filter((item) => item.status === "enabled")
-    .filter((item) => bindingGroupFilter.value === "all" || item.group_name === bindingGroupFilter.value)
-    .map((item) => ({
-      label: `${item.name}${item.group_name ? ` (${item.group_name})` : ""}`,
-      value: item.id,
-    }));
 }
 
 function toBackupApiSelectValue(value: number | null | undefined) {
@@ -734,6 +819,48 @@ function openEditSceneMeta(record: ChatExternalApiSceneBinding) {
   sceneMetaModalOpen.value = true;
 }
 
+function isSceneUnbound(record: ChatExternalApiSceneBinding) {
+  return !record.api_config_id;
+}
+
+function sceneRowClassName(record: ChatExternalApiSceneBinding) {
+  return isSceneUnbound(record) ? "is-unbound-scene" : "";
+}
+
+function openEditCopy(record: ChatExternalApiSceneBinding) {
+  copyEditingKey.value = record.scene_key;
+  copyForm.display_name = record.display_name || "";
+  copyForm.subtitle = record.subtitle || "";
+  copyModalOpen.value = true;
+}
+
+async function handleSaveCopy() {
+  const record = sceneBindings.value.find((item) => item.scene_key === copyEditingKey.value);
+  if (!record) return;
+  await handleBindingChange(record.scene_key, buildBindingPayload(record, {
+    display_name: copyForm.display_name,
+    subtitle: copyForm.subtitle,
+  }));
+  copyModalOpen.value = false;
+}
+
+function canSwapBinding(record: ChatExternalApiSceneBinding) {
+  const primaryId = record.api_config_id ?? null;
+  const backupId = record.backup_api_config_id ?? null;
+  return primaryId !== backupId && (primaryId != null || backupId != null);
+}
+
+function handleSwapBinding(record: ChatExternalApiSceneBinding) {
+  if (!canSwapBinding(record)) {
+    message.warning("请先绑定主接口或备用接口后再互换");
+    return;
+  }
+  void handleBindingChange(record.scene_key, buildBindingPayload(record, {
+    api_config_id: record.backup_api_config_id ?? null,
+    backup_api_config_id: record.api_config_id ?? null,
+  }));
+}
+
 async function handleSaveSceneMeta() {
   sceneMetaSaving.value = true;
   try {
@@ -829,7 +956,7 @@ onMounted(loadData);
       @change="handleStarterImageChange"
     />
     <a-space direction="vertical" :size="16" style="width: 100%">
-      <a-card title="接口配置" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 40ms">
+      <a-card title="接口配置" class="warm-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 40ms">
         <template #extra>
           <a-space wrap>
             <a-input v-model:value="configNameFilter" class="warm-input" allow-clear placeholder="按名称筛选" style="width: 180px" />
@@ -852,48 +979,89 @@ onMounted(loadData);
           </a-space>
         </template>
 
-        <a-table
-          row-key="id"
-          :columns="configColumns"
-          :data-source="filteredConfigs"
-          :loading="loading"
-          :pagination="{ pageSize: 10, class: 'warm-pagination' }"
-          :scroll="{ x: 1200 }"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.dataIndex === 'group_name'">
-              <a-tag class="api-tag api-tag-group">{{ record.group_name || "未分组" }}</a-tag>
-            </template>
-            <template v-else-if="column.dataIndex === 'status'">
-              <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                {{ record.status === "enabled" ? "启用" : "停用" }}
-              </a-tag>
-            </template>
-            <template v-else-if="column.dataIndex === 'updated_at'">
-              {{ formatUpdatedAt(record.updated_at || record.created_at) }}
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-space wrap>
-                <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEdit(record)">编辑</a-button>
-                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopy(record)">复制新增</a-button>
-                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="handleCopyConfigJson(record)">复制 JSON</a-button>
-                <a-button
-                  size="small"
-                  :class="record.status === 'enabled' ? 'api-danger-btn' : 'api-secondary-btn'"
-                  @click="handleToggleConfigStatus(record)"
+        <a-spin :spinning="loading">
+          <a-empty v-if="!groupedConfigs.length" description="没有匹配的接口" />
+          <div v-else class="api-config-groups">
+            <section v-for="block in groupedConfigs" :key="block.group" class="api-config-group">
+              <div class="api-config-group-title">
+                <span>{{ block.group }}</span>
+                <span class="api-config-group-count">{{ block.items.length }} 个接口</span>
+              </div>
+              <div class="api-config-grid">
+                <article
+                  v-for="item in block.items"
+                  :key="item.id"
+                  class="api-config-tile"
+                  :class="{
+                    'is-used': configUsageCount(item.id) > 0,
+                    'is-unused': configUsageCount(item.id) === 0,
+                    'is-disabled': item.status !== 'enabled',
+                  }"
+                  @click="openEdit(item)"
                 >
-                  {{ record.status === "enabled" ? "停用" : "启用" }}
-                </a-button>
-                <a-button size="small" class="api-danger-btn" :icon="h(DeleteOutlined)" @click="handleDeleteConfig(record)">
-                  删除
-                </a-button>
-              </a-space>
-            </template>
-          </template>
-        </a-table>
+                  <div class="api-config-tile-top">
+                    <div class="api-config-tile-name" :title="item.name">{{ configCardName(item) }}</div>
+                    <a-dropdown trigger="click" overlay-class-name="api-more-dropdown" @click.stop>
+                      <button type="button" class="api-config-more-btn" @click.stop>
+                        <MoreOutlined />
+                      </button>
+                      <template #overlay>
+                        <a-menu>
+                          <a-menu-item key="edit" @click="openEdit(item)">编辑</a-menu-item>
+                          <a-menu-item key="copy" @click="openCopy(item)">复制新增</a-menu-item>
+                          <a-menu-item key="copy-json" @click="handleCopyConfigJson(item)">复制 JSON</a-menu-item>
+                          <a-menu-divider />
+                          <a-menu-item key="toggle" @click="handleToggleConfigStatus(item)">
+                            {{ item.status === "enabled" ? "停用" : "启用" }}
+                          </a-menu-item>
+                          <a-menu-item key="delete" danger @click="handleDeleteConfig(item)">删除</a-menu-item>
+                        </a-menu>
+                      </template>
+                    </a-dropdown>
+                  </div>
+                  <div class="api-config-tile-tags">
+                    <a-tag class="api-tag" :class="item.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-disabled'">
+                      {{ item.status === "enabled" ? "启用" : "停用" }}
+                    </a-tag>
+                    <a-tag class="api-tag api-tag-sync">同步</a-tag>
+                    <a-tag class="api-tag api-tag-json">JSON</a-tag>
+                  </div>
+                  <a-popover
+                    v-if="configUsageCount(item.id)"
+                    trigger="click"
+                    placement="bottomLeft"
+                    overlay-class-name="api-config-usage-popover"
+                  >
+                    <template #title>使用该接口的场景</template>
+                    <template #content>
+                      <div class="api-config-usage-list">
+                        <div
+                          v-for="scene in configUsageScenes(item.id)"
+                          :key="scene.scene_key"
+                          class="api-config-usage-item"
+                        >
+                          <div class="api-config-usage-name">{{ configUsageSceneName(scene) }}</div>
+                          <div class="api-config-usage-desc">
+                            对话 · {{ configUsageRoleLabel(scene.roles) }}
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <span class="api-config-tile-meta is-clickable" @click.stop>
+                      {{ configUsageLabel(item.id) }}
+                    </span>
+                  </a-popover>
+                  <div v-else class="api-config-tile-meta is-unused">
+                    {{ configUsageLabel(item.id) }}
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </a-spin>
       </a-card>
 
-      <a-card title="场景绑定" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 120ms">
+      <a-card title="场景绑定" class="warm-card warm-table-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
         <template #extra>
           <a-space wrap>
             <a-input v-model:value="bindingNameFilter" class="warm-input" allow-clear placeholder="按名称筛选" style="width: 180px" />
@@ -902,10 +1070,10 @@ onMounted(loadData);
               class="warm-select"
               show-search
               option-filter-prop="label"
-              placeholder="筛选分组"
+              placeholder="主接口分组"
               style="width: 180px"
             >
-              <a-select-option value="all" label="全部分组">全部分组</a-select-option>
+              <a-select-option value="all" label="全部主接口分组">全部主接口分组</a-select-option>
               <a-select-option v-for="group in groupOptions" :key="group" :value="group" :label="group">
                 {{ group }}
               </a-select-option>
@@ -920,155 +1088,148 @@ onMounted(loadData);
           class="warm-alert"
           type="info"
           show-icon
-          message="对话场景会出现在 AI 对话页的场景选择中。可为每个场景单独配置文案、主接口、备用接口、积分、系统提示词与欢迎语。"
+          message="主接口分组只过滤列表，不会限制可选接口。显示文案请用行内菜单编辑。"
           style="margin-bottom: 16px"
         />
 
-        <a-table
-          row-key="scene_key"
-          :columns="bindingColumns"
-          :data-source="filteredSceneBindings"
-          :loading="loading"
-          :pagination="false"
-          :scroll="{ x: 1680 }"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'scene'">
-              <div class="scene-title">{{ record.scene_label }}</div>
-              <div class="scene-desc">{{ record.scene_key }}</div>
-              <div v-if="record.scene_description" class="scene-desc">{{ record.scene_description }}</div>
-              <a-space size="small" style="margin-top: 6px">
-                <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                  {{ record.status === "enabled" ? "启用" : "停用" }}
-                </a-tag>
-                <a-tag class="api-tag api-tag-group">上下文 {{ record.context_message_limit || 10 }}</a-tag>
-              </a-space>
-            </template>
-            <template v-else-if="column.key === 'copy'">
-              <div class="binding-copy-cell">
-                <a-input v-model:value="record.display_name" class="warm-input" placeholder="显示名称，为空则使用场景名称" />
-                <a-input v-model:value="record.subtitle" class="warm-input" placeholder="副标题，为空则不展示" />
-                <a-button
-                  size="small"
-                  class="api-secondary-btn"
-                  :loading="bindingSavingKey === record.scene_key"
-                  @click="handleBindingChange(record.scene_key, buildBindingPayload(record))"
-                >
-                  保存文案
-                </a-button>
+        <a-spin :spinning="loading">
+          <a-empty v-if="!groupedSceneBindings.length" description="没有匹配的场景" />
+          <div v-else class="scene-binding-groups">
+            <section v-for="block in groupedSceneBindings" :key="block.sceneType" class="scene-binding-group">
+              <div class="api-config-group-title">
+                <span>对话场景</span>
+                <span class="api-config-group-count">{{ block.items.length }} 个场景</span>
               </div>
-            </template>
-            <template v-else-if="column.key === 'current'">
-              <div class="binding-current-stack">
-                <div>
-                  <div class="scene-desc" style="margin-bottom: 4px">主接口</div>
-                  <div v-if="record.api_config_name">
-                    <div>{{ record.api_config_name }}</div>
-                    <a-space size="small">
-                      <a-tag class="api-tag api-tag-group">{{ record.api_group_name || "未分组" }}</a-tag>
-                      <a-tag class="api-tag" :class="record.api_status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                        {{ record.api_status === "enabled" ? "启用" : "停用" }}
-                      </a-tag>
-                    </a-space>
-                  </div>
-                  <span v-else class="scene-desc">未绑定</span>
-                </div>
-                <div>
-                  <div class="scene-desc" style="margin-bottom: 4px">备用接口</div>
-                  <div v-if="record.backup_api_config_name">
-                    <div>{{ record.backup_api_config_name }}</div>
-                    <a-space size="small">
-                      <a-tag class="api-tag api-tag-group">{{ record.backup_api_group_name || "未分组" }}</a-tag>
-                      <a-tag class="api-tag" :class="record.backup_api_status === 'enabled' ? 'api-tag-enabled' : 'api-tag-muted'">
-                        {{ record.backup_api_status === "enabled" ? "启用" : "停用" }}
-                      </a-tag>
-                    </a-space>
-                  </div>
-                  <span v-else class="scene-desc">未绑定</span>
-                </div>
-              </div>
-            </template>
-            <template v-else-if="column.key === 'bind'">
-              <a-select
-                :value="record.api_config_id ?? undefined"
-                class="warm-select"
-                show-search
-                option-filter-prop="label"
-                placeholder="请选择主接口"
-                style="width: 240px"
-                :loading="bindingSavingKey === record.scene_key"
-                @change="(value: number) => handleBindingChange(record.scene_key, buildBindingPayload(record, { api_config_id: value }))"
+              <a-table
+                row-key="scene_key"
+                :columns="bindingColumns"
+                :data-source="block.items"
+                :pagination="false"
+                table-layout="fixed"
+                :scroll="{ x: 1316 }"
+                :row-class-name="sceneRowClassName"
               >
-                <a-select-option
-                  v-for="option in getBindingOptions()"
-                  :key="option.value"
-                  :value="option.value"
-                  :label="option.label"
-                >
-                  {{ option.label }}
-                </a-select-option>
-              </a-select>
-            </template>
-            <template v-else-if="column.key === 'backup'">
-              <a-select
-                :value="toBackupApiSelectValue(record.backup_api_config_id)"
-                class="warm-select"
-                allow-clear
-                show-search
-                option-filter-prop="label"
-                placeholder="请选择备用接口"
-                style="width: 240px"
-                :loading="bindingSavingKey === record.scene_key"
-                @change="(value: number | string | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { backup_api_config_id: fromBackupApiSelectValue(value) }))"
-              >
-                <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
-                <a-select-option
-                  v-for="option in getBindingOptions()"
-                  :key="option.value"
-                  :value="option.value"
-                  :label="option.label"
-                >
-                  {{ option.label }}
-                </a-select-option>
-              </a-select>
-            </template>
-            <template v-else-if="column.key === 'credit'">
-              <div class="binding-credit-cell">
-                <a-input-number
-                  :value="record.credit_cost"
-                  class="warm-input-number"
-                  :min="0"
-                  :precision="0"
-                  :disabled="bindingSavingKey === record.scene_key"
-                  @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { credit_cost: Number(value ?? 0) }))"
-                />
-                <span class="credit-unit">积分 / 次</span>
-                <div class="scene-desc" style="margin-top: 4px">
-                  上下文 {{ record.context_message_limit || 10 }} 条（在「编辑」里修改）
-                </div>
-              </div>
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-space wrap>
-                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="openCopyScene(record)">
-                  复制新增
-                </a-button>
-                <a-button size="small" class="api-secondary-btn" :icon="h(CopyOutlined)" @click="handleCopySceneJson(record)">
-                  复制 JSON
-                </a-button>
-                <a-button size="small" class="api-secondary-btn" :icon="h(EditOutlined)" @click="openEditSceneMeta(record)">
-                  编辑
-                </a-button>
-                <a-button size="small" class="api-secondary-btn" @click="handleToggleSceneStatus(record)">
-                  {{ record.status === "enabled" ? "停用" : "启用" }}
-                </a-button>
-                <a-button size="small" class="api-danger-btn" :icon="h(DeleteOutlined)" @click="handleDeleteScene(record)">
-                  删除
-                </a-button>
-              </a-space>
-            </template>
-          </template>
-        </a-table>
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'scene'">
+                    <div class="scene-title">{{ record.scene_label }}</div>
+                    <div v-if="record.display_name" class="scene-desc">展示名：{{ record.display_name }}</div>
+                    <div v-else-if="record.scene_description" class="scene-desc">{{ record.scene_description }}</div>
+                    <a-space size="small" style="margin-top: 6px">
+                      <a-tag class="api-tag" :class="record.status === 'enabled' ? 'api-tag-enabled' : 'api-tag-disabled'">
+                        {{ record.status === "enabled" ? "启用" : "停用" }}
+                      </a-tag>
+                      <a-tag class="api-tag api-tag-group">上下文 {{ record.context_message_limit || 10 }}</a-tag>
+                      <a-tag v-if="isSceneUnbound(record)" class="api-tag api-tag-form">未绑定</a-tag>
+                    </a-space>
+                  </template>
+                  <template v-else-if="column.key === 'bind'">
+                    <div class="binding-api-cell">
+                      <a-select
+                        :value="record.api_config_id ?? undefined"
+                        class="warm-select"
+                        popup-class-name="binding-api-select-dropdown"
+                        allow-clear
+                        show-search
+                        option-filter-prop="label"
+                        placeholder="请选择主接口"
+                        :loading="bindingSavingKey === record.scene_key"
+                        @change="(value: number | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { api_config_id: value ?? null }))"
+                      >
+                        <a-select-opt-group v-for="group in bindingOptionGroups" :key="group.group" :label="group.group">
+                          <a-select-option
+                            v-for="option in group.options"
+                            :key="option.value"
+                            :value="option.value"
+                            :label="option.label"
+                          >
+                            {{ option.label }}
+                          </a-select-option>
+                        </a-select-opt-group>
+                      </a-select>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'swap'">
+                    <div class="binding-swap-cell">
+                      <a-tooltip title="互换主备接口">
+                        <a-button
+                          size="small"
+                          class="api-secondary-btn api-icon-btn"
+                          :icon="h(SwapOutlined)"
+                          :disabled="!canSwapBinding(record) || bindingSavingKey === record.scene_key"
+                          :loading="bindingSavingKey === record.scene_key"
+                          @click="handleSwapBinding(record)"
+                        />
+                      </a-tooltip>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'backup'">
+                    <div class="binding-api-cell">
+                      <a-select
+                        :value="toBackupApiSelectValue(record.backup_api_config_id)"
+                        class="warm-select"
+                        popup-class-name="binding-api-select-dropdown"
+                        allow-clear
+                        show-search
+                        option-filter-prop="label"
+                        placeholder="请选择备用接口"
+                        :loading="bindingSavingKey === record.scene_key"
+                        @change="(value: number | string | undefined) => handleBindingChange(record.scene_key, buildBindingPayload(record, { backup_api_config_id: fromBackupApiSelectValue(value) }))"
+                      >
+                        <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
+                        <a-select-opt-group v-for="group in bindingOptionGroups" :key="group.group" :label="group.group">
+                          <a-select-option
+                            v-for="option in group.options"
+                            :key="option.value"
+                            :value="option.value"
+                            :label="option.label"
+                          >
+                            {{ option.label }}
+                          </a-select-option>
+                        </a-select-opt-group>
+                      </a-select>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'credit'">
+                    <div class="binding-credit-cell">
+                      <a-input-number
+                        :value="record.credit_cost"
+                        class="warm-input-number"
+                        :min="0"
+                        :precision="0"
+                        :disabled="bindingSavingKey === record.scene_key"
+                        @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { credit_cost: Number(value ?? 0) }))"
+                      />
+                      <span class="credit-unit">积分</span>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'sort'">
+                    <span class="binding-sort-value">{{ record.sort_order ?? 0 }}</span>
+                  </template>
+                  <template v-else-if="column.key === 'action'">
+                    <a-dropdown trigger="click" overlay-class-name="api-more-dropdown">
+                      <button type="button" class="api-config-more-btn">
+                        <MoreOutlined />
+                      </button>
+                      <template #overlay>
+                        <a-menu>
+                          <a-menu-item key="copy-text" @click="openEditCopy(record)">编辑文案</a-menu-item>
+                          <a-menu-item key="copy-scene" @click="openCopyScene(record)">复制新增</a-menu-item>
+                          <a-menu-item key="copy-json" @click="handleCopySceneJson(record)">复制 JSON</a-menu-item>
+                          <a-menu-divider />
+                          <a-menu-item key="edit" @click="openEditSceneMeta(record)">编辑</a-menu-item>
+                          <a-menu-item key="toggle" @click="handleToggleSceneStatus(record)">
+                            {{ record.status === "enabled" ? "停用" : "启用" }}
+                          </a-menu-item>
+                          <a-menu-item key="delete" danger @click="handleDeleteScene(record)">删除</a-menu-item>
+                        </a-menu>
+                      </template>
+                    </a-dropdown>
+                  </template>
+                </template>
+              </a-table>
+            </section>
+          </div>
+        </a-spin>
       </a-card>
 
       <a-card title="占位符用法" class="warm-card api-card motion-fade-up motion-card-lift" style="--motion-delay: 200ms">
@@ -1242,19 +1403,22 @@ onMounted(loadData);
               <a-select
                 v-model:value="sceneForm.api_config_id"
                 class="warm-select"
+                popup-class-name="binding-api-select-dropdown"
                 show-search
                 option-filter-prop="label"
                 placeholder="请选择主接口"
                 style="width: 100%"
               >
-                <a-select-option
-                  v-for="option in getBindingOptions()"
-                  :key="option.value"
-                  :value="option.value"
-                  :label="option.label"
-                >
-                  {{ option.label }}
-                </a-select-option>
+                <a-select-opt-group v-for="group in bindingOptionGroups" :key="group.group" :label="group.group">
+                  <a-select-option
+                    v-for="option in group.options"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  >
+                    {{ option.label }}
+                  </a-select-option>
+                </a-select-opt-group>
               </a-select>
               <div class="scene-desc" style="margin-top: 6px">前台场景必须绑定启用中的主接口后才会出现。</div>
             </a-form-item>
@@ -1264,6 +1428,7 @@ onMounted(loadData);
               <a-select
                 :value="toBackupApiSelectValue(sceneForm.backup_api_config_id)"
                 class="warm-select"
+                popup-class-name="binding-api-select-dropdown"
                 allow-clear
                 show-search
                 option-filter-prop="label"
@@ -1272,14 +1437,16 @@ onMounted(loadData);
                 @change="(value: number | string | undefined) => { sceneForm.backup_api_config_id = fromBackupApiSelectValue(value); }"
               >
                 <a-select-option :value="EMPTY_BACKUP_API_OPTION" label="无">无</a-select-option>
-                <a-select-option
-                  v-for="option in getBindingOptions()"
-                  :key="option.value"
-                  :value="option.value"
-                  :label="option.label"
-                >
-                  {{ option.label }}
-                </a-select-option>
+                <a-select-opt-group v-for="group in bindingOptionGroups" :key="group.group" :label="group.group">
+                  <a-select-option
+                    v-for="option in group.options"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  >
+                    {{ option.label }}
+                  </a-select-option>
+                </a-select-opt-group>
               </a-select>
             </a-form-item>
           </a-col>
@@ -1468,6 +1635,35 @@ onMounted(loadData);
         </a-space>
       </template>
     </a-modal>
+
+    <a-modal
+      v-model:open="copyModalOpen"
+      title="编辑展示文案"
+      :mask-closable="false"
+      :width="480"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="显示名称">
+          <a-input v-model:value="copyForm.display_name" class="warm-input" placeholder="为空则使用场景名称" />
+        </a-form-item>
+        <a-form-item label="副标题">
+          <a-input v-model:value="copyForm.subtitle" class="warm-input" placeholder="为空则不展示" />
+        </a-form-item>
+      </a-form>
+      <template #footer>
+        <a-space>
+          <a-button class="api-secondary-btn" @click="copyModalOpen = false">取消</a-button>
+          <a-button
+            type="primary"
+            class="api-primary-btn"
+            :loading="bindingSavingKey === copyEditingKey"
+            @click="handleSaveCopy"
+          >
+            保存
+          </a-button>
+        </a-space>
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -1488,6 +1684,169 @@ onMounted(loadData);
 
 .api-card :deep(.ant-card-body) {
   padding: 20px;
+}
+
+.api-config-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.api-config-group + .api-config-group {
+  padding-top: 20px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.api-config-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #5d4526;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.api-config-group-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.api-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 10px;
+}
+
+.api-config-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 96px;
+  padding: 10px 10px 8px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 12px;
+  background: var(--theme-panel-bg-soft);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.api-config-tile.is-used {
+  border-color: #1fba62;
+  background: #7ee3a3;
+}
+
+.api-config-tile.is-unused {
+  border-color: #ebd3a4;
+  background: #fff8eb;
+}
+
+.api-config-tile:hover {
+  transform: translateY(-1px);
+}
+
+.api-config-tile.is-used:hover {
+  border-color: #12964c;
+  box-shadow: 0 8px 20px rgba(18, 150, 76, 0.22);
+}
+
+.api-config-tile.is-unused:hover {
+  border-color: #dfb56a;
+  box-shadow: 0 8px 20px rgba(176, 126, 36, 0.1);
+}
+
+.api-config-tile.is-disabled {
+  opacity: 0.88;
+}
+
+.api-config-tile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.api-config-tile-name {
+  color: #5d4526;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.api-config-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #5d4526;
+  cursor: pointer;
+}
+
+.api-config-more-btn:hover {
+  border-color: var(--theme-panel-border-strong);
+  background: var(--theme-control-hover-bg);
+  color: var(--theme-accent-text);
+}
+
+.api-config-tile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.api-config-tile-tags :deep(.ant-tag) {
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  line-height: 18px;
+  font-size: 11px;
+}
+
+.api-config-tile-meta {
+  margin-top: auto;
+  color: #0d6b35;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.api-config-tile-meta.is-clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.api-config-tile-meta.is-unused {
+  color: #b07e24;
+}
+
+.api-config-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+  max-width: 280px;
+}
+
+.api-config-usage-item + .api-config-usage-item {
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.api-config-usage-name {
+  color: #5d4526;
+  font-weight: 700;
+}
+
+.api-config-usage-desc {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .api-primary-btn {
@@ -1535,63 +1894,159 @@ onMounted(loadData);
   color: #c9483d !important;
 }
 
+.api-icon-btn {
+  padding-inline: 10px;
+}
+
 .api-tag {
   border-radius: 999px;
-  padding-inline: 10px;
+  border-width: 1px;
   font-weight: 600;
 }
 
 .api-tag-group {
-  color: #8a5d20;
-  background: #fff1d7;
-  border-color: #f1d29a;
-}
-
-.api-tag-muted {
-  color: #7d7d7d;
-  background: #f5f5f5;
-  border-color: #dfdfdf;
+  color: var(--theme-accent-text);
+  background: var(--theme-panel-bg-strong);
+  border-color: var(--theme-panel-border-strong);
 }
 
 .api-tag-enabled {
-  color: #1d7a49;
-  background: #edf9f1;
-  border-color: #b8e4c8;
+  color: #2f7a45;
+  background: #e7f6ec;
+  border-color: #b7d6bf;
+}
+
+.api-tag-disabled {
+  color: #8a5a55;
+  background: #f6eceb;
+  border-color: #e2c4c0;
+}
+
+.api-tag-sync {
+  color: #2b6f86;
+  background: #e7f4f8;
+  border-color: #b5d4de;
+}
+
+.api-tag-json {
+  color: #5d4526;
+  background: #f6efe4;
+  border-color: #e2d3bb;
+}
+
+.api-tag-form {
+  color: #8a5a1e;
+  background: #fff3df;
+  border-color: #ebd3a4;
+}
+
+.api-tag-muted {
+  color: var(--text-secondary);
+  background: var(--theme-panel-bg-soft);
+  border-color: var(--theme-panel-border);
+}
+
+.scene-binding-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.scene-binding-group + .scene-binding-group {
+  padding-top: 20px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.scene-binding-group :deep(.ant-table),
+.scene-binding-group :deep(.ant-table-container),
+.scene-binding-group :deep(.ant-table-content),
+.scene-binding-group :deep(.ant-table-body),
+.scene-binding-group :deep(.ant-table-header) {
+  background: transparent;
+}
+
+.scene-binding-group :deep(.ant-table-tbody > tr.is-unbound-scene > td) {
+  background: color-mix(in srgb, #f3d7a0 28%, var(--theme-table-row-bg));
+}
+
+.scene-binding-group :deep(.ant-table-tbody > tr.is-unbound-scene:hover > td) {
+  background: color-mix(in srgb, #f3d7a0 38%, var(--theme-table-row-hover)) !important;
+}
+
+.scene-binding-group :deep(.ant-table-container table) {
+  table-layout: fixed;
+}
+
+.scene-binding-group :deep(.ant-table-thead > tr > th:nth-child(1)),
+.scene-binding-group :deep(.ant-table-tbody > tr > td:nth-child(1)) {
+  width: 196px;
+  max-width: 196px;
+}
+
+.scene-binding-group :deep(.ant-table-thead > tr > th:nth-child(2)),
+.scene-binding-group :deep(.ant-table-tbody > tr > td:nth-child(2)),
+.scene-binding-group :deep(.ant-table-thead > tr > th:nth-child(4)),
+.scene-binding-group :deep(.ant-table-tbody > tr > td:nth-child(4)) {
+  width: 400px;
+  min-width: 400px;
+  max-width: 400px;
+}
+
+.binding-api-cell {
+  width: 100%;
+}
+
+.binding-api-cell :deep(.ant-select) {
+  width: 100%;
 }
 
 .scene-title {
   color: #5d4526;
-  font-weight: 700;
+  font-weight: 600;
+}
+
+.scene-binding-group .scene-title,
+.scene-binding-group .scene-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scene-desc {
-  color: #8b7457;
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }
 
-.binding-copy-cell {
+.binding-swap-cell {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.binding-current-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
 }
 
 .binding-credit-cell {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.binding-credit-cell :deep(.warm-input-number.ant-input-number) {
+  width: 72px !important;
+  min-width: 72px;
+  flex: none;
 }
 
 .credit-unit {
-  color: #8b7457;
-  font-size: 12px;
+  flex: none;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.binding-sort-value {
+  color: #5d4526;
+  font-weight: 700;
 }
 
 .starter-prompt-editor {
@@ -1656,5 +2111,57 @@ onMounted(loadData);
   border: 1px solid var(--theme-panel-border);
   white-space: pre-wrap;
   word-break: break-word;
+}
+</style>
+
+<style>
+.binding-api-select-dropdown .ant-select-item-group {
+  margin-top: 2px;
+  padding-top: 8px;
+  color: #5d4526;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.binding-api-select-dropdown .ant-select-item-group:not(:first-child) {
+  margin-top: 6px;
+  border-top: 1px solid var(--theme-border, #ead9c0);
+}
+
+.api-more-dropdown .ant-dropdown-menu {
+  min-width: 148px;
+  padding: 6px;
+  border: 1px solid var(--theme-panel-border, #ead9c0);
+  border-radius: 12px;
+  background: #fffaf2;
+  box-shadow: 0 10px 28px rgba(93, 69, 38, 0.12);
+}
+
+.api-more-dropdown .ant-dropdown-menu-item {
+  margin: 2px 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: #5d4526;
+  font-weight: 600;
+}
+
+.api-more-dropdown .ant-dropdown-menu-item:hover {
+  background: var(--theme-control-hover-bg, #f6efe4);
+  color: #5d4526;
+}
+
+.api-more-dropdown .ant-dropdown-menu-item-danger {
+  color: #c9483d;
+}
+
+.api-more-dropdown .ant-dropdown-menu-item-danger:hover {
+  background: #fff1ef;
+  color: #c9483d;
+}
+
+.api-more-dropdown .ant-dropdown-menu-item-divider {
+  margin: 4px 8px;
+  background: var(--theme-border, #ead9c0);
 }
 </style>
