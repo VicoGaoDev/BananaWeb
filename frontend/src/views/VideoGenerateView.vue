@@ -20,6 +20,7 @@ import {
   VideoCameraOutlined,
   ExpandOutlined,
 } from "@ant-design/icons-vue";
+import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
@@ -27,6 +28,7 @@ import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.v
 import { getMe } from "@/api/auth";
 import { createUserPrompt } from "@/api/userPrompts";
 import { getVideoTaskScenes } from "@/api/videoConfig";
+import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
 import {
@@ -101,6 +103,14 @@ const detailTask = ref<VideoTaskResult | null>(null);
 const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<VideoTaskResult | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const {
+  accept: imageFileAccept,
+  sheetOpen: imageSourceSheetOpen,
+  requestPick: requestImageSourcePick,
+  pickFromGallery,
+  pickFromFiles,
+  cancelSheet: cancelImageSourceSheet,
+} = useImageSourcePicker();
 const referencePickerOpening = ref(false);
 const referenceDragActive = ref(false);
 const frameDragActive = ref<0 | 1 | null>(null);
@@ -112,6 +122,11 @@ const { uploadFiles: uploadUserAssetFiles } = useUserAssets();
 
 function isImageUploadTooLarge(file: File) {
   return file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES;
+}
+
+function isReferenceImageFile(file: File) {
+  if (file.type.startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
 }
 
 function isSceneAvailableForGenerateMode(scene: VideoTaskSceneConfig, mode: VideoGenerateMode) {
@@ -298,9 +313,13 @@ function triggerUpload(frameSlot: 0 | 1 | null = null) {
     return;
   }
   assetPickerFrameSlot.value = frameSlot;
-  referencePickerOpening.value = true;
-  scheduleFilePickerRecovery();
-  fileInput.value?.click();
+  requestImageSourcePick(fileInput.value, {
+    onOpen: () => {
+      referencePickerOpening.value = true;
+      scheduleFilePickerRecovery();
+    },
+    onCancel: clearReferencePickerOpening,
+  });
 }
 
 function clearReferencePickerOpening() {
@@ -622,10 +641,18 @@ async function handlePlayVideo(taskId: string) {
 }
 
 async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = null) {
+  const imageFiles = files.filter((file) => isReferenceImageFile(file));
+  if (!imageFiles.length) {
+    if (files.length) {
+      message.warning("仅支持上传图片文件");
+    }
+    return;
+  }
+
   if (frameSlot !== null) {
-    const file = files[0];
+    const file = imageFiles[0];
     if (!file) return;
-    if (files.length > 1) {
+    if (imageFiles.length > 1) {
       message.warning("首帧和尾帧每次只能上传 1 张图片");
     }
     if (isImageUploadTooLarge(file)) {
@@ -663,8 +690,8 @@ async function processReferenceFiles(files: File[], frameSlot: 0 | 1 | null = nu
     return;
   }
 
-  const acceptedFiles = files.slice(0, remainingSlots);
-  if (acceptedFiles.length < files.length) {
+  const acceptedFiles = imageFiles.slice(0, remainingSlots);
+  if (acceptedFiles.length < imageFiles.length) {
     message.warning(`当前最多上传 ${maxReferenceImages.value} 张参考图`);
   }
 
@@ -1355,7 +1382,7 @@ onBeforeUnmount(() => {
                       ref="fileInput"
                       class="native-file-input"
                       type="file"
-                      accept="image/*"
+                      :accept="imageFileAccept"
                       multiple
                       @change="handleFileChange"
                     />
@@ -1421,7 +1448,7 @@ onBeforeUnmount(() => {
                       ref="fileInput"
                       class="native-file-input"
                       type="file"
-                      accept="image/*"
+                      :accept="imageFileAccept"
                       multiple
                       @change="handleFileChange"
                     />
@@ -1807,6 +1834,12 @@ onBeforeUnmount(() => {
       @download="handleDownloadVideo"
       @navigate-prev="navigateVideoTaskDetail(-1)"
       @navigate-next="navigateVideoTaskDetail(1)"
+    />
+    <ImageSourceActionSheet
+      v-if="imageSourceSheetOpen"
+      @gallery="pickFromGallery"
+      @files="pickFromFiles"
+      @cancel="cancelImageSourceSheet"
     />
   </div>
 </template>

@@ -15,9 +15,11 @@ import {
 import { getMe } from "@/api/auth";
 import { getPreviewImageSrc, resolveImageUrl } from "@/api/images";
 import { MAX_IMAGE_UPLOAD_SIZE_BYTES, MAX_IMAGE_UPLOAD_SIZE_TEXT } from "@/api/upload";
+import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import RepaintCanvas from "@/components/generate/RepaintCanvas.vue";
+import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useAuthStore } from "@/stores/auth";
 import type { SceneOptionItem } from "@/types";
 
@@ -106,6 +108,14 @@ const sourceUploading = ref(false);
 const maskUploading = ref(false);
 const sourcePickerOpening = ref(false);
 const sourceInput = ref<HTMLInputElement | null>(null);
+const {
+  accept: imageFileAccept,
+  sheetOpen: imageSourceSheetOpen,
+  requestPick: requestImageSourcePick,
+  pickFromGallery,
+  pickFromFiles,
+  cancelSheet: cancelImageSourceSheet,
+} = useImageSourcePicker();
 const brushSize = ref(28);
 const repaintTool = ref<"paint" | "erase" | "rect" | "circle" | "text">("paint");
 const repaintLineColor = ref("#c38d36");
@@ -184,17 +194,28 @@ function resetMaskState() {
   canRedoMask.value = false;
 }
 
+function isReferenceImageFile(file: File) {
+  if (file.type.startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+}
+
 function triggerSourceUpload() {
   if (!auth.isLoggedIn) {
     requestLogin();
     return;
   }
-  sourcePickerOpening.value = true;
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     sourcePickerOpening.value = false;
     requestLogin();
   });
-  sourceInput.value?.click();
+  requestImageSourcePick(sourceInput.value, {
+    onOpen: () => {
+      sourcePickerOpening.value = true;
+    },
+    onCancel: () => {
+      sourcePickerOpening.value = false;
+    },
+  });
 }
 
 async function handleSourceFileChange(e: Event) {
@@ -202,6 +223,12 @@ async function handleSourceFileChange(e: Event) {
   const file = input.files?.[0];
   sourcePickerOpening.value = false;
   if (!file) return;
+
+  if (!isReferenceImageFile(file)) {
+    message.warning("仅支持上传图片文件");
+    input.value = "";
+    return;
+  }
 
   if (file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES) {
     message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
@@ -392,7 +419,7 @@ defineExpose({
           ref="sourceInput"
           class="native-file-input"
           type="file"
-          accept="image/*"
+          :accept="imageFileAccept"
           @change="handleSourceFileChange"
         />
 
@@ -666,6 +693,12 @@ defineExpose({
         {{ submitButtonText }}
       </a-button>
     </div>
+    <ImageSourceActionSheet
+      v-if="imageSourceSheetOpen"
+      @gallery="pickFromGallery"
+      @files="pickFromFiles"
+      @cancel="cancelImageSourceSheet"
+    />
   </section>
 </template>
 

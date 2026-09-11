@@ -619,7 +619,7 @@ const selectedKeys = computed(() => {
     p.startsWith("/feedbacks") ||
     p.startsWith("/system-messages")
   ) return [];
-  return ["generate"];
+  return ["generate", activeGenerateEntryMode.value];
 });
 
 const activeMoreFeatureKey = computed<MoreFeatureMenuKey | "">(() => {
@@ -681,6 +681,16 @@ function handleMenuClick({ key }: { key: string }) {
   else if (key === "generate") {
     window.dispatchEvent(new CustomEvent(GENERATE_MENU_ENTRY_EVENT));
     router.push("/generate");
+  }
+  else if (
+    key === "textGenerate"
+    || key === "imageEdit"
+    || key === "inpaint"
+    || key === "smartCutout"
+    || key === "promptReverse"
+  ) {
+    openGenerateEntry(key);
+    return;
   }
   else if (key === "video-generate") router.push("/video-generate");
   else if (
@@ -2284,6 +2294,7 @@ watch(
       v-model:open="mobileDrawerOpen"
       placement="right"
       :width="320"
+      root-class-name="mobile-nav-drawer"
       class="mobile-nav-drawer"
       title="导航菜单"
     >
@@ -2338,6 +2349,21 @@ watch(
                   {{ subItem.label }}
                 </a-menu-item>
               </a-sub-menu>
+              <a-sub-menu v-else-if="item.key === 'generate'" key="generate">
+                <template #icon>
+                  <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                  <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                </template>
+                <template #title>{{ item.label }}</template>
+                <a-menu-item v-for="subItem in generateEntryPrimaryMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+                <a-menu-item v-for="subItem in generateEntryToolMenuItems" :key="subItem.key">
+                  <template #icon><component :is="subItem.icon" /></template>
+                  {{ subItem.label }}
+                </a-menu-item>
+              </a-sub-menu>
               <a-sub-menu v-else-if="item.key === 'video-generate'" key="video-generate">
                 <template #icon>
                   <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
@@ -2350,8 +2376,10 @@ watch(
                 </a-menu-item>
               </a-sub-menu>
               <a-menu-item v-else :key="item.key">
-                <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
-                <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                <template #icon>
+                  <component v-if="item.icon" :is="item.icon" class="nav-menu-system-icon" />
+                  <img v-else :src="getPrimaryMenuIconSrc(item)" :alt="item.label" class="nav-menu-icon" />
+                </template>
                 <span>{{ item.label }}</span>
                 <span v-if="item.badgeText" class="nav-menu-new-badge nav-menu-new-badge-mobile">{{ item.badgeText }}</span>
               </a-menu-item>
@@ -3482,11 +3510,29 @@ watch(
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
+    width: 16px;
     min-width: 16px;
+    height: 16px;
     margin: 0 !important;
     font-size: 16px !important;
     line-height: 1;
     flex: none;
+  }
+
+  :deep(.ant-menu-item .ant-menu-item-icon .anticon),
+  :deep(.ant-menu-item .ant-menu-item-icon .nav-menu-system-icon),
+  :deep(.ant-menu-item .ant-menu-item-icon .nav-generate-image-icon),
+  :deep(.ant-menu-item .ant-menu-item-icon svg),
+  :deep(.ant-menu-submenu-title > .ant-menu-item-icon .anticon),
+  :deep(.ant-menu-submenu-title > .ant-menu-item-icon .nav-menu-system-icon),
+  :deep(.ant-menu-submenu-title > .ant-menu-item-icon .nav-generate-image-icon),
+  :deep(.ant-menu-submenu-title > .ant-menu-item-icon svg) {
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px;
+    margin: 0 !important;
+    font-size: 16px !important;
+    line-height: 1;
   }
 
   :deep(.ant-menu-submenu-title .ant-menu-title-content) {
@@ -4480,6 +4526,11 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
   transform: translate3d(0, 0, 0);
 }
 
+:deep(.mobile-nav-drawer .ant-drawer-content-wrapper),
+:deep(.mobile-nav-drawer .ant-drawer-content) {
+  border-radius: 0;
+}
+
 :deep(.mobile-nav-drawer .ant-drawer-header) {
   padding: 20px 20px 0;
   border-bottom: none;
@@ -4774,6 +4825,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .announcement-modal :deep(
 </style>
 
 <style lang="scss">
+.mobile-nav-drawer.ant-drawer .ant-drawer-content-wrapper,
+.mobile-nav-drawer.ant-drawer .ant-drawer-content,
+.mobile-nav-drawer .ant-drawer-content-wrapper,
+.mobile-nav-drawer .ant-drawer-content {
+  border-radius: 0 !important;
+}
+
 .warm-dropdown {
   z-index: 1300;
   overflow: visible;

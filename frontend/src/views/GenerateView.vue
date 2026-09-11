@@ -72,9 +72,11 @@ import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from 
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
+import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
+import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { withBaseUrl } from "@/lib/assets";
 import { useExpiredResultAsset } from "@/lib/expiredResultAsset";
@@ -376,6 +378,14 @@ const pickingGeneratedReference = ref(false);
 const quickSavingReferenceIds = ref<string[]>([]);
 const quickSavingPromptKeys = ref<string[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
+const {
+  accept: imageFileAccept,
+  sheetOpen: imageSourceSheetOpen,
+  requestPick: requestImageSourcePick,
+  pickFromGallery,
+  pickFromFiles,
+  cancelSheet: cancelImageSourceSheet,
+} = useImageSourcePicker();
 const referenceUploadBlockRef = ref<HTMLElement | null>(null);
 const referenceDragActive = ref(false);
 const referenceDragCounter = ref(0);
@@ -1957,6 +1967,11 @@ async function submitGeneratedTask(
   const localTasks = Array.from({ length: taskCount }, () => createLocalGeneratedTask(taskDraft));
   const localTaskIds = new Set(localTasks.map((task) => task.localId));
   generatedTasks.value = [...localTasks, ...generatedTasks.value];
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      scrollGeneratedResultsIntoViewOnMobile();
+    });
+  });
 
   try {
     const res = await createTask({
@@ -2062,13 +2077,17 @@ function triggerUpload() {
     loginModalVisible.value = true;
     return;
   }
-  referencePickerOpening.value = true;
-  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearReferencePickerOpening();
     loginModalVisible.value = true;
   });
-  fileInput.value?.click();
+  requestImageSourcePick(fileInput.value, {
+    onOpen: () => {
+      referencePickerOpening.value = true;
+      scheduleFilePickerRecovery();
+    },
+    onCancel: clearReferencePickerOpening,
+  });
 }
 
 function clearReferencePickerOpening() {
@@ -2641,13 +2660,17 @@ function triggerSourceUpload() {
     loginModalVisible.value = true;
     return;
   }
-  sourcePickerOpening.value = true;
-  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearSourcePickerOpening();
     loginModalVisible.value = true;
   });
-  sourceInput.value?.click();
+  requestImageSourcePick(sourceInput.value, {
+    onOpen: () => {
+      sourcePickerOpening.value = true;
+      scheduleFilePickerRecovery();
+    },
+    onCancel: clearSourcePickerOpening,
+  });
 }
 
 async function handleSourceFileChange(e: Event) {
@@ -2656,6 +2679,12 @@ async function handleSourceFileChange(e: Event) {
   clearSourcePickerOpening();
   clearFilePickerRecoveryTimer();
   if (!file) return;
+
+  if (!isReferenceImageFile(file)) {
+    message.warning("仅支持上传图片文件");
+    input.value = "";
+    return;
+  }
 
   if (isImageUploadTooLarge(file)) {
     message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
@@ -2698,13 +2727,17 @@ function triggerReverseUpload() {
     loginModalVisible.value = true;
     return;
   }
-  reversePickerOpening.value = true;
-  scheduleFilePickerRecovery();
   getMe().then((user) => auth.updateUser(user)).catch(() => {
     clearReversePickerOpening();
     loginModalVisible.value = true;
   });
-  reverseInput.value?.click();
+  requestImageSourcePick(reverseInput.value, {
+    onOpen: () => {
+      reversePickerOpening.value = true;
+      scheduleFilePickerRecovery();
+    },
+    onCancel: clearReversePickerOpening,
+  });
 }
 
 async function handleReverseFileChange(e: Event) {
@@ -2713,6 +2746,12 @@ async function handleReverseFileChange(e: Event) {
   clearReversePickerOpening();
   clearFilePickerRecoveryTimer();
   if (!file) return;
+
+  if (!isReferenceImageFile(file)) {
+    message.warning("仅支持上传图片文件");
+    input.value = "";
+    return;
+  }
 
   if (isImageUploadTooLarge(file)) {
     message.warning(`图片大小不能超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}`);
@@ -4955,7 +4994,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   ref="fileInput"
                   class="native-file-input"
                   type="file"
-                  accept="image/*"
+                  :accept="imageFileAccept"
                   multiple
                   @change="handleFileChange"
                 />
@@ -5310,7 +5349,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   ref="reverseInput"
                   class="native-file-input"
                   type="file"
-                  accept="image/*"
+                  :accept="imageFileAccept"
                   @change="handleReverseFileChange"
                 />
 
@@ -5410,7 +5449,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   ref="sourceInput"
                   class="native-file-input"
                   type="file"
-                  accept="image/*"
+                  :accept="imageFileAccept"
                   @change="handleSourceFileChange"
                 />
 
@@ -6488,6 +6527,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       :placeholder="promptExpandPlaceholder"
       @confirm="applyExpandedPrompt"
     />
+    <ImageSourceActionSheet
+      v-if="imageSourceSheetOpen"
+      @gallery="pickFromGallery"
+      @files="pickFromFiles"
+      @cancel="cancelImageSourceSheet"
+    />
   </div>
 </template>
 
@@ -6680,12 +6725,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 14px;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: generate-mode-switch;
 }
 
 .mode-switch-cluster {
   min-width: 0;
   display: flex;
   align-items: center;
+}
+
+.mode-switch-cluster:first-child {
+  flex: 1 1 auto;
+}
+
+.mode-switch-cluster:last-child {
+  flex: 0 0 auto;
 }
 
 .mode-switch-group {
@@ -6869,6 +6925,37 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   opacity: 0.58;
 }
 
+@media (min-width: 961px) {
+  @container generate-mode-switch (max-width: 430px) {
+    .mode-switch-group-primary .mode-switch-btn {
+      min-width: 0;
+    }
+
+    .mode-switch-btn.tool,
+    .tool-trigger {
+      min-width: 42px;
+      width: 42px;
+      padding: 0;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .mode-switch-trigger-content {
+      justify-content: center;
+    }
+
+    .mode-switch-trigger-icon {
+      font-size: 16px;
+      opacity: 0.88;
+    }
+
+    .mode-switch-trigger-value,
+    .mode-switch-trigger-arrow {
+      display: none;
+    }
+  }
+}
+
 .generate-tool-menu-item-label {
   display: inline-flex;
   align-items: center;
@@ -6906,6 +6993,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .settings-scroll {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 0 10px 0 4px;
 }
@@ -6917,6 +7005,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   margin-top: auto;
   padding-top: 8px;
   background: var(--theme-page-base);
+  container-type: inline-size;
+  container-name: generate-footer;
 }
 
 .native-file-input {
@@ -7298,9 +7388,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .settings-row {
   display: flex;
   gap: 16px;
+  min-width: 0;
 }
 
 .settings-row-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   align-items: stretch;
 }
 
@@ -7309,6 +7402,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   display: flex;
   flex-direction: column;
   gap: var(--config-title-gap);
+  min-width: 0;
 
   label {
     color: var(--config-title-color);
@@ -7323,7 +7417,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .setting-item-inline {
-  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
   align-items: stretch;
   gap: 10px;
 
@@ -7335,10 +7430,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   :deep(.option-grid-picker) {
     display: flex;
     width: 100%;
+    min-width: 0;
   }
 
   :deep(.option-grid-trigger) {
     width: 100%;
+    min-width: 0;
     justify-content: space-between;
   }
 }
@@ -8134,6 +8231,26 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .generate-action-row .generate-btn {
   margin-top: 0;
   width: 100%;
+}
+
+@media (min-width: 961px) {
+  @container generate-footer (max-width: 380px) {
+    .generate-action-row {
+      grid-template-columns: minmax(0, 1fr) max-content;
+    }
+
+    .generate-action-row .generate-btn {
+      width: auto;
+      min-width: max-content;
+      white-space: nowrap;
+    }
+
+    .generate-action-row .generate-btn-secondary {
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
+  }
 }
 
 .generate-btn.generate-btn-secondary {
@@ -10230,6 +10347,29 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     flex-wrap: nowrap;
   }
 
+  .mode-switch-btn.tool,
+  .tool-trigger {
+    width: auto;
+    min-width: auto;
+    padding: 0 10px;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mode-switch-trigger-value,
+  .mode-switch-trigger-arrow {
+    display: inline-flex;
+  }
+
+  .generate-action-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  .generate-action-row .generate-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
   .mode-switch-cluster:first-child {
     flex: 1 1 auto;
     min-width: 0;
@@ -10319,10 +10459,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     gap: 8px;
   }
 
-  .generate-action-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  }
-
   .generate-action-row .generate-btn-secondary {
     font-size: 13px;
     padding-inline: 8px;
@@ -10333,13 +10469,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   }
 
   .settings-row-inline {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
     align-items: stretch;
     gap: 10px;
   }
 
   .settings-row-inline .setting-item-inline {
-    flex: 1 1 0;
     min-width: 0;
     gap: 6px;
   }
