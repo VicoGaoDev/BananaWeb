@@ -25,9 +25,11 @@ import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { getMe } from "@/api/auth";
-import { getImageFileAccept, isSupportedImageUploadFile } from "@/api/upload";
+import { isSupportedImageUploadFile } from "@/api/upload";
+import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import { createUserPrompt } from "@/api/userPrompts";
 import { getVideoTaskScenes } from "@/api/videoConfig";
+import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { useUserAssets } from "@/composables/useUserAssets";
 import { triggerDirectDownload } from "@/lib/directDownload";
 import {
@@ -102,7 +104,15 @@ const detailTask = ref<VideoTaskResult | null>(null);
 const feedbackDialogOpen = ref(false);
 const feedbackTarget = ref<VideoTaskResult | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const imageFileAccept = getImageFileAccept();
+const {
+  accept: imageFileAccept,
+  sheetOpen: imageSourceSheetOpen,
+  requestPick: requestImageSourcePick,
+  pickFromCamera,
+  pickFromGallery,
+  pickFromFiles,
+  cancelSheet: cancelImageSourceSheet,
+} = useImageSourcePicker();
 const referencePickerOpening = ref(false);
 const referenceDragActive = ref(false);
 const frameDragActive = ref<0 | 1 | null>(null);
@@ -304,9 +314,13 @@ function triggerUpload(frameSlot: 0 | 1 | null = null) {
     return;
   }
   assetPickerFrameSlot.value = frameSlot;
-  referencePickerOpening.value = true;
-  scheduleFilePickerRecovery();
-  fileInput.value?.click();
+  requestImageSourcePick(fileInput.value, {
+    onOpen: () => {
+      referencePickerOpening.value = true;
+      scheduleFilePickerRecovery();
+    },
+    onCancel: clearReferencePickerOpening,
+  });
 }
 
 function clearReferencePickerOpening() {
@@ -1821,6 +1835,13 @@ onBeforeUnmount(() => {
       @download="handleDownloadVideo"
       @navigate-prev="navigateVideoTaskDetail(-1)"
       @navigate-next="navigateVideoTaskDetail(1)"
+    />
+    <ImageSourceActionSheet
+      v-if="imageSourceSheetOpen"
+      @camera="pickFromCamera"
+      @gallery="pickFromGallery"
+      @files="pickFromFiles"
+      @cancel="cancelImageSourceSheet"
     />
   </div>
 </template>

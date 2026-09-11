@@ -25,8 +25,9 @@ export function isSupportedImageUploadFile(file: File) {
   return ALLOWED_IMAGE_UPLOAD_TYPES.has(inferImageContentType(file));
 }
 
-export const IMAGE_FILE_ACCEPT_DESKTOP = "image/*";
-export const IMAGE_FILE_ACCEPT_MOBILE = "*/*";
+export const IMAGE_FILE_ACCEPT_GALLERY = "image/*";
+export const IMAGE_FILE_ACCEPT_FILES = "*/*";
+export const IMAGE_FILE_ACCEPT_DESKTOP = IMAGE_FILE_ACCEPT_GALLERY;
 
 export function isMobileUploadDevice() {
   if (typeof navigator === "undefined") return false;
@@ -36,8 +37,9 @@ export function isMobileUploadDevice() {
   return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
 }
 
-export function getImageFileAccept() {
-  return isMobileUploadDevice() ? IMAGE_FILE_ACCEPT_MOBILE : IMAGE_FILE_ACCEPT_DESKTOP;
+export function getImageFileAccept(source: "camera" | "gallery" | "files" = "gallery") {
+  if (!isMobileUploadDevice()) return IMAGE_FILE_ACCEPT_DESKTOP;
+  return source === "files" ? IMAGE_FILE_ACCEPT_FILES : IMAGE_FILE_ACCEPT_GALLERY;
 }
 
 export function isImageUploadTooLarge(file: File) {
