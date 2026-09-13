@@ -72,6 +72,7 @@ import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
+import SketchBoardIcon from "@/components/icons/SketchBoardIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
@@ -111,6 +112,7 @@ const RepaintCanvas = defineAsyncComponent(() => import("@/components/generate/R
 const GenerateCameraPicker = defineAsyncComponent(() => import("@/components/generate/GenerateCameraPicker.vue"));
 const GenerateStylePicker = defineAsyncComponent(() => import("@/components/generate/GenerateStylePicker.vue"));
 const UserAssetPicker = defineAsyncComponent(() => import("@/components/assets/UserAssetPicker.vue"));
+const SketchBoardDialog = defineAsyncComponent(() => import("@/components/generate/SketchBoardDialog.vue"));
 const UserPromptLibraryModal = defineAsyncComponent(() => import("@/components/prompts/UserPromptLibraryModal.vue"));
 const PromptOptimizeStyleDialog = defineAsyncComponent(() => import("@/components/generate/PromptOptimizeStyleDialog.vue"));
 const PromptExpandDialog = defineAsyncComponent(() => import("@/components/generate/PromptExpandDialog.vue"));
@@ -375,6 +377,7 @@ interface UploadPreviewItem {
 const DEFAULT_MAX_REFERENCE_IMAGES = 6;
 const referenceItems = ref<UploadPreviewItem[]>([]);
 const assetPickerOpen = ref(false);
+const sketchBoardOpen = ref(false);
 const pickingGeneratedReference = ref(false);
 const quickSavingReferenceIds = ref<string[]>([]);
 const quickSavingPromptKeys = ref<string[]>([]);
@@ -2465,7 +2468,21 @@ async function openAssetPicker() {
   assetPickerOpen.value = true;
 }
 
-async function uploadReferenceFiles(files: File[]) {
+function openSketchBoard() {
+  if (!ensureLoggedIn()) return;
+  if (referenceItems.value.length >= maxReferenceImages.value) {
+    message.warning(`当前模型最多支持 ${maxReferenceImages.value} 张参考图`);
+    return;
+  }
+  sketchBoardOpen.value = true;
+}
+
+function handleSketchBoardConfirm(file: File) {
+  sketchBoardOpen.value = false;
+  void uploadReferenceFiles([file], "已作为参考图");
+}
+
+async function uploadReferenceFiles(files: File[], successText?: string) {
   const imageFiles = files.filter((file) => isReferenceImageFile(file));
   if (!imageFiles.length) {
     if (files.length) {
@@ -2530,7 +2547,7 @@ async function uploadReferenceFiles(files: File[]) {
   }
 
   if (uploadedCount > 0) {
-    message.success(`成功上传 ${uploadedCount} 张参考图`);
+    message.success(successText || `成功上传 ${uploadedCount} 张参考图`);
   }
   if (oversizedCount > 0) {
     message.warning(`${oversizedCount} 张图片超过 ${MAX_IMAGE_UPLOAD_SIZE_TEXT}，已跳过`);
@@ -4983,6 +5000,26 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <span class="panel-hint">(最多 {{ maxReferenceImages }} 张<span class="panel-hint-extra">，支持拖拽、粘贴上传</span>)</span>
                   </div>
                   <div class="panel-head-actions">
+                    <a-tooltip overlay-class-name="smart-cutout-entry-tooltip">
+                      <template #title>
+                        <div class="smart-cutout-entry-tip">
+                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域，结果图为透明背景 PNG</p>
+                          <img
+                            :src="smartCutoutTipAsset"
+                            alt="智能抠图前后对比：左边是原图，右边是透明背景结果"
+                            class="smart-cutout-entry-tip-img"
+                          />
+                        </div>
+                      </template>
+                      <button
+                        type="button"
+                        class="prompt-icon-btn"
+                        aria-label="智能抠图"
+                        @click="openSmartCutoutFromImageEdit"
+                      >
+                        <ScissorOutlined />
+                      </button>
+                    </a-tooltip>
                     <a-tooltip title="我的素材">
                       <button type="button" class="prompt-icon-btn" aria-label="我的素材" @click.stop="openAssetPicker">
                         <NavGenerateImageIcon />
@@ -5039,7 +5076,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                   <div
                     v-if="referenceItems.length < maxReferenceImages"
                     class="upload-add-group"
-                    :class="{ 'is-picking': pickingGeneratedReference }"
+                    :class="{
+                      'is-picking': pickingGeneratedReference,
+                      'has-thumbs': referenceItems.length > 0,
+                    }"
                   >
                     <div
                       class="upload-add"
@@ -5054,17 +5094,37 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         <span>{{ referenceDragActive ? "松开上传" : "拖拽或点击" }}</span>
                       </template>
                     </div>
-                    <button
-                      type="button"
-                      class="upload-add upload-add-from-generated"
-                      :class="{ active: pickingGeneratedReference }"
-                      :title="pickingGeneratedReference ? '点击可取消' : '已生成图片中选择'"
-                      @click.stop="togglePickingGeneratedReference"
-                    >
-                      <PlusOutlined class="upload-add-icon" style="font-size: 20px" />
-                      <span v-if="pickingGeneratedReference">点击可取消</span>
-                      <span v-else>已生成图<br>片中选择</span>
-                    </button>
+                    <div class="upload-add-extras">
+                      <button
+                        type="button"
+                        class="upload-add upload-add-extra upload-add-assets"
+                        title="我的素材"
+                        @click.stop="openAssetPicker"
+                      >
+                        <NavGenerateImageIcon class="upload-add-icon" />
+                        <span>我的素材</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="upload-add upload-add-extra upload-add-from-generated"
+                        :class="{ active: pickingGeneratedReference }"
+                        :title="pickingGeneratedReference ? '点击可取消' : '已生成图片中选择'"
+                        @click.stop="togglePickingGeneratedReference"
+                      >
+                        <PlusOutlined class="upload-add-icon" style="font-size: 20px" />
+                        <span v-if="pickingGeneratedReference">点击可取消</span>
+                        <span v-else>已生成图<br>片中选择</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="upload-add upload-add-extra"
+                        title="画板"
+                        @click.stop="openSketchBoard"
+                      >
+                        <SketchBoardIcon class="upload-add-icon" />
+                        <span>画板</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5087,26 +5147,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </a-tooltip>
                   </div>
                   <div class="prompt-label-actions">
-                    <a-tooltip overlay-class-name="smart-cutout-entry-tooltip">
-                      <template #title>
-                        <div class="smart-cutout-entry-tip">
-                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域，结果图为透明背景 PNG</p>
-                          <img
-                            :src="smartCutoutTipAsset"
-                            alt="智能抠图前后对比：左边是原图，右边是透明背景结果"
-                            class="smart-cutout-entry-tip-img"
-                          />
-                        </div>
-                      </template>
-                      <button
-                        type="button"
-                        class="prompt-icon-btn"
-                        aria-label="智能抠图"
-                        @click="openSmartCutoutFromImageEdit"
-                      >
-                        <ScissorOutlined />
-                      </button>
-                    </a-tooltip>
                     <GenerateCameraPicker
                       v-model:body-id="selectedCameraBodyId"
                       v-model:lens-id="selectedCameraLensId"
@@ -6503,6 +6543,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
       @select-asset="handlePickUserAsset"
       @select-assets="handlePickUserAssets"
     />
+    <SketchBoardDialog
+      v-if="sketchBoardOpen"
+      v-model:open="sketchBoardOpen"
+      @confirm="handleSketchBoardConfirm"
+    />
     <TemplateFormDialog
       v-if="templateDialogOpen"
       v-model:open="templateDialogOpen"
@@ -7247,6 +7292,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 }
 
+.prompt-icon-btn-wrap {
+  display: inline-flex;
+}
+
 .prompt-icon-btn {
   appearance: none;
   display: inline-flex;
@@ -7285,11 +7334,29 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   }
 
   :deep(.anticon),
-  :deep(.nav-generate-image-icon) {
+  :deep(.nav-generate-image-icon),
+  :deep(.sketch-board-icon) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     margin: 0;
-    font-size: 15px;
-    width: 1em;
-    height: 1em;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    overflow: visible;
+
+    svg {
+      display: block;
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  :deep(.sketch-board-icon),
+  :deep(.sketch-board-icon svg) {
+    width: 14px;
+    height: 14px;
+    font-size: 14px;
   }
 }
 
@@ -7781,6 +7848,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  container-type: inline-size;
 }
 
 .generate-config-panel .upload-thumb {
@@ -7948,23 +8016,79 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .generate-config-panel .upload-add-group {
+  position: relative;
+  z-index: 4;
   display: flex;
-  gap: 8px;
+  flex: 0 0 auto;
   align-items: flex-start;
 }
 
-.generate-config-panel .upload-add-from-generated {
-  display: none;
+.generate-config-panel .upload-add-group > .upload-add:hover {
+  transform: none;
+}
+
+.generate-config-panel .upload-add-extras {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-left: 8px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.generate-config-panel .upload-add-group:hover .upload-add-extras,
+.generate-config-panel .upload-add-group:focus-within .upload-add-extras,
+.generate-config-panel .upload-add-group.is-picking .upload-add-extras {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.generate-config-panel .upload-add-group.has-thumbs .upload-add-extras {
+  left: auto;
+  right: 0;
+  top: 100%;
+  padding-left: 0;
+  padding-top: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(340px, 100cqw);
+}
+
+.generate-config-panel .upload-add-extra {
   padding: 6px;
   font-size: 11px;
   line-height: 1.25;
   text-align: center;
-}
 
-.generate-config-panel .upload-add-group:hover .upload-add-from-generated,
-.generate-config-panel .upload-add-group:focus-within .upload-add-from-generated,
-.generate-config-panel .upload-add-group.is-picking .upload-add-from-generated {
-  display: flex;
+  :deep(.anticon),
+  :deep(.nav-generate-image-icon),
+  :deep(.sketch-board-icon) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+
+    svg {
+      display: block;
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  :deep(.sketch-board-icon),
+  :deep(.sketch-board-icon svg) {
+    width: 17px;
+    height: 17px;
+    font-size: 17px;
+  }
 }
 
 .generate-config-panel .upload-add-from-generated.active {
@@ -7972,9 +8096,23 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   color: var(--theme-accent-text);
 }
 
+.generate-config-panel .upload-add-assets span {
+  white-space: nowrap;
+}
+
 @media (hover: none) {
-  .generate-config-panel .upload-add-from-generated {
-    display: flex;
+  .generate-config-panel .upload-add-group {
+    gap: 8px;
+  }
+
+  .generate-config-panel .upload-add-extras {
+    position: static;
+    left: auto;
+    top: auto;
+    padding-left: 0;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
   }
 }
 
