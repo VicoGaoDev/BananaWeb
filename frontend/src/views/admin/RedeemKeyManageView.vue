@@ -83,9 +83,17 @@ const saleColumns = [
 
 const giftColumns = [...sharedColumns, ...statusColumns];
 
+function onSalePageChange(page: number, pageSize: number) {
+  handlePageChange(saleList, false, page, pageSize);
+}
+
+function onGiftPageChange(page: number, pageSize: number) {
+  handlePageChange(giftList, true, page, pageSize);
+}
+
 const tableSections = [
-  { kind: "sale" as const, title: "售卖积分", state: saleList, isGift: false, columns: saleColumns, scrollX: 1100 },
-  { kind: "gift" as const, title: "赠送积分", state: giftList, isGift: true, columns: giftColumns, scrollX: 1000 },
+  { kind: "sale" as const, title: "售卖积分", state: saleList, isGift: false, columns: saleColumns, scrollX: 1100, onPageChange: onSalePageChange },
+  { kind: "gift" as const, title: "赠送积分", state: giftList, isGift: true, columns: giftColumns, scrollX: 1000, onPageChange: onGiftPageChange },
 ];
 
 function findAdminUser(userId?: string | null) {
@@ -595,8 +603,8 @@ onMounted(() => {
           :total="section.state.total"
           :page-size="section.state.pageSize"
           show-size-changer
-          @change="(page, pageSize) => handlePageChange(section.state, section.isGift, page, pageSize)"
-          @showSizeChange="(page, pageSize) => handlePageChange(section.state, section.isGift, page, pageSize)"
+          @change="section.onPageChange"
+          @showSizeChange="section.onPageChange"
         />
       </div>
     </div>
