@@ -1,6 +1,7 @@
 import secrets
 import string
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
@@ -26,6 +27,24 @@ def _generate_batch_no() -> str:
     return f"RK{datetime.now().strftime('%Y%m%d%H%M%S')}{secrets.randbelow(1000):03d}"
 
 
+def _sale_amount_yuan_to_fen(amount_yuan: Decimal | int | float | str | None, *, is_gift: bool) -> int | None:
+    if is_gift or amount_yuan is None:
+        return None
+    try:
+        normalized = Decimal(str(amount_yuan)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="金额格式不正确") from exc
+    if normalized <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="金额必须大于 0")
+    return int((normalized * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def _sale_amount_fen_to_yuan(amount_fen: int | None) -> float | None:
+    if amount_fen is None:
+        return None
+    return round(int(amount_fen) / 100, 2)
+
+
 def _serialize_redeem_key(row: CreditRedeemKey) -> dict:
     used_by = row.used_by_user
     creator = row.creator
@@ -33,6 +52,8 @@ def _serialize_redeem_key(row: CreditRedeemKey) -> dict:
         "id": row.id,
         "redeem_key": row.redeem_key,
         "credit_amount": int(row.credit_amount or 0),
+        "sale_amount_yuan": _sale_amount_fen_to_yuan(row.sale_amount_fen),
+        "is_gift": bool(row.is_gift),
         "batch_no": row.batch_no,
         "status": row.status,
         "is_used": bool(row.used_at or row.used_by_user_id),
@@ -46,7 +67,15 @@ def _serialize_redeem_key(row: CreditRedeemKey) -> dict:
     }
 
 
-def create_redeem_key_batch(db: Session, *, count: int, credit_amount: int, admin_user: User) -> dict:
+def create_redeem_key_batch(
+    db: Session,
+    *,
+    count: int,
+    credit_amount: int,
+    admin_user: User,
+    sale_amount_yuan: Decimal | int | float | str | None = None,
+    is_gift: bool = False,
+) -> dict:
     if count <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="生成数量必须大于 0")
     if count > 1000:
@@ -54,6 +83,7 @@ def create_redeem_key_batch(db: Session, *, count: int, credit_amount: int, admi
     if credit_amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="积分值必须大于 0")
 
+    sale_amount_fen = _sale_amount_yuan_to_fen(sale_amount_yuan, is_gift=is_gift)
     batch_no = _generate_batch_no()
     rows: list[CreditRedeemKey] = []
     existing_keys: set[str] = set()
@@ -74,6 +104,8 @@ def create_redeem_key_batch(db: Session, *, count: int, credit_amount: int, admi
         row = CreditRedeemKey(
             redeem_key=candidate,
             credit_amount=credit_amount,
+            sale_amount_fen=sale_amount_fen,
+            is_gift=bool(is_gift),
             batch_no=batch_no,
             status=REDEEM_KEY_STATUS_ENABLED,
             created_by=admin_user.id,
@@ -89,6 +121,8 @@ def create_redeem_key_batch(db: Session, *, count: int, credit_amount: int, admi
     return {
         "batch_no": batch_no,
         "credit_amount": credit_amount,
+        "sale_amount_yuan": _sale_amount_fen_to_yuan(sale_amount_fen),
+        "is_gift": bool(is_gift),
         "count": len(rows),
         "items": [_serialize_redeem_key(row) for row in rows],
     }
@@ -104,6 +138,7 @@ def list_redeem_keys(
     credit_amount: int | None = None,
     status_filter: str | None = None,
     is_used: bool | None = None,
+    is_gift: bool | None = None,
     used_by: str | None = None,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
@@ -127,6 +162,10 @@ def list_redeem_keys(
         query = query.filter(CreditRedeemKey.used_at.is_not(None))
     elif is_used is False:
         query = query.filter(CreditRedeemKey.used_at.is_(None))
+    if is_gift is True:
+        query = query.filter(CreditRedeemKey.is_gift.is_(True))
+    elif is_gift is False:
+        query = query.filter(CreditRedeemKey.is_gift.is_(False))
     if used_by:
         keyword = f"%{used_by.strip()}%"
         query = (

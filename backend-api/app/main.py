@@ -740,6 +740,8 @@ def _ensure_credit_redeem_key_schema():
                         id INTEGER NOT NULL AUTO_INCREMENT,
                         redeem_key VARCHAR(16) NOT NULL,
                         credit_amount INTEGER NOT NULL DEFAULT 0,
+                        sale_amount_fen INTEGER NULL,
+                        is_gift TINYINT(1) NOT NULL DEFAULT 0,
                         batch_no VARCHAR(32) NOT NULL,
                         status VARCHAR(20) NOT NULL DEFAULT 'enabled',
                         created_by INTEGER NULL,
@@ -751,6 +753,7 @@ def _ensure_credit_redeem_key_schema():
                         UNIQUE KEY uq_credit_redeem_keys_redeem_key (redeem_key),
                         INDEX ix_credit_redeem_keys_redeem_key (redeem_key),
                         INDEX ix_credit_redeem_keys_batch_no (batch_no),
+                        INDEX ix_credit_redeem_keys_is_gift (is_gift),
                         INDEX ix_credit_redeem_keys_status (status),
                         INDEX ix_credit_redeem_keys_created_by (created_by),
                         INDEX ix_credit_redeem_keys_used_by_user_id (used_by_user_id),
@@ -771,6 +774,26 @@ def _ensure_credit_redeem_key_schema():
                     ALTER TABLE credit_redeem_keys
                     ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'enabled'
                     AFTER batch_no
+                    """
+                )
+            )
+        if "sale_amount_fen" not in credit_redeem_columns:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE credit_redeem_keys
+                    ADD COLUMN sale_amount_fen INTEGER NULL
+                    AFTER credit_amount
+                    """
+                )
+            )
+        if "is_gift" not in credit_redeem_columns:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE credit_redeem_keys
+                    ADD COLUMN is_gift TINYINT(1) NOT NULL DEFAULT 0
+                    AFTER sale_amount_fen
                     """
                 )
             )

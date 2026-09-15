@@ -1127,7 +1127,21 @@ async function handleRedeemCredits() {
         auth.updateUser({ ...auth.user, credits: res.credits });
       }
     }
-    message.success(`兑换成功，已到账 ${res.credit_amount} 积分`);
+    notification.success({
+      key: "redeem-credit-success",
+      class: "app-user-notice-card app-redeem-success-card",
+      message: "兑换成功",
+      description: `已到账 ${res.credit_amount} 积分，当前余额 ${res.credits} 积分`,
+      icon: renderUserNoticeIcon(ThunderboltOutlined),
+      placement: "topRight",
+      duration: 8,
+      style: {
+        ...USER_NOTICE_CARD_STYLE,
+        cursor: "default",
+        width: "420px",
+        maxWidth: "calc(100vw - 32px)",
+      },
+    });
     redeemDialogOpen.value = false;
     redeemForm.key = "";
   } catch (err: any) {

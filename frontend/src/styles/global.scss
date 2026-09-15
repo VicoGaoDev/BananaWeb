@@ -1214,6 +1214,31 @@ html, body, #app {
   color: var(--theme-icon) !important;
 }
 
+.ant-notification .app-redeem-success-card.ant-notification-notice {
+  padding: 20px 22px 18px;
+}
+
+.ant-notification .app-redeem-success-card .ant-notification-notice-message {
+  margin-bottom: 8px;
+  color: var(--theme-title);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.ant-notification .app-redeem-success-card .ant-notification-notice-description {
+  color: var(--theme-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.ant-notification .app-redeem-success-card .ant-notification-notice-icon,
+.ant-notification .app-redeem-success-card .ant-notification-notice-icon-success,
+.ant-notification .app-redeem-success-card .ant-notification-notice-icon .anticon {
+  color: var(--theme-accent-contrast) !important;
+}
+
 .ant-input,
 .ant-input-affix-wrapper,
 .ant-input-number,

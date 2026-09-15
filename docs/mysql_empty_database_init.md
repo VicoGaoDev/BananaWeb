@@ -189,6 +189,8 @@
 - `id`: 兑换码主键。
 - `redeem_key`: 16 位兑换码，唯一。
 - `credit_amount`: 该兑换码可兑换的积分值。
+- `sale_amount_fen`: 单码自定义售价，单位分；为空时营业额按预算单价计算。
+- `is_gift`: 是否赠送积分；为 1 时不计入营业额。
 - `batch_no`: 批次号；同一批生成的兑换码共享同一个批次号。
 - `status`: 兑换码状态，当前常见值为 `enabled`、`disabled`。
 - `created_by`: 生成人；通常为管理员用户 ID。
@@ -855,6 +857,8 @@ CREATE TABLE credit_redeem_keys (
   id INT NOT NULL AUTO_INCREMENT,
   redeem_key VARCHAR(16) NOT NULL,
   credit_amount INT NOT NULL DEFAULT 0,
+  sale_amount_fen INT DEFAULT NULL,
+  is_gift TINYINT(1) NOT NULL DEFAULT 0,
   batch_no VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'enabled',
   created_by INT DEFAULT NULL,
@@ -866,6 +870,7 @@ CREATE TABLE credit_redeem_keys (
   UNIQUE KEY uq_credit_redeem_keys_redeem_key (redeem_key),
   KEY ix_credit_redeem_keys_redeem_key (redeem_key),
   KEY ix_credit_redeem_keys_batch_no (batch_no),
+  KEY ix_credit_redeem_keys_is_gift (is_gift),
   KEY ix_credit_redeem_keys_status (status),
   KEY ix_credit_redeem_keys_created_by (created_by),
   KEY ix_credit_redeem_keys_used_by_user_id (used_by_user_id),

@@ -40,7 +40,7 @@ function formatMoney(value: number) {
 }
 
 function rowKey(record: AdminAnalyticsRedeemRevenueItem) {
-  return String(record.credit_amount);
+  return `${record.credit_amount}-${record.unit_price}`;
 }
 </script>
 

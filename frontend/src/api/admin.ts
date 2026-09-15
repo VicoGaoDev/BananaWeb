@@ -282,10 +282,16 @@ export function refreshAdminLedgerIncome(month: string): Promise<AdminLedger> {
   return client.post(`/admin/ledgers/${month}/refresh-income`);
 }
 
-export function createRedeemKeysBatch(count: number, creditAmount: number): Promise<AdminRedeemKeyBatchResult> {
+export function createRedeemKeysBatch(
+  count: number,
+  creditAmount: number,
+  options?: { saleAmountYuan?: number | null; isGift?: boolean },
+): Promise<AdminRedeemKeyBatchResult> {
   return client.post("/admin/redeem-keys/batch", {
     count,
     credit_amount: creditAmount,
+    sale_amount_yuan: options?.isGift ? undefined : options?.saleAmountYuan,
+    is_gift: Boolean(options?.isGift),
   });
 }
 
@@ -297,6 +303,7 @@ export function listRedeemKeys(params: {
   credit_amount?: number;
   status?: RedeemKeyStatus;
   is_used?: boolean;
+  is_gift?: boolean;
   used_by?: string;
   start_date?: string;
   end_date?: string;

@@ -1119,6 +1119,8 @@ export interface AdminRedeemKey {
   id: number;
   redeem_key: string;
   credit_amount: number;
+  sale_amount_yuan?: number | null;
+  is_gift: boolean;
   batch_no: string;
   status: RedeemKeyStatus;
   is_used: boolean;
@@ -1134,6 +1136,8 @@ export interface AdminRedeemKey {
 export interface AdminRedeemKeyBatchResult {
   batch_no: string;
   credit_amount: number;
+  sale_amount_yuan?: number | null;
+  is_gift: boolean;
   count: number;
   items: AdminRedeemKey[];
 }

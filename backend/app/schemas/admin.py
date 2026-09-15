@@ -48,6 +48,8 @@ class ResetCreditsRequest(BaseModel):
 class CreateRedeemKeysBatchRequest(BaseModel):
     count: int
     credit_amount: int
+    sale_amount_yuan: Decimal | None = Field(default=None, gt=0)
+    is_gift: bool = False
 
 
 class CreateOfflineOrderRequest(BaseModel):
@@ -66,6 +68,8 @@ class RedeemKeyOut(BaseModel):
     id: int
     redeem_key: str
     credit_amount: int
+    sale_amount_yuan: float | None = None
+    is_gift: bool = False
     batch_no: str
     status: str
     is_used: bool
@@ -81,6 +85,8 @@ class RedeemKeyOut(BaseModel):
 class RedeemKeyBatchOut(BaseModel):
     batch_no: str
     credit_amount: int
+    sale_amount_yuan: float | None = None
+    is_gift: bool = False
     count: int
     items: list[RedeemKeyOut]
 

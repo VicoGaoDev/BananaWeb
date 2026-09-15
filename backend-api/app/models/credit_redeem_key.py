@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -10,6 +10,8 @@ class CreditRedeemKey(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     redeem_key = Column(String(16), nullable=False, unique=True, index=True)
     credit_amount = Column(Integer, nullable=False, default=0, server_default="0")
+    sale_amount_fen = Column(Integer, nullable=True)
+    is_gift = Column(Boolean, nullable=False, default=False, server_default="0", index=True)
     batch_no = Column(String(32), nullable=False, index=True)
     status = Column(String(20), nullable=False, default="enabled", server_default="enabled", index=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)

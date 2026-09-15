@@ -132,14 +132,16 @@ def collect_daily_report_stats(
     redeem_rows = (
         db.query(
             CreditRedeemKey.credit_amount,
+            CreditRedeemKey.sale_amount_fen,
             func.count(CreditRedeemKey.id).label("used_count"),
         )
         .filter(
             CreditRedeemKey.used_at.is_not(None),
+            CreditRedeemKey.is_gift.is_(False),
             CreditRedeemKey.used_at >= start_at,
             CreditRedeemKey.used_at < end_at,
         )
-        .group_by(CreditRedeemKey.credit_amount)
+        .group_by(CreditRedeemKey.credit_amount, CreditRedeemKey.sale_amount_fen)
         .all()
     )
     redeem_revenue_yuan = 0.0
@@ -148,7 +150,12 @@ def collect_daily_report_stats(
         credit_amount = int(row.credit_amount or 0)
         used_count = int(row.used_count or 0)
         redeem_used_count += used_count
-        redeem_revenue_yuan += used_count * float(REDEEM_UNIT_PRICES.get(credit_amount, 0.0))
+        sale_amount_fen = row.sale_amount_fen
+        if sale_amount_fen is not None and int(sale_amount_fen) > 0:
+            unit_price = round(int(sale_amount_fen) / 100, 2)
+        else:
+            unit_price = float(REDEEM_UNIT_PRICES.get(credit_amount, 0.0))
+        redeem_revenue_yuan += used_count * unit_price
 
     task_total_count, task_success_count, task_failed_count = (
         db.query(
