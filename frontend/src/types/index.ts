@@ -1309,6 +1309,7 @@ export interface AdminDailyReportTestResult {
   task_success_count: number;
   task_failed_count: number;
   credit_consumed: number;
+  new_user_count: number;
 }
 
 export interface AdminDailyReportRangePayload {

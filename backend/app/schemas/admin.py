@@ -378,6 +378,7 @@ class DailyReportTestOut(BaseModel):
     task_success_count: int
     task_failed_count: int
     credit_consumed: int
+    new_user_count: int
 
 
 class DailyReportRangeRequest(BaseModel):

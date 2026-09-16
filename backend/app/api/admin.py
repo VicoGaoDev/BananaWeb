@@ -104,6 +104,7 @@ def _format_daily_report_result(result: DailyReportSendResult) -> dict:
         "task_success_count": stats.task_success_count,
         "task_failed_count": stats.task_failed_count,
         "credit_consumed": stats.credit_consumed,
+        "new_user_count": stats.new_user_count,
     }
 
 

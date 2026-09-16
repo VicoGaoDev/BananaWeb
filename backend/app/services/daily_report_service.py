@@ -12,8 +12,9 @@ from app.models.credit_log import CreditLog
 from app.models.offline_order import OfflineOrder
 from app.models.payment_order import PaymentOrder
 from app.models.task import Task
+from app.models.user import User
 from app.services.payment_service import parse_alipay_payment_time
-from app.services.admin_service import REDEEM_UNIT_PRICES
+from app.services.admin_service import REDEEM_UNIT_PRICES, _analytics_user_filter
 from app.utils.datetime_utils import now_local, to_local_naive
 from app.services.wecom_notify_service import is_wecom_notify_enabled, send_wecom_markdown
 
@@ -38,6 +39,7 @@ class DailyReportStats:
     task_success_count: int
     task_failed_count: int
     credit_consumed: int
+    new_user_count: int
 
     @property
     def total_revenue_yuan(self) -> float:
@@ -166,7 +168,6 @@ def collect_daily_report_stats(
         .filter(
             Task.created_at >= start_at,
             Task.created_at < end_at,
-            Task.is_deleted.is_(False),
             _exclude_example_template_seed_task_clause(),
         )
         .one()
@@ -178,6 +179,16 @@ def collect_daily_report_stats(
             CreditLog.type == "consume",
             CreditLog.created_at >= start_at,
             CreditLog.created_at < end_at,
+        )
+        .scalar()
+    )
+
+    new_user_count = (
+        db.query(func.count(User.id))
+        .filter(
+            *_analytics_user_filter(),
+            User.created_at >= start_at,
+            User.created_at < end_at,
         )
         .scalar()
     )
@@ -195,6 +206,7 @@ def collect_daily_report_stats(
         task_success_count=int(task_success_count or 0),
         task_failed_count=int(task_failed_count or 0),
         credit_consumed=int(credit_consumed or 0),
+        new_user_count=int(new_user_count or 0),
     )
 
 
@@ -215,6 +227,7 @@ def build_daily_report_markdown(stats: DailyReportStats) -> str:
         f"> 📝 线下订单录入数: **{stats.offline_order_count}**\n"
         f"> 🎟️ 兑换码营业额: <font color=\"warning\">¥{stats.redeem_revenue_yuan:.2f}</font>\n"
         f"> 🔑 兑换码使用次数: **{stats.redeem_used_count}**\n"
+        f"> 👤 新增用户数: **{stats.new_user_count}**\n"
         f"> 🖼️ 任务总数: **{stats.task_total_count}**\n"
         f"> 🟢 成功任务数: **{stats.task_success_count}**\n"
         f"> 🔴 失败任务数: **{stats.task_failed_count}**\n"
