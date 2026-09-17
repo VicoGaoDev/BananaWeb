@@ -10,7 +10,7 @@ from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.user import User
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account, get_user_credit_balance
-from app.services.wecom_notify_service import format_wecom_user_label, send_wecom_markdown
+from app.services.wecom_notify_service import dispatch_wecom_event, format_wecom_user_label
 from app.utils.datetime_utils import now_local
 
 REDEEM_KEY_ALPHABET = string.ascii_uppercase + string.digits
@@ -75,7 +75,9 @@ def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user
     used_credit = int(credit_account.used_credit or 0) if credit_account else 0
     gift_title = "（赠送）" if bool(row.is_gift) else ""
     gift_line = "> 🏷️ 类型: **赠送**\n" if bool(row.is_gift) else ""
-    send_wecom_markdown(
+    time_text = now_local().strftime("%Y-%m-%d %H:%M:%S")
+    dispatch_wecom_event(
+        "redeem_success",
         f"## 🎁 兑换码兑换成功{gift_title}\n"
         f"> 👤 用户: **{user_label}**\n"
         f"> 🔑 兑换码: `{row.redeem_key}`\n"
@@ -83,7 +85,19 @@ def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user
         f"> ⚡ 兑换积分: **{int(row.credit_amount or 0)}**\n"
         f"> ⚡ 已使用积分: **{used_credit}**\n"
         f"> ⚡ 剩余积分: **{remain_credit}**\n"
-        f"> ⏰ 兑换时间: {now_local().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"> ⏰ 兑换时间: {time_text}",
+        {
+            "is_gift": bool(row.is_gift),
+            "user_label": user_label,
+            "redeem_key": row.redeem_key,
+            "gift_title": gift_title,
+            "gift_line": gift_line,
+            "gift_label": "赠送" if bool(row.is_gift) else "售卖",
+            "credit_amount": int(row.credit_amount or 0),
+            "used_credit": used_credit,
+            "remain_credit": remain_credit,
+            "time": time_text,
+        },
     )
 
 

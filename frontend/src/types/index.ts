@@ -1317,6 +1317,73 @@ export interface AdminDailyReportRangePayload {
   end_date: string;
 }
 
+export interface WecomEventFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface WecomEventField {
+  key: string;
+  label: string;
+  type: "number" | "boolean" | "multi_select" | string;
+  optional?: boolean;
+  default?: boolean | null;
+  options?: WecomEventFieldOption[];
+}
+
+export interface WecomEventVariable {
+  key: string;
+  label: string;
+  example?: string | number | boolean | null;
+}
+
+export interface WecomEventCatalogItem {
+  event_key: string;
+  label: string;
+  fields: WecomEventField[];
+  variables: WecomEventVariable[];
+  default_template: string;
+}
+
+export interface AdminWecomWebhookChannel {
+  id: string;
+  name: string;
+  webhook_url: string;
+  is_enabled: boolean;
+  remark: string;
+  rule_count: number;
+  updated_at?: string | null;
+}
+
+export interface AdminWecomWebhookChannelPayload {
+  name: string;
+  webhook_url?: string;
+  is_enabled?: boolean;
+  remark?: string;
+}
+
+export interface AdminWecomNotifyRule {
+  id: string;
+  channel_id: string;
+  channel_name: string;
+  event_key: string;
+  event_label: string;
+  name: string;
+  is_enabled: boolean;
+  conditions: Record<string, unknown>;
+  template_markdown: string;
+  updated_at?: string | null;
+}
+
+export interface AdminWecomNotifyRulePayload {
+  channel_id: string;
+  event_key: string;
+  name?: string;
+  is_enabled?: boolean;
+  conditions?: Record<string, unknown>;
+  template_markdown?: string;
+}
+
 export interface AdminAnalyticsBreakdown {
   range_label: string;
   status_breakdown: AdminAnalyticsBreakdownItem[];

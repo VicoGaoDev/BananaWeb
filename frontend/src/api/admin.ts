@@ -43,6 +43,11 @@ import type {
   ChatExternalApiConfigTestResult,
   AdminDailyReportTestResult,
   AdminDailyReportRangePayload,
+  AdminWecomNotifyRule,
+  AdminWecomNotifyRulePayload,
+  AdminWecomWebhookChannel,
+  AdminWecomWebhookChannelPayload,
+  WecomEventCatalogItem,
   FeedbackDetail,
   FeedbackListResponse,
   FeedbackMessage,
@@ -280,6 +285,56 @@ export function updateAdminLedger(month: string, payload: AdminLedgerPayload): P
 
 export function refreshAdminLedgerIncome(month: string): Promise<AdminLedger> {
   return client.post(`/admin/ledgers/${month}/refresh-income`);
+}
+
+export function listWecomEventCatalog(): Promise<WecomEventCatalogItem[]> {
+  return client.get("/admin/wecom-event-catalog");
+}
+
+export function listWecomChannels(): Promise<AdminWecomWebhookChannel[]> {
+  return client.get("/admin/wecom-channels");
+}
+
+export function createWecomChannel(payload: AdminWecomWebhookChannelPayload): Promise<AdminWecomWebhookChannel> {
+  return client.post("/admin/wecom-channels", payload);
+}
+
+export function updateWecomChannel(
+  channelId: string,
+  payload: Partial<AdminWecomWebhookChannelPayload>,
+): Promise<AdminWecomWebhookChannel> {
+  return client.put(`/admin/wecom-channels/${channelId}`, payload);
+}
+
+export function deleteWecomChannel(channelId: string): Promise<void> {
+  return client.delete(`/admin/wecom-channels/${channelId}`);
+}
+
+export function testWecomChannel(channelId: string): Promise<{ sent: boolean; channel_id: string }> {
+  return client.post(`/admin/wecom-channels/${channelId}/test`);
+}
+
+export function listWecomRules(): Promise<AdminWecomNotifyRule[]> {
+  return client.get("/admin/wecom-rules");
+}
+
+export function createWecomRule(payload: AdminWecomNotifyRulePayload): Promise<AdminWecomNotifyRule> {
+  return client.post("/admin/wecom-rules", payload);
+}
+
+export function updateWecomRule(
+  ruleId: string,
+  payload: Partial<AdminWecomNotifyRulePayload>,
+): Promise<AdminWecomNotifyRule> {
+  return client.put(`/admin/wecom-rules/${ruleId}`, payload);
+}
+
+export function testWecomRule(ruleId: string): Promise<{ sent: boolean; rule_id: string }> {
+  return client.post(`/admin/wecom-rules/${ruleId}/test`);
+}
+
+export function deleteWecomRule(ruleId: string): Promise<void> {
+  return client.delete(`/admin/wecom-rules/${ruleId}`);
 }
 
 export function createRedeemKeysBatch(

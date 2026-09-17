@@ -386,6 +386,94 @@ class DailyReportRangeRequest(BaseModel):
     end_date: datetime
 
 
+class WecomEventFieldOut(BaseModel):
+    key: str
+    label: str
+    type: str
+    optional: bool = True
+    default: bool | None = None
+    options: list[dict] = Field(default_factory=list)
+
+
+class WecomEventVariableOut(BaseModel):
+    key: str
+    label: str
+    example: str | int | float | bool | None = None
+
+
+class WecomEventCatalogItemOut(BaseModel):
+    event_key: str
+    label: str
+    fields: list[WecomEventFieldOut] = Field(default_factory=list)
+    variables: list[WecomEventVariableOut] = Field(default_factory=list)
+    default_template: str = ""
+
+
+class WecomWebhookChannelOut(BaseModel):
+    id: str
+    name: str
+    webhook_url: str
+    is_enabled: bool
+    remark: str
+    rule_count: int = 0
+    updated_at: datetime | None = None
+
+
+class WecomWebhookChannelWriteRequest(BaseModel):
+    name: str
+    webhook_url: str = ""
+    is_enabled: bool = False
+    remark: str = ""
+
+
+class WecomWebhookChannelUpdateRequest(BaseModel):
+    name: str | None = None
+    webhook_url: str | None = None
+    is_enabled: bool | None = None
+    remark: str | None = None
+
+
+class WecomWebhookChannelTestOut(BaseModel):
+    sent: bool
+    channel_id: str
+
+
+class WecomNotifyRuleOut(BaseModel):
+    id: str
+    channel_id: str
+    channel_name: str
+    event_key: str
+    event_label: str
+    name: str
+    is_enabled: bool
+    conditions: dict = Field(default_factory=dict)
+    template_markdown: str = ""
+    updated_at: datetime | None = None
+
+
+class WecomNotifyRuleWriteRequest(BaseModel):
+    channel_id: str
+    event_key: str
+    name: str = ""
+    is_enabled: bool = True
+    conditions: dict = Field(default_factory=dict)
+    template_markdown: str = ""
+
+
+class WecomNotifyRuleUpdateRequest(BaseModel):
+    channel_id: str | None = None
+    event_key: str | None = None
+    name: str | None = None
+    is_enabled: bool | None = None
+    conditions: dict | None = None
+    template_markdown: str | None = None
+
+
+class WecomNotifyRuleTestOut(BaseModel):
+    sent: bool
+    rule_id: str
+
+
 class ApiAlertApiStatOut(BaseModel):
     api_config_id: int | None = None
     api_config_name: str

@@ -283,6 +283,12 @@ const router = createRouter({
           component: () => import("@/views/admin/GeneralSettingsView.vue"),
         },
         {
+          path: "admin/wecom-notify",
+          name: "AdminWecomNotify",
+          meta: { requiresAdmin: true, requiresSuperAdmin: true },
+          component: () => import("@/views/admin/WecomNotifyManageView.vue"),
+        },
+        {
           path: "admin/feedbacks",
           name: "AdminFeedbackManage",
           meta: { requiresAdmin: true },

@@ -73,6 +73,7 @@ import {
   AccountBookOutlined,
   MoneyCollectOutlined,
   BellOutlined,
+  NotificationOutlined,
   BulbOutlined,
   CheckOutlined,
   ClockCircleOutlined,
@@ -279,6 +280,7 @@ const routeOrder = new Map<string, number>([
   ["/admin/video-dashboard", 25],
   ["/admin/error-analytics", 26],
   ["/admin/general-settings", 27],
+  ["/admin/wecom-notify", 27.5],
   ["/admin/redeem-keys", 28],
   ["/admin/ledger", 29],
   ["/admin/revenue", 30],
@@ -396,6 +398,7 @@ const ADMIN_ANALYTICS_MENU_KEY = "admin-analytics";
 const ADMIN_FUNDS_MENU_KEY = "admin-funds";
 const ADMIN_THIRD_PARTY_MENU_KEY = "admin-third-party";
 const ADMIN_NOTICE_MENU_KEY = "admin-notice";
+const ADMIN_SYSTEM_MENU_KEY = "admin-system";
 
 const adminMenuItems = computed(() =>
   [
@@ -412,6 +415,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/video-dashboard", label: "视频数据", icon: VideoCameraOutlined, superAdminOnly: false },
     { key: "/admin/error-analytics", label: "错误统计", icon: BugOutlined, superAdminOnly: false },
     { key: "/admin/general-settings", label: "通用设置", icon: SettingOutlined, superAdminOnly: false },
+    { key: "/admin/wecom-notify", label: "企微通知", icon: NotificationOutlined, superAdminOnly: true },
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
     { key: "/admin/ledger", label: "账本", icon: MoneyCollectOutlined, superAdminOnly: false },
     { key: "/admin/redeem-keys", label: "兑换码", icon: GiftOutlined, superAdminOnly: false },
@@ -453,11 +457,17 @@ const adminMenuPromoDataItems = computed(() =>
 const adminMenuFundItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/ledger", "/admin/revenue"].includes(item.key))
 );
-const adminMenuBaseItems = computed(() =>
-  adminMenuItems.value.filter((item) => [
+const adminMenuSystemItems = computed(() => {
+  const order = [
     "/admin/general-settings",
-  ].includes(item.key))
-);
+    "/admin/wecom-notify",
+    "/admin/generation-scene-categories",
+  ];
+  const lookup = new Map(adminMenuItems.value.map((item) => [item.key, item]));
+  return order
+    .map((key) => lookup.get(key))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+});
 const isAdminTemplateRoute = computed(() =>
   route.path.startsWith("/admin/templates")
   || route.path.startsWith("/admin/prompt-optimize")
@@ -485,7 +495,6 @@ const isAdminFundsRoute = computed(() =>
 const isAdminThirdPartyRoute = computed(() =>
   route.path.startsWith("/admin/cos-config")
   || route.path.startsWith("/admin/external-api-configs")
-  || route.path.startsWith("/admin/generation-scene-categories")
   || route.path.startsWith("/admin/video-api-configs")
   || route.path.startsWith("/admin/chat-api-configs")
 );
@@ -494,6 +503,11 @@ const isAdminNoticeRoute = computed(() =>
   || route.path.startsWith("/admin/system-messages")
   || route.path.startsWith("/admin/update-logs")
 );
+const isAdminSystemRoute = computed(() =>
+  route.path.startsWith("/admin/general-settings")
+  || route.path.startsWith("/admin/wecom-notify")
+  || route.path.startsWith("/admin/generation-scene-categories")
+);
 const adminMenuOpenKeys = ref<string[]>([
   ...(isAdminTemplateRoute.value ? [ADMIN_TEMPLATE_MENU_KEY] : []),
   ...(isAdminUserDataRoute.value ? [ADMIN_USER_DATA_MENU_KEY] : []),
@@ -501,6 +515,7 @@ const adminMenuOpenKeys = ref<string[]>([
   ...(isAdminFundsRoute.value ? [ADMIN_FUNDS_MENU_KEY] : []),
   ...(isAdminThirdPartyRoute.value ? [ADMIN_THIRD_PARTY_MENU_KEY] : []),
   ...(isAdminNoticeRoute.value ? [ADMIN_NOTICE_MENU_KEY] : []),
+  ...(isAdminSystemRoute.value ? [ADMIN_SYSTEM_MENU_KEY] : []),
 ]);
 
 watch(isAdminTemplateRoute, (active) => {
@@ -533,6 +548,11 @@ watch(isAdminNoticeRoute, (active) => {
     adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_NOTICE_MENU_KEY];
   }
 });
+watch(isAdminSystemRoute, (active) => {
+  if (active && !adminMenuOpenKeys.value.includes(ADMIN_SYSTEM_MENU_KEY)) {
+    adminMenuOpenKeys.value = [...adminMenuOpenKeys.value, ADMIN_SYSTEM_MENU_KEY];
+  }
+});
 const adminMenuBusinessItems = computed(() =>
   adminMenuItems.value.filter((item) => ["/admin/redeem-keys"].includes(item.key))
 );
@@ -543,7 +563,6 @@ const adminMenuConfigItems = computed(() =>
   adminMenuItems.value.filter((item) => [
     "/admin/cos-config",
     "/admin/external-api-configs",
-    "/admin/generation-scene-categories",
     "/admin/video-api-configs",
     "/admin/chat-api-configs",
   ].includes(item.key))
@@ -1780,15 +1799,19 @@ watch(
                       <template v-else>{{ item.label }}</template>
                     </a-menu-item>
                   </a-sub-menu>
-                  <template v-if="adminMenuBaseItems.length">
+                  <template v-if="adminMenuSystemItems.length">
                     <a-menu-divider />
-                    <a-menu-item
-                      v-for="item in adminMenuBaseItems"
-                      :key="item.key"
-                    >
-                      <template #icon><component :is="item.icon" /></template>
-                      {{ item.label }}
-                    </a-menu-item>
+                    <a-sub-menu :key="ADMIN_SYSTEM_MENU_KEY" popup-class-name="warm-dropdown">
+                      <template #icon><SettingOutlined /></template>
+                      <template #title>系统设置</template>
+                      <a-menu-item
+                        v-for="item in adminMenuSystemItems"
+                        :key="item.key"
+                      >
+                        <template #icon><component :is="item.icon" /></template>
+                        {{ item.label }}
+                      </a-menu-item>
+                    </a-sub-menu>
                   </template>
                 </a-menu>
               </template>
@@ -2190,12 +2213,16 @@ watch(
                   <template v-else>{{ item.label }}</template>
                 </a-menu-item>
               </a-sub-menu>
-              <template v-if="adminMenuBaseItems.length">
+              <template v-if="adminMenuSystemItems.length">
                 <a-menu-divider />
-                <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
-                  <template #icon><component :is="item.icon" /></template>
-                  {{ item.label }}
-                </a-menu-item>
+                <a-sub-menu :key="ADMIN_SYSTEM_MENU_KEY" popup-class-name="warm-dropdown">
+                  <template #icon><SettingOutlined /></template>
+                  <template #title>系统设置</template>
+                  <a-menu-item v-for="item in adminMenuSystemItems" :key="item.key">
+                    <template #icon><component :is="item.icon" /></template>
+                    {{ item.label }}
+                  </a-menu-item>
+                </a-sub-menu>
               </template>
             </a-menu>
           </template>
@@ -2510,12 +2537,16 @@ watch(
                 <template v-else>{{ item.label }}</template>
               </a-menu-item>
             </a-sub-menu>
-            <template v-if="adminMenuBaseItems.length">
+            <template v-if="adminMenuSystemItems.length">
               <a-menu-divider />
-              <a-menu-item v-for="item in adminMenuBaseItems" :key="item.key">
-                <template #icon><component :is="item.icon" /></template>
-                {{ item.label }}
-              </a-menu-item>
+              <a-sub-menu :key="ADMIN_SYSTEM_MENU_KEY" popup-class-name="warm-dropdown">
+                <template #icon><SettingOutlined /></template>
+                <template #title>系统设置</template>
+                <a-menu-item v-for="item in adminMenuSystemItems" :key="item.key">
+                  <template #icon><component :is="item.icon" /></template>
+                  {{ item.label }}
+                </a-menu-item>
+              </a-sub-menu>
             </template>
           </a-menu>
         </div>

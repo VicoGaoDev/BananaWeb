@@ -184,6 +184,22 @@
 - `task_id`: 关联任务；任务消费和返还时很关键。
 - `created_at`: 流水创建时间。
 
+### `wecom_webhook_channels`
+
+- `name`: 通道展示名称。
+- `webhook_url`: 企业微信群机器人地址。
+- `is_enabled`: 是否发送该通道消息。
+- `remark`: 用途说明。
+
+### `wecom_notify_rules`
+
+- `channel_id`: 目标通道。
+- `event_key`: 触发场景，取值见后台事件目录。
+- `name`: 规则展示名称。
+- `is_enabled`: 是否启用该规则。
+- `conditions_json`: 结构化条件；空对象表示该场景一律触发。
+- `template_markdown`: 当前规则的企微 Markdown 内容模版，支持 `{{变量名}}`。
+
 ### `credit_redeem_keys`
 
 - `id`: 兑换码主键。
@@ -1042,6 +1058,37 @@ CREATE TABLE system_message_recipients (
   KEY ix_system_message_recipients_is_read (is_read),
   CONSTRAINT fk_system_message_recipients_message FOREIGN KEY (message_id) REFERENCES system_messages (id),
   CONSTRAINT fk_system_message_recipients_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE wecom_webhook_channels (
+  id INT NOT NULL AUTO_INCREMENT,
+  business_id VARCHAR(32) NOT NULL,
+  name VARCHAR(50) NOT NULL,
+  webhook_url VARCHAR(500) NOT NULL DEFAULT '',
+  is_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  remark VARCHAR(200) NOT NULL DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_wecom_webhook_channels_business_id (business_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE wecom_notify_rules (
+  id INT NOT NULL AUTO_INCREMENT,
+  business_id VARCHAR(32) NOT NULL,
+  channel_id INT NOT NULL,
+  event_key VARCHAR(50) NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  conditions_json TEXT NOT NULL,
+  template_markdown TEXT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_wecom_notify_rules_business_id (business_id),
+  KEY ix_wecom_notify_rules_channel_id (channel_id),
+  KEY ix_wecom_notify_rules_event_key (event_key),
+  CONSTRAINT fk_wecom_notify_rules_channel FOREIGN KEY (channel_id) REFERENCES wecom_webhook_channels (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE regenerate_logs (

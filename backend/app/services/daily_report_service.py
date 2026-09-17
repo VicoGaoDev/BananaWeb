@@ -16,7 +16,7 @@ from app.models.user import User
 from app.services.payment_service import parse_alipay_payment_time
 from app.services.admin_service import REDEEM_UNIT_PRICES, _analytics_user_filter
 from app.utils.datetime_utils import now_local, to_local_naive
-from app.services.wecom_notify_service import is_wecom_notify_enabled, send_wecom_markdown
+from app.services.wecom_notify_service import dispatch_wecom_event, is_wecom_notify_enabled
 
 PAYMENT_SUCCESS_STATUSES = ("paid", "credited")
 
@@ -255,5 +255,6 @@ def send_range_report(
     stats = collect_daily_report_stats(db, start_at=normalized_start, end_at=normalized_end)
     sent = False
     if is_wecom_notify_enabled():
-        sent = send_wecom_markdown(build_daily_report_markdown(stats))
+        markdown = build_daily_report_markdown(stats)
+        sent = dispatch_wecom_event("daily_report", markdown, {"report_markdown": markdown})
     return DailyReportSendResult(sent=sent, stats=stats)
