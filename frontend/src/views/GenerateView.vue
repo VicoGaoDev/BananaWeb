@@ -265,6 +265,34 @@ function upsertChatGeneratedTasks(payload?: ChatGenerateTasksPayload | null) {
 const failedResultAsset = withBaseUrl("failed-result.svg");
 const generateEmptyStateAsset = withBaseUrl("generate-task-card-minimal-a.svg");
 const smartCutoutTipAsset = withBaseUrl("docs/tutorial/20-smart-cutout-compare-tip.jpg");
+const inpaintTipAsset = withBaseUrl("docs/tutorial/21-inpaint-compare-tip.jpg");
+const promptReverseTipAsset = withBaseUrl("docs/tutorial/22-prompt-reverse-tip.jpg");
+const extendedToolMenuItems = [
+  {
+    key: "promptReverse" as const,
+    label: "提示词反推",
+    icon: SearchOutlined,
+    tip: "提示词反推：上传一张图，系统会帮你写出可用的提示词，适合看到喜欢的图却不知道怎么描述时",
+    tipAlt: "提示词反推示例：根据图片生成可用提示词",
+    tipAsset: promptReverseTipAsset,
+  },
+  {
+    key: "inpaint" as const,
+    label: "局部重绘",
+    icon: HighlightOutlined,
+    tip: "局部重绘：在原图上涂抹要改的区域，只重绘这一块，未涂抹部分保持不变",
+    tipAlt: "局部重绘前后对比：左边是原图，右边是局部修改后的结果",
+    tipAsset: inpaintTipAsset,
+  },
+  {
+    key: "smartCutout" as const,
+    label: "智能抠图",
+    icon: ScissorOutlined,
+    tip: "智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域，结果图为透明背景 PNG",
+    tipAlt: "智能抠图前后对比：左边是原图，右边是透明背景结果",
+    tipAsset: smartCutoutTipAsset,
+  },
+];
 const expiredResultAsset = useExpiredResultAsset();
 const prompt = ref("");
 const repaintPrompt = ref("");
@@ -3899,35 +3927,6 @@ function handleSmartCutoutGeneratedImage(task: GeneratedTaskItem, img: ImageResu
   message.success("已带入智能抠图");
 }
 
-function openSmartCutoutFromImageEdit() {
-  const firstReference = firstReferenceItem.value;
-  const firstReferenceUrl = firstReference?.remoteUrl?.trim() || "";
-  expandConfigPanelForEditing();
-  generateMode.value = "smartCutout";
-  prompt.value = "";
-  repaintPrompt.value = "";
-  numImages.value = 1;
-  syncReferenceItems([]);
-
-  if (!firstReference) {
-    applySmartCutoutSource("");
-    message.success("已切换到智能抠图");
-    return;
-  }
-
-  if (firstReference.status === "success" && firstReferenceUrl) {
-    applySmartCutoutSource(firstReferenceUrl);
-    message.success("已带第一张目标图进入智能抠图");
-    return;
-  }
-
-  applySmartCutoutSource("");
-  message.warning(
-    firstReference.status === "uploading"
-      ? "已切换到智能抠图，第一张目标图仍在上传中，未自动带入"
-      : "已切换到智能抠图，第一张目标图上传失败，未自动带入",
-  );
-}
 
 async function ensureTemplateTagsLoaded() {
   if (templateTags.value.length) return;
@@ -4406,23 +4405,28 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                       :selected-keys="activeExtendedToolMenuKeys"
                       @click="handleExtendedToolMenuClick"
                     >
-                      <a-menu-item key="promptReverse">
-                        <span class="generate-tool-menu-item-label">
-                          <SearchOutlined />
-                          <span>提示词反推</span>
-                        </span>
-                      </a-menu-item>
-                      <a-menu-item key="inpaint">
-                        <span class="generate-tool-menu-item-label">
-                          <HighlightOutlined />
-                          <span>局部重绘</span>
-                        </span>
-                      </a-menu-item>
-                      <a-menu-item key="smartCutout">
-                        <span class="generate-tool-menu-item-label">
-                          <ScissorOutlined />
-                          <span>智能抠图</span>
-                        </span>
+                      <a-menu-item v-for="item in extendedToolMenuItems" :key="item.key">
+                        <a-tooltip
+                          overlay-class-name="generate-tool-entry-tooltip"
+                          placement="left"
+                          :mouse-enter-delay="0.08"
+                          :get-popup-container="getBodyPopupContainer"
+                        >
+                          <template #title>
+                            <div class="generate-tool-entry-tip">
+                              <p>{{ item.tip }}</p>
+                              <img
+                                :src="item.tipAsset"
+                                :alt="item.tipAlt"
+                                class="generate-tool-entry-tip-img"
+                              />
+                            </div>
+                          </template>
+                          <span class="generate-tool-menu-item-label generate-tool-entry-label">
+                            <component :is="item.icon" />
+                            <span>{{ item.label }}</span>
+                          </span>
+                        </a-tooltip>
                       </a-menu-item>
                     </a-menu>
                   </template>
@@ -5000,26 +5004,6 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <span class="panel-hint">(最多 {{ maxReferenceImages }} 张<span class="panel-hint-extra">，支持拖拽、粘贴上传</span>)</span>
                   </div>
                   <div class="panel-head-actions">
-                    <a-tooltip overlay-class-name="smart-cutout-entry-tooltip">
-                      <template #title>
-                        <div class="smart-cutout-entry-tip">
-                          <p>智能抠图：支持根据提示词自动抠图，也可手动涂抹并自定义抠图区域，结果图为透明背景 PNG</p>
-                          <img
-                            :src="smartCutoutTipAsset"
-                            alt="智能抠图前后对比：左边是原图，右边是透明背景结果"
-                            class="smart-cutout-entry-tip-img"
-                          />
-                        </div>
-                      </template>
-                      <button
-                        type="button"
-                        class="prompt-icon-btn"
-                        aria-label="智能抠图"
-                        @click="openSmartCutoutFromImageEdit"
-                      >
-                        <ScissorOutlined />
-                      </button>
-                    </a-tooltip>
                     <a-tooltip title="我的素材">
                       <button type="button" class="prompt-icon-btn" aria-label="我的素材" @click.stop="openAssetPicker">
                         <NavGenerateImageIcon />
@@ -7009,6 +6993,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   gap: 10px;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.generate-tool-entry-label {
+  width: 100%;
 }
 
 /* --- Prompt (standalone) --- */
@@ -10726,28 +10714,29 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 </style>
 
 <style lang="scss">
-.smart-cutout-entry-tooltip {
+.generate-tool-entry-tooltip {
+  z-index: 1400;
   max-width: none;
 }
 
-.smart-cutout-entry-tooltip .ant-tooltip-inner {
+.generate-tool-entry-tooltip .ant-tooltip-inner {
   box-sizing: border-box;
   width: 264px;
   padding: 10px 12px;
 }
 
-.smart-cutout-entry-tip {
+.generate-tool-entry-tip {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.smart-cutout-entry-tip p {
+.generate-tool-entry-tip p {
   margin: 0;
   line-height: 1.5;
 }
 
-.smart-cutout-entry-tip-img {
+.generate-tool-entry-tip-img {
   display: block;
   width: 100%;
   height: auto;
