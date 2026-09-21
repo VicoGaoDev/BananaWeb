@@ -76,6 +76,8 @@ import SketchBoardIcon from "@/components/icons/SketchBoardIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
 import SmartCutoutPanel from "@/components/generate/SmartCutoutPanel.vue";
+import ImageEditEmptyGuide from "@/components/generate/ImageEditEmptyGuide.vue";
+import ExtendedToolEmptyGuide from "@/components/generate/ExtendedToolEmptyGuide.vue";
 import UpdateLogEntryButton from "@/components/update-log/UpdateLogEntryButton.vue";
 import { useImageSourcePicker } from "@/composables/useImageSourcePicker";
 import { appendTransientImageNonce, useTransientImageLoad } from "@/composables/useTransientImageLoad";
@@ -1114,6 +1116,11 @@ const smartCutoutCreditCost = computed(() => resolveSceneCreditCost(
   customSizeEnabled.value ? "" : resolution.value,
 ));
 const isExtendedToolMode = computed(() => generateMode.value === "promptReverse" || generateMode.value === "inpaint" || generateMode.value === "smartCutout");
+const extendedToolEmptyGuideMode = computed(() => (
+  generateMode.value === "promptReverse" || generateMode.value === "inpaint" || generateMode.value === "smartCutout"
+    ? generateMode.value
+    : "smartCutout"
+));
 const activeExtendedToolLabel = computed(() => (
   generateMode.value === "promptReverse"
     ? "提示词反推"
@@ -6440,9 +6447,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
             />
           </template>
 
-          <div v-else class="result-empty">
+          <div v-else class="result-empty" :class="{ 'is-image-edit-guide': isImageEditMode || isTextGenerateMode || isExtendedToolMode }">
             <transition name="generate-panel-slide" mode="out-in">
-              <div :key="generateMode" class="result-empty-copy">
+              <ImageEditEmptyGuide
+                v-if="isImageEditMode || isTextGenerateMode"
+                :key="generateMode"
+                :mode="isTextGenerateMode ? 'textGenerate' : 'imageEdit'"
+              />
+              <ExtendedToolEmptyGuide
+                v-else-if="isExtendedToolMode"
+                :key="generateMode"
+                :mode="extendedToolEmptyGuideMode"
+              />
+              <div v-else :key="generateMode" class="result-empty-copy">
                 <div class="empty-illustration-shell">
                   <img
                     :src="generateEmptyStateAsset"
@@ -10137,6 +10154,12 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   justify-content: center;
   padding: 8px 20px 28px;
   animation: generate-fade-up var(--motion-duration-reveal) var(--motion-ease-enter) 0.2s both;
+}
+
+.result-empty.is-image-edit-guide {
+  justify-content: center;
+  align-items: center;
+  padding: 8px 20px 16px;
 }
 
 .result-empty-copy {
