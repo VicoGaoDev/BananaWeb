@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, defineAsyncComponent, defineComponent, h, inject, nextTick, onActivated, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
-import { message, Modal } from "ant-design-vue";
+import { message, Modal, notification } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -13,6 +13,7 @@ import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
 import {
   FontSizeOutlined,
   CloseOutlined,
+  CheckOutlined,
   CloudUploadOutlined,
   CopyOutlined,
   DeleteOutlined,
@@ -1461,12 +1462,94 @@ function syncFailureRefundRemainingCount(value: number | null | undefined) {
   }
 }
 
+function countReadyGeneratedImages(images: ImageResult[]) {
+  return images.filter((image) => (
+    image.status === "success" && !!(image.image_url || image.preview_url || image.thumb_url)
+  )).length;
+}
+
+function openGenerateResultNotice(options: {
+  key: string;
+  message: string;
+  description?: string;
+  tone: "success" | "failure";
+}) {
+  const isFailure = options.tone === "failure";
+  const notice = {
+    key: options.key,
+    class: "app-user-notice-card app-generate-result-card",
+    message: options.message,
+    description: options.description,
+    icon: h(
+      "span",
+      {
+        style: {
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "34px",
+          height: "34px",
+          borderRadius: "50%",
+          background: isFailure ? "#dc2626" : "var(--theme-control-active)",
+          border: isFailure ? "1px solid #dc2626" : "1px solid var(--theme-border-accent)",
+          boxShadow: "0 10px 20px var(--theme-shadow-soft)",
+        },
+      },
+      [
+        h(isFailure ? CloseOutlined : CheckOutlined, {
+          style: {
+            fontSize: "16px",
+            color: "#fff",
+          },
+        }),
+      ],
+    ),
+    closeIcon: h(CloseOutlined, {
+      style: {
+        color: "var(--theme-accent-text)",
+        fontSize: "18px",
+      },
+    }),
+    placement: "topRight" as const,
+    duration: 5,
+    style: {
+      cursor: "default",
+      borderRadius: "20px",
+      background: "linear-gradient(180deg, var(--theme-panel-bg), var(--theme-panel-bg-soft))",
+      border: "1px solid var(--theme-border-accent)",
+      boxShadow: "0 16px 28px var(--theme-shadow-soft)",
+      color: "var(--theme-title)",
+    },
+  };
+  if (isFailure) notification.error(notice);
+  else notification.success(notice);
+}
+
+function notifyGenerateTaskSuccess(taskId: string, imageCount: number) {
+  openGenerateResultNotice({
+    key: `generate-task-success-${taskId}`,
+    message: `成功生成 ${imageCount} 张图片`,
+    tone: "success",
+  });
+}
+
+function notifyGenerateTaskFailure(taskId: string, description: string) {
+  openGenerateResultNotice({
+    key: `generate-task-failure-${taskId}`,
+    message: "生成失败",
+    description,
+    tone: "failure",
+  });
+}
+
 function syncTaskFromResult(taskId: string, data: TaskResult) {
   const current = generatedTasks.value.find((task) => task.taskId === taskId);
   if (!current) return;
   const previousStatus = current.status;
+  const previousReadyCount = countReadyGeneratedImages(current.images);
   const nextErrorMessage = data.error_message || data.images.find((image) => image.status === "failed" && image.error_message)?.error_message || "";
   syncFailureRefundRemainingCount(data.failure_refund_remaining_count);
+  const nextImages = data.images.length ? data.images : current.images;
   updateGeneratedTaskByTaskId(taskId, (task) => ({
     ...task,
     status: data.status,
@@ -1492,20 +1575,22 @@ function syncTaskFromResult(taskId: string, data: TaskResult) {
     sourceImageThumb: data.source_image_thumb || task.sourceImageThumb,
     maskImage: data.mask_image || task.maskImage,
     maskImageThumb: data.mask_image_thumb || task.maskImageThumb,
-    images: data.images.length ? data.images : task.images,
+    images: nextImages,
   }));
-  if (previousStatus !== data.status && (data.status === "success" || data.status === "failed")) {
-    data.status === "success"
-      ? message.success(`任务 #${taskId} 已完成`)
-      : message.warning(getPreferredGenerationErrorMessage(
-        data.error_message,
-        data.images.find((image) => image.status === "failed" && image.error_message)?.error_message,
-        Boolean(data.credit_refunded),
-        "生成失败，请重试",
-        Boolean(data.used_fallback_api),
-        data.api_attempts,
-        data.provider_error_message,
-      ));
+  const nextReadyCount = countReadyGeneratedImages(nextImages);
+  if (nextReadyCount > previousReadyCount) {
+    notifyGenerateTaskSuccess(taskId, nextReadyCount);
+  }
+  if (previousStatus !== data.status && data.status === "failed") {
+    notifyGenerateTaskFailure(taskId, getPreferredGenerationErrorMessage(
+      data.error_message,
+      data.images.find((image) => image.status === "failed" && image.error_message)?.error_message,
+      Boolean(data.credit_refunded),
+      "生成失败，请重试",
+      Boolean(data.used_fallback_api),
+      data.api_attempts,
+      data.provider_error_message,
+    ));
   }
 }
 
@@ -8857,9 +8942,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 16px 18px 18px;
-  background: var(--theme-panel-bg);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   background-image: none;
+  box-shadow: none;
 }
 
 .result-panel.config-panel-is-collapsed {
@@ -9556,8 +9644,8 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   align-items: start;
   grid-template-columns: repeat(var(--generate-grid-columns, 4), minmax(0, 1fr));
   gap: 16px;
-  margin-top: 12px;
-  background: var(--theme-panel-bg);
+  margin-top: 0;
+  background: transparent;
   background-image: none;
 }
 
@@ -9565,11 +9653,11 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin-top: 14px;
-  padding-right: 4px;
+  margin-top: 8px;
+  padding-right: 0;
   display: flex;
   flex-direction: column;
-  background: var(--theme-panel-bg);
+  background: transparent;
   background-image: none;
   scrollbar-width: thin;
   scrollbar-color: var(--theme-border-strong) transparent;
@@ -9669,7 +9757,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   overflow: hidden;
   border: 1px dashed var(--theme-panel-border);
   background: #ffffff;
-  box-shadow: 0 12px 24px var(--theme-shadow-soft);
+  box-shadow: none;
   transition:
     transform var(--motion-duration-hover) var(--motion-ease-enter),
     box-shadow var(--motion-duration-hover) var(--motion-ease-soft),
@@ -9708,13 +9796,13 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   &.failed {
     border-color: rgba(214, 87, 75, 0.34);
     background: linear-gradient(180deg, #fff0ed, #ffe1db);
-    box-shadow: 0 14px 26px rgba(214, 87, 75, 0.16);
+    box-shadow: none;
   }
 }
 
 .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong);
-  box-shadow: 0 16px 28px var(--theme-shadow-medium);
+  box-shadow: none;
 }
 
 .result-card:hover .result-frame.clickable img {
@@ -10596,6 +10684,13 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
     border-radius: 20px;
   }
 
+  .result-panel {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .generate-config-panel {
     padding: 15px;
   }
@@ -10737,6 +10832,28 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
 </style>
 
 <style lang="scss">
+.app-user-notice-card.app-generate-result-card.ant-notification-notice .ant-notification-notice-with-icon {
+  align-items: center;
+}
+
+.app-user-notice-card.app-generate-result-card.ant-notification-notice .ant-notification-notice-icon {
+  margin-top: 0;
+  grid-row: auto;
+}
+
+.app-user-notice-card.app-generate-result-card.ant-notification-notice .ant-notification-notice-message {
+  margin-bottom: 0;
+}
+
+.ant-notification .app-generate-result-card .ant-notification-notice-icon .anticon {
+  color: #fff !important;
+  font-size: 18px;
+}
+
+.app-user-notice-card.app-generate-result-card.ant-notification-notice .ant-notification-notice-description {
+  margin-top: 4px;
+}
+
 .generate-tool-entry-tooltip {
   z-index: 1400;
   max-width: none;
@@ -11134,8 +11251,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .work-panel
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-panel,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-body,
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-list {
-  background: var(--theme-panel-bg);
+  background: transparent;
   background-image: none;
+  box-shadow: none;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .settings-panel.generate-config-panel {
@@ -11334,7 +11452,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .reverse-re
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-frame {
   border-color: var(--theme-panel-border) !important;
   background: var(--theme-surface-strong) !important;
-  box-shadow: 0 12px 28px var(--theme-shadow-soft) !important;
+  box-shadow: none !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-frame.pending {
@@ -11350,7 +11468,7 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .frame-stat
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-card:hover .result-frame.clickable {
   border-color: var(--theme-border-strong) !important;
-  box-shadow: 0 18px 30px var(--theme-shadow-medium) !important;
+  box-shadow: none !important;
 }
 
 html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-empty {
@@ -11424,8 +11542,9 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .brush-prev
 .generate-page .result-panel,
 .generate-page .result-body,
 .generate-page .result-list {
-  background: var(--theme-panel-bg) !important;
+  background: transparent !important;
   background-image: none !important;
+  box-shadow: none !important;
 }
 
 .generate-page .result-card {
