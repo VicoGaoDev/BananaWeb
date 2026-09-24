@@ -95,6 +95,12 @@ function formatPiePercent(value: number, total: number) {
   return `${percent.toFixed(1)}%`;
 }
 
+function formatPieCount(value: number) {
+  const count = Number(value || 0);
+  if (!Number.isFinite(count)) return "0";
+  return `${count}`;
+}
+
 function buildPieOption(colors: string[], data: PieDatum[]) {
   const total = data.reduce((sum, item) => sum + Number(item.value || 0), 0);
   return {
@@ -122,7 +128,7 @@ function buildPieOption(colors: string[], data: PieDatum[]) {
         avoidLabelOverlap: true,
         label: {
           show: true,
-          formatter: "{d}%",
+          formatter: (params: { value?: number }) => formatPieCount(Number(params.value || 0)),
         },
         labelLine: {
           show: true,

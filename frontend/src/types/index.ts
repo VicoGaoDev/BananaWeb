@@ -1754,6 +1754,7 @@ export interface GenerationModelOption {
   custom_size_options: SceneOptionItem[];
   category_id?: number | null;
   category_name?: string | null;
+  category_description?: string | null;
   category_sort_order?: number | null;
 }
 
@@ -1779,6 +1780,7 @@ export interface TaskSceneConfig {
   custom_size_options: SceneOptionItem[];
   category_id?: number | null;
   category_name?: string | null;
+  category_description?: string | null;
   category_sort_order?: number | null;
 }
 

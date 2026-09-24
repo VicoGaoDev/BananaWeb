@@ -593,6 +593,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     custom_size_options: scene.custom_size_options,
     category_id: scene.category_id ?? null,
     category_name: scene.category_name ?? null,
+    category_description: scene.category_description ?? null,
     category_sort_order: scene.category_sort_order ?? null,
   };
 }
@@ -649,6 +650,7 @@ const generationModelSelectOptions = computed(() => (
     sortOrder: model.sort_order,
     categoryId: model.category_id,
     categoryName: model.category_name,
+    categoryDescription: model.category_description,
     categorySortOrder: model.category_sort_order,
   }))
 ));
@@ -9619,9 +9621,18 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .result-retain-badge > .result-retain-text {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+}
+
+.result-retain-clause {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .result-retain-badge .result-tip-highlight {
+  display: inline-flex;
+  align-items: center;
   margin: 0 4px;
   line-height: 1;
   color: #16a34a;
@@ -9635,7 +9646,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 }
 
 .result-tip-divider {
+  display: inline-flex;
+  align-items: center;
   margin: 0 8px;
+  line-height: 1;
   color: var(--theme-text-secondary, #8b7457);
 }
 
@@ -10662,13 +10676,15 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   }
 
   .result-retain-clause {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
     max-width: none;
     white-space: nowrap;
   }
 
   .result-tip-divider {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
     margin: 0 6px;
   }
 
