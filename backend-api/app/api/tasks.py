@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_user
+from app.models.external_api_scene_binding import ExternalApiSceneBinding
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskCreateResponse, TaskOut
 from app.services.image_delivery_service import (
@@ -104,11 +105,31 @@ def _resolve_api_task_model(model: str, reference_images: list[str]) -> str:
     return task_model
 
 
-def _validate_api_generation_request(body: TaskCreate) -> tuple[list[str], str, str]:
+def _validate_reference_image_count(db: Session, task_model: str, reference_images: list[str]) -> None:
+    if not reference_images:
+        return
+    binding = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.scene_key == task_model,
+            ExternalApiSceneBinding.is_deleted.is_(False),
+        )
+        .first()
+    )
+    max_reference_images = int(binding.max_reference_images or 0) if binding else 0
+    if max_reference_images > 0 and len(reference_images) > max_reference_images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{task_model} 最多支持 {max_reference_images} 张参考图，当前传入 {len(reference_images)} 张",
+        )
+
+
+def _validate_api_generation_request(db: Session, body: TaskCreate) -> tuple[list[str], str, str]:
     if (body.mode or "generate").strip().lower() != "generate":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="暂不开放局部重绘 API")
     reference_images = _normalize_base64_images(body.reference_images)
     task_model = _resolve_api_task_model(body.model, reference_images)
+    _validate_reference_image_count(db, task_model, reference_images)
     resolved_resolution = "" if task_model == "banana" else body.resolution
     return reference_images, task_model, resolved_resolution
 
@@ -177,7 +198,7 @@ def create(
             "prompt_length": len((body.prompt or "").strip()),
         },
     )
-    reference_images, task_model, resolved_resolution = _validate_api_generation_request(body)
+    reference_images, task_model, resolved_resolution = _validate_api_generation_request(db, body)
     require_scene_config(db, task_model)
     persisted_reference_images = _persist_reference_images_for_async(db, reference_images)
     task_create_kwargs = _build_api_task_create_kwargs(
@@ -243,7 +264,7 @@ def submit(
             "prompt_length": len((body.prompt or "").strip()),
         },
     )
-    reference_images, task_model, resolved_resolution = _validate_api_generation_request(body)
+    reference_images, task_model, resolved_resolution = _validate_api_generation_request(db, body)
     require_scene_config(db, task_model)
     persisted_reference_images = _persist_reference_images_for_async(db, reference_images)
 
