@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,12 +17,14 @@ from app.services.business_id_service import task_external_id, user_external_id
 from app.services.external_api_config_service import require_scene_config
 from app.services.cos_service import build_object_key, load_image_bytes, upload_bytes_to_cos
 from app.services.task_service import (
+    MAX_TASK_PROMPT_LENGTH,
     create_tasks,
     get_task_detail,
     get_task_details,
     mark_tasks_dispatched,
     mark_tasks_enqueue_failed,
     mark_tasks_queued,
+    _validate_custom_size,
 )
 
 router = APIRouter(prefix="/api/tasks", tags=["生成任务"])
@@ -39,6 +42,7 @@ API_GENERATE_MODELS = frozenset(
         "gptimage2_low",
         "banana_pro",
         "banana2",
+        "banana2_lite",
         "banana",
     }
 )
@@ -51,6 +55,7 @@ API_EDIT_MODELS = frozenset(
         "gptimage2_low_edit",
         "banana_pro_edit",
         "banana2_edit",
+        "banana2_edit_lite",
         "banana_edit",
     }
 )
@@ -105,9 +110,18 @@ def _resolve_api_task_model(model: str, reference_images: list[str]) -> str:
     return task_model
 
 
-def _validate_reference_image_count(db: Session, task_model: str, reference_images: list[str]) -> None:
-    if not reference_images:
-        return
+def _validate_api_prompt(prompt: str) -> None:
+    normalized = (prompt or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="提示词不能为空")
+    if len(normalized) > MAX_TASK_PROMPT_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"提示词不能超过 {MAX_TASK_PROMPT_LENGTH} 个字符",
+        )
+
+
+def _get_scene_binding_or_400(db: Session, task_model: str) -> ExternalApiSceneBinding:
     binding = (
         db.query(ExternalApiSceneBinding)
         .filter(
@@ -116,21 +130,74 @@ def _validate_reference_image_count(db: Session, task_model: str, reference_imag
         )
         .first()
     )
+    if not binding:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的调用场景")
+    return binding
+
+
+def _validate_reference_image_count(binding: ExternalApiSceneBinding, reference_images: list[str]) -> None:
+    if not reference_images:
+        return
     max_reference_images = int(binding.max_reference_images or 0) if binding else 0
     if max_reference_images > 0 and len(reference_images) > max_reference_images:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{task_model} 最多支持 {max_reference_images} 张参考图，当前传入 {len(reference_images)} 张",
+            detail=f"{binding.scene_key} 最多支持 {max_reference_images} 张参考图，当前传入 {len(reference_images)} 张",
         )
+
+
+def _parse_scene_option_values(raw: str | None) -> set[str]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    values: set[str] = set()
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("value") or "").strip()
+        if value:
+            values.add(value)
+    return values
+
+
+def _validate_scene_options(binding: ExternalApiSceneBinding, *, size: str, resolution: str) -> None:
+    normalized_size = (size or "").strip()
+    if normalized_size and not bool(binding.hide_aspect_ratio):
+        allowed_sizes = _parse_scene_option_values(binding.aspect_ratio_options_json)
+        if allowed_sizes and normalized_size not in allowed_sizes:
+            options = "、".join(sorted(allowed_sizes))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{binding.scene_key} 不支持 size={normalized_size}，可选值：{options}",
+            )
+
+    normalized_resolution = (resolution or "").strip()
+    if normalized_resolution and not bool(binding.hide_resolution):
+        allowed_resolutions = _parse_scene_option_values(binding.image_size_options_json)
+        if allowed_resolutions and normalized_resolution not in allowed_resolutions:
+            options = "、".join(sorted(allowed_resolutions))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{binding.scene_key} 不支持 resolution={normalized_resolution}，可选值：{options}",
+            )
 
 
 def _validate_api_generation_request(db: Session, body: TaskCreate) -> tuple[list[str], str, str]:
     if (body.mode or "generate").strip().lower() != "generate":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="暂不开放局部重绘 API")
+    _validate_api_prompt(body.prompt)
     reference_images = _normalize_base64_images(body.reference_images)
     task_model = _resolve_api_task_model(body.model, reference_images)
-    _validate_reference_image_count(db, task_model, reference_images)
+    require_scene_config(db, task_model)
+    binding = _get_scene_binding_or_400(db, task_model)
+    _validate_reference_image_count(binding, reference_images)
+    if (body.custom_size or "").strip():
+        _validate_custom_size(db, task_model, body.custom_size)
     resolved_resolution = "" if task_model == "banana" else body.resolution
+    _validate_scene_options(binding, size=body.size, resolution=resolved_resolution)
     return reference_images, task_model, resolved_resolution
 
 
@@ -199,7 +266,6 @@ def create(
         },
     )
     reference_images, task_model, resolved_resolution = _validate_api_generation_request(db, body)
-    require_scene_config(db, task_model)
     persisted_reference_images = _persist_reference_images_for_async(db, reference_images)
     task_create_kwargs = _build_api_task_create_kwargs(
         body,
@@ -265,7 +331,6 @@ def submit(
         },
     )
     reference_images, task_model, resolved_resolution = _validate_api_generation_request(db, body)
-    require_scene_config(db, task_model)
     persisted_reference_images = _persist_reference_images_for_async(db, reference_images)
 
     try:

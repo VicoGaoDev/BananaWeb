@@ -13,7 +13,6 @@ from app.models.image import Image
 from app.models.user import User
 from app.models.user_board import UserBoard
 from app.models.credit_log import CreditLog
-from app.models.prompt_history import PromptHistory
 from app.services.business_id_service import task_external_id, user_external_id
 from app.services.distributed_lock_service import RedisLockHandle, acquire_redis_lock, release_redis_lock
 from app.services.external_api_config_service import SCENE_INPAINT, SCENE_SMART_CUTOUT, get_scene_credit_cost
@@ -640,7 +639,6 @@ def create_tasks(
 
             tasks.append(task)
 
-        db.add(PromptHistory(user_id=user_id, prompt=normalized_prompt, mode=mode))
         db.commit()
         for task in tasks:
             db.refresh(task)
