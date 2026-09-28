@@ -39,11 +39,13 @@ SCENE_BANANA2_EDIT = "banana2_edit"
 SCENE_BANANA_PRO_EDIT = "banana_pro_edit"
 SCENE_BANANA_PRO_PLUS_EDIT = "banana_pro_plus_edit"
 SCENE_PROMPT_REVERSE = "prompt_reverse"
+SCENE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_INPAINT = "inpaint"
 SCENE_SMART_CUTOUT = "smart_cutout"
 SCENE_TYPE_GENERATE = "generate"
 SCENE_TYPE_IMAGE_EDIT = "image_edit"
 SCENE_TYPE_PROMPT_REVERSE = "prompt_reverse"
+SCENE_TYPE_PROMPT_OPTIMIZE = "prompt_optimize"
 SCENE_TYPE_INPAINT = "inpaint"
 SCENE_TYPE_SMART_CUTOUT = "smart_cutout"
 DEFAULT_GENERATION_SCENE = SCENE_BANANA_PRO
@@ -112,6 +114,7 @@ DEFAULT_SCENE_DEFINITIONS = [
     {"scene_key": SCENE_BANANA_PRO_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro", "scene_description": "增强版", "sort_order": 130, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
     {"scene_key": SCENE_BANANA_PRO_PLUS_EDIT, "scene_type": SCENE_TYPE_IMAGE_EDIT, "scene_label": "Banana Pro+", "scene_description": "增强稳定版", "sort_order": 140, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": True},
     {"scene_key": SCENE_PROMPT_REVERSE, "scene_type": SCENE_TYPE_PROMPT_REVERSE, "scene_label": "提示词反推", "scene_description": "图片反推提示词", "sort_order": 50, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
+    {"scene_key": SCENE_PROMPT_OPTIMIZE, "scene_type": SCENE_TYPE_PROMPT_OPTIMIZE, "scene_label": "提示词优化", "scene_description": "优化当前提示词", "sort_order": 55, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_INPAINT, "scene_type": SCENE_TYPE_INPAINT, "scene_label": "局部重绘", "scene_description": "图编辑/局部重绘", "sort_order": 60, "hide_aspect_ratio": True, "hide_resolution": True, "hide_custom_size": True},
     {"scene_key": SCENE_SMART_CUTOUT, "scene_type": SCENE_TYPE_SMART_CUTOUT, "scene_label": "智能抠图", "scene_description": "涂抹区域后自动抠图", "sort_order": 65, "hide_aspect_ratio": False, "hide_resolution": False, "hide_custom_size": False},
 ]
@@ -125,6 +128,7 @@ SCENE_DEFAULT_CREDIT_COSTS = {
     SCENE_BANANA_PRO_EDIT: 4,
     SCENE_BANANA_PRO_PLUS_EDIT: 4,
     SCENE_PROMPT_REVERSE: 1,
+    SCENE_PROMPT_OPTIMIZE: 1,
     SCENE_INPAINT: 4,
     SCENE_SMART_CUTOUT: 4,
 }
@@ -135,7 +139,7 @@ IMAGE_EDIT_SCENE_SOURCE_MAP = {
     SCENE_BANANA_PRO_PLUS_EDIT: SCENE_BANANA_PRO_PLUS,
 }
 DEFAULT_SCENE_MAP = {item["scene_key"]: item for item in DEFAULT_SCENE_DEFINITIONS}
-NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_INPAINT}
+NON_EDITABLE_SCENE_KEYS = {SCENE_PROMPT_REVERSE, SCENE_PROMPT_OPTIMIZE, SCENE_INPAINT}
 DEFAULT_SMART_CUTOUT_MAX_REFERENCE_IMAGES = 2
 DEFAULT_ASPECT_RATIO_OPTIONS = [
     {"label": "■  1:1", "value": "1:1"},
@@ -509,6 +513,8 @@ def get_default_credit_cost(scene_key: str, scene_type: str | None = None) -> in
         return SCENE_DEFAULT_CREDIT_COSTS[scene_key]
     if scene_type == SCENE_TYPE_PROMPT_REVERSE:
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_PROMPT_REVERSE]
+    if scene_type == SCENE_TYPE_PROMPT_OPTIMIZE:
+        return SCENE_DEFAULT_CREDIT_COSTS[SCENE_PROMPT_OPTIMIZE]
     if scene_type == SCENE_TYPE_INPAINT:
         return SCENE_DEFAULT_CREDIT_COSTS[SCENE_INPAINT]
     if scene_type == SCENE_TYPE_SMART_CUTOUT:
@@ -750,33 +756,50 @@ def _validate_scene_binding_configs(
     return primary_config, backup_config
 
 
-def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
+def list_public_task_scene_configs(db: Session, scene_types: set[str] | None = None) -> list[TaskSceneConfigOut]:
+    _ensure_scene_bindings(db)
     category_map = build_scene_category_map(db)
+    query = (
+        db.query(ExternalApiSceneBinding)
+        .filter(
+            ExternalApiSceneBinding.is_deleted.is_(False),
+            ExternalApiSceneBinding.status == "enabled",
+        )
+    )
+    if scene_types:
+        query = query.filter(ExternalApiSceneBinding.scene_type.in_(scene_types))
+    bindings = query.order_by(ExternalApiSceneBinding.sort_order.asc(), ExternalApiSceneBinding.id.asc()).all()
+
     items: list[TaskSceneConfigOut] = []
-    for item in list_scene_bindings(db):
-        if item.status != "enabled":
-            continue
-        category = category_map.get(item.scene_key)
+    for binding in bindings:
+        scene_label, scene_description = _resolve_scene_copy(binding)
+        aspect_ratio_options_json, image_size_options_json, custom_size_options_json = _get_scene_option_json(
+            binding.scene_type,
+            binding.aspect_ratio_options_json,
+            binding.image_size_options_json,
+            binding.custom_size_options_json,
+        )
+        category = category_map.get(binding.scene_key)
         items.append(TaskSceneConfigOut(
-            scene_key=item.scene_key,
-            scene_type=item.scene_type,
-            scene_label=item.scene_label,
-            scene_description=item.scene_description,
-            display_name=item.display_name,
-            subtitle=item.subtitle,
-            sort_order=item.sort_order,
-            hide_aspect_ratio=item.hide_aspect_ratio,
-            hide_resolution=item.hide_resolution,
-            hide_custom_size=item.hide_custom_size,
-            custom_size_min=item.custom_size_min,
-            custom_size_max=item.custom_size_max,
-            custom_size_step=item.custom_size_step,
-            credit_cost=item.credit_cost,
-            resolution_credit_costs=_normalize_resolution_credit_costs(item.resolution_credit_costs_json),
-            max_reference_images=item.max_reference_images,
-            aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
-            image_size_options=json.loads(item.image_size_options_json or "[]"),
-            custom_size_options=json.loads(item.custom_size_options_json or "[]"),
+            scene_key=binding.scene_key,
+            scene_type=binding.scene_type,
+            scene_label=scene_label,
+            scene_description=scene_description,
+            display_name=(binding.display_name or "").strip(),
+            subtitle=(binding.subtitle or "").strip(),
+            sort_order=binding.sort_order,
+            hide_aspect_ratio=bool(binding.hide_aspect_ratio),
+            hide_resolution=binding.hide_resolution,
+            hide_custom_size=bool(binding.hide_custom_size),
+            custom_size_min=max(1, int(binding.custom_size_min or 256)),
+            custom_size_max=max(1, int(binding.custom_size_max or 4096)),
+            custom_size_step=max(1, int(binding.custom_size_step or 8)),
+            credit_cost=binding.credit_cost,
+            resolution_credit_costs=_normalize_resolution_credit_costs(binding.resolution_credit_costs_json),
+            max_reference_images=max(0, int(binding.max_reference_images or 0)),
+            aspect_ratio_options=json.loads(aspect_ratio_options_json or "[]"),
+            image_size_options=json.loads(image_size_options_json or "[]"),
+            custom_size_options=json.loads(custom_size_options_json or "[]"),
             category_id=category["id"] if category else None,
             category_name=category["name"] if category else None,
             category_description=category["description"] if category else None,

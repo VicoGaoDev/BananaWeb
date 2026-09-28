@@ -55,7 +55,7 @@ def get_generation_models(db: Session = Depends(get_db)):
 
 @public_router.get("/task-scenes", response_model=list[TaskSceneConfigOut])
 def get_task_scenes(db: Session = Depends(get_db)):
-    return list_public_task_scene_configs(db)
+    return list_public_task_scene_configs(db, scene_types={"generate", "image_edit"})
 
 
 @router.post("", response_model=ExternalApiConfigOut)
