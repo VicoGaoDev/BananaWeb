@@ -17,14 +17,16 @@ type CardItem = {
 };
 
 function buildSuccessRateMetric(
-  tasksCreated: AdminAnalyticsMetric,
   successTasks: AdminAnalyticsMetric,
+  failedTasks: AdminAnalyticsMetric,
 ): AdminAnalyticsMetric {
-  const current = tasksCreated.current
-    ? Number(((successTasks.current / tasksCreated.current) * 100).toFixed(1))
+  const currentFinished = successTasks.current + failedTasks.current;
+  const previousFinished = successTasks.previous + failedTasks.previous;
+  const current = currentFinished
+    ? Number(((successTasks.current / currentFinished) * 100).toFixed(1))
     : 0;
-  const previous = tasksCreated.previous
-    ? Number(((successTasks.previous / tasksCreated.previous) * 100).toFixed(1))
+  const previous = previousFinished
+    ? Number(((successTasks.previous / previousFinished) * 100).toFixed(1))
     : 0;
   const delta = Number((current - previous).toFixed(1));
   const delta_pct = previous === 0 ? null : Number(((delta / previous) * 100).toFixed(1));
@@ -52,7 +54,7 @@ const emit = defineEmits<{
 
 const cards = computed<CardItem[]>(() => {
   if (!props.summary) return [];
-  const successRateMetric = buildSuccessRateMetric(props.summary.tasks_created, props.summary.success_tasks);
+  const successRateMetric = buildSuccessRateMetric(props.summary.success_tasks, props.summary.failed_tasks);
   return [
     { key: "tasks_created", label: "任务总数", color: "#1890ff", metric: props.summary.tasks_created },
     { key: "success_tasks", label: "成功任务数", color: "#52c41a", metric: props.summary.success_tasks },

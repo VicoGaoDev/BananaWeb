@@ -109,11 +109,13 @@ const processingTaskCount = computed(() => (
 
 const periodCards = computed<PeriodCardItem[]>(() => {
   if (!summary.value) return [];
-  const successRateCurrent = summary.value.tasks_created.current
-    ? Number(((summary.value.success_tasks.current / summary.value.tasks_created.current) * 100).toFixed(1))
+  const currentFinishedTasks = summary.value.success_tasks.current + summary.value.failed_tasks.current;
+  const previousFinishedTasks = summary.value.success_tasks.previous + summary.value.failed_tasks.previous;
+  const successRateCurrent = currentFinishedTasks
+    ? Number(((summary.value.success_tasks.current / currentFinishedTasks) * 100).toFixed(1))
     : 0;
-  const successRatePrevious = summary.value.tasks_created.previous
-    ? Number(((summary.value.success_tasks.previous / summary.value.tasks_created.previous) * 100).toFixed(1))
+  const successRatePrevious = previousFinishedTasks
+    ? Number(((summary.value.success_tasks.previous / previousFinishedTasks) * 100).toFixed(1))
     : 0;
   const successRateDelta = Number((successRateCurrent - successRatePrevious).toFixed(1));
   return [

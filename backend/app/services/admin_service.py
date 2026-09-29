@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from sqlalchemy.orm import Session, aliased, joinedload
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.task import Task
@@ -99,13 +99,6 @@ def _exclude_example_template_seed_task_clause():
     return or_(Task.is_example_template_seed.is_(False), Task.is_example_template_seed.is_(None))
 
 
-def _dialog_task_run_time_expr():
-    # 与任务详情 dialog 的 run_time 一致：finished - (started or created)
-    return func.unix_timestamp(Task.request_finished_at) - func.unix_timestamp(
-        func.coalesce(Task.request_started_at, Task.created_at)
-    )
-
-
 def _task_duration_seconds(task: Task, attempt_duration_ms: int | None = None) -> float | None:
     run_time = _calculate_task_run_time(task)
     if run_time is not None:
@@ -145,21 +138,7 @@ def _model_avg_run_time_map(
     canvas_task_filter: str | None = None,
     include_unsafe_tasks: bool = True,
 ) -> dict[str, tuple[float, int]]:
-    attempt_seconds = (
-        db.query(func.sum(TaskApiAttempt.duration_ms) / 1000.0)
-        .filter(
-            TaskApiAttempt.task_id == Task.id,
-            TaskApiAttempt.duration_ms.is_not(None),
-            TaskApiAttempt.duration_ms > 0,
-        )
-        .correlate(Task)
-        .scalar_subquery()
-    )
-    run_time = case(
-        (Task.request_finished_at.is_not(None), _dialog_task_run_time_expr()),
-        else_=attempt_seconds,
-    )
-    rows = (
+    task_subquery = (
         _task_query(
             db,
             start_date=start_date,
@@ -173,8 +152,22 @@ def _model_avg_run_time_map(
             include_unsafe_tasks=include_unsafe_tasks,
             include_restricted_users=True,
         )
-        .with_entities(Task.model, func.avg(run_time), func.count(run_time))
-        .group_by(Task.model)
+        .with_entities(Task.id, Task.model)
+        .subquery()
+    )
+    rows = (
+        db.query(
+            task_subquery.c.model,
+            func.avg(TaskApiAttempt.duration_ms / 1000.0),
+            func.count(TaskApiAttempt.id),
+        )
+        .select_from(TaskApiAttempt)
+        .join(task_subquery, task_subquery.c.id == TaskApiAttempt.task_id)
+        .filter(
+            TaskApiAttempt.duration_ms.is_not(None),
+            TaskApiAttempt.duration_ms > 0,
+        )
+        .group_by(task_subquery.c.model)
         .all()
     )
     result: dict[str, tuple[float, int]] = {}
@@ -2411,19 +2404,15 @@ def _model_compare_rows(
         failed_count = int(payload.get("failed_count") or 0)
         credit_cost = int(payload.get("credit_cost") or 0)
         mapped_avg, mapped_count = duration_map.get(name, (0.0, 0))
-        duration_count = int(mapped_count or payload.get("duration_count") or 0)
-        duration_total = float(payload.get("duration_total") or 0)
-        avg_duration_seconds = (
-            float(mapped_avg)
-            if mapped_count
-            else (round(duration_total / duration_count, 1) if duration_count else 0.0)
-        )
+        duration_count = int(mapped_count or 0)
+        finished_count = success_count + failed_count
+        avg_duration_seconds = float(mapped_avg) if mapped_count else 0.0
         rows.append({
             "name": name,
             "count": count,
             "success_count": success_count,
             "failed_count": failed_count,
-            "success_rate": round((success_count / count) * 100, 1) if count else 0.0,
+            "success_rate": round((success_count / finished_count) * 100, 1) if finished_count else 0.0,
             "credit_cost": credit_cost,
             "avg_credit_cost": round(credit_cost / count, 1) if count else 0.0,
             "duration_count": duration_count,
@@ -2464,8 +2453,14 @@ def _api_attempt_performance_rows(
         .subquery()
     )
     task_duration_seconds = case(
-        (Task.request_finished_at.is_not(None), _dialog_task_run_time_expr()),
-        else_=TaskApiAttempt.duration_ms / 1000.0,
+        (
+            and_(
+                TaskApiAttempt.duration_ms.is_not(None),
+                TaskApiAttempt.duration_ms > 0,
+            ),
+            TaskApiAttempt.duration_ms / 1000.0,
+        ),
+        else_=None,
     )
     download_duration_ms = case(
         (

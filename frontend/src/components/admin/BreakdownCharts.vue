@@ -193,8 +193,8 @@ const modelCompareOption = computed(() => ({
         name,
         `用量：${item.count}`,
         `成功 / 失败：${item.success_count} / ${item.failed_count}`,
-        `成功率：${item.success_rate}%`,
-        `平均耗时：${formatDurationSeconds(item.avg_duration_seconds)}`,
+        `成功率：${item.success_rate}%（已结束任务）`,
+        `单次平均接口耗时：${formatDurationSeconds(item.avg_duration_seconds)}`,
       ].join("<br/>");
     },
   },
@@ -212,7 +212,7 @@ const modelCompareOption = computed(() => ({
     },
     {
       type: "value",
-      name: "平均耗时",
+      name: "接口耗时",
       splitLine: { show: false },
       axisLabel: { formatter: "{value}秒" },
     },
@@ -235,7 +235,7 @@ const modelCompareOption = computed(() => ({
       itemStyle: { color: "#1890ff", borderRadius: [8, 8, 0, 0] },
     },
     {
-      name: "平均耗时",
+      name: "单次接口耗时",
       type: "line",
       yAxisIndex: 1,
       smooth: true,
@@ -272,7 +272,7 @@ const apiAttemptPerformanceOption = computed(() => ({
       return [
         name,
         `调用次数：${item.call_count}`,
-        `平均任务耗时：${formatDurationSeconds(item.avg_task_duration_seconds)}`,
+        `平均调用耗时：${formatDurationSeconds(item.avg_task_duration_seconds)}`,
         `平均下载耗时：${formatDurationMs(item.avg_result_download_ms)}`,
         `下载样本数：${item.download_count}`,
       ].join("<br/>");
@@ -306,7 +306,7 @@ const apiAttemptPerformanceOption = computed(() => ({
       itemStyle: { color: "#2f54eb", borderRadius: [8, 8, 0, 0] },
     },
     {
-      name: "平均任务耗时",
+      name: "平均调用耗时",
       type: "line",
       yAxisIndex: 1,
       smooth: true,
@@ -467,7 +467,7 @@ function handleUserCreditClick(params: { dataIndex?: number }) {
         <div class="breakdown-head">
           <div>
             <div class="breakdown-title">接口调用次数 / 任务耗时 / 下载耗时</div>
-            <div class="breakdown-desc">按实际调用接口统计结果 URL 图片下载速度和任务耗时。</div>
+            <div class="breakdown-desc">按每一次接口调用统计耗时，并单独统计成功调用的结果图下载耗时。</div>
           </div>
           <div class="breakdown-badge">接口</div>
         </div>

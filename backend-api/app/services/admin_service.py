@@ -3,7 +3,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.task import Task
@@ -44,12 +44,6 @@ TASK_CREDIT_REFUND_DESCRIPTIONS = (
 
 def _non_whitelisted_user_filter():
     return User.is_whitelisted.is_(False)
-
-
-def _dialog_task_run_time_expr():
-    return func.unix_timestamp(Task.request_finished_at) - func.unix_timestamp(
-        func.coalesce(Task.request_started_at, Task.created_at)
-    )
 
 
 def _get_first_admin_id(db: Session) -> int | None:
@@ -1074,7 +1068,7 @@ def _model_compare_rows(items: dict[str, dict[str, int]], limit: int = 10) -> li
             "count": count,
             "success_count": success_count,
             "failed_count": failed_count,
-            "success_rate": round((success_count / count) * 100, 1) if count else 0.0,
+            "success_rate": round((success_count / (success_count + failed_count)) * 100, 1) if (success_count + failed_count) else 0.0,
             "credit_cost": credit_cost,
             "avg_credit_cost": round(credit_cost / count, 1) if count else 0.0,
         })
@@ -1109,8 +1103,14 @@ def _api_attempt_performance_rows(
         .subquery()
     )
     task_duration_seconds = case(
-        (Task.request_finished_at.is_not(None), _dialog_task_run_time_expr()),
-        else_=TaskApiAttempt.duration_ms / 1000.0,
+        (
+            and_(
+                TaskApiAttempt.duration_ms.is_not(None),
+                TaskApiAttempt.duration_ms > 0,
+            ),
+            TaskApiAttempt.duration_ms / 1000.0,
+        ),
+        else_=None,
     )
     download_duration_ms = case(
         (

@@ -204,10 +204,14 @@ const statusOption = computed(() => ({
   ],
 }));
 
-function successRate(point?: { success_tasks?: number; tasks_created?: number } | null) {
-  const total = Number(point?.tasks_created || 0);
-  if (!total) return null;
-  return Number(((Number(point?.success_tasks || 0) / total) * 100).toFixed(1));
+function finishedTaskCount(point?: { success_tasks?: number; failed_tasks?: number } | null) {
+  return Number(point?.success_tasks || 0) + Number(point?.failed_tasks || 0);
+}
+
+function successRate(point?: { success_tasks?: number; failed_tasks?: number } | null) {
+  const finishedTotal = finishedTaskCount(point);
+  if (!finishedTotal) return null;
+  return Number(((Number(point?.success_tasks || 0) / finishedTotal) * 100).toFixed(1));
 }
 
 const successRateOption = computed(() => ({
@@ -227,9 +231,9 @@ const successRateOption = computed(() => ({
       return [
         params[0]?.axisValue || "",
         `${marker("当前周期成功率")}当前周期成功率：${currentRate == null ? "-" : `${currentRate}%`}`,
-        `当前成功 / 任务：${Number(current?.success_tasks || 0)} / ${Number(current?.tasks_created || 0)}`,
+        `当前成功 / 已结束：${Number(current?.success_tasks || 0)} / ${finishedTaskCount(current)}`,
         `${marker("上一周期成功率")}上一周期成功率：${previousRate == null ? "-" : `${previousRate}%`}`,
-        `上一周期成功 / 任务：${Number(previous?.success_tasks || 0)} / ${Number(previous?.tasks_created || 0)}`,
+        `上一周期成功 / 已结束：${Number(previous?.success_tasks || 0)} / ${finishedTaskCount(previous)}`,
       ].join("<br/>");
     },
   },

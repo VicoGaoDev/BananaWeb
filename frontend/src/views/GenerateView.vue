@@ -1479,7 +1479,9 @@ function openGenerateResultNotice(options: {
   const isFailure = options.tone === "failure";
   const notice = {
     key: options.key,
-    class: "app-user-notice-card app-generate-result-card",
+    class: isFailure
+      ? "app-user-notice-card app-generate-result-card app-generate-failure-card"
+      : "app-user-notice-card app-generate-result-card",
     message: options.message,
     description: options.description,
     icon: h(
@@ -10865,8 +10867,27 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   font-size: 18px;
 }
 
-.app-user-notice-card.app-generate-result-card.ant-notification-notice .ant-notification-notice-description {
-  margin-top: 4px;
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-with-icon {
+  align-items: start;
+}
+
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-icon {
+  grid-row: 1 / span 2;
+}
+
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-message,
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-description {
+  padding-inline-end: 36px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-message {
+  margin-bottom: 4px;
+}
+
+.app-user-notice-card.app-generate-failure-card.ant-notification-notice .ant-notification-notice-description {
+  margin-top: 0;
 }
 
 .generate-tool-entry-tooltip {
