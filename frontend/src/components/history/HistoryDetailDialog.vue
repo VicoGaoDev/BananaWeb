@@ -183,6 +183,7 @@ watch(
     if (typeof document === "undefined") return;
     document.body.style.overflow = open ? "hidden" : "";
   },
+  { immediate: true },
 );
 
 watch(

@@ -248,12 +248,28 @@ function syncSelection(list: UserHistoryCard[]) {
   selectedImageIds.value = selectedImageIds.value.filter((id) => list.some((item) => item.image_id === id));
 }
 
+function mergeRefreshedDetailItem(current: UserHistoryCard, refreshed: UserHistoryCard): UserHistoryCard {
+  const shouldKeepDetailAttempts = Boolean(
+    isAdminHistoryView.value
+    && current.item_type === "task"
+    && current.api_attempts?.length
+    && !refreshed.api_attempts?.length
+  );
+  return {
+    ...current,
+    ...refreshed,
+    api_attempts: shouldKeepDetailAttempts ? current.api_attempts : refreshed.api_attempts,
+    error_message: refreshed.error_message ?? current.error_message,
+    provider_error_message: refreshed.provider_error_message ?? current.provider_error_message,
+  };
+}
+
 function syncDetail(list: UserHistoryCard[]) {
   if (!detailItem.value) return;
   const refreshedDetail = list.find((item) => item.image_id === detailItem.value?.image_id);
   if (!refreshedDetail) return;
   if (detailItem.value.status === "success" && refreshedDetail.status === "success") return;
-  detailItem.value = refreshedDetail;
+  detailItem.value = mergeRefreshedDetailItem(detailItem.value, refreshedDetail);
 }
 
 async function fetchHistoryPage(targetPage: number) {
@@ -278,7 +294,7 @@ async function loadHistory(
   if (!silent) loading.value = true;
   try {
     const shouldRebuildLoadedPages = options.rebuildLoadedPages
-      ?? (!isIncrementalHistoryView.value && page.value > 1);
+      ?? page.value > 1;
 
     if (shouldRebuildLoadedPages) {
       const targetPages = Math.max(1, page.value);

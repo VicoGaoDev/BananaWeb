@@ -1724,7 +1724,6 @@ function syncGlobalActiveStatusPolling() {
 
 function reloadGeneratedTasksForFilters() {
   if (!auth.isLoggedIn) return;
-  generatedTasks.value = [];
   stopAllTaskPolling();
   void loadRecentGeneratedTasks();
 }
