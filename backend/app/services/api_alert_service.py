@@ -55,12 +55,20 @@ class ApiAlertStats:
     overall_image_count: int
     overall_success_count: int
     api_count: int
+    task_total_count: int = 0
+    task_success_count: int = 0
 
     @property
     def overall_success_rate(self) -> float:
         if self.overall_image_count <= 0:
             return 0.0
         return (self.overall_success_count / self.overall_image_count) * 100
+
+    @property
+    def task_success_rate(self) -> float:
+        if self.task_total_count <= 0:
+            return 0.0
+        return (self.task_success_count / self.task_total_count) * 100
 
 
 @dataclass(frozen=True)
@@ -289,6 +297,21 @@ def collect_api_alert_stats(
 
     overall_image_count = sum(api.image_count for api in apis)
     overall_success_count = sum(api.success_count for api in apis)
+    task_total_count, task_success_count = (
+        db.query(
+            func.count(Task.id),
+            func.coalesce(func.sum(case((Task.status == "success", 1), else_=0)), 0),
+        )
+        .filter(
+            Task.request_finished_at.is_not(None),
+            Task.request_finished_at >= start_at,
+            Task.request_finished_at < end_at,
+            Task.status.in_(("success", "failed")),
+            build_exclude_content_safety_failed_task_clause(Task.status, Task.error_message),
+            _exclude_example_template_seed_task_clause(),
+        )
+        .one()
+    )
 
     return ApiAlertStats(
         start_at=start_at,
@@ -297,6 +320,8 @@ def collect_api_alert_stats(
         overall_image_count=int(overall_image_count or 0),
         overall_success_count=int(overall_success_count or 0),
         api_count=len(apis),
+        task_total_count=int(task_total_count or 0),
+        task_success_count=int(task_success_count or 0),
     )
 
 
@@ -397,6 +422,8 @@ def build_overall_markdown(stats: ApiAlertStats) -> str:
         "\n"
         f"> 合计成功率: <font color=\"warning\">**{stats.overall_success_rate:.1f}%**</font> "
         f"({stats.overall_success_count}/{stats.overall_image_count})\n"
+        f"> 任务成功率: **{stats.task_success_rate:.1f}%** "
+        f"({stats.task_success_count}/{stats.task_total_count})\n"
         f"> 涉及接口数: **{stats.api_count}**"
     )
 

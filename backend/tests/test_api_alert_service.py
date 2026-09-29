@@ -45,7 +45,14 @@ def _api(
     )
 
 
-def _stats(apis: list[ApiAlertApiStat], *, overall_image_count: int, overall_success_count: int) -> ApiAlertStats:
+def _stats(
+    apis: list[ApiAlertApiStat],
+    *,
+    overall_image_count: int,
+    overall_success_count: int,
+    task_total_count: int = 0,
+    task_success_count: int = 0,
+) -> ApiAlertStats:
     start_at = datetime(2026, 9, 1, 15, 30)
     end_at = datetime(2026, 9, 1, 16, 30)
     return ApiAlertStats(
@@ -55,6 +62,8 @@ def _stats(apis: list[ApiAlertApiStat], *, overall_image_count: int, overall_suc
         overall_image_count=overall_image_count,
         overall_success_count=overall_success_count,
         api_count=len(apis),
+        task_total_count=task_total_count,
+        task_success_count=task_success_count,
     )
 
 
@@ -176,6 +185,8 @@ class ApiAlertQueryTests(unittest.TestCase):
             conn.execute(text("""
                 CREATE TABLE tasks (
                     id INTEGER PRIMARY KEY,
+                    status VARCHAR(20),
+                    error_message TEXT,
                     is_example_template_seed BOOLEAN,
                     provider_task_id VARCHAR(255),
                     request_started_at DATETIME,
@@ -207,11 +218,11 @@ class ApiAlertQueryTests(unittest.TestCase):
             conn.execute(
                 text("""
                     INSERT INTO tasks
-                        (id, is_example_template_seed, provider_task_id, request_started_at, request_finished_at, created_at)
+                        (id, status, error_message, is_example_template_seed, provider_task_id, request_started_at, request_finished_at, created_at)
                     VALUES
-                        (1, 0, '', '2026-09-01 15:00:00', '2026-09-01 16:10:00', '2026-09-01 15:00:00'),
-                        (2, 0, '', '2026-09-01 12:00:00', '2026-09-01 12:01:00', '2026-09-01 12:00:00'),
-                        (3, 0, 'provider-async-1', '2026-09-01 16:00:00', '2026-09-01 16:10:00', '2026-09-01 16:00:00')
+                        (1, 'success', '', 0, '', '2026-09-01 15:00:00', '2026-09-01 16:10:00', '2026-09-01 15:00:00'),
+                        (2, 'failed', '接口超时', 0, '', '2026-09-01 12:00:00', '2026-09-01 12:01:00', '2026-09-01 12:00:00'),
+                        (3, 'success', '', 0, 'provider-async-1', '2026-09-01 16:00:00', '2026-09-01 16:10:00', '2026-09-01 16:00:00')
                 """)
             )
             conn.execute(
@@ -259,6 +270,9 @@ class ApiAlertQueryTests(unittest.TestCase):
 
         self.assertEqual(stats.overall_image_count, 5)
         self.assertEqual(stats.overall_success_count, 3)
+        self.assertEqual(stats.task_total_count, 2)
+        self.assertEqual(stats.task_success_count, 2)
+        self.assertEqual(stats.task_success_rate, 100)
         by_name = {item.api_config_name: item for item in stats.apis}
         self.assertEqual(set(by_name), {"primary", "fallback", "async"})
         self.assertEqual(by_name["primary"].image_count, 2)
@@ -283,11 +297,19 @@ class ApiAlertMarkdownTests(unittest.TestCase):
         self.assertIn("168.2s", content)
 
     def test_overall_markdown_includes_totals(self):
-        stats = _stats([_api(name="foo-api", image_count=16, success_count=10, avg_duration_seconds=20)], overall_image_count=172, overall_success_count=128)
+        stats = _stats(
+            [_api(name="foo-api", image_count=16, success_count=10, avg_duration_seconds=20)],
+            overall_image_count=172,
+            overall_success_count=128,
+            task_total_count=20,
+            task_success_count=18,
+        )
         content = build_overall_markdown(stats)
         self.assertIn("全量接口成功率告警", content)
         self.assertIn("74.4%", content)
         self.assertIn("128/172", content)
+        self.assertIn("任务成功率: **90.0%**", content)
+        self.assertIn("18/20", content)
         self.assertIn("涉及接口数: **1**", content)
 
 

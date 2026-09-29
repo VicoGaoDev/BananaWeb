@@ -579,7 +579,6 @@ const userMenuItems = computed(() => [
   { key: "my-feedback", label: "我的反馈", icon: MessageOutlined, danger: false },
   { key: "system-messages", label: "系统消息", icon: MailOutlined, danger: false },
   { key: "update-logs", label: "更新日志", icon: BellOutlined, danger: false },
-  { key: "contact", label: "联系我们", icon: CustomerServiceOutlined, danger: false },
   { key: "settings", label: "设置", icon: SettingOutlined, danger: false },
   { key: "logout", label: "退出登录", icon: LogoutOutlined, danger: true },
 ]);
@@ -2111,13 +2110,10 @@ watch(
           <span>邀请奖励</span>
           <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
         </button>
-        <template v-if="!auth.isLoggedIn">
-          <span class="canvas-side-nav-divider"></span>
-          <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
-            <CustomerServiceOutlined />
-            <span>联系我们</span>
-          </button>
-        </template>
+        <button type="button" class="canvas-side-nav-item canvas-side-nav-action" @click="openCreditsContact">
+          <CustomerServiceOutlined />
+          <span>联系我们</span>
+        </button>
 
         <a-dropdown
           v-if="auth.isLoggedIn && isAdmin"
@@ -2444,6 +2440,10 @@ watch(
               <span>邀请奖励</span>
               <span v-if="INVITE_REWARDS_BADGE_TEXT" class="nav-menu-new-badge nav-menu-new-badge-mobile">{{ INVITE_REWARDS_BADGE_TEXT }}</span>
             </a-button>
+            <a-button block class="mobile-drawer-action-btn" @click="openCreditsContact">
+              <template #icon><CustomerServiceOutlined /></template>
+              联系我们
+            </a-button>
           </div>
         </div>
 
@@ -2640,10 +2640,6 @@ watch(
             </a-menu>
           </div>
           <div v-else class="mobile-auth-actions">
-            <a-button block class="mobile-drawer-guest-contact" @click="openCreditsContact">
-              <template #icon><CustomerServiceOutlined /></template>
-              联系我们
-            </a-button>
             <a-button type="primary" class="login-header-btn" block @click="openAuthModal('login')">
               <template #icon><UserOutlined /></template>
               登录

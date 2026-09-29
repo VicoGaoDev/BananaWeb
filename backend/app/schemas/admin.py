@@ -489,6 +489,9 @@ class ApiAlertOverallOut(BaseModel):
     image_count: int
     success_count: int
     success_rate: float
+    task_count: int = 0
+    task_success_count: int = 0
+    task_success_rate: float = 0
     api_count: int
     would_alert: bool
 

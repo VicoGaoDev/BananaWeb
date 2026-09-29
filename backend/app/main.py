@@ -245,6 +245,11 @@ def _ensure_schema_compat():
         if "provider_started_at" not in task_columns:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN provider_started_at DATETIME"))
 
+    task_indexes = {index["name"] for index in inspect(engine).get_indexes("tasks")}
+    with engine.begin() as conn:
+        if "idx_tasks_request_finished_at" not in task_indexes:
+            conn.execute(text("CREATE INDEX idx_tasks_request_finished_at ON tasks (request_finished_at)"))
+
     image_columns = {col["name"] for col in inspector.get_columns("images")}
     with engine.begin() as conn:
         if "is_deleted" not in image_columns:
