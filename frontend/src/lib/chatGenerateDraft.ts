@@ -1,6 +1,9 @@
+import { setAiAssistantDockTabEnabled } from "@/lib/aiAssistantDock";
+
 export const CHAT_DRAFT_KEY = "generateDraftFromChat";
 export const APPLY_CHAT_GENERATE_DRAFT_EVENT = "banana:apply-chat-generate-draft";
 export const CLOSE_AI_ASSISTANT_DOCK_EVENT = "banana:close-ai-assistant-dock";
+export const OPEN_AI_ASSISTANT_DOCK_EVENT = "banana:open-ai-assistant-dock";
 export const CHAT_GENERATE_TASKS_CREATED_EVENT = "banana:chat-generate-tasks-created";
 
 export type ChatGenerateTasksPayload = {
@@ -40,7 +43,22 @@ export function applyChatGenerateDraftInPlace() {
   window.dispatchEvent(new CustomEvent(APPLY_CHAT_GENERATE_DRAFT_EVENT));
 }
 
+let pendingOpenAiAssistantDock = false;
+
+export function requestOpenAiAssistantDock() {
+  pendingOpenAiAssistantDock = true;
+  setAiAssistantDockTabEnabled(true);
+  window.dispatchEvent(new CustomEvent(OPEN_AI_ASSISTANT_DOCK_EVENT));
+}
+
+export function consumePendingOpenAiAssistantDock() {
+  const pending = pendingOpenAiAssistantDock;
+  pendingOpenAiAssistantDock = false;
+  return pending;
+}
+
 export function requestCloseAiAssistantDock() {
+  pendingOpenAiAssistantDock = false;
   window.dispatchEvent(new CustomEvent(CLOSE_AI_ASSISTANT_DOCK_EVENT));
 }
 

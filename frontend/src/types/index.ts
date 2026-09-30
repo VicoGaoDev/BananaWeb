@@ -687,6 +687,32 @@ export interface UpdateLogPayload {
   effective_at?: string | null;
 }
 
+export type ActivityStatus = "enabled" | "disabled";
+
+export interface ActivityItem {
+  activity_id: string;
+  title: string;
+  image_url: string;
+  description: string;
+  status: ActivityStatus;
+  sort_order: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ActivityListResponse {
+  total: number;
+  items: ActivityItem[];
+}
+
+export interface ActivityPayload {
+  title: string;
+  image_url: string;
+  description: string;
+  status: ActivityStatus;
+  sort_order: number;
+}
+
 export type PromptOptimizeStyleStatus = "enabled" | "disabled";
 
 export interface PromptOptimizeStyle {
@@ -2327,6 +2353,7 @@ export type UploadPurpose =
   | "reverse"
   | "misc"
   | "contact_qr"
+  | "activity"
   | "canvas_upload"
   | "user_suggestion"
   | "admin_ledger"

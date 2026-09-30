@@ -3181,7 +3181,7 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, prompt_optimize, prompt_optimize_styles, generation_scene_categories, external_api_config, video_external_api_config, chat_external_api_config, chat, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts, update_logs  # noqa: E402
+from app.api import auth, boards, canvases, tasks, video_tasks, images, history, admin, upload, api_key, templates, prompt_reverse, prompt_optimize, prompt_optimize_styles, generation_scene_categories, external_api_config, video_external_api_config, chat_external_api_config, chat, feedback, system_messages, user_api_keys, payment, example_canvases, user_assets, user_prompts, update_logs, activities  # noqa: E402
 app.include_router(auth.router)
 app.include_router(user_api_keys.router)
 app.include_router(templates.router)
@@ -3202,6 +3202,8 @@ app.include_router(system_messages.router)
 app.include_router(system_messages.admin_router)
 app.include_router(update_logs.router)
 app.include_router(update_logs.admin_router)
+app.include_router(activities.router)
+app.include_router(activities.admin_router)
 app.include_router(admin.router)
 app.include_router(example_canvases.admin_router)
 app.include_router(upload.router)

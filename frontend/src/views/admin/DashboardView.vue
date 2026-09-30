@@ -6,6 +6,7 @@ import type { Dayjs } from "dayjs";
 import { BarChartOutlined } from "@ant-design/icons-vue";
 import { useRouter } from "vue-router";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
+import { buildMixedImageModelFilterOptions } from "@/lib/imageModelScene";
 import {
   getAdminUnresolvedFeedbackCount,
   getAdminAnalyticsBreakdown,
@@ -108,21 +109,15 @@ const columns = [
   { title: "操作", key: "actions", width: 72, fixed: "right" as const },
 ];
 
-const modelOptions = computed(() => {
-  const optionMap = new Map<string, string>();
-  generationModels.value.forEach((item) => {
-    optionMap.set(item.model_key, item.model_label);
-  });
-  taskScenes.value
-    .filter((item) => item.scene_type === "image_edit")
-    .forEach((item) => {
-      optionMap.set(item.scene_key, item.display_name || item.scene_label);
-    });
-  optionMap.set("inpaint", "局部重绘");
-  optionMap.set("smart_cutout", "智能抠图");
-  optionMap.set("提示词反推", "提示词反推");
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-});
+const modelOptions = computed(() => buildMixedImageModelFilterOptions({
+  generationModels: generationModels.value,
+  scenes: taskScenes.value,
+  extras: [
+    { value: "inpaint", label: "局部重绘" },
+    { value: "smart_cutout", label: "智能抠图" },
+    { value: "提示词反推", label: "提示词反推" },
+  ],
+}));
 
 const activeFilterSummary = computed(() => {
   const chips: string[] = [];

@@ -3,6 +3,8 @@ import { computed } from "vue";
 import type { PropType } from "vue";
 import type { Dayjs } from "dayjs";
 import type { AdminAnalyticsGranularity, AdminUser, TaskSource, TaskType } from "@/types";
+import ImageModelGroupSelect from "@/components/generate/ImageModelGroupSelect.vue";
+import type { ImageModelFilterOption } from "@/lib/imageModelScene";
 
 type FilterState = {
   status?: string;
@@ -21,7 +23,7 @@ const props = defineProps({
     default: () => [],
   },
   modelOptions: {
-    type: Array as PropType<Array<{ label: string; value: string }>>,
+    type: Array as PropType<ImageModelFilterOption[]>,
     default: () => [],
   },
   filters: {
@@ -174,20 +176,12 @@ const presetOptions = computed(() => {
         <a-select-option value="promptReverse">提示词反推</a-select-option>
       </a-select>
 
-      <a-select
+      <ImageModelGroupSelect
         v-model:value="filters.model"
+        :options="modelOptions"
         placeholder="全部模型"
-        allow-clear
         class="analytics-filter-select analytics-filter-model"
-      >
-        <a-select-option
-          v-for="option in modelOptions"
-          :key="option.value"
-          :value="option.value"
-        >
-          {{ option.label }}
-        </a-select-option>
-      </a-select>
+      />
 
       <a-select
         v-model:value="filters.canvas_task_filter"

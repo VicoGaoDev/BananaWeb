@@ -1746,7 +1746,9 @@ upload_path = Path(settings.UPLOAD_DIR)
 upload_path.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
 
-from app.api import tasks, credits, config  # noqa: E402
+from app.api import tasks, credits, config, activities  # noqa: E402
 app.include_router(tasks.router)
 app.include_router(credits.router)
 app.include_router(config.router)
+app.include_router(activities.router)
+app.include_router(activities.admin_router)

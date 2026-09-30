@@ -42,6 +42,7 @@ from app.models.history_pin import HistoryPin
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.system_message import SystemMessage, SystemMessageRecipient
 from app.models.update_log import UpdateLog
+from app.models.activity import Activity
 from app.models.admin_ledger import AdminLedger, AdminLedgerExpense, AdminLedgerLog
 from app.models.template import Template
 from app.models.template_tag import TemplateTag
@@ -98,6 +99,7 @@ __all__ = [
     "SystemMessage",
     "SystemMessageRecipient",
     "UpdateLog",
+    "Activity",
     "AdminLedger",
     "AdminLedgerExpense",
     "AdminLedgerLog",

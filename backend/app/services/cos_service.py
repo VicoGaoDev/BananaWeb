@@ -24,6 +24,7 @@ UPLOAD_PURPOSE_PREFIXES = {
     "reverse": "reverse",
     "misc": "misc",
     "contact_qr": "contact_qr",
+    "activity": "activity",
     "canvas_upload": "canvas_upload",
     "user_suggestion": "user_suggestion",
     "admin_ledger": "admin_ledger",

@@ -9,6 +9,7 @@ import {
   getAnnouncementConfig,
   redeemCreditKey,
 } from "@/api/auth";
+import { getActiveActivity } from "@/api/activities";
 import { createPaymentOrder, listPaymentPlans } from "@/api/payments";
 import { createFeedback, getMyUnreadFeedbackCount } from "@/api/feedback";
 import { getAdminUnreadFeedbackCount } from "@/api/admin";
@@ -46,7 +47,8 @@ import { getCurrentTheme, setAppTheme } from "@/lib/theme";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import ThemeStyleMenuEntry from "@/components/theme/ThemeStyleMenuEntry.vue";
 import AuthModal from "@/components/auth/AuthModal.vue";
-import type { AnnouncementConfig, PaymentPlan } from "@/types";
+import ActivityPromotion from "@/components/generate/ActivityPromotion.vue";
+import type { ActivityItem, AnnouncementConfig, PaymentPlan } from "@/types";
 import {
   PictureOutlined,
   SettingOutlined,
@@ -280,6 +282,7 @@ const routeOrder = new Map<string, number>([
   ["/admin/video-dashboard", 25],
   ["/admin/error-analytics", 26],
   ["/admin/general-settings", 27],
+  ["/admin/activities", 27.2],
   ["/admin/wecom-notify", 27.5],
   ["/admin/redeem-keys", 28],
   ["/admin/ledger", 29],
@@ -413,6 +416,7 @@ const adminMenuItems = computed(() =>
     { key: "/admin/video-dashboard", label: "视频数据", icon: VideoCameraOutlined, superAdminOnly: false },
     { key: "/admin/error-analytics", label: "错误统计", icon: BugOutlined, superAdminOnly: false },
     { key: "/admin/general-settings", label: "通用设置", icon: SettingOutlined, superAdminOnly: false },
+    { key: "/admin/activities", label: "活动管理", icon: GiftOutlined, superAdminOnly: false },
     { key: "/admin/wecom-notify", label: "企微通知", icon: NotificationOutlined, superAdminOnly: true },
     { key: "/admin/revenue", label: "营业额", icon: AccountBookOutlined, superAdminOnly: false },
     { key: "/admin/ledger", label: "账本", icon: MoneyCollectOutlined, superAdminOnly: false },
@@ -458,6 +462,7 @@ const adminMenuFundItems = computed(() =>
 const adminMenuSystemItems = computed(() => {
   const order = [
     "/admin/general-settings",
+    "/admin/activities",
     "/admin/wecom-notify",
     "/admin/generation-scene-categories",
   ];
@@ -503,6 +508,7 @@ const isAdminNoticeRoute = computed(() =>
 );
 const isAdminSystemRoute = computed(() =>
   route.path.startsWith("/admin/general-settings")
+  || route.path.startsWith("/admin/activities")
   || route.path.startsWith("/admin/wecom-notify")
   || route.path.startsWith("/admin/generation-scene-categories")
 );
@@ -1169,6 +1175,8 @@ async function handleRedeemCredits() {
 
 const creditsContactVisible = ref(false);
 const contactQrImage = ref("");
+const activeActivity = ref<ActivityItem | null>(null);
+const activityPopupOpen = ref(false);
 const announcementVisible = ref(false);
 const announcementDismissToday = ref(false);
 const announcementConfig = ref<AnnouncementConfig>({
@@ -1222,6 +1230,21 @@ async function checkAnnouncement() {
     announcementVisible.value = true;
   } catch {
     // ignore announcement config failures
+  }
+}
+
+async function loadActiveActivity(options?: { autoOpen?: boolean }) {
+  try {
+    const activity = await getActiveActivity();
+    activeActivity.value = activity;
+    if (options?.autoOpen !== false && activity) {
+      activityPopupOpen.value = true;
+    } else if (!activity) {
+      activityPopupOpen.value = false;
+    }
+  } catch {
+    activeActivity.value = null;
+    activityPopupOpen.value = false;
   }
 }
 
@@ -1455,6 +1478,7 @@ onMounted(async () => {
       contactQrImage.value = res.contact_qr_image || "";
     })(),
     checkAnnouncement(),
+    loadActiveActivity({ autoOpen: true }),
     loadPaymentPlans(),
   ]);
 
@@ -2669,6 +2693,13 @@ watch(
 
     <AiAssistantDock v-if="showAiAssistantDock" />
     <GenerateTutorialDock v-if="showGenerateTutorialDock" />
+
+    <ActivityPromotion
+      v-if="activeActivity"
+      v-model:open="activityPopupOpen"
+      :activity="activeActivity"
+      @contact="openCreditsContact"
+    />
 
     <UserSuggestionDialog v-if="suggestionDialogOpen" v-model:open="suggestionDialogOpen" />
     <NotificationCenterDialog

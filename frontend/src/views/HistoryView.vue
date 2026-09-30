@@ -19,6 +19,8 @@ import { useRouter } from "vue-router";
 import { getAdminHistoryCards, getAdminHistoryDetail, listUserOptions } from "@/api/admin";
 import { listBoards } from "@/api/boards";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
+import ImageModelGroupSelect from "@/components/generate/ImageModelGroupSelect.vue";
+import { buildMixedImageModelFilterOptions } from "@/lib/imageModelScene";
 import { deleteHistoryTask, fetchHistory, toggleHistoryPin } from "@/api/history";
 import {
   exceedsRealtimeImagePreviewLimit,
@@ -122,21 +124,15 @@ const isIncrementalHistoryView = computed(() => !isAdminHistoryView.value && !is
 const userInfoDialogOpen = ref(false);
 const selectedUserInfo = ref<AdminUser | null>(null);
 
-const modelOptions = computed(() => {
-  const optionMap = new Map<string, string>();
-  generationModels.value.forEach((item) => {
-    optionMap.set(item.model_key, item.model_label);
-  });
-  taskScenes.value
-    .filter((item) => item.scene_type === "image_edit")
-    .forEach((item) => {
-      optionMap.set(item.scene_key, item.display_name || item.scene_label);
-    });
-  optionMap.set("inpaint", "局部重绘");
-  optionMap.set("smart_cutout", "智能抠图");
-  optionMap.set("提示词反推", "提示词反推");
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-});
+const modelOptions = computed(() => buildMixedImageModelFilterOptions({
+  generationModels: generationModels.value,
+  scenes: taskScenes.value,
+  extras: [
+    { value: "inpaint", label: "局部重绘" },
+    { value: "smart_cutout", label: "智能抠图" },
+    { value: "提示词反推", label: "提示词反推" },
+  ],
+}));
 const modelLabelMap = computed(() => new Map(modelOptions.value.map((item) => [item.value, item.label])));
 const selectedBoardKey = computed<BoardKey>({
   get: () => props.boardKey || DEFAULT_BOARD_KEY,
@@ -1261,11 +1257,12 @@ function handleEditImage(item: UserHistoryCard) {
         <a-select-option value="app">App</a-select-option>
         <a-select-option value="api">API</a-select-option>
       </a-select>
-      <a-select v-model:value="modelFilter" placeholder="全部模型" class="history-filter-control history-filter-select history-filter-select-lg" allow-clear>
-        <a-select-option v-for="option in modelOptions" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </a-select-option>
-      </a-select>
+      <ImageModelGroupSelect
+        v-model:value="modelFilter"
+        :options="modelOptions"
+        placeholder="全部模型"
+        class="history-filter-control history-filter-select history-filter-select-lg"
+      />
       <a-select v-model:value="statusFilter" placeholder="全部状态" class="history-filter-control history-filter-select" allow-clear>
         <a-select-option value="pending">等待中</a-select-option>
         <a-select-option value="processing">处理中</a-select-option>

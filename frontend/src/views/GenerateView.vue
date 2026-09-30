@@ -7,6 +7,7 @@ import {
   APPLY_CHAT_GENERATE_DRAFT_EVENT,
   CHAT_DRAFT_KEY,
   CHAT_GENERATE_TASKS_CREATED_EVENT,
+  requestOpenAiAssistantDock,
   type ChatGenerateTasksPayload,
 } from "@/lib/chatGenerateDraft";
 import { saveImageToVideoDraft } from "@/lib/videoGenerateDraft";
@@ -68,11 +69,13 @@ import { isSupportedImageUploadFile } from "@/api/upload";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
 import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
+import ImageModelGroupSelect from "@/components/generate/ImageModelGroupSelect.vue";
 import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from "@/lib/generateCameras";
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
+import { imageModelSceneMark } from "@/lib/imageModelScene";
 import SketchBoardIcon from "@/components/icons/SketchBoardIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
@@ -661,9 +664,15 @@ const detailModelOptions = computed(() => (
   }))
 ));
 const generatedTaskFilterModelOptions = computed(() => {
-  const optionMap = new Map<string, string>();
-  detailModelOptions.value.forEach((item) => optionMap.set(item.value, item.label));
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+  const optionMap = new Map<string, { value: string; label: string; sceneType: ReturnType<typeof imageModelSceneMark> }>();
+  taskScenes.value.forEach((scene) => {
+    optionMap.set(scene.scene_key, {
+      value: scene.scene_key,
+      label: scene.scene_label,
+      sceneType: imageModelSceneMark(scene.scene_type, scene.scene_key),
+    });
+  });
+  return Array.from(optionMap.values());
 });
 const generatedTaskActiveFilterCount = computed(() => {
   let count = 0;
@@ -3173,6 +3182,10 @@ function handlePromptOptimizeStyleConfirm(style: PublicPromptOptimizeStyle) {
   void runPromptOptimize(payload, target);
 }
 
+function openPromptAiAssistant() {
+  requestOpenAiAssistantDock();
+}
+
 async function handlePromptOptimize() {
   if (promptOptimizeLoading.value) return;
   if (!(await ensureAuthenticated())) return;
@@ -4785,6 +4798,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <button type="button" class="prompt-optimize-cancel-btn" @click="confirmCancelPromptOptimize">取消</button>
                   </div>
                 </div>
+                <button type="button" class="prompt-ai-chat-entry" @click="openPromptAiAssistant">
+                  提示词怎么写？跟AI聊聊想法
+                </button>
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
@@ -5301,6 +5317,9 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     <button type="button" class="prompt-optimize-cancel-btn" @click="confirmCancelPromptOptimize">取消</button>
                   </div>
                 </div>
+                <button type="button" class="prompt-ai-chat-entry" @click="openPromptAiAssistant">
+                  提示词怎么写？跟AI聊聊想法
+                </button>
               </div>
 
               <div class="settings-row settings-row-inline config-section compact-config-section">
@@ -6118,23 +6137,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                     </label>
                     <label class="generate-filter-field generate-filter-field-half">
                       <span>模型</span>
-                      <a-select
+                      <ImageModelGroupSelect
                         v-model:value="generatedTaskModelFilter"
-                        allow-clear
-                        show-search
-                        option-filter-prop="label"
+                        :options="generatedTaskFilterModelOptions"
                         placeholder="全部模型"
                         class="generate-filter-control"
-                      >
-                        <a-select-option
-                          v-for="option in generatedTaskFilterModelOptions"
-                          :key="option.value"
-                          :value="option.value"
-                          :label="option.label"
-                        >
-                          {{ option.label }}
-                        </a-select-option>
-                      </a-select>
+                      />
                     </label>
                     <label class="generate-filter-field generate-filter-field-half">
                       <span>提示词</span>
@@ -7207,6 +7215,27 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 .prompt-block {
   display: flex;
   flex-direction: column;
+}
+
+.prompt-ai-chat-entry {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: -12px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theme-text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.prompt-ai-chat-entry:hover,
+.prompt-ai-chat-entry:focus-visible {
+  background: var(--theme-field-hover-bg, var(--theme-control-hover-bg));
 }
 
 .prompt-input-wrap {
@@ -9476,18 +9505,12 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   gap: 10px 12px;
 }
 
-.result-head-center {
-  display: flex;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .result-head-main {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .result-panel-head {
@@ -9519,7 +9542,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .result-head-meta :deep(.history-filter-control) {
@@ -10795,10 +10818,6 @@ html:is([data-theme="dark"], [data-theme="midnight"]) .generate-page .result-mor
   .result-retain-badge {
     grid-column: 1 / -1;
     grid-row: 2;
-  }
-
-  .result-head-center {
-    width: 100%;
   }
 
   .result-canvas-entry-btn {

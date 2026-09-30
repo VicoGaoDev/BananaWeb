@@ -5,7 +5,7 @@ import { Modal } from "ant-design-vue";
 import { useRouter } from "vue-router";
 import { withBaseUrl } from "@/lib/assets";
 import { setAiAssistantDockTabEnabled } from "@/lib/aiAssistantDock";
-import { CLOSE_AI_ASSISTANT_DOCK_EVENT } from "@/lib/chatGenerateDraft";
+import { CLOSE_AI_ASSISTANT_DOCK_EVENT, OPEN_AI_ASSISTANT_DOCK_EVENT, consumePendingOpenAiAssistantDock } from "@/lib/chatGenerateDraft";
 import { requestCloseGenerateTutorialDock } from "@/lib/generateTutorialDock";
 import { importAfterExtendedAntd } from "@/lib/antd";
 import { useAuthStore } from "@/stores/auth";
@@ -46,6 +46,11 @@ function openDock() {
   workspaceReady.value = true;
   tabVisible.value = false;
   open.value = true;
+}
+
+function handleOpenDockRequest() {
+  consumePendingOpenAiAssistantDock();
+  openDock();
 }
 
 function closeDock() {
@@ -92,12 +97,15 @@ watch(() => auth.isLoggedIn, (loggedIn) => {
 onMounted(() => {
   window.addEventListener("keydown", handleWindowKeydown);
   window.addEventListener(CLOSE_AI_ASSISTANT_DOCK_EVENT, closeDock);
+  window.addEventListener(OPEN_AI_ASSISTANT_DOCK_EVENT, handleOpenDockRequest);
+  if (consumePendingOpenAiAssistantDock()) openDock();
 });
 
 onBeforeUnmount(() => {
   window.clearTimeout(tabRevealTimer);
   window.removeEventListener("keydown", handleWindowKeydown);
   window.removeEventListener(CLOSE_AI_ASSISTANT_DOCK_EVENT, closeDock);
+  window.removeEventListener(OPEN_AI_ASSISTANT_DOCK_EVENT, handleOpenDockRequest);
   document.body.classList.remove("ai-assistant-dock-open");
 });
 </script>

@@ -6,6 +6,8 @@ import type { Dayjs } from "dayjs";
 import { BugOutlined } from "@ant-design/icons-vue";
 import { getAdminErrorAnalytics, getAdminErrorCategoryTimeseries, getAdminErrorTasks, getAdminHistoryDetail, getAdminVideoTaskDetail } from "@/api/admin";
 import { getGenerationModels, getTaskScenes } from "@/api/config";
+import ImageModelGroupSelect from "@/components/generate/ImageModelGroupSelect.vue";
+import { buildMixedImageModelFilterOptions } from "@/lib/imageModelScene";
 import { getVideoTaskScenes } from "@/api/videoConfig";
 import { isSessionExpiredError } from "@/lib/authError";
 import { VChart } from "@/components/admin/charting";
@@ -257,40 +259,24 @@ const trendOption = computed(() => ({
   })),
 }));
 
+const imageModelOptions = computed(() => buildMixedImageModelFilterOptions({
+  generationModels: generationModels.value,
+  scenes: taskScenes.value,
+  extras: [
+    { value: "inpaint", label: "局部重绘" },
+    { value: "smart_cutout", label: "智能抠图" },
+  ],
+}));
+
 const modelOptions = computed(() => {
   if (taskKindFilter.value === "video") {
     return videoTaskScenes.value.map((item) => ({
       value: item.scene_key,
       label: item.display_name || item.scene_label || item.scene_key,
+      sceneType: "" as const,
     }));
   }
-  const optionMap = new Map<string, string>();
-  generationModels.value.forEach((item) => {
-    optionMap.set(item.model_key, item.model_label);
-  });
-  taskScenes.value
-    .filter((item) => item.scene_type === "image_edit")
-    .forEach((item) => {
-      optionMap.set(item.scene_key, item.display_name || item.scene_label);
-    });
-  optionMap.set("inpaint", "局部重绘");
-  optionMap.set("smart_cutout", "智能抠图");
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-});
-
-const imageModelOptions = computed(() => {
-  const optionMap = new Map<string, string>();
-  generationModels.value.forEach((item) => {
-    optionMap.set(item.model_key, item.model_label);
-  });
-  taskScenes.value
-    .filter((item) => item.scene_type === "image_edit")
-    .forEach((item) => {
-      optionMap.set(item.scene_key, item.display_name || item.scene_label);
-    });
-    optionMap.set("inpaint", "局部重绘");
-    optionMap.set("smart_cutout", "智能抠图");
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+  return imageModelOptions.value;
 });
 
 const videoModelOptions = computed(() => (
@@ -676,14 +662,11 @@ onMounted(async () => {
           <a-select-option value="web">Web</a-select-option>
           <a-select-option value="api">API</a-select-option>
         </a-select>
-        <a-select
+        <ImageModelGroupSelect
           v-model:value="modelFilter"
-          allow-clear
-          show-search
+          :options="modelOptions"
           class="analytics-filter-select"
           placeholder="全部模型"
-          :options="modelOptions"
-          option-filter-prop="label"
           @change="load"
         />
         <a-select

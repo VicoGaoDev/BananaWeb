@@ -16,6 +16,7 @@ from app.models.prompt_history import PromptHistory
 from app.models.history_pin import HistoryPin
 from app.models.feedback import Feedback
 from app.models.system_message import SystemMessage, SystemMessageRecipient
+from app.models.activity import Activity
 from app.models.template import Template
 from app.models.template_tag import TemplateTag
 from app.models.template_tag_relation import TemplateTagRelation
@@ -40,6 +41,7 @@ __all__ = [
     "Feedback",
     "SystemMessage",
     "SystemMessageRecipient",
+    "Activity",
     "Template",
     "TemplateTag",
     "TemplateTagRelation",
