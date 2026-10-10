@@ -2,13 +2,13 @@
 
 ## 接口说明
 
-获取当前可用于普通生图任务的模型列表、展示文案、积分单价和可选尺寸配置。通常在创建任务前调用，用于决定 `POST /api/tasks` 的 `model`、`size`、`resolution`、`custom_size` 等参数。
+获取当前可用于普通生图任务的模型列表、展示文案、积分单价和可选尺寸配置。通常在创建任务前调用，用于决定 `POST https://api.80ai.net/api/tasks` 的 `model`、`size`、`resolution`、`custom_size` 等参数。
 
 ## 请求信息
 
 | 项目 | 内容 |
 | --- | --- |
-| URL | `/api/config/generation-models` |
+| URL | `https://api.80ai.net/api/config/generation-models` |
 | Method | `GET` |
 | Content-Type | 无 |
 | 鉴权 | 不需要 |

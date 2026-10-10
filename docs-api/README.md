@@ -33,18 +33,18 @@ Authorization: Bearer sk-yourApiKey
 
 ## 推荐调用流程
 
-1. 查询可用模型/场景配置：`GET /api/config/generation-models`、`GET /api/config/task-scenes`。
+1. 查询可用模型/场景配置：`GET https://api.80ai.net/api/config/generation-models`、`GET https://api.80ai.net/api/config/task-scenes`。
 2. 如需参考图，将图片转为 base64 或 data URL，直接放入创建任务参数。
 3. 二选一发起任务：
-   - 同步调用：`POST /api/tasks`，接口会等待处理完成并直接返回结果。
-   - 异步调用：`POST /api/tasks/submit` 获取 `task_id`，再通过 `GET /api/tasks/{task_id}` 或 `GET /api/tasks?task_ids=...` 查询结果。
+   - 同步调用：`POST https://api.80ai.net/api/tasks`，接口会等待处理完成并直接返回结果。
+   - 异步调用：`POST https://api.80ai.net/api/tasks/submit` 获取 `task_id`，再通过 `GET https://api.80ai.net/api/tasks/{task_id}` 或 `GET https://api.80ai.net/api/tasks?task_ids=...` 查询结果。
 
 ## 文档列表
 
 - [查询生图模型列表](./01-get-generation-models.md)
 - [查询任务场景配置](./02-get-task-scenes.md)
-- [创建同步生图任务](./03-create-task.md)
 - [异步生图任务](./04-async-task.md)
+- [同步生图任务](./03-create-task.md)
 
 ## 更新静态站点
 

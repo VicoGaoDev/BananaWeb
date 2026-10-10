@@ -234,7 +234,7 @@ a.brand:hover { background: #f3f4f6; }
         <div class="brand-sub">生图开放接口文档</div>
         <div class="brand-base">https://api.80ai.net</div>
       </a>
-      <nav class="nav" aria-label="文档导航"><a class="nav-link active" href="/docs-api/">概览</a><a class="nav-link" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>创建同步生图任务</span></a><a class="nav-link" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a></nav>
+      <nav class="nav" aria-label="文档导航"><a class="nav-link active" href="/docs-api/">概览</a><a class="nav-link" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>同步生图任务</span></a></nav>
     </aside>
     <main class="content">
       <header class="page-header">
@@ -262,17 +262,17 @@ a.brand:hover { background: #f3f4f6; }
 <li><code>502</code>：AI 服务调用失败或同步处理失败。</li>
 </ul>
 <h2 id="推荐调用流程">推荐调用流程</h2>
-<p>1. 查询可用模型/场景配置：<code>GET /api/config/generation-models</code>、<code>GET /api/config/task-scenes</code>。</p>
+<p>1. 查询可用模型/场景配置：<code>GET https://api.80ai.net/api/config/generation-models</code>、<code>GET https://api.80ai.net/api/config/task-scenes</code>。</p>
 <p>2. 如需参考图，将图片转为 base64 或 data URL，直接放入创建任务参数。</p>
 <p>3. 二选一发起任务：</p>
-<p>- 同步调用：<code>POST /api/tasks</code>，接口会等待处理完成并直接返回结果。</p>
-<p>- 异步调用：<code>POST /api/tasks/submit</code> 获取 <code>task_id</code>，再通过 <code>GET /api/tasks/{task_id}</code> 或 <code>GET /api/tasks?task_ids=...</code> 查询结果。</p>
+<p>- 同步调用：<code>POST https://api.80ai.net/api/tasks</code>，接口会等待处理完成并直接返回结果。</p>
+<p>- 异步调用：<code>POST https://api.80ai.net/api/tasks/submit</code> 获取 <code>task_id</code>，再通过 <code>GET https://api.80ai.net/api/tasks/{task_id}</code> 或 <code>GET https://api.80ai.net/api/tasks?task_ids=...</code> 查询结果。</p>
 <h2 id="文档列表">文档列表</h2>
 <ul>
 <li><a href="/docs-api/01-get-generation-models/">查询生图模型列表</a></li>
 <li><a href="/docs-api/02-get-task-scenes/">查询任务场景配置</a></li>
-<li><a href="/docs-api/03-create-task/">创建同步生图任务</a></li>
 <li><a href="/docs-api/04-async-task/">异步生图任务</a></li>
+<li><a href="/docs-api/03-create-task/">同步生图任务</a></li>
 </ul>
 <h2 id="更新静态站点">更新静态站点</h2>
 <p>文档源文件为 <code>docs-api/*.md</code>，浏览器实际访问的是 <code>docs-api/docs-api/</code> 下的 HTML。<strong>修改 <code>.md</code> 后必须执行构建</strong>，否则 HTML 不会变：</p>

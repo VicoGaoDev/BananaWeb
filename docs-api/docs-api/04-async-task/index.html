@@ -234,7 +234,7 @@ a.brand:hover { background: #f3f4f6; }
         <div class="brand-sub">生图开放接口文档</div>
         <div class="brand-base">https://api.80ai.net</div>
       </a>
-      <nav class="nav" aria-label="文档导航"><a class="nav-link" href="/docs-api/">概览</a><a class="nav-link" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>创建同步生图任务</span></a><a class="nav-link active" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a></nav>
+      <nav class="nav" aria-label="文档导航"><a class="nav-link" href="/docs-api/">概览</a><a class="nav-link" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link active" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>同步生图任务</span></a></nav>
     </aside>
     <main class="content">
       <header class="page-header">
@@ -249,16 +249,16 @@ a.brand:hover { background: #f3f4f6; }
 <li>需要批量提交多个任务后统一查询状态。</li>
 </ul>
 <p>异步调用分为两步：</p>
-<p>1. 调用 <code>POST /api/tasks/submit</code> 提交任务，拿到 <code>task_id</code></p>
-<p>2. 调用 <code>GET /api/tasks/{task_id}</code> 或 <code>GET /api/tasks?task_ids=...</code> 轮询结果</p>
+<p>1. 调用 <code>POST https://api.80ai.net/api/tasks/submit</code> 提交任务，拿到 <code>task_id</code></p>
+<p>2. 调用 <code>GET https://api.80ai.net/api/tasks/{task_id}</code> 或 <code>GET https://api.80ai.net/api/tasks?task_ids=...</code> 轮询结果</p>
 <h2 id="第一步-提交任务">第一步：提交任务</h2>
 <h3 id="请求信息">请求信息</h3>
-<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>/api/tasks/submit</code></td></tr><tr><td>Method</td><td><code>POST</code></td></tr><tr><td>Content-Type</td><td><code>application/json</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>https://api.80ai.net/api/tasks/submit</code></td></tr><tr><td>Method</td><td><code>POST</code></td></tr><tr><td>Content-Type</td><td><code>application/json</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
 <h3 id="header">Header</h3>
 <div class="table-wrap"><table><thead><tr><th>参数名</th><th>必填</th><th>示例</th><th>说明</th></tr></thead><tbody><tr><td><code>X-API-Key</code></td><td>是</td><td><code>sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></td><td>用户 API Key。</td></tr></tbody></table></div>
 <h3 id="body-参数">Body 参数</h3>
-<p><code>POST /api/tasks/submit</code> 的 Body 与同步接口 <code>POST /api/tasks</code> 完全一致，可直接复用同一套请求结构：</p>
-<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>是</td><td>-</td><td>场景标识，<strong>必填</strong>。须根据是否传入 <code>reference_images</code> 选择对应取值：<br><br><strong>文生图</strong>（未传 <code>reference_images</code> 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage25_flare_high</code></td><td>⚡️ Image 2.5 Flare</td></tr><tr><td><code>gptimage25_sunburst_high</code></td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td><code>gptimage2_high</code></td><td>⚡️ Image 2 (顶级)</td></tr><tr><td><code>gptimage2_medium</code></td><td>⚡️ Image 2 (高质量)</td></tr><tr><td><code>gptimage2_low</code></td><td>⚡️ Image 2 (性价比)</td></tr><tr><td><code>banana_pro</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana2_lite</code></td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td><code>banana</code></td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 <code>reference_images</code>）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage25_flare_high_edit</code></td><td>⚡️ Image 2.5 Flare</td></tr><tr><td><code>gptimage25_sunburst_high_edit</code></td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td><code>gptimage2_high_edit</code></td><td>⚡️ Image 2 (顶级)</td></tr><tr><td><code>gptimage2_medium_edit</code></td><td>⚡️ Image 2 (高质量)</td></tr><tr><td><code>gptimage2_low_edit</code></td><td>⚡️ Image 2 (性价比)</td></tr><tr><td><code>banana_pro_edit</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2_edit</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana2_edit_lite</code></td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td><code>banana_edit</code></td><td>🍌 Nano Banana</td></tr></tbody></table></td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 10000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET /api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。图编辑时必填。</td></tr></tbody></table></div>
+<p><code>POST https://api.80ai.net/api/tasks/submit</code> 的 Body 与同步接口 <code>POST https://api.80ai.net/api/tasks</code> 完全一致，可直接复用同一套请求结构：</p>
+<div class="table-wrap"><table><thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead><tbody><tr><td><code>mode</code></td><td>string</td><td>否</td><td><code>generate</code></td><td>任务模式。当前仅支持 <code>generate</code>。</td></tr><tr><td><code>model</code></td><td>string</td><td>是</td><td>-</td><td>场景标识，<strong>必填</strong>。须根据是否传入 <code>reference_images</code> 选择对应取值：<br><br><strong>文生图</strong>（未传 <code>reference_images</code> 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage25_flare_high</code></td><td>⭐️ G-Image 2.5 Flare</td></tr><tr><td><code>gptimage25_sunburst_high</code></td><td>⭐️ G-Image 2.5 Sunburst</td></tr><tr><td><code>gptimage2_high</code></td><td>⚡️ G-Image 2 · 顶级</td></tr><tr><td><code>gptimage2_medium</code></td><td>⚡️ G-Image 2 · 高质量</td></tr><tr><td><code>gptimage2_low</code></td><td>⚡️ G-Image 2 · 性价比</td></tr><tr><td><code>banana_pro</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2_1</code></td><td>🍌 Nano Banana 2.1</td></tr><tr><td><code>banana2</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana2_lite</code></td><td>🍌 Nano Banana 2 Lite</td></tr></tbody></table><br><strong>图编辑</strong>（传入 <code>reference_images</code>）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td><code>gptimage25_flare_high_edit</code></td><td>⭐️ G-Image 2.5 Flare</td></tr><tr><td><code>gptimage25_sunburst_high_edit</code></td><td>⭐️ G-Image 2.5 Sunburst</td></tr><tr><td><code>gptimage2_high_edit</code></td><td>⚡️ G-Image 2 · 顶级</td></tr><tr><td><code>gptimage2_medium_edit</code></td><td>⚡️ G-Image 2 · 高质量</td></tr><tr><td><code>gptimage2_low_edit</code></td><td>⚡️ G-Image 2 · 性价比</td></tr><tr><td><code>banana_pro_edit</code></td><td>🍌 Nano Banana Pro</td></tr><tr><td><code>banana2_1_edit</code></td><td>🍌 Nano Banana 2.1</td></tr><tr><td><code>banana2_edit</code></td><td>🍌 Nano Banana 2</td></tr><tr><td><code>banana2_edit_lite</code></td><td>🍌 Nano Banana 2 Lite</td></tr></tbody></table></td></tr><tr><td><code>prompt</code></td><td>string</td><td>是</td><td>-</td><td>提示词，不能为空，最长 10000 字符。</td></tr><tr><td><code>size</code></td><td>string</td><td>否</td><td><code>3:4</code></td><td>图片宽高比，例如 <code>1:1</code>、<code>3:4</code>、<code>9:16</code>。可选值见 <code>GET https://api.80ai.net/api/config/task-scenes</code> 的 <code>aspect_ratio_options</code>。</td></tr><tr><td><code>resolution</code></td><td>string</td><td>否</td><td><code>4K</code></td><td>清晰度档位，例如 <code>1K</code>、<code>2K</code>、<code>4K</code>。可选值见 <code>GET https://api.80ai.net/api/config/task-scenes</code> 的 <code>image_size_options</code>。</td></tr><tr><td><code>reference_images</code></td><td>string[]</td><td>否</td><td><code>null</code></td><td>参考图数组，元素为 base64 字符串或 <code>data:image/...;base64,...</code> 形式。图编辑时必填。</td></tr></tbody></table></div>
 <h3 id="提交示例">提交示例</h3>
 <pre><code class="language-bash">curl --request POST \
   --url &quot;https://api.80ai.net/api/tasks/submit&quot; \
@@ -297,7 +297,7 @@ a.brand:hover { background: #f3f4f6; }
 <div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td><code>task_id</code></td><td>string \</td><td>null</td><td>首个任务 ID。当前 API 每次默认只创建 1 个任务，通常与 <code>task_ids[0]</code> 相同。</td></tr><tr><td><code>task_ids</code></td><td>string[]</td><td>本次提交产生的任务 ID 列表。</td></tr></tbody></table></div>
 <h2 id="第二步-查询单个任务">第二步：查询单个任务</h2>
 <h3 id="请求信息">请求信息</h3>
-<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>/api/tasks/{task_id}</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>https://api.80ai.net/api/tasks/{task_id}</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
 <h3 id="查询示例">查询示例</h3>
 <pre><code class="language-bash">curl --request GET \
   --url &quot;https://api.80ai.net/api/tasks/biz_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot; \
@@ -362,12 +362,12 @@ a.brand:hover { background: #f3f4f6; }
 }</code></pre>
 <h2 id="第三步-批量查询多个任务">第三步：批量查询多个任务</h2>
 <h3 id="请求信息">请求信息</h3>
-<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>/api/tasks?task_ids=taskA&amp;task_ids=taskB</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>https://api.80ai.net/api/tasks?task_ids=taskA&amp;task_ids=taskB</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>鉴权</td><td>需要 API Key</td></tr></tbody></table></div>
 <h3 id="查询示例">查询示例</h3>
 <pre><code class="language-bash">curl --request GET \
   --url &quot;https://api.80ai.net/api/tasks?task_ids=biz_taskA&amp;task_ids=biz_taskB&quot; \
   --header &quot;X-API-Key: sk-yourApiKey&quot;</code></pre>
-<p>批量查询返回 <code>TaskOut[]</code>，单个元素结构与同步接口 <code>POST /api/tasks</code> 成功响应中的任务对象一致。</p>
+<p>批量查询返回 <code>TaskOut[]</code>，单个元素结构与同步接口 <code>POST https://api.80ai.net/api/tasks</code> 成功响应中的任务对象一致。</p>
 <h2 id="异步状态说明">异步状态说明</h2>
 <div class="table-wrap"><table><thead><tr><th>状态</th><th>说明</th></tr></thead><tbody><tr><td><code>pending</code></td><td>任务已创建，等待进入队列。</td></tr><tr><td><code>queued</code></td><td>任务已入队，等待 worker 处理。</td></tr><tr><td><code>processing</code></td><td>worker 正在处理任务。</td></tr><tr><td><code>success</code></td><td>任务处理成功，可读取 <code>images[].image_url</code>。</td></tr><tr><td><code>failed</code></td><td>任务处理失败，可查看 <code>error_message</code> 和 <code>images[].error_message</code>。</td></tr></tbody></table></div>
 <p>建议轮询间隔为 2 到 5 秒；当任务进入 <code>success</code> 或 <code>failed</code> 后即可停止轮询。</p>
@@ -389,10 +389,10 @@ a.brand:hover { background: #f3f4f6; }
 }</code></pre>
 <h2 id="注意事项">注意事项</h2>
 <ul>
-<li><code>POST /api/tasks/submit</code> 默认创建 1 个任务，返回的 <code>task_id</code> 可用于后续查询。</li>
+<li><code>POST https://api.80ai.net/api/tasks/submit</code> 默认创建 1 个任务，返回的 <code>task_id</code> 可用于后续查询。</li>
 <li>图编辑与文生图共用同一组 Body 参数；须根据是否传入 <code>reference_images</code> 选择对应的 <code>model</code> 取值。</li>
 <li>异步模式下，图编辑请求中的 <code>reference_images</code> 可以继续直接传 base64 或 data URL；服务端会自动转为可供 worker 读取的持久化引用。</li>
-<li><code>size</code>、<code>resolution</code> 是否生效取决于所选 <code>model</code>，可先调用 <code>GET /api/config/task-scenes</code> 查看场景配置。</li>
+<li><code>size</code>、<code>resolution</code> 是否生效取决于所选 <code>model</code>，可先调用 <code>GET https://api.80ai.net/api/config/task-scenes</code> 查看场景配置。</li>
 </ul></article>
       <footer class="footer">80AI API</footer>
     </main>

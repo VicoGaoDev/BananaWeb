@@ -234,7 +234,7 @@ a.brand:hover { background: #f3f4f6; }
         <div class="brand-sub">生图开放接口文档</div>
         <div class="brand-base">https://api.80ai.net</div>
       </a>
-      <nav class="nav" aria-label="文档导航"><a class="nav-link" href="/docs-api/">概览</a><a class="nav-link active" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>创建同步生图任务</span></a><a class="nav-link" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a></nav>
+      <nav class="nav" aria-label="文档导航"><a class="nav-link" href="/docs-api/">概览</a><a class="nav-link active" href="/docs-api/01-get-generation-models/"><span class="method get">GET</span><span>查询生图模型列表</span></a><a class="nav-link" href="/docs-api/02-get-task-scenes/"><span class="method get">GET</span><span>查询任务场景配置</span></a><a class="nav-link" href="/docs-api/04-async-task/"><span class="method post">POST</span><span>异步生图任务</span></a><a class="nav-link" href="/docs-api/03-create-task/"><span class="method post">POST</span><span>同步生图任务</span></a></nav>
     </aside>
     <main class="content">
       <header class="page-header">
@@ -242,9 +242,9 @@ a.brand:hover { background: #f3f4f6; }
         <h3 class="page-title">查询生图模型列表</h3>
       </header>
       <article class="doc"><h2 id="接口说明">接口说明</h2>
-<p>获取当前可用于普通生图任务的模型列表、展示文案、积分单价和可选尺寸配置。通常在创建任务前调用，用于决定 <code>POST /api/tasks</code> 的 <code>model</code>、<code>size</code>、<code>resolution</code>、<code>custom_size</code> 等参数。</p>
+<p>获取当前可用于普通生图任务的模型列表、展示文案、积分单价和可选尺寸配置。通常在创建任务前调用，用于决定 <code>POST https://api.80ai.net/api/tasks</code> 的 <code>model</code>、<code>size</code>、<code>resolution</code>、<code>custom_size</code> 等参数。</p>
 <h2 id="请求信息">请求信息</h2>
-<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>/api/config/generation-models</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>Content-Type</td><td>无</td></tr><tr><td>鉴权</td><td>不需要</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>URL</td><td><code>https://api.80ai.net/api/config/generation-models</code></td></tr><tr><td>Method</td><td><code>GET</code></td></tr><tr><td>Content-Type</td><td>无</td></tr><tr><td>鉴权</td><td>不需要</td></tr></tbody></table></div>
 <h2 id="请求参数">请求参数</h2>
 <p>无。</p>
 <h2 id="请求示例">请求示例</h2>

@@ -26,8 +26,8 @@ SRC_FILES = [
     ("index", "README.md", "80AI API 生图接口文档", "GET"),
     ("01-get-generation-models", "01-get-generation-models.md", "查询生图模型列表", "GET"),
     ("02-get-task-scenes", "02-get-task-scenes.md", "查询任务场景配置", "GET"),
-    ("03-create-task", "03-create-task.md", "创建同步生图任务", "POST"),
     ("04-async-task", "04-async-task.md", "异步生图任务", "POST"),
+    ("03-create-task", "03-create-task.md", "同步生图任务", "POST"),
 ]
 
 NAV = [(slug, title, method) for slug, _, title, method in SRC_FILES if slug != "index"]

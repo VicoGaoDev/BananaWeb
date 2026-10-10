@@ -8,7 +8,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| URL | `/api/config/task-scenes` |
+| URL | `https://api.80ai.net/api/config/task-scenes` |
 | Method | `GET` |
 | Content-Type | 无 |
 | 鉴权 | 不需要 |

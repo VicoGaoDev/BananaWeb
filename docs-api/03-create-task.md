@@ -1,4 +1,4 @@
-# 创建同步生图任务
+# 同步生图任务
 
 ## 接口说明
 
@@ -8,7 +8,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| URL | `/api/tasks` |
+| URL | `https://api.80ai.net/api/tasks` |
 | Method | `POST` |
 | Content-Type | `application/json` |
 | 鉴权 | 需要 API Key |
@@ -24,10 +24,10 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `mode` | string | 否 | `generate` | 任务模式。当前仅支持 `generate`。 |
-| `model` | string | 是 | - | 场景标识，<strong>必填</strong>。须根据是否传入 `reference_images` 选择对应取值：<br><br><strong>文生图</strong>（未传 `reference_images` 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high`</td><td>⚡️ Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high`</td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana`</td><td>🍌 Nano Banana</td></tr></tbody></table><br><strong>图编辑</strong>（传入 `reference_images`）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high_edit`</td><td>⚡️ Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high_edit`</td><td>⚡️ Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high_edit`</td><td>⚡️ Image 2 (顶级)</td></tr><tr><td>`gptimage2_medium_edit`</td><td>⚡️ Image 2 (高质量)</td></tr><tr><td>`gptimage2_low_edit`</td><td>⚡️ Image 2 (性价比)</td></tr><tr><td>`banana_pro_edit`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_edit`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_edit_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr><tr><td>`banana_edit`</td><td>🍌 Nano Banana</td></tr></tbody></table> |
+| `model` | string | 是 | - | 场景标识，<strong>必填</strong>。须根据是否传入 `reference_images` 选择对应取值：<br><br><strong>文生图</strong>（未传 `reference_images` 或传空数组）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high`</td><td>⭐️ G-Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high`</td><td>⭐️ G-Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high`</td><td>⚡️ G-Image 2 · 顶级</td></tr><tr><td>`gptimage2_medium`</td><td>⚡️ G-Image 2 · 高质量</td></tr><tr><td>`gptimage2_low`</td><td>⚡️ G-Image 2 · 性价比</td></tr><tr><td>`banana_pro`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_1`</td><td>🍌 Nano Banana 2.1</td></tr><tr><td>`banana2`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr></tbody></table><br><strong>图编辑</strong>（传入 `reference_images`）：<table><thead><tr><th>model</th><th>对应官网模型</th></tr></thead><tbody><tr><td>`gptimage25_flare_high_edit`</td><td>⭐️ G-Image 2.5 Flare</td></tr><tr><td>`gptimage25_sunburst_high_edit`</td><td>⭐️ G-Image 2.5 Sunburst</td></tr><tr><td>`gptimage2_high_edit`</td><td>⚡️ G-Image 2 · 顶级</td></tr><tr><td>`gptimage2_medium_edit`</td><td>⚡️ G-Image 2 · 高质量</td></tr><tr><td>`gptimage2_low_edit`</td><td>⚡️ G-Image 2 · 性价比</td></tr><tr><td>`banana_pro_edit`</td><td>🍌 Nano Banana Pro</td></tr><tr><td>`banana2_1_edit`</td><td>🍌 Nano Banana 2.1</td></tr><tr><td>`banana2_edit`</td><td>🍌 Nano Banana 2</td></tr><tr><td>`banana2_edit_lite`</td><td>🍌 Nano Banana 2 Lite</td></tr></tbody></table> |
 | `prompt` | string | 是 | - | 提示词，不能为空，最长 10000 字符。 |
-| `size` | string | 否 | `3:4` | 图片宽高比，例如 `1:1`、`3:4`、`9:16`。可选值见 `GET /api/config/task-scenes` 的 `aspect_ratio_options`。 |
-| `resolution` | string | 否 | `4K` | 清晰度档位，例如 `1K`、`2K`、`4K`。可选值见 `GET /api/config/task-scenes` 的 `image_size_options`。 |
+| `size` | string | 否 | `3:4` | 图片宽高比，例如 `1:1`、`3:4`、`9:16`。可选值见 `GET https://api.80ai.net/api/config/task-scenes` 的 `aspect_ratio_options`。 |
+| `resolution` | string | 否 | `4K` | 清晰度档位，例如 `1K`、`2K`、`4K`。可选值见 `GET https://api.80ai.net/api/config/task-scenes` 的 `image_size_options`。 |
 | `reference_images` | string[] | 否 | `null` | 参考图数组，元素为 base64 字符串或 `data:image/...;base64,...` 形式。<strong>图编辑时必填</strong>（至少 1 张）。 |
 
 ### 文生图请求示例
@@ -155,7 +155,7 @@ curl --request POST \
 ## 注意事项
 
 - 图编辑与文生图共用同一组 Body 参数；须根据是否传入 `reference_images` 选择对应的 `model` 取值。
-- `size`、`resolution` 是否生效取决于所选 `model`，可先调用 `GET /api/config/task-scenes` 查看场景配置。
-- 每个 `POST /api/tasks` 请求默认生成 1 张图片，并按场景单价扣积分。
+- `size`、`resolution` 是否生效取决于所选 `model`，可先调用 `GET https://api.80ai.net/api/config/task-scenes` 查看场景配置。
+- 每个 `POST https://api.80ai.net/api/tasks` 请求默认生成 1 张图片，并按场景单价扣积分。
 - 接口会等待外部 AI 服务返回，调用方需要设置足够长的 HTTP 超时时间。
 - 如果生成失败，响应仍可能返回任务对象，`status` 为 `failed`，并带有 `error_message`。
