@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.credit_redeem_key import CreditRedeemKey
 from app.models.user import User
+from app.services.admin_service import REDEEM_UNIT_PRICES
 from app.services.business_id_service import user_external_id
 from app.services.user_credit_service import change_user_credit_balance, get_user_credit_account, get_user_credit_balance
 from app.services.wecom_notify_service import dispatch_wecom_event, format_wecom_user_label
@@ -68,6 +69,27 @@ def _serialize_redeem_key(row: CreditRedeemKey) -> dict:
     }
 
 
+def redeem_price_notice(row: CreditRedeemKey) -> dict[str, str]:
+    """兑换通知里的价格：有设定售价用设定价，否则用积分档位预设价。"""
+    if bool(row.is_gift):
+        return {"amount_yuan": "0.00", "price_source": "赠送", "price_text": "赠送"}
+    sale_fen = row.sale_amount_fen
+    if sale_fen is not None and int(sale_fen) > 0:
+        amount = round(int(sale_fen) / 100, 2)
+        source = "设定"
+    else:
+        amount = float(REDEEM_UNIT_PRICES.get(int(row.credit_amount or 0), 0.0))
+        source = "预设"
+    amount_text = f"{amount:.2f}"
+    if source == "预设" and amount <= 0:
+        return {"amount_yuan": "0.00", "price_source": "预设", "price_text": "未设置"}
+    return {
+        "amount_yuan": amount_text,
+        "price_source": source,
+        "price_text": f"¥{amount_text}（{source}）",
+    }
+
+
 def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user: User) -> None:
     user_label = format_wecom_user_label(user)
     credit_account = get_user_credit_account(db, user.id, create_if_missing=False)
@@ -75,6 +97,7 @@ def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user
     used_credit = int(credit_account.used_credit or 0) if credit_account else 0
     gift_title = "（赠送）" if bool(row.is_gift) else ""
     gift_line = "> 🏷️ 类型: **赠送**\n" if bool(row.is_gift) else ""
+    price = redeem_price_notice(row)
     time_text = now_local().strftime("%Y-%m-%d %H:%M:%S")
     dispatch_wecom_event(
         "redeem_success",
@@ -83,6 +106,7 @@ def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user
         f"> 🔑 兑换码: `{row.redeem_key}`\n"
         f"{gift_line}"
         f"> ⚡ 兑换积分: **{int(row.credit_amount or 0)}**\n"
+        f"> 💵 价格: <font color=\"warning\">{price['price_text']}</font>\n"
         f"> ⚡ 已使用积分: **{used_credit}**\n"
         f"> ⚡ 剩余积分: **{remain_credit}**\n"
         f"> ⏰ 兑换时间: {time_text}",
@@ -94,6 +118,9 @@ def _send_redeem_success_notification(db: Session, *, row: CreditRedeemKey, user
             "gift_line": gift_line,
             "gift_label": "赠送" if bool(row.is_gift) else "售卖",
             "credit_amount": int(row.credit_amount or 0),
+            "amount_yuan": price["amount_yuan"],
+            "price_source": price["price_source"],
+            "price_text": price["price_text"],
             "used_credit": used_credit,
             "remain_credit": remain_credit,
             "time": time_text,

@@ -10,6 +10,9 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.wecom_notify_rule import WecomNotifyRule
 from app.models.wecom_webhook_channel import WecomWebhookChannel
+from types import SimpleNamespace
+
+from app.services.credit_redeem_service import redeem_price_notice
 from app.services.wecom_channel_service import (
     EVENT_API_ALERT,
     EVENT_DAILY_REPORT,
@@ -17,7 +20,9 @@ from app.services.wecom_channel_service import (
     EVENT_PAYMENT_SUCCESS,
     EVENT_REDEEM_SUCCESS,
     EVENT_USER_REGISTERED,
+    LEGACY_REDEEM_SUCCESS_TEMPLATE,
     _enabled_targets,
+    upgrade_stock_redeem_templates,
     create_wecom_channel,
     create_wecom_rule,
     update_wecom_rule,
@@ -246,6 +251,52 @@ class WecomChannelServiceTests(unittest.TestCase):
         self.assertEqual(updated["event_key"], EVENT_REDEEM_SUCCESS)
         self.assertEqual(updated["conditions"], {})
         self.assertEqual(updated["template_markdown"], get_default_template(EVENT_REDEEM_SUCCESS))
+
+    def test_upgrade_replaces_legacy_redeem_template_only(self):
+        with patch("app.services.wecom_channel_service.settings") as mock_settings:
+            mock_settings.WECOM_NOTIFY_ENABLED = True
+            mock_settings.WECOM_WEBHOOK_URL = "https://biz.example/hook"
+            mock_settings.API_ALERT_ENABLED = False
+            mock_settings.WECOM_ALERT_WEBHOOK_URL = ""
+            seed_default_wecom_notify(self.db)
+        rule = self.db.query(WecomNotifyRule).filter(WecomNotifyRule.event_key == EVENT_REDEEM_SUCCESS).one()
+        rule.template_markdown = LEGACY_REDEEM_SUCCESS_TEMPLATE
+        custom = WecomNotifyRule(
+            business_id="custom-redeem",
+            channel_id=rule.channel_id,
+            event_key=EVENT_REDEEM_SUCCESS,
+            name="自定义兑换通知",
+            is_enabled=True,
+            conditions_json="{}",
+            template_markdown="自定义 {{redeem_key}}",
+        )
+        self.db.add(custom)
+        self.db.commit()
+
+        upgrade_stock_redeem_templates(self.db)
+        self.db.refresh(rule)
+        self.db.refresh(custom)
+        self.assertEqual(rule.template_markdown, get_default_template(EVENT_REDEEM_SUCCESS))
+        self.assertIn("{{price_text}}", rule.template_markdown)
+        self.assertEqual(custom.template_markdown, "自定义 {{redeem_key}}")
+
+
+class RedeemPriceNoticeTests(unittest.TestCase):
+    def test_uses_preset_price_when_sale_amount_missing(self):
+        notice = redeem_price_notice(SimpleNamespace(is_gift=False, sale_amount_fen=None, credit_amount=100))
+        self.assertEqual(notice["price_source"], "预设")
+        self.assertEqual(notice["amount_yuan"], "5.00")
+        self.assertEqual(notice["price_text"], "¥5.00（预设）")
+
+    def test_uses_configured_price_when_sale_amount_set(self):
+        notice = redeem_price_notice(SimpleNamespace(is_gift=False, sale_amount_fen=8800, credit_amount=100))
+        self.assertEqual(notice["price_source"], "设定")
+        self.assertEqual(notice["amount_yuan"], "88.00")
+        self.assertEqual(notice["price_text"], "¥88.00（设定）")
+
+    def test_gift_does_not_use_preset_price(self):
+        notice = redeem_price_notice(SimpleNamespace(is_gift=True, sale_amount_fen=None, credit_amount=100))
+        self.assertEqual(notice["price_text"], "赠送")
 
 
 if __name__ == "__main__":

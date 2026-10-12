@@ -103,6 +103,9 @@ EVENT_VARIABLES: dict[str, list[dict[str, Any]]] = {
         {"key": "gift_line", "label": "赠送类型行", "example": "> 🏷️ 类型: **赠送**\n"},
         {"key": "gift_label", "label": "兑换类型", "example": "赠送"},
         {"key": "credit_amount", "label": "兑换积分", "example": "100"},
+        {"key": "amount_yuan", "label": "价格（元）", "example": "5.00"},
+        {"key": "price_source", "label": "价格来源", "example": "预设"},
+        {"key": "price_text", "label": "价格说明", "example": "¥5.00（预设）"},
         {"key": "used_credit", "label": "已使用积分", "example": "20"},
         {"key": "remain_credit", "label": "剩余积分", "example": "80"},
         {"key": "time", "label": "兑换时间", "example": "2026-09-17 17:00:00"},
@@ -179,6 +182,17 @@ EVENT_VARIABLES: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+LEGACY_REDEEM_SUCCESS_TEMPLATE = (
+    "## 🎁 兑换码兑换成功{{gift_title}}\n"
+    "> 👤 用户: **{{user_label}}**\n"
+    "> 🔑 兑换码: `{{redeem_key}}`\n"
+    "{{gift_line}}"
+    "> ⚡ 兑换积分: **{{credit_amount}}**\n"
+    "> ⚡ 已使用积分: **{{used_credit}}**\n"
+    "> ⚡ 剩余积分: **{{remain_credit}}**\n"
+    "> ⏰ 兑换时间: {{time}}"
+)
+
 EVENT_DEFAULT_TEMPLATES: dict[str, str] = {
     EVENT_PAYMENT_SUCCESS: (
         "## 💰 订单购买成功\n"
@@ -197,6 +211,7 @@ EVENT_DEFAULT_TEMPLATES: dict[str, str] = {
         "> 🔑 兑换码: `{{redeem_key}}`\n"
         "{{gift_line}}"
         "> ⚡ 兑换积分: **{{credit_amount}}**\n"
+        "> 💵 价格: <font color=\"warning\">{{price_text}}</font>\n"
         "> ⚡ 已使用积分: **{{used_credit}}**\n"
         "> ⚡ 剩余积分: **{{remain_credit}}**\n"
         "> ⏰ 兑换时间: {{time}}"
@@ -510,6 +525,23 @@ def backfill_missing_rule_templates(db: Session) -> None:
     db.commit()
 
 
+def upgrade_stock_redeem_templates(db: Session) -> None:
+    """把仍使用旧默认文案的兑换成功规则升级为带价格的模版。"""
+    current = get_default_template(EVENT_REDEEM_SUCCESS).strip()
+    legacy = LEGACY_REDEEM_SUCCESS_TEMPLATE.strip()
+    if not current or current == legacy:
+        return
+    rows = db.query(WecomNotifyRule).filter(WecomNotifyRule.event_key == EVENT_REDEEM_SUCCESS).all()
+    changed = False
+    for row in rows:
+        stored = (row.template_markdown or "").strip()
+        if stored == legacy:
+            row.template_markdown = current
+            changed = True
+    if changed:
+        db.commit()
+
+
 def _enabled_rule_targets(db: Session, event_key: str, context: dict[str, Any]) -> list[dict[str, str]]:
     rows = (
         db.query(WecomNotifyRule)
@@ -553,6 +585,8 @@ def resolve_dispatch_targets(event_key: str, context: dict[str, Any] | None = No
         has_channel = _has_any_channel(db)
         if not has_rule and not has_channel:
             seed_default_wecom_notify(db)
+        if _has_any_rule(db):
+            upgrade_stock_redeem_templates(db)
         if not _has_any_rule(db):
             if _has_any_channel(db):
                 return []
@@ -673,6 +707,7 @@ def test_wecom_channel(db: Session, channel_id: str) -> dict:
 def list_wecom_rules(db: Session) -> list[dict]:
     seed_default_wecom_notify(db)
     backfill_missing_rule_templates(db)
+    upgrade_stock_redeem_templates(db)
     rows = (
         db.query(WecomNotifyRule)
         .join(WecomWebhookChannel, WecomWebhookChannel.id == WecomNotifyRule.channel_id)
