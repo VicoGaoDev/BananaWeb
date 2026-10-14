@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { readGenerationProgress, subscribeGenerationClock } from "@/lib/generationProgress";
 
 const props = withDefaults(defineProps<{
@@ -7,10 +7,12 @@ const props = withDefaults(defineProps<{
   startedAt?: string | null;
   estimateSeconds?: number | null;
   size?: number;
+  complete?: boolean;
 }>(), {
   startedAt: "",
   estimateSeconds: 60,
   size: 60,
+  complete: false,
 });
 
 const RADIUS = 42;
@@ -18,15 +20,38 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const tick = ref(0);
 const live = ref(false);
+const displayedPercent = ref(0);
 const localRunKey = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 let stopClock = () => {};
 
 const progressStateKey = computed(() => `${props.progressKey}:${props.startedAt || localRunKey}`);
-const percent = computed(() => {
+const rawPercent = computed(() => {
   tick.value;
+  if (props.complete) return 100;
   return readGenerationProgress(progressStateKey.value, props.startedAt, props.estimateSeconds);
 });
+const percent = computed(() => displayedPercent.value);
 const dashOffset = computed(() => CIRCUMFERENCE * (1 - percent.value / 100));
+
+watch(
+  () => [props.progressKey, props.startedAt] as const,
+  ([nextKey, nextStartedAt], [previousKey, previousStartedAt]) => {
+    const taskChanged = nextKey !== previousKey;
+    const serverStartChanged = Boolean(previousStartedAt && nextStartedAt && previousStartedAt !== nextStartedAt);
+    const serverStartCleared = Boolean(previousStartedAt && !nextStartedAt);
+    if (taskChanged || serverStartChanged || serverStartCleared) {
+      displayedPercent.value = 0;
+    }
+  },
+);
+
+watch(
+  rawPercent,
+  (value) => {
+    displayedPercent.value = Math.max(displayedPercent.value, value);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   stopClock = subscribeGenerationClock(() => {
@@ -50,7 +75,7 @@ onBeforeUnmount(() => {
     role="progressbar"
     :aria-valuenow="percent"
     aria-valuemin="0"
-    aria-valuemax="99"
+    :aria-valuemax="complete ? 100 : 99"
     :aria-label="`生成进度 ${percent}%`"
   >
     <svg viewBox="0 0 100 100" aria-hidden="true">

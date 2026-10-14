@@ -3920,6 +3920,10 @@ function markGeneratedResultMediaLoaded(task: GeneratedTaskItem, img: ImageResul
   loadedResultMediaKeys.value = next;
 }
 
+function isGeneratedResultMediaLoaded(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  return loadedResultMediaKeys.value.has(getGeneratedResultMediaLoadKey(task, img, index));
+}
+
 function handleGeneratedResultMediaError(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success" || isGeneratedTaskExpired(task)) return;
   if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return;
@@ -6314,6 +6318,19 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         @load="markGeneratedResultMediaLoaded(item.task, item.image, item.index)"
                         @error="handleGeneratedResultMediaError(item.task, item.image, item.index)"
                       />
+                      <div
+                        v-if="!isGeneratedResultMediaLoaded(item.task, item.image, item.index)"
+                        class="frame-state frame-state-complete"
+                      >
+                        <GenerationProgressRing
+                          :progress-key="item.task.localId"
+                          :started-at="item.task.createdAt"
+                          :estimate-seconds="generationEstimateSeconds(item.task.model)"
+                          complete
+                        />
+                        <span>生成完成...</span>
+                        <span class="frame-state-subtext">正在加载结果图</span>
+                      </div>
                       <div class="result-actions">
                         <template v-if="isGeneratedResultMoreExpanded(item)">
                           <a-tooltip v-if="canGenerateVideoFromGeneratedImage(item.task, item.image)" title="生成视频">
@@ -10068,6 +10085,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
   font-size: 14px;
   background: linear-gradient(180deg, rgba(255, 250, 240, 0.1), rgba(255, 250, 240, 0.16));
   backdrop-filter: blur(0.25px);
+
+  &.frame-state-complete {
+    pointer-events: none;
+  }
 
   &.error {
     background: linear-gradient(

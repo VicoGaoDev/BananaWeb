@@ -717,11 +717,12 @@ onBeforeUnmount(() => {
         />
         <div v-if="slot.status === 'failed' || !isImageReady(slot)" class="chat-generate-result-state">
           <GenerationProgressRing
-            v-if="slot.status === 'pending'"
+            v-if="slot.status === 'pending' || slot.status === 'loading' || slot.status === 'success'"
             :progress-key="slot.progressKey"
             :started-at="slot.startedAt"
             :estimate-seconds="slot.estimateSeconds"
             :size="56"
+            :complete="slot.status !== 'pending'"
           />
           <span v-else-if="slot.status !== 'failed'" class="chat-generate-result-loader" aria-hidden="true">
             <span class="chat-generate-result-spin" />

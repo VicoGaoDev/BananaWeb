@@ -178,6 +178,7 @@ function generationEstimateSeconds(model?: string | null) {
   return normalizeGenerationEstimateSeconds(scene?.estimated_seconds);
 }
 const cards = ref<BatchGenerateCard[]>([]);
+const loadedResultImageKeys = ref<Set<string>>(new Set());
 const globalSettings = ref<GlobalBatchSettings>({
   sceneType: "image_edit",
   model: "",
@@ -319,6 +320,22 @@ function getSuccessImages(card: BatchGenerateCard) {
 
 function getSlotTaskId(card: BatchGenerateCard, index: number) {
   return getCardTaskIds(card)[index] || "";
+}
+
+function getBatchResultImageLoadKey(card: BatchGenerateCard, image: ImageResult, index: number) {
+  return `batch-result:${card.id}:${getSlotTaskId(card, index) || image.id || index}`;
+}
+
+function isBatchResultImageLoaded(card: BatchGenerateCard, image: ImageResult, index: number) {
+  return loadedResultImageKeys.value.has(getBatchResultImageLoadKey(card, image, index));
+}
+
+function markBatchResultImageLoaded(card: BatchGenerateCard, image: ImageResult, index: number) {
+  const key = getBatchResultImageLoadKey(card, image, index);
+  if (loadedResultImageKeys.value.has(key)) return;
+  const next = new Set(loadedResultImageKeys.value);
+  next.add(key);
+  loadedResultImageKeys.value = next;
 }
 
 function ensureCardImageSlots(card: BatchGenerateCard, count: number) {
@@ -3219,7 +3236,26 @@ onBeforeUnmount(() => {
                     @click="openBatchTaskDetail(card, imageIndex)"
                   >
                     <div v-if="image.status === 'success' && (image.image_url || image.preview_url)" class="result-success-frame">
-                      <img :src="getDisplayImageUrl(image)" alt="生图结果" class="result-image" />
+                      <img
+                        :src="getDisplayImageUrl(image)"
+                        alt="生图结果"
+                        class="result-image"
+                        @load="markBatchResultImageLoaded(card, image, imageIndex)"
+                        @error="markBatchResultImageLoaded(card, image, imageIndex)"
+                      />
+                      <div
+                        v-if="!isBatchResultImageLoaded(card, image, imageIndex)"
+                        class="result-generating result-generating-complete"
+                      >
+                        <GenerationProgressRing
+                          :progress-key="getSlotTaskId(card, imageIndex) || `${card.id}-${imageIndex}`"
+                          :started-at="card.createdAt"
+                          :estimate-seconds="generationEstimateSeconds(card.model)"
+                          complete
+                        />
+                        <span class="result-generating-title">生成完成...</span>
+                        <span class="result-generating-sub">正在加载结果图</span>
+                      </div>
                       <div class="result-hover-actions result-hover-actions-top">
                         <a-button
                           v-if="canFeedbackBatchSlot(card, imageIndex)"
@@ -4645,6 +4681,12 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   text-align: center;
   background: linear-gradient(180deg, rgba(255, 250, 240, 0.1), rgba(255, 250, 240, 0.16));
+}
+
+.result-generating-complete {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .result-generating-title {
