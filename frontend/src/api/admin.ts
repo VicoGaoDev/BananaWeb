@@ -837,6 +837,7 @@ export function updateExternalApiSceneBinding(
     api_config_id: number | null;
     backup_api_config_id: number | null;
     credit_cost: number;
+    estimated_seconds: number;
     resolution_credit_costs_json: string;
     display_name: string;
     subtitle: string;

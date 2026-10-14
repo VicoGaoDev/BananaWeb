@@ -15,6 +15,29 @@ SceneKeyType = str
 _BADGE_COLOR_PATTERN = re.compile(r"^#(?:[0-9A-Fa-f]{6})$")
 
 
+DEFAULT_ESTIMATED_SECONDS = 60
+MIN_ESTIMATED_SECONDS = 5
+MAX_ESTIMATED_SECONDS = 1800
+
+
+def normalize_estimated_seconds(value: int | None) -> int:
+    try:
+        seconds = int(value or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds < MIN_ESTIMATED_SECONDS:
+        return DEFAULT_ESTIMATED_SECONDS
+    return min(seconds, MAX_ESTIMATED_SECONDS)
+
+
+def _validate_estimated_seconds(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if value < MIN_ESTIMATED_SECONDS or value > MAX_ESTIMATED_SECONDS:
+        raise ValueError("平均生成时间需为 5 到 1800 秒")
+    return value
+
+
 def _normalize_badge(text: str, color: str) -> tuple[str, str]:
     cleaned_text = (text or "").strip()[:16]
     cleaned_color = (color or "").strip().upper()
@@ -402,6 +425,7 @@ class GenerationModelOptionOut(BaseModel):
     custom_size_max: int = 4096
     custom_size_step: int = 8
     credit_cost: int
+    estimated_seconds: int = DEFAULT_ESTIMATED_SECONDS
     resolution_credit_costs: dict[str, int] = {}
     max_reference_images: int = 0
     aspect_ratio_options: list["SceneOptionItem"] = []
@@ -438,6 +462,7 @@ class ExternalApiSceneBindingCreate(BaseModel):
     badge_text: str = ""
     badge_color: str = ""
     credit_cost: int
+    estimated_seconds: int = DEFAULT_ESTIMATED_SECONDS
     max_reference_images: int = 0
     scene_type: SceneTypeType = "generate"
     status: StatusType = "enabled"
@@ -475,6 +500,12 @@ class ExternalApiSceneBindingCreate(BaseModel):
         if value < 0:
             raise ValueError("积分消耗不能小于 0")
         return value
+
+    @field_validator("estimated_seconds")
+    @classmethod
+    def validate_estimated_seconds(cls, value: int) -> int:
+        validated = _validate_estimated_seconds(value)
+        return DEFAULT_ESTIMATED_SECONDS if validated is None else validated
 
     @field_validator("max_reference_images")
     @classmethod
@@ -536,6 +567,7 @@ class ExternalApiSceneBindingUpdate(BaseModel):
     badge_text: str = ""
     badge_color: str = ""
     credit_cost: int
+    estimated_seconds: int | None = None
     resolution_credit_costs_json: str = "{}"
 
     @field_validator("display_name", "subtitle")
@@ -555,6 +587,11 @@ class ExternalApiSceneBindingUpdate(BaseModel):
             raise ValueError("积分消耗不能小于 0")
         return value
 
+    @field_validator("estimated_seconds")
+    @classmethod
+    def validate_estimated_seconds(cls, value: int | None) -> int | None:
+        return _validate_estimated_seconds(value)
+
     @field_validator("resolution_credit_costs_json")
     @classmethod
     def validate_resolution_credit_costs_json(cls, value: str) -> str:
@@ -573,6 +610,7 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
     custom_size_max: int = 4096
     custom_size_step: int = 8
     max_reference_images: int = 0
+    estimated_seconds: int | None = None
     badge_text: str = ""
     badge_color: str = ""
     aspect_ratio_options_json: str = "[]"
@@ -612,6 +650,11 @@ class ExternalApiSceneBindingMetaUpdate(BaseModel):
         if value < 0:
             raise ValueError("最大参考图张数不能小于 0")
         return value
+
+    @field_validator("estimated_seconds")
+    @classmethod
+    def validate_meta_estimated_seconds(cls, value: int | None) -> int | None:
+        return _validate_estimated_seconds(value)
 
     @model_validator(mode="after")
     def validate_custom_size_limits(self):
@@ -687,6 +730,7 @@ class ExternalApiSceneBindingOut(BaseModel):
     backup_api_group_name: str = ""
     backup_api_status: StatusType | None = None
     credit_cost: int
+    estimated_seconds: int = DEFAULT_ESTIMATED_SECONDS
     max_reference_images: int
     aspect_ratio_options_json: str
     image_size_options_json: str
@@ -712,6 +756,7 @@ class TaskSceneConfigOut(BaseModel):
     custom_size_max: int
     custom_size_step: int
     credit_cost: int
+    estimated_seconds: int = DEFAULT_ESTIMATED_SECONDS
     resolution_credit_costs: dict[str, int]
     max_reference_images: int
     aspect_ratio_options: list[SceneOptionItem]

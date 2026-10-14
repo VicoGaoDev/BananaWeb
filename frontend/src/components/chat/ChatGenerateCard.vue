@@ -8,9 +8,11 @@ import { confirmChatMessageGenerate } from "@/api/chat";
 import { getTaskScenes } from "@/api/config";
 import { getTasks } from "@/api/tasks";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import GenerationProgressRing from "@/components/generate/GenerationProgressRing.vue";
 import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import { notifyGeneratePageOfChatTasks } from "@/lib/chatGenerateDraft";
+import { normalizeGenerationEstimateSeconds } from "@/lib/generationProgress";
 import { formatGenerationTaskFailureMessage, GENERATION_TASK_FAILURE_MESSAGE } from "@/lib/generationErrors";
 import type { ChatGenerateInfo, ChatMessage, SceneOptionItem, TaskResult, TaskSceneConfig } from "@/types";
 
@@ -180,19 +182,26 @@ const resultSlots = computed(() => {
       || resultImages.value[index];
     const displayUrl = (image?.thumb_url || image?.preview_url || image?.image_url || "").trim();
     const previewUrl = (image?.image_url || image?.preview_url || "").trim();
+    const model = (task?.model || generateInfo.value.model || "").trim();
+    const scene = scenes.value.find((item) => item.scene_key === model);
+    const progress = {
+      progressKey: `chat-${props.messageId}-${index}`,
+      startedAt: task?.created_at || "",
+      estimateSeconds: normalizeGenerationEstimateSeconds(scene?.estimated_seconds),
+    };
     if ((previewUrl || displayUrl) && image?.status !== "failed" && task?.status !== "failed") {
-      return { key: `ok-${image?.id || index}`, status: "success" as const, url: displayUrl || previewUrl, previewUrl };
+      return { key: `ok-${image?.id || index}`, status: "success" as const, url: displayUrl || previewUrl, previewUrl, ...progress };
     }
     if (task?.status === "failed" || image?.status === "failed") {
-      return { key: `fail-${task?.id || index}`, status: "failed" as const, url: "", previewUrl: "" };
+      return { key: `fail-${task?.id || index}`, status: "failed" as const, url: "", previewUrl: "", ...progress };
     }
     if (!task && (generateInfo.value.status === "failed" || tasksMissing.value)) {
-      return { key: `fail-${index}`, status: "failed" as const, url: "", previewUrl: "" };
+      return { key: `fail-${index}`, status: "failed" as const, url: "", previewUrl: "", ...progress };
     }
     if (hasKnownSuccess.value || task?.status === "success") {
-      return { key: `load-${task?.id || index}`, status: "loading" as const, url: "", previewUrl: "" };
+      return { key: `load-${task?.id || index}`, status: "loading" as const, url: "", previewUrl: "", ...progress };
     }
-    return { key: `pending-${task?.id || index}`, status: "pending" as const, url: "", previewUrl: "" };
+    return { key: `pending-${task?.id || index}`, status: "pending" as const, url: "", previewUrl: "", ...progress };
   });
 });
 const resultAspectRatio = computed(() => {
@@ -706,12 +715,19 @@ onBeforeUnmount(() => {
           @load="markImageReady(slot.key)"
           @error="markImageReady(slot.key)"
         />
-        <span v-if="slot.status === 'failed' || !isImageReady(slot)" class="chat-generate-result-state">
-          <span v-if="slot.status !== 'failed'" class="chat-generate-result-loader" aria-hidden="true">
+        <div v-if="slot.status === 'failed' || !isImageReady(slot)" class="chat-generate-result-state">
+          <GenerationProgressRing
+            v-if="slot.status === 'pending'"
+            :progress-key="slot.progressKey"
+            :started-at="slot.startedAt"
+            :estimate-seconds="slot.estimateSeconds"
+            :size="56"
+          />
+          <span v-else-if="slot.status !== 'failed'" class="chat-generate-result-loader" aria-hidden="true">
             <span class="chat-generate-result-spin" />
           </span>
           {{ slot.status === "failed" ? "生成失败" : (slot.status === "pending" ? "生成中" : "加载中") }}
-        </span>
+        </div>
       </button>
     </div>
     <p v-if="failedMessage && !isGenerating" class="chat-generate-error">{{ failedMessage }}</p>

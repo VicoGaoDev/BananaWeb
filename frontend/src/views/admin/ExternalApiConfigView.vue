@@ -26,6 +26,11 @@ import {
   parseAdminConfigTemplate,
   stringifyAdminConfigTemplate,
 } from "@/lib/adminConfigTemplate";
+import {
+  DEFAULT_GENERATION_ESTIMATE_SECONDS,
+  MAX_GENERATION_ESTIMATE_SECONDS,
+  MIN_GENERATION_ESTIMATE_SECONDS,
+} from "@/lib/generationProgress";
 import type {
   ExternalApiCallMode,
   ExternalApiConfig,
@@ -125,6 +130,7 @@ const bindingColumns = [
   { title: "互换", key: "swap", width: 64 },
   { title: "备用接口", key: "backup", width: 400, ellipsis: true },
   { title: "积分", key: "credit", width: 128 },
+  { title: "平均耗时", key: "estimate", width: 140 },
   { title: "排序", key: "sort", width: 72 },
   { title: "", key: "action", width: 56 },
 ];
@@ -175,6 +181,7 @@ const sceneForm = reactive<ExternalApiSceneBindingCreatePayload>({
   badge_text: "",
   badge_color: "",
   credit_cost: 4,
+  estimated_seconds: DEFAULT_GENERATION_ESTIMATE_SECONDS,
   max_reference_images: 0,
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
   image_size_options_json: DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
@@ -194,6 +201,7 @@ const sceneMetaForm = reactive<ExternalApiSceneBindingMetaPayload>({
   custom_size_max: 4096,
   custom_size_step: 8,
   max_reference_images: 0,
+  estimated_seconds: DEFAULT_GENERATION_ESTIMATE_SECONDS,
   badge_text: "",
   badge_color: "",
   aspect_ratio_options_json: DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
@@ -520,6 +528,7 @@ function resetSceneForm() {
   sceneForm.badge_text = "";
   sceneForm.badge_color = "";
   sceneForm.credit_cost = 4;
+  sceneForm.estimated_seconds = DEFAULT_GENERATION_ESTIMATE_SECONDS;
   sceneForm.max_reference_images = 0;
   sceneForm.aspect_ratio_options_json = DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneForm.image_size_options_json = DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
@@ -578,6 +587,7 @@ function fillSceneMetaForm(record: ExternalApiSceneBinding) {
   sceneMetaForm.custom_size_max = Number(record.custom_size_max || 4096);
   sceneMetaForm.custom_size_step = Number(record.custom_size_step || 8);
   sceneMetaForm.max_reference_images = Number(record.max_reference_images || 0);
+  sceneMetaForm.estimated_seconds = Number(record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS);
   sceneMetaForm.badge_text = record.badge_text || "";
   sceneMetaForm.badge_color = record.badge_color || "";
   sceneMetaForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
@@ -734,6 +744,7 @@ function openCopyScene(record: ExternalApiSceneBinding) {
   sceneForm.badge_text = record.badge_text || "";
   sceneForm.badge_color = record.badge_color || "";
   sceneForm.credit_cost = Number(record.credit_cost || 0);
+  sceneForm.estimated_seconds = Number(record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS);
   sceneForm.max_reference_images = Number(record.max_reference_images || 0);
   sceneForm.aspect_ratio_options_json = record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON;
   sceneForm.image_size_options_json = record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON;
@@ -866,6 +877,7 @@ function buildSceneTemplateData(record: ExternalApiSceneBinding): ExternalApiSce
     badge_text: record.badge_text || "",
     badge_color: record.badge_color || "",
     credit_cost: Number(record.credit_cost || 0),
+    estimated_seconds: Number(record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS),
     max_reference_images: Number(record.max_reference_images || 0),
     aspect_ratio_options_json: record.aspect_ratio_options_json || DEFAULT_ASPECT_RATIO_OPTIONS_JSON,
     image_size_options_json: record.image_size_options_json || DEFAULT_IMAGE_SIZE_OPTIONS_JSON,
@@ -968,6 +980,7 @@ function applyImportedSceneData(data: Record<string, unknown>) {
   sceneForm.badge_text = normalizeStringValue(data.badge_text, sceneForm.badge_text);
   sceneForm.badge_color = normalizeStringValue(data.badge_color, sceneForm.badge_color);
   sceneForm.credit_cost = normalizeNumberValue(data.credit_cost, sceneForm.credit_cost);
+  sceneForm.estimated_seconds = normalizeNumberValue(data.estimated_seconds, sceneForm.estimated_seconds);
   sceneForm.max_reference_images = normalizeNumberValue(data.max_reference_images, sceneForm.max_reference_images);
   sceneForm.aspect_ratio_options_json = normalizeJsonFieldValue(data.aspect_ratio_options_json, sceneForm.aspect_ratio_options_json);
   sceneForm.image_size_options_json = normalizeJsonFieldValue(data.image_size_options_json, sceneForm.image_size_options_json);
@@ -1254,6 +1267,7 @@ async function handleBindingChange(
     api_config_id: number | null;
     backup_api_config_id: number | null;
     credit_cost: number;
+    estimated_seconds: number;
     resolution_credit_costs_json: string;
     display_name: string;
     subtitle: string;
@@ -1294,6 +1308,7 @@ function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial
   api_config_id: number | null;
   backup_api_config_id: number | null;
   credit_cost: number;
+  estimated_seconds: number;
   resolution_credit_costs_json: string;
   display_name: string;
   subtitle: string;
@@ -1304,6 +1319,7 @@ function buildBindingPayload(record: ExternalApiSceneBinding, overrides: Partial
     api_config_id: overrides.api_config_id !== undefined ? overrides.api_config_id : (record.api_config_id ?? null),
     backup_api_config_id: overrides.backup_api_config_id !== undefined ? overrides.backup_api_config_id : (record.backup_api_config_id ?? null),
     credit_cost: overrides.credit_cost ?? record.credit_cost,
+    estimated_seconds: overrides.estimated_seconds ?? record.estimated_seconds ?? DEFAULT_GENERATION_ESTIMATE_SECONDS,
     resolution_credit_costs_json: overrides.resolution_credit_costs_json ?? record.resolution_credit_costs_json ?? DEFAULT_RESOLUTION_CREDIT_COSTS_JSON,
     display_name: overrides.display_name ?? record.display_name ?? "",
     subtitle: overrides.subtitle ?? record.subtitle ?? "",
@@ -1372,6 +1388,7 @@ async function handleCreateScene() {
       badge_text: sceneForm.badge_text.trim(),
       badge_color: sceneForm.badge_color.trim(),
       credit_cost: Number(sceneForm.credit_cost || 0),
+      estimated_seconds: Number(sceneForm.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS),
       max_reference_images: Number(sceneForm.max_reference_images || 0),
       aspect_ratio_options_json: sceneForm.aspect_ratio_options_json,
       image_size_options_json: sceneForm.image_size_options_json,
@@ -1421,6 +1438,7 @@ async function handleSaveSceneMeta() {
       custom_size_max: Number(sceneMetaForm.custom_size_max),
       custom_size_step: Number(sceneMetaForm.custom_size_step),
       max_reference_images: Number(sceneMetaForm.max_reference_images || 0),
+      estimated_seconds: Number(sceneMetaForm.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS),
       badge_text: sceneMetaForm.badge_text.trim(),
       badge_color: sceneMetaForm.badge_color.trim(),
       aspect_ratio_options_json: sceneMetaForm.aspect_ratio_options_json,
@@ -1792,6 +1810,20 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
                       <span class="credit-unit">积分</span>
                     </div>
                   </template>
+                  <template v-else-if="column.key === 'estimate'">
+                    <div class="binding-credit-cell">
+                      <a-input-number
+                        :value="record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS"
+                        class="warm-input-number"
+                        :min="MIN_GENERATION_ESTIMATE_SECONDS"
+                        :max="MAX_GENERATION_ESTIMATE_SECONDS"
+                        :precision="0"
+                        :disabled="bindingSavingKey === record.scene_key"
+                        @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { estimated_seconds: Number(value ?? DEFAULT_GENERATION_ESTIMATE_SECONDS) }))"
+                      />
+                      <span class="credit-unit">秒</span>
+                    </div>
+                  </template>
                   <template v-else-if="column.key === 'sort'">
                     <span class="binding-sort-value">{{ record.sort_order ?? 0 }}</span>
                   </template>
@@ -2005,6 +2037,20 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
             </a-form-item>
           </a-col>
         </a-row>
+
+        <a-form-item label="平均生成时间（秒）">
+          <a-input-number
+            v-model:value="sceneForm.estimated_seconds"
+            class="warm-input-number"
+            :min="MIN_GENERATION_ESTIMATE_SECONDS"
+            :max="MAX_GENERATION_ESTIMATE_SECONDS"
+            :precision="0"
+            style="width: 100%"
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            生图卡片按这个时间推进进度。到点大约走到 90%，超时后缓慢爬到 99%，完成前不会显示 100%。
+          </div>
+        </a-form-item>
 
         <a-form-item label="最大参考图张数">
           <a-input-number v-model:value="sceneForm.max_reference_images" class="warm-input-number" :min="0" style="width: 100%" />
@@ -2247,6 +2293,19 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
             </a-form-item>
           </a-col>
         </a-row>
+        <a-form-item label="平均生成时间（秒）">
+          <a-input-number
+            v-model:value="sceneMetaForm.estimated_seconds"
+            class="warm-input-number"
+            :min="MIN_GENERATION_ESTIMATE_SECONDS"
+            :max="MAX_GENERATION_ESTIMATE_SECONDS"
+            :precision="0"
+            style="width: 100%"
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            生图卡片按这个时间推进进度。到点大约走到 90%，超时后缓慢爬到 99%，完成前不会显示 100%。
+          </div>
+        </a-form-item>
 
         <a-form-item label="场景描述">
           <a-input v-model:value="sceneMetaForm.scene_description" class="warm-input" />

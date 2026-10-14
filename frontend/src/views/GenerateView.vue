@@ -68,6 +68,7 @@ import { getMe } from "@/api/auth";
 import { isSupportedImageUploadFile } from "@/api/upload";
 import { useAuthStore } from "@/stores/auth";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import GenerationProgressRing from "@/components/generate/GenerationProgressRing.vue";
 import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import ImageModelGroupSelect from "@/components/generate/ImageModelGroupSelect.vue";
 import GenerateStyleTags from "@/components/generate/GenerateStyleTags.vue";
@@ -76,6 +77,7 @@ import { formatSelectedGenerateCameraLabel, type GenerateCameraSelection } from 
 import { composeGeneratePrompt, formatSelectedGenerateStyleLabel, parseGeneratePrompt } from "@/lib/generateStyles";
 import NavGenerateImageIcon from "@/components/icons/NavGenerateImageIcon.vue";
 import { imageModelSceneMark } from "@/lib/imageModelScene";
+import { normalizeGenerationEstimateSeconds } from "@/lib/generationProgress";
 import SketchBoardIcon from "@/components/icons/SketchBoardIcon.vue";
 import PromptInterceptionTip from "@/components/generate/PromptInterceptionTip.vue";
 import ImageSourceActionSheet from "@/components/generate/ImageSourceActionSheet.vue";
@@ -589,6 +591,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     custom_size_max: scene.custom_size_max,
     custom_size_step: scene.custom_size_step,
     credit_cost: scene.credit_cost,
+    estimated_seconds: scene.estimated_seconds,
     resolution_credit_costs: scene.resolution_credit_costs || {},
     max_reference_images: scene.max_reference_images,
     aspect_ratio_options: scene.aspect_ratio_options,
@@ -1110,6 +1113,10 @@ const smartCutoutResolutionOptions = computed(() => (
     : DEFAULT_IMAGE_SIZE_OPTIONS
 ));
 const sceneCostMap = computed(() => Object.fromEntries(taskScenes.value.map((item) => [item.scene_key, item.credit_cost])));
+function generationEstimateSeconds(model?: string | null) {
+  const scene = taskScenes.value.find((item) => item.scene_key === model);
+  return normalizeGenerationEstimateSeconds(scene?.estimated_seconds);
+}
 function resolveSceneCreditCost(sceneKey: string, targetResolution = resolution.value) {
   const scene = generationModels.value.find((item) => item.model_key === sceneKey)
     || taskScenes.value.find((item) => item.scene_key === sceneKey);
@@ -6494,8 +6501,10 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
 
                     <template v-else>
                       <div class="frame-state">
-                        <a-spin
-                          :indicator="h(LoadingOutlined, { style: neutralIndicatorStyle })"
+                        <GenerationProgressRing
+                          :progress-key="item.task.localId"
+                          :started-at="item.task.createdAt"
+                          :estimate-seconds="generationEstimateSeconds(item.task.model)"
                         />
                         <span>正在生成图片...</span>
                         <span class="frame-state-subtext">预计 30 秒 ～ 2 分钟</span>

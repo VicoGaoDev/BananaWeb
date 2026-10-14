@@ -26,6 +26,7 @@ import {
   uploadReferenceImage,
 } from "@/api/upload";
 import AspectRatioPicker from "@/components/generate/AspectRatioPicker.vue";
+import GenerationProgressRing from "@/components/generate/GenerationProgressRing.vue";
 import ModelCategorySelect from "@/components/generate/ModelCategorySelect.vue";
 import OptionGridPicker from "@/components/generate/OptionGridPicker.vue";
 import FeedbackDialog from "@/components/feedback/FeedbackDialog.vue";
@@ -35,6 +36,7 @@ import {
   getPreferredGenerationErrorMessage,
 } from "@/lib/generationErrors";
 import { withBaseUrl } from "@/lib/assets";
+import { normalizeGenerationEstimateSeconds } from "@/lib/generationProgress";
 import {
   CUSTOM_SIZE_DEFAULT_SIDE,
   CUSTOM_SIZE_PIXEL_MULTIPLE,
@@ -171,6 +173,10 @@ const ASPECT_RATIO_AUTO_DETECT_STORAGE_KEY = "generateAspectRatioAutoDetectEnabl
 const sceneConfigLoading = ref(true);
 const sceneConfigLoaded = ref(false);
 const taskScenes = ref<TaskSceneConfig[]>([]);
+function generationEstimateSeconds(model?: string | null) {
+  const scene = taskScenes.value.find((item) => item.scene_key === model);
+  return normalizeGenerationEstimateSeconds(scene?.estimated_seconds);
+}
 const cards = ref<BatchGenerateCard[]>([]);
 const globalSettings = ref<GlobalBatchSettings>({
   sceneType: "image_edit",
@@ -619,6 +625,7 @@ function toGenerationModelOption(scene: TaskSceneConfig): GenerationModelOption 
     custom_size_max: scene.custom_size_max,
     custom_size_step: scene.custom_size_step,
     credit_cost: scene.credit_cost,
+    estimated_seconds: scene.estimated_seconds,
     resolution_credit_costs: scene.resolution_credit_costs || {},
     max_reference_images: scene.max_reference_images,
     aspect_ratio_options: scene.aspect_ratio_options,
@@ -3279,7 +3286,11 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                     <div v-else class="result-generating">
-                      <a-spin size="large" />
+                      <GenerationProgressRing
+                        :progress-key="getSlotTaskId(card, imageIndex) || `${card.id}-${imageIndex}`"
+                        :started-at="card.createdAt"
+                        :estimate-seconds="generationEstimateSeconds(card.model)"
+                      />
                       <span class="result-generating-title">正在生成图片...</span>
                       <span class="result-generating-sub">预计 30 秒 ～ 2 分钟</span>
                     </div>

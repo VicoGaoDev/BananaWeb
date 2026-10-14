@@ -510,6 +510,8 @@ def _ensure_schema_compat():
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN badge_text VARCHAR(32) DEFAULT ''"))
             if "badge_color" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN badge_color VARCHAR(16) DEFAULT ''"))
+            if "estimated_seconds" not in scene_binding_columns:
+                conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN estimated_seconds INTEGER NOT NULL DEFAULT 60"))
             if "credit_cost" not in scene_binding_columns:
                 conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN credit_cost INTEGER DEFAULT 0"))
                 credit_cost_added = True
@@ -1857,6 +1859,8 @@ def _ensure_scene_binding_required_columns():
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN badge_text VARCHAR(32) NOT NULL DEFAULT ''"))
         if "badge_color" not in scene_binding_columns:
             conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN badge_color VARCHAR(16) NOT NULL DEFAULT ''"))
+        if "estimated_seconds" not in scene_binding_columns:
+            conn.execute(text("ALTER TABLE external_api_scene_bindings ADD COLUMN estimated_seconds INTEGER NOT NULL DEFAULT 60"))
         conn.execute(
             text(
                 """

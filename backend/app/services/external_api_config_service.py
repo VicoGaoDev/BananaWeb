@@ -24,6 +24,7 @@ from app.schemas.external_api_config import (
     ExternalApiSceneBindingUpdate,
     GenerationModelOptionOut,
     RenderedExternalApiConfig,
+    normalize_estimated_seconds,
     RenderedPollExternalApiConfig,
     TaskSceneConfigOut,
 )
@@ -597,6 +598,7 @@ def _serialize_scene_binding(
         backup_api_group_name=backup_config.group_name if backup_config else "",
         backup_api_status=backup_config.status if backup_config else None,
         credit_cost=binding.credit_cost,
+        estimated_seconds=normalize_estimated_seconds(binding.estimated_seconds),
         max_reference_images=max(0, int(binding.max_reference_images or 0)),
         aspect_ratio_options_json=aspect_ratio_options_json,
         image_size_options_json=image_size_options_json,
@@ -648,6 +650,7 @@ def list_generation_models(db: Session) -> list[GenerationModelOptionOut]:
             custom_size_max=max(1, int(binding.custom_size_max or 4096)),
             custom_size_step=max(1, int(binding.custom_size_step or 8)),
             credit_cost=binding.credit_cost,
+            estimated_seconds=normalize_estimated_seconds(binding.estimated_seconds),
             resolution_credit_costs=_normalize_resolution_credit_costs(binding.resolution_credit_costs_json),
             max_reference_images=max(0, int(binding.max_reference_images or 0)),
             aspect_ratio_options=json.loads(binding.aspect_ratio_options_json or "[]"),
@@ -811,6 +814,7 @@ def list_public_task_scene_configs(db: Session) -> list[TaskSceneConfigOut]:
             custom_size_max=item.custom_size_max,
             custom_size_step=item.custom_size_step,
             credit_cost=item.credit_cost,
+            estimated_seconds=item.estimated_seconds,
             resolution_credit_costs=_normalize_resolution_credit_costs(item.resolution_credit_costs_json),
             max_reference_images=item.max_reference_images,
             aspect_ratio_options=json.loads(item.aspect_ratio_options_json or "[]"),
@@ -864,6 +868,7 @@ def create_scene_binding(
         badge_text=body.badge_text,
         badge_color=body.badge_color,
         credit_cost=body.credit_cost,
+        estimated_seconds=body.estimated_seconds,
         max_reference_images=body.max_reference_images,
         aspect_ratio_options_json=body.aspect_ratio_options_json,
         image_size_options_json=body.image_size_options_json,
@@ -923,6 +928,8 @@ def set_scene_binding(
     binding.badge_text = body.badge_text
     binding.badge_color = body.badge_color
     binding.credit_cost = body.credit_cost
+    if body.estimated_seconds is not None:
+        binding.estimated_seconds = body.estimated_seconds
     binding.resolution_credit_costs_json = body.resolution_credit_costs_json
     db.commit()
     return _serialize_scene_binding(binding, primary_config, backup_config)
@@ -956,6 +963,8 @@ def update_scene_binding_meta(
     binding.custom_size_max = body.custom_size_max
     binding.custom_size_step = body.custom_size_step
     binding.max_reference_images = body.max_reference_images
+    if body.estimated_seconds is not None:
+        binding.estimated_seconds = body.estimated_seconds
     binding.badge_text = body.badge_text
     binding.badge_color = body.badge_color
     binding.aspect_ratio_options_json = body.aspect_ratio_options_json
@@ -1523,6 +1532,7 @@ def _ensure_scene_bindings(db: Session) -> None:
             display_name="",
             subtitle="",
             credit_cost=get_default_credit_cost(definition["scene_key"], definition["scene_type"]),
+            estimated_seconds=60,
             max_reference_images=get_default_max_reference_images(definition["scene_type"]),
             aspect_ratio_options_json=aspect_ratio_options_json,
             image_size_options_json=image_size_options_json,
@@ -1545,6 +1555,9 @@ def _ensure_scene_bindings(db: Session) -> None:
         )
         if binding.credit_cost is None:
             binding.credit_cost = default_cost
+            updated = True
+        if normalize_estimated_seconds(binding.estimated_seconds) != int(binding.estimated_seconds or 0):
+            binding.estimated_seconds = normalize_estimated_seconds(binding.estimated_seconds)
             updated = True
         if (binding.status or "").strip().lower() not in {"enabled", "disabled"}:
             binding.status = "enabled"
