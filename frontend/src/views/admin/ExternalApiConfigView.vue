@@ -100,6 +100,7 @@ const copyForm = reactive({
   subtitle: "",
   badge_text: "",
   badge_color: "",
+  estimated_seconds: DEFAULT_GENERATION_ESTIMATE_SECONDS,
 });
 const editingId = ref<number | null>(null);
 const sceneEditingKey = ref("");
@@ -130,7 +131,6 @@ const bindingColumns = [
   { title: "互换", key: "swap", width: 64 },
   { title: "备用接口", key: "backup", width: 400, ellipsis: true },
   { title: "积分", key: "credit", width: 128 },
-  { title: "平均耗时", key: "estimate", width: 140 },
   { title: "排序", key: "sort", width: 72 },
   { title: "", key: "action", width: 56 },
 ];
@@ -773,6 +773,7 @@ function openEditCopy(record: ExternalApiSceneBinding) {
   copyForm.subtitle = record.subtitle || "";
   copyForm.badge_text = record.badge_text || "";
   copyForm.badge_color = record.badge_color || "";
+  copyForm.estimated_seconds = Number(record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS);
   copyModalOpen.value = true;
 }
 
@@ -784,6 +785,7 @@ async function handleSaveCopy() {
     subtitle: copyForm.subtitle,
     badge_text: copyForm.badge_text,
     badge_color: copyForm.badge_color,
+    estimated_seconds: Number(copyForm.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS),
   }));
   copyModalOpen.value = false;
 }
@@ -1810,20 +1812,6 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
                       <span class="credit-unit">积分</span>
                     </div>
                   </template>
-                  <template v-else-if="column.key === 'estimate'">
-                    <div class="binding-credit-cell">
-                      <a-input-number
-                        :value="record.estimated_seconds || DEFAULT_GENERATION_ESTIMATE_SECONDS"
-                        class="warm-input-number"
-                        :min="MIN_GENERATION_ESTIMATE_SECONDS"
-                        :max="MAX_GENERATION_ESTIMATE_SECONDS"
-                        :precision="0"
-                        :disabled="bindingSavingKey === record.scene_key"
-                        @change="(value: number | null) => handleBindingChange(record.scene_key, buildBindingPayload(record, { estimated_seconds: Number(value ?? DEFAULT_GENERATION_ESTIMATE_SECONDS) }))"
-                      />
-                      <span class="credit-unit">秒</span>
-                    </div>
-                  </template>
                   <template v-else-if="column.key === 'sort'">
                     <span class="binding-sort-value">{{ record.sort_order ?? 0 }}</span>
                   </template>
@@ -1834,7 +1822,7 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
                       </button>
                       <template #overlay>
                         <a-menu>
-                          <a-menu-item key="copy-text" @click="openEditCopy(record)">编辑文案</a-menu-item>
+                          <a-menu-item key="copy-text" @click="openEditCopy(record)">编辑展示设置</a-menu-item>
                           <a-menu-item v-if="canCopyScene(record)" key="copy-scene" @click="openCopyScene(record)">复制新增</a-menu-item>
                           <a-menu-item v-if="canCopyScene(record)" key="copy-json" @click="handleCopySceneJson(record)">复制 JSON</a-menu-item>
                           <template v-if="!record.is_builtin">
@@ -2293,27 +2281,33 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="平均生成时间（秒）">
-          <a-input-number
-            v-model:value="sceneMetaForm.estimated_seconds"
-            class="warm-input-number"
-            :min="MIN_GENERATION_ESTIMATE_SECONDS"
-            :max="MAX_GENERATION_ESTIMATE_SECONDS"
-            :precision="0"
-            style="width: 100%"
-          />
-          <div class="scene-desc" style="margin-top: 6px">
-            生图卡片按这个时间推进进度。到点大约走到 90%，超时后缓慢爬到 99%，完成前不会显示 100%。
-          </div>
-        </a-form-item>
-
-        <a-form-item label="场景描述">
-          <a-input v-model:value="sceneMetaForm.scene_description" class="warm-input" />
-        </a-form-item>
-
-        <a-form-item label="模型标签">
-          <SceneBadgeFields v-model:text="sceneMetaForm.badge_text" v-model:color="sceneMetaForm.badge_color" />
-        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="6">
+            <a-form-item label="平均生成时间（秒）">
+              <a-input-number
+                v-model:value="sceneMetaForm.estimated_seconds"
+                class="warm-input-number"
+                :min="MIN_GENERATION_ESTIMATE_SECONDS"
+                :max="MAX_GENERATION_ESTIMATE_SECONDS"
+                :precision="0"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="场景描述">
+              <a-input v-model:value="sceneMetaForm.scene_description" class="warm-input" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="10">
+            <a-form-item label="模型标签">
+              <SceneBadgeFields v-model:text="sceneMetaForm.badge_text" v-model:color="sceneMetaForm.badge_color" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <div class="scene-desc" style="margin: -8px 0 18px">
+          平均生成时间只影响生图卡片进度条：到点大约走到 90%，超时后缓慢爬到 99%。
+        </div>
 
         <a-row :gutter="16">
           <a-col :span="8">
@@ -2430,7 +2424,7 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
 
     <a-modal
       v-model:open="copyModalOpen"
-      title="编辑展示文案"
+      title="编辑展示设置"
       :mask-closable="false"
       :width="480"
     >
@@ -2443,6 +2437,19 @@ function handleDeleteScene(record: ExternalApiSceneBinding) {
         </a-form-item>
         <a-form-item label="模型标签">
           <SceneBadgeFields v-model:text="copyForm.badge_text" v-model:color="copyForm.badge_color" />
+        </a-form-item>
+        <a-form-item label="平均生成时间（秒）">
+          <a-input-number
+            v-model:value="copyForm.estimated_seconds"
+            class="warm-input-number"
+            :min="MIN_GENERATION_ESTIMATE_SECONDS"
+            :max="MAX_GENERATION_ESTIMATE_SECONDS"
+            :precision="0"
+            style="width: 100%"
+          />
+          <div class="scene-desc" style="margin-top: 6px">
+            只影响生图卡片进度条的推进速度，卡片文案仍显示“预计 30 秒 ～ 2 分钟”。
+          </div>
         </a-form-item>
       </a-form>
       <template #footer>
