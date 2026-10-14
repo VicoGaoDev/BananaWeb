@@ -289,8 +289,13 @@ def load_image_bytes(image_url: str) -> tuple[bytes, str] | None:
     relative = image_url.strip().lstrip("/")
     if relative.startswith("uploads/"):
         relative = relative[len("uploads/"):]
-    file_path = Path(settings.UPLOAD_DIR) / relative
-    if not file_path.exists():
+    upload_dir = Path(settings.UPLOAD_DIR).resolve()
+    file_path = (upload_dir / relative).resolve()
+    try:
+        file_path.relative_to(upload_dir)
+    except ValueError:
+        return None
+    if not file_path.is_file():
         return None
     mime_type = infer_mime_type(file_path.name)
     return file_path.read_bytes(), mime_type
