@@ -13,7 +13,7 @@ import {
   getAdminAnalyticsSummary,
   getAdminAnalyticsTimeseries,
   getAdminHistoryDetail,
-  getAdminHistory,
+  getAdminHistoryCards,
   listUserOptions,
 } from "@/api/admin";
 import { setStoredAdminUnresolvedFeedbackCount } from "@/lib/adminFeedbackNotice";
@@ -33,8 +33,6 @@ import type {
   AdminAnalyticsTimeseries,
   AdminUser,
   GenerationModelOption,
-  HistoryFilter,
-  HistoryItem,
   TaskSceneConfig,
   TaskSource,
   TaskType,
@@ -60,9 +58,8 @@ const users = ref<AdminUser[]>([]);
 const usersLoading = ref(false);
 const generationModels = ref<GenerationModelOption[]>([]);
 const taskScenes = ref<TaskSceneConfig[]>([]);
-const history = ref<HistoryItem[]>([]);
+const history = ref<UserHistoryCard[]>([]);
 const historyTotal = ref(0);
-const historyCreditTotal = ref(0);
 const page = ref(1);
 const granularity = ref<AdminAnalyticsGranularity>("3hour");
 const preset = ref("today");
@@ -260,7 +257,7 @@ function buildAnalyticsQuery(): AdminAnalyticsQuery {
   };
 }
 
-function buildHistoryFilter(): HistoryFilter {
+function buildHistoryCardFilter() {
   const useBucketRange = granularity.value === "3hour" && preset.value === "custom";
   return {
     status: filters.status,
@@ -268,8 +265,7 @@ function buildHistoryFilter(): HistoryFilter {
     source: filters.source,
     model: filters.model,
     mode: filters.mode,
-    canvas_task_filter: filters.canvas_task_filter,
-    include_unsafe_tasks: filters.include_unsafe_tasks,
+    include_prompt_reverse: true,
     start_date: formatQueryDate(useBucketRange ? filters.dateRange?.[0] : filters.dateRange?.[0].startOf("day")),
     end_date: formatQueryDate(useBucketRange ? filters.dateRange?.[1] : filters.dateRange?.[1].endOf("day")),
   };
@@ -356,10 +352,9 @@ async function loadHistory() {
   if (showFullSpinner) historyLoading.value = true;
   historyRefreshing.value = true;
   try {
-    const res = await getAdminHistory(page.value, HISTORY_PAGE_SIZE, buildHistoryFilter());
+    const res = await getAdminHistoryCards(page.value, HISTORY_PAGE_SIZE, buildHistoryCardFilter());
     history.value = res.items;
     historyTotal.value = res.total;
-    historyCreditTotal.value = res.total_credit_cost;
   } catch (err: any) {
     if (isSessionExpiredError(err)) return;
     message.error("获取任务记录失败");
@@ -412,60 +407,12 @@ function handlePresetChange(value: string) {
 
 function handlePageChange(nextPage: number) {
   page.value = nextPage;
-  loadHistory();
+  void loadHistory();
 }
 
-function historyRecordToDetailItem(record: HistoryItem): UserHistoryCard {
-  const primaryImage = record.images?.[0];
-  return {
-    history_id: record.history_id,
-    item_type: record.item_type,
-    display_id: record.display_id,
-    task_id: record.task_id,
-    canvas_id: record.canvas_id,
-    canvas_project_id: record.canvas_project_id,
-    image_id: primaryImage?.id ?? null,
-    user_id: record.user_id,
-    username: record.username,
-    avatar_url: record.avatar_url,
-    is_pinned: false,
-    image_url: primaryImage?.image_url || "",
-    preview_url: primaryImage?.preview_url || "",
-    thumb_url: primaryImage?.thumb_url || "",
-    status: record.status as UserHistoryCard["status"],
-    image_format: primaryImage?.image_format || "",
-    image_size_bytes: primaryImage?.image_size_bytes || 0,
-    task_is_deleted: record.task_is_deleted,
-    is_soft_deleted: record.is_soft_deleted,
-    task_type: record.task_type,
-    model: record.model,
-    source: record.source,
-    mode: record.mode,
-    prompt: record.prompt,
-    reference_images: record.reference_images || [],
-    reference_image_thumbs: [],
-    source_image: "",
-    source_image_thumb: "",
-    mask_image: "",
-    mask_image_thumb: "",
-    num_images: record.num_images,
-    size: record.size,
-    resolution: record.resolution,
-    custom_size: record.custom_size,
-    credit_cost: record.credit_cost,
-    credit_refunded: record.credit_refunded,
-    used_fallback_api: record.used_fallback_api,
-    created_at: record.created_at,
-    error_message: record.error_message,
-    provider_error_message: record.provider_error_message,
-    images: record.images || [],
-    api_attempts: record.api_attempts || [],
-  };
-}
-
-async function openHistoryDetail(record: HistoryItem) {
+async function openHistoryDetail(record: UserHistoryCard) {
   detailOpen.value = true;
-  detailItem.value = historyRecordToDetailItem(record);
+  detailItem.value = record;
   const requestKey = `${record.item_type}:${record.task_id || record.history_id || record.display_id || record.created_at}`;
   activeDetailRequestKey = requestKey;
   detailRequestPreviewLoading.value = true;
@@ -493,7 +440,34 @@ function handleBucketClick(payload: { start?: string | null; end?: string | null
   preset.value = "custom";
 }
 
-function handleBreakdownFilter(payload: { type: "status" | "source" | "mode" | "model" | "user" | "canvas"; value: string }) {
+function ensureFilterUserOption(user: AdminUser) {
+  if (users.value.some((item) => item.id === user.id)) return;
+  users.value = [user, ...users.value];
+}
+
+async function applyClickedUserFilter(username: string) {
+  const cachedUser = users.value.find((item) => item.username === username);
+  if (cachedUser) {
+    filters.user_id = cachedUser.id;
+    return;
+  }
+  try {
+    const options = await listUserOptions(username);
+    const matchedUser = options.find((item) => item.username === username)
+      || options.find((item) => item.username.toLowerCase() === username.toLowerCase());
+    if (!matchedUser) {
+      message.warning("未找到该用户");
+      return;
+    }
+    ensureFilterUserOption(matchedUser);
+    filters.user_id = matchedUser.id;
+  } catch (err: any) {
+    if (isSessionExpiredError(err)) return;
+    message.error("筛选用户失败");
+  }
+}
+
+async function handleBreakdownFilter(payload: { type: "status" | "source" | "mode" | "model" | "user" | "canvas"; value: string }) {
   if (payload.type === "status") filters.status = payload.value;
   if (payload.type === "source") filters.source = payload.value as TaskSource;
   if (payload.type === "mode") filters.mode = payload.value as TaskType;
@@ -502,12 +476,11 @@ function handleBreakdownFilter(payload: { type: "status" | "source" | "mode" | "
     filters.canvas_task_filter = payload.value;
   }
   if (payload.type === "user") {
-    const matchedUser = users.value.find((item) => item.username === payload.value);
-    if (matchedUser) filters.user_id = matchedUser.id;
+    await applyClickedUserFilter(payload.value);
   }
 }
 
-function findHistoryUser(record: HistoryItem) {
+function findHistoryUser(record: UserHistoryCard) {
   if (record.user_id) {
     const matchedById = users.value.find((item) => item.id === record.user_id);
     if (matchedById) return matchedById;
@@ -515,7 +488,7 @@ function findHistoryUser(record: HistoryItem) {
   return users.value.find((item) => item.username === record.username) || null;
 }
 
-function openUserInfoDialog(record: HistoryItem) {
+function openUserInfoDialog(record: UserHistoryCard) {
   if (!record.user_id) {
     message.warning("未找到该用户信息");
     return;
@@ -583,7 +556,7 @@ function statusColor(value: string) {
   return "default";
 }
 
-function historyStatusSummary(record: HistoryItem) {
+function historyStatusSummary(record: UserHistoryCard) {
   const tags = [
     { key: "status", text: statusLabel(record.status), color: statusColor(record.status) },
   ];
@@ -591,11 +564,7 @@ function historyStatusSummary(record: HistoryItem) {
     tags.push({ key: "taskDeleted", text: "任务已软删", color: "red" });
   }
   if (record.is_soft_deleted) {
-    tags.push({
-      key: "imageDeleted",
-      text: `图片软删 ${record.soft_deleted_count || 0}`,
-      color: "orange",
-    });
+    tags.push({ key: "imageDeleted", text: "图片已软删", color: "orange" });
   }
   return tags;
 }
@@ -716,8 +685,8 @@ watch(filterSignature, async () => {
           </div>
           <div class="history-summary">
             <span v-if="historyRefreshing && history.length" class="history-summary-chip">更新中</span>
-            <span class="history-summary-chip">筛选结果 {{ historyTotal }} 条</span>
-            <span class="history-summary-chip">总消耗积分 {{ historyCreditTotal }}</span>
+            <span class="history-summary-chip">共 {{ historyTotal }} 条结果</span>
+            <span class="history-summary-chip">已展示 {{ history.length }} 条</span>
           </div>
         </div>
 
@@ -725,7 +694,7 @@ watch(filterSignature, async () => {
           :columns="columns"
           :data-source="history"
           :loading="historyLoading && !history.length"
-          :row-key="(record: HistoryItem) => record.display_id || record.task_id"
+          :row-key="(record: UserHistoryCard) => record.display_id || record.task_id || record.history_id"
           :pagination="false"
           :scroll="{ x: HISTORY_TABLE_SCROLL_X }"
           class="admin-mobile-table"

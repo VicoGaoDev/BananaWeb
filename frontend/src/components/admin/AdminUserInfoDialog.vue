@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import dayjs from "dayjs";
 import { getAdminUserDetail, getCreditLogs as getAdminCreditLogs, listPaymentOrders } from "@/api/admin";
@@ -18,6 +19,8 @@ const emit = defineEmits<{
   (event: "update:open", value: boolean): void;
   (event: "view-data", user: AdminUser): void;
 }>();
+
+const router = useRouter();
 
 const loading = ref(false);
 const redeemLogs = ref<CreditLog[]>([]);
@@ -71,6 +74,20 @@ function handleViewData() {
   emit("view-data", displayUser.value);
 }
 
+function openCreditLogs(mode: "purchase" | "redeem") {
+  const user = displayUser.value;
+  if (!user?.id) return;
+  emit("update:open", false);
+  void router.push({
+    name: "CreditLogs",
+    query: {
+      user_id: user.id,
+      username: user.username || "",
+      mode,
+    },
+  });
+}
+
 watch(() => [props.open, props.user?.id], () => {
   void loadUserRecords();
 }, { immediate: true });
@@ -121,7 +138,10 @@ watch(() => [props.open, props.user?.id], () => {
           </div>
 
           <div class="user-info-section">
-            <div class="user-info-section-title">最近在线购买记录</div>
+            <div class="user-info-section-head">
+              <div class="user-info-section-title">最近在线购买记录</div>
+              <button type="button" class="user-info-more" @click="openCreditLogs('purchase')">所有记录</button>
+            </div>
             <div v-if="purchaseOrders.length" class="user-redeem-list">
               <div v-for="order in purchaseOrders" :key="order.order_no" class="user-redeem-item">
                 <div>
@@ -135,7 +155,10 @@ watch(() => [props.open, props.user?.id], () => {
           </div>
 
           <div class="user-info-section">
-            <div class="user-info-section-title">最近积分兑换记录</div>
+            <div class="user-info-section-head">
+              <div class="user-info-section-title">最近积分兑换记录</div>
+              <button type="button" class="user-info-more" @click="openCreditLogs('redeem')">所有记录</button>
+            </div>
             <div v-if="redeemLogs.length" class="user-redeem-list">
               <div v-for="log in redeemLogs" :key="log.id" class="user-redeem-item">
                 <div>
@@ -248,10 +271,29 @@ watch(() => [props.open, props.user?.id], () => {
   }
 }
 
-.user-info-section-title {
+.user-info-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
+}
+
+.user-info-section-title {
+  margin-bottom: 0;
   color: var(--theme-title);
   font-weight: 800;
+}
+
+.user-info-more {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-accent-text, var(--theme-title));
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .user-redeem-list {

@@ -138,8 +138,10 @@ export function listUsers(
   });
 }
 
-export function listUserOptions(): Promise<AdminUser[]> {
-  return client.get("/admin/user-options");
+export function listUserOptions(keyword?: string): Promise<AdminUser[]> {
+  return client.get("/admin/user-options", {
+    params: keyword ? { keyword, limit: 20 } : undefined,
+  });
 }
 
 export function getAdminUserDetail(userId: string): Promise<AdminUser> {

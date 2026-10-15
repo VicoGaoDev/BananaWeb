@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import { message } from "ant-design-vue";
 import {
   ThunderboltOutlined,
@@ -13,6 +14,7 @@ import type { CreditLog, AdminUser, TaskType } from "@/types";
 import dayjs from "dayjs";
 
 const auth = useAuthStore();
+const route = useRoute();
 const isAdmin = computed(() => auth.isAdmin);
 
 const items = ref<CreditLog[]>([]);
@@ -25,9 +27,21 @@ const filterUserId = ref<string | undefined>(undefined);
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 const filterDirection = ref<"increase" | "decrease" | undefined>(undefined);
 const filterMode = ref<TaskType | "manual" | "redeem" | "purchase" | undefined>(undefined);
+const creditLogModes = [
+  "text_generate",
+  "image_edit",
+  "inpaint",
+  "smart_cutout",
+  "promptReverse",
+  "promptOptimize",
+  "manual",
+  "redeem",
+  "purchase",
+] as const;
 
 const userList = ref<AdminUser[]>([]);
 const usersLoading = ref(false);
+const usersLoaded = ref(false);
 
 const columns = computed(() => {
   const base = [
@@ -85,14 +99,51 @@ async function loadLogs() {
 }
 
 async function loadUsers() {
-  if (!isAdmin.value || userList.value.length || usersLoading.value) return;
+  if (!isAdmin.value || usersLoaded.value || usersLoading.value) return;
   usersLoading.value = true;
   try {
-    userList.value = await listUserOptions();
+    const options = await listUserOptions();
+    const seeded = userList.value.filter((item) => !options.some((option) => option.id === item.id));
+    userList.value = [...seeded, ...options];
+    usersLoaded.value = true;
   } catch {
     /* ignore */
   } finally {
     usersLoading.value = false;
+  }
+}
+
+function ensureRouteUserOption(userId: string, username: string) {
+  if (userList.value.some((item) => item.id === userId)) return;
+  userList.value = [
+    {
+      id: userId,
+      username,
+      role: "user",
+      status: "active",
+      is_whitelisted: false,
+      credits: 0,
+      consumed_credits: 0,
+      created_at: "",
+    },
+    ...userList.value,
+  ];
+}
+
+function isCreditLogMode(value: string): value is NonNullable<typeof filterMode.value> {
+  return (creditLogModes as readonly string[]).includes(value);
+}
+
+function applyRouteFilters() {
+  const userId = typeof route.query.user_id === "string" ? route.query.user_id : "";
+  const username = typeof route.query.username === "string" ? route.query.username : "";
+  const mode = typeof route.query.mode === "string" ? route.query.mode : "";
+  if (isAdmin.value && userId) {
+    filterUserId.value = userId;
+    ensureRouteUserOption(userId, username || userId);
+  }
+  if (mode && isCreditLogMode(mode)) {
+    filterMode.value = mode;
   }
 }
 
@@ -150,8 +201,18 @@ function modeLabel(mode: CreditLog["mode"]) {
 }
 
 onMounted(() => {
+  applyRouteFilters();
   loadLogs();
 });
+
+watch(
+  () => [route.query.user_id, route.query.username, route.query.mode],
+  () => {
+    applyRouteFilters();
+    page.value = 1;
+    loadLogs();
+  },
+);
 </script>
 
 <template>

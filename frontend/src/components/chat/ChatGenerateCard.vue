@@ -53,6 +53,7 @@ const customHeight = ref(1024);
 const tasks = ref<TaskResult[]>([]);
 const tasksFetched = ref(false);
 const loadedImageKeys = ref<Set<string>>(new Set());
+const completionFlashSlotKeys = ref<Set<string>>(new Set());
 let pollTimer: number | null = null;
 
 const generateInfo = computed(() => props.generate);
@@ -204,6 +205,22 @@ const resultSlots = computed(() => {
     return { key: `pending-${task?.id || index}`, status: "pending" as const, url: "", previewUrl: "", ...progress };
   });
 });
+
+watch(
+  () => resultSlots.value.map((slot) => `${slot.progressKey}:${slot.status}`).join("|"),
+  () => {
+    const next = new Set(completionFlashSlotKeys.value);
+    let changed = false;
+    for (const slot of resultSlots.value) {
+      if (slot.status !== "pending" || next.has(slot.progressKey)) continue;
+      next.add(slot.progressKey);
+      changed = true;
+    }
+    if (changed) completionFlashSlotKeys.value = next;
+  },
+  { immediate: true },
+);
+
 const resultAspectRatio = computed(() => {
   const raw = (generateInfo.value.custom_size || generateInfo.value.size || "").trim();
   const ratioMatch = raw.match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/);
@@ -239,6 +256,10 @@ const statusLabel = computed(() => {
   }
   return modeLabel.value;
 });
+
+function shouldShowChatCompletionFlash(slot: { progressKey: string; status: string }) {
+  return slot.status !== "pending" && completionFlashSlotKeys.value.has(slot.progressKey);
+}
 
 function isImageReady(slot: { key: string; status: string; url: string }) {
   return slot.status === "success" && !!slot.url && loadedImageKeys.value.has(slot.key);
@@ -717,12 +738,12 @@ onBeforeUnmount(() => {
         />
         <div v-if="slot.status === 'failed' || !isImageReady(slot)" class="chat-generate-result-state">
           <GenerationProgressRing
-            v-if="slot.status === 'pending' || slot.status === 'loading' || slot.status === 'success'"
+            v-if="slot.status === 'pending' || shouldShowChatCompletionFlash(slot)"
             :progress-key="slot.progressKey"
             :started-at="slot.startedAt"
             :estimate-seconds="slot.estimateSeconds"
             :size="56"
-            :complete="slot.status !== 'pending'"
+            :complete="shouldShowChatCompletionFlash(slot)"
           />
           <span v-else-if="slot.status !== 'failed'" class="chat-generate-result-loader" aria-hidden="true">
             <span class="chat-generate-result-spin" />

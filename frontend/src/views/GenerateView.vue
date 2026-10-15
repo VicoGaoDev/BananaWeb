@@ -490,6 +490,7 @@ const detailItem = ref<UserHistoryCard | null>(null);
 const detailTaskLocalId = ref<string | null>(null);
 const feedbackDialogOpen = ref(false);
 const loadedResultMediaKeys = ref<Set<string>>(new Set());
+const completionFlashTaskKeys = ref<Set<string>>(new Set());
 const hdPreviewRequestedKeys = ref<Set<string>>(new Set());
 const hdPreviewLoadedKeys = ref<Set<string>>(new Set());
 const expandedResultMoreKeys = ref<Set<string>>(new Set());
@@ -1424,6 +1425,21 @@ watch(generatedTasks, (tasks) => {
     : undefined;
   detailItem.value = convertGeneratedTaskToHistoryCard(latest, focusedImage);
 });
+
+watch(
+  () => generatedTasks.value.map((task) => `${task.localId}:${task.status}:${task.images.map((image) => image.status).join(",")}`).join("|"),
+  () => {
+    const next = new Set(completionFlashTaskKeys.value);
+    let changed = false;
+    for (const task of generatedTasks.value) {
+      if (!isGeneratedTaskInFlight(task) || next.has(task.localId)) continue;
+      next.add(task.localId);
+      changed = true;
+    }
+    if (changed) completionFlashTaskKeys.value = next;
+  },
+  { immediate: true },
+);
 
 watch(
   resultItems,
@@ -3924,6 +3940,18 @@ function isGeneratedResultMediaLoaded(task: GeneratedTaskItem, img: ImageResult,
   return loadedResultMediaKeys.value.has(getGeneratedResultMediaLoadKey(task, img, index));
 }
 
+function isGeneratedTaskInFlight(task: GeneratedTaskItem) {
+  return task.status === "submitting"
+    || task.status === "pending"
+    || task.status === "queued"
+    || task.status === "processing"
+    || task.images.some((image) => image.status === "pending");
+}
+
+function shouldShowGeneratedCompletionFlash(task: GeneratedTaskItem, img: ImageResult, index: number) {
+  return completionFlashTaskKeys.value.has(task.localId) && !isGeneratedResultMediaLoaded(task, img, index);
+}
+
 function handleGeneratedResultMediaError(task: GeneratedTaskItem, img: ImageResult, index: number) {
   if (img.status !== "success" || isGeneratedTaskExpired(task)) return;
   if (shouldShowGeneratedLargeImagePreviewNotice(task, img, index)) return;
@@ -6319,7 +6347,7 @@ watch(() => auth.isLoggedIn, async (isLoggedIn) => {
                         @error="handleGeneratedResultMediaError(item.task, item.image, item.index)"
                       />
                       <div
-                        v-if="!isGeneratedResultMediaLoaded(item.task, item.image, item.index)"
+                        v-if="shouldShowGeneratedCompletionFlash(item.task, item.image, item.index)"
                         class="frame-state frame-state-complete"
                       >
                         <GenerationProgressRing

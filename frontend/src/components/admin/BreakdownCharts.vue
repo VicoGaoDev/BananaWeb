@@ -336,11 +336,17 @@ const userTaskOption = computed(() => ({
     textStyle: { color: "#fffdf8" },
   },
   grid: { left: 48, right: 20, top: 20, bottom: 48 },
-  xAxis: { type: "category", data: (props.data?.top_users_by_tasks || []).map((item) => item.name), axisLabel: { interval: 0, rotate: 18 } },
+  xAxis: {
+    type: "category",
+    triggerEvent: true,
+    data: (props.data?.top_users_by_tasks || []).map((item) => item.name),
+    axisLabel: { interval: 0, rotate: 18 },
+  },
   yAxis: { type: "value" },
   series: [
     {
       type: "bar",
+      cursor: "pointer",
       data: (props.data?.top_users_by_tasks || []).map((item) => item.count),
       itemStyle: { color: "#13c2c2", borderRadius: [8, 8, 0, 0] },
     },
@@ -355,11 +361,17 @@ const userCreditOption = computed(() => ({
     textStyle: { color: "#fffdf8" },
   },
   grid: { left: 48, right: 20, top: 20, bottom: 48 },
-  xAxis: { type: "category", data: (props.data?.top_users_by_credit || []).map((item) => item.name), axisLabel: { interval: 0, rotate: 18 } },
+  xAxis: {
+    type: "category",
+    triggerEvent: true,
+    data: (props.data?.top_users_by_credit || []).map((item) => item.name),
+    axisLabel: { interval: 0, rotate: 18 },
+  },
   yAxis: { type: "value" },
   series: [
     {
       type: "bar",
+      cursor: "pointer",
       data: (props.data?.top_users_by_credit || []).map((item) => item.credit_cost),
       itemStyle: { color: "#fa8c16", borderRadius: [8, 8, 0, 0] },
     },
@@ -396,14 +408,29 @@ function handleModelClick(params: { dataIndex?: number }) {
   if (item) emit("filter-click", { type: "model", value: item.name });
 }
 
-function handleUserTaskClick(params: { dataIndex?: number }) {
-  const item = props.data?.top_users_by_tasks[params.dataIndex || 0];
-  if (item) emit("filter-click", { type: "user", value: item.name });
+function resolveRankedUserName(
+  list: { name: string }[] | undefined,
+  params: { dataIndex?: number; name?: string; value?: unknown },
+) {
+  if (!list?.length) return "";
+  if (typeof params.dataIndex === "number" && list[params.dataIndex]) return list[params.dataIndex].name;
+  const label = typeof params.name === "string" && params.name
+    ? params.name
+    : typeof params.value === "string"
+      ? params.value
+      : "";
+  if (!label) return "";
+  return list.some((item) => item.name === label) ? label : "";
 }
 
-function handleUserCreditClick(params: { dataIndex?: number }) {
-  const item = props.data?.top_users_by_credit[params.dataIndex || 0];
-  if (item) emit("filter-click", { type: "user", value: item.name });
+function handleUserTaskClick(params: { dataIndex?: number; name?: string; value?: unknown }) {
+  const name = resolveRankedUserName(props.data?.top_users_by_tasks, params);
+  if (name) emit("filter-click", { type: "user", value: name });
+}
+
+function handleUserCreditClick(params: { dataIndex?: number; name?: string; value?: unknown }) {
+  const name = resolveRankedUserName(props.data?.top_users_by_credit, params);
+  if (name) emit("filter-click", { type: "user", value: name });
 }
 </script>
 

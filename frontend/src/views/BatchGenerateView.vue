@@ -179,6 +179,7 @@ function generationEstimateSeconds(model?: string | null) {
 }
 const cards = ref<BatchGenerateCard[]>([]);
 const loadedResultImageKeys = ref<Set<string>>(new Set());
+const completionFlashCardKeys = ref<Set<string>>(new Set());
 const globalSettings = ref<GlobalBatchSettings>({
   sceneType: "image_edit",
   model: "",
@@ -328,6 +329,19 @@ function getBatchResultImageLoadKey(card: BatchGenerateCard, image: ImageResult,
 
 function isBatchResultImageLoaded(card: BatchGenerateCard, image: ImageResult, index: number) {
   return loadedResultImageKeys.value.has(getBatchResultImageLoadKey(card, image, index));
+}
+
+function isBatchCardInFlight(card: BatchGenerateCard) {
+  return card.status === "submitting"
+    || card.status === "pending"
+    || card.status === "queued"
+    || card.status === "queued_local"
+    || card.status === "processing"
+    || card.images.some((image) => image.status === "pending");
+}
+
+function shouldShowBatchCompletionFlash(card: BatchGenerateCard, image: ImageResult, index: number) {
+  return completionFlashCardKeys.value.has(card.id) && !isBatchResultImageLoaded(card, image, index);
 }
 
 function markBatchResultImageLoaded(card: BatchGenerateCard, image: ImageResult, index: number) {
@@ -1212,6 +1226,21 @@ watch(
     persistBatchGenerateDraft();
   },
   { deep: true },
+);
+
+watch(
+  () => cards.value.map((card) => `${card.id}:${card.status}:${card.images.map((image) => image.status).join(",")}`).join("|"),
+  () => {
+    const next = new Set(completionFlashCardKeys.value);
+    let changed = false;
+    for (const card of cards.value) {
+      if (!isBatchCardInFlight(card) || next.has(card.id)) continue;
+      next.add(card.id);
+      changed = true;
+    }
+    if (changed) completionFlashCardKeys.value = next;
+  },
+  { immediate: true },
 );
 
 watch(cards, () => {
@@ -3244,7 +3273,7 @@ onBeforeUnmount(() => {
                         @error="markBatchResultImageLoaded(card, image, imageIndex)"
                       />
                       <div
-                        v-if="!isBatchResultImageLoaded(card, image, imageIndex)"
+                        v-if="shouldShowBatchCompletionFlash(card, image, imageIndex)"
                         class="result-generating result-generating-complete"
                       >
                         <GenerationProgressRing
